@@ -1,0 +1,14 @@
+{
+  "Servers": {
+    "1": {
+      "Name": "Digiability PostgreSQL",
+      "Group": "Servers",
+      "Host": "postgres",
+      "Port": 5432,
+      "MaintenanceDB": "digiability_db",
+      "Username": "digiability",
+      "SSLMode": "prefer",
+      "PassFile": "/pgpass"
+    }
+  }
+}
