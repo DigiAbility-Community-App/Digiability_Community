@@ -1,6 +1,7 @@
 import prisma from "../models/prisma.client";
 import { hashPassword, comparePassword } from "../utils/hash.util";
 import { signAccessToken } from "../utils/jwt.util";
+import { createError } from "../middleware/error.middleware";
 import {
   createEmailVerificationToken,
   validateEmailVerificationToken,
@@ -20,41 +21,13 @@ import type {
   LoginInput,
   ForgotPasswordInput,
   ResetPasswordInput,
+  UpdateRoleInput,
 } from "../utils/validation.util";
+import { Role } from "@prisma/client";
 
 // ─────────────────────────────────────────────────────
 // Auth Service — Core business logic
 // ─────────────────────────────────────────────────────
-
-// ─── Register ──────────────────────────────────────────
-
-export async function registerUser(input: RegisterInput): Promise<{ message: string }> {
-  const { name, email, password } = input;
-
-  // 1. Check if email already exists
-  const existing = await prisma.user.findUnique({ where: { email } });
-  if (existing) {
-    throw new Error("An account with this email already exists");
-  }
-
-  // 2. Hash password
-  const hashedPassword = await hashPassword(password);
-
-  // 3. Create user
-  const user = await prisma.user.create({
-    data: { name, email, password: hashedPassword },
-  });
-
-  // 4. Create email verification token
-  const rawToken = await createEmailVerificationToken(user.id);
-
-  // 5. Send verification email (non-blocking — don't await to keep response fast)
-  sendVerificationEmail(user.email, user.name, rawToken).catch((err) =>
-    console.error("[EmailService] Failed to send verification email:", err)
-  );
-
-  return { message: "Account created. Please check your email to verify your account." };
-}
 
 // ─── Email Verification ────────────────────────────────
 
@@ -83,35 +56,52 @@ export interface LoginResult {
     id: string;
     name: string;
     email: string;
+    role: string | null;
+    profileComplete: boolean;
     isEmailVerified: boolean;
   };
 }
 
-export async function loginUser(input: LoginInput): Promise<LoginResult> {
-  const { email, password } = input;
+function toAuthUser(user: {
+  id: string;
+  name: string;
+  email: string;
+  role: Role | null;
+  profileComplete: boolean;
+  isEmailVerified: boolean;
+}) {
+  return {
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    role: user.role,
+    profileComplete: user.profileComplete,
+    isEmailVerified: user.isEmailVerified,
+  };
+}
 
-  // 1. Find user
-  const user = await prisma.user.findUnique({ where: { email } });
-  if (!user) throw new Error("Invalid email or password");
+export async function registerUser(input: RegisterInput): Promise<LoginResult> {
+  const { name, email, password, role } = input;
 
-  // 2. Compare password
-  const isMatch = await comparePassword(password, user.password);
-  if (!isMatch) throw new Error("Invalid email or password");
-
-  // 3. Check email verification
-  if (!user.isEmailVerified) {
-    throw new Error(
-      "Please verify your email before logging in. Check your inbox."
-    );
+  const existing = await prisma.user.findUnique({ where: { email } });
+  if (existing) {
+    throw createError("An account with this email already exists", 400);
   }
 
-  // 4. Sign access token
-  const accessToken = signAccessToken({ sub: user.id, email: user.email });
+  const hashedPassword = await hashPassword(password);
 
-  // 5. Create refresh token
+  const user = await prisma.user.create({
+    data: { name, email, password: hashedPassword, role },
+  });
+
+  const rawToken = await createEmailVerificationToken(user.id);
+  sendVerificationEmail(user.email, user.name, rawToken).catch((err) =>
+    console.error("[EmailService] Failed to send verification email:", err)
+  );
+
+  const accessToken = signAccessToken({ sub: user.id, email: user.email });
   const refreshToken = await createRefreshToken(user.id);
 
-  // 6. Update lastSeen
   await prisma.user.update({
     where: { id: user.id },
     data: { lastSeen: new Date() },
@@ -120,12 +110,37 @@ export async function loginUser(input: LoginInput): Promise<LoginResult> {
   return {
     accessToken,
     refreshToken,
-    user: {
-      id: user.id,
-      name: user.name,
-      email: user.email,
-      isEmailVerified: user.isEmailVerified,
-    },
+    user: toAuthUser(user),
+  };
+}
+
+export async function loginUser(input: LoginInput): Promise<LoginResult> {
+  const { email, password } = input;
+
+  // 1. Find user
+  const user = await prisma.user.findUnique({ where: { email } });
+  if (!user) throw createError("Invalid email or password", 400);
+
+  // 2. Compare password
+  const isMatch = await comparePassword(password, user.password);
+  if (!isMatch) throw createError("Invalid email or password", 400);
+
+  // 3. Sign access token
+  const accessToken = signAccessToken({ sub: user.id, email: user.email });
+
+  // 4. Create refresh token
+  const refreshToken = await createRefreshToken(user.id);
+
+  // 5. Update lastSeen
+  await prisma.user.update({
+    where: { id: user.id },
+    data: { lastSeen: new Date() },
+  });
+
+  return {
+    accessToken,
+    refreshToken,
+    user: toAuthUser(user),
   };
 }
 
@@ -200,7 +215,8 @@ export async function getCurrentUser(userId: string) {
       name: true,
       email: true,
       phoneNo: true,
-      dob: true,
+      role: true,
+      profileComplete: true,
       lastSeen: true,
       isEmailVerified: true,
       createdAt: true,
@@ -210,4 +226,22 @@ export async function getCurrentUser(userId: string) {
 
   if (!user) throw new Error("User not found");
   return user;
+}
+
+// ─── Update User Role ──────────────────────────────────
+
+export async function updateUserRole(userId: string, input: UpdateRoleInput) {
+  const user = await prisma.user.update({
+    where: { id: userId },
+    data: { role: input.role as Role },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      role: true,
+      profileComplete: true,
+      isEmailVerified: true,
+    },
+  });
+  return { message: "Role updated successfully", user };
 }

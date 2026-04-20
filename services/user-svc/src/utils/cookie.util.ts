@@ -1,6 +1,6 @@
 import { Response } from "express";
 
-const REFRESH_TOKEN_COOKIE_NAME = "refresh_token";
+const REFRESH_TOKEN_COOKIE_NAME = "refreshToken";
 
 // ─────────────────────────────────────────────────────
 // Cookie Utility
@@ -25,6 +25,14 @@ export function setRefreshTokenCookie(res: Response, token: string): void {
 }
 
 /**
+ * Expose the raw refresh token for native clients that cannot reliably
+ * read or persist HttpOnly cookies.
+ */
+export function setRefreshTokenHeader(res: Response, token: string): void {
+  res.setHeader("x-refresh-token", token);
+}
+
+/**
  * Clear the refresh token cookie (on logout).
  */
 export function clearRefreshTokenCookie(res: Response): void {
@@ -43,4 +51,18 @@ export function getRefreshTokenFromCookie(
   cookies: Record<string, string>
 ): string | undefined {
   return cookies[REFRESH_TOKEN_COOKIE_NAME];
+}
+
+/**
+ * Read the raw refresh token from Authorization: Bearer <token>.
+ * Used by native clients when cookies are not available.
+ */
+export function getRefreshTokenFromAuthHeader(
+  authHeader?: string
+): string | undefined {
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    return undefined;
+  }
+
+  return authHeader.slice("Bearer ".length).trim() || undefined;
 }

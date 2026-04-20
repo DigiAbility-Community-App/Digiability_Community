@@ -1,0 +1,161 @@
+import * as SecureStore from 'expo-secure-store';
+import apiClient, { REFRESH_TOKEN_KEY } from './apiClient';
+import { useAuthStore, AuthUser } from '@store/authStore';
+
+// ─────────────────────────────────────────────────────────
+// Auth Service
+// Typed wrappers around every user-svc auth endpoint.
+// ─────────────────────────────────────────────────────────
+
+// ── Types ──────────────────────────────────────────────────
+
+export interface RegisterInput {
+  name: string;
+  email: string;
+  password: string;
+}
+
+export interface LoginInput {
+  email: string;
+  password: string;
+}
+
+export interface ForgotPasswordInput {
+  email: string;
+}
+
+export interface ResetPasswordInput {
+  token: string;
+  password: string;
+}
+
+interface ApiResponse<T = Record<string, never>> {
+  success: boolean;
+  message: string;
+  data: T;
+}
+
+interface LoginResponseData {
+  accessToken: string;
+  user: AuthUser;
+  // refreshToken is in Set-Cookie header (web) or response header (native)
+}
+
+// ── Helpers ────────────────────────────────────────────────
+
+/**
+ * On native, the server cannot set HttpOnly cookies directly.
+ * We extract the refresh token from the response headers if the server
+ * returns it in X-Refresh-Token, or from a custom response field.
+ *
+ * For now, the user-svc sets a cookie — on native we read it from the
+ * axios response `set-cookie` header and persist it to SecureStore.
+ */
+async function persistRefreshToken(headers: Record<string, string | string[]>) {
+  const headerToken = headers['x-refresh-token'];
+  if (typeof headerToken === 'string' && headerToken.trim()) {
+    await SecureStore.setItemAsync(REFRESH_TOKEN_KEY, headerToken);
+    return;
+  }
+
+  const setCookie = headers['set-cookie'];
+  if (!setCookie) return;
+
+  const cookieStr = Array.isArray(setCookie) ? setCookie[0] : setCookie;
+  // Cookie format: refreshToken=<value>; Path=/; HttpOnly; ...
+  const match =
+    cookieStr.match(/refreshToken=([^;]+)/) ??
+    cookieStr.match(/refresh_token=([^;]+)/);
+  if (match?.[1]) {
+    await SecureStore.setItemAsync(REFRESH_TOKEN_KEY, match[1]);
+  }
+}
+
+// ── Register ───────────────────────────────────────────────
+
+export async function register(input: RegisterInput): Promise<AuthUser> {
+  const response = await apiClient.post<ApiResponse<LoginResponseData>>(
+    '/api/auth/register',
+    input,
+  );
+
+  const { accessToken, user } = response.data.data;
+  await persistRefreshToken(response.headers as Record<string, string | string[]>);
+  useAuthStore.getState().setAuth(accessToken, user);
+
+  return user;
+}
+
+// ── Login ──────────────────────────────────────────────────
+
+export async function login(input: LoginInput): Promise<AuthUser> {
+  const response = await apiClient.post<ApiResponse<LoginResponseData>>(
+    '/api/auth/login',
+    input,
+  );
+
+  const { accessToken, user } = response.data.data;
+
+  // Persist refresh token from cookie header (native)
+  await persistRefreshToken(response.headers as Record<string, string | string[]>);
+
+  // Store access token + user in memory
+  useAuthStore.getState().setAuth(accessToken, user);
+
+  return user;
+}
+
+// ── Logout ─────────────────────────────────────────────────
+
+export async function logout(): Promise<void> {
+  try {
+    await apiClient.post('/api/auth/logout');
+  } catch {
+    // Swallow — we still clear local state even if request fails
+  }
+  useAuthStore.getState().clearAuth();
+  await SecureStore.deleteItemAsync(REFRESH_TOKEN_KEY);
+}
+
+// ── Get current user (protected) ───────────────────────────
+
+export async function getMe(): Promise<AuthUser> {
+  const response = await apiClient.get<ApiResponse<{ user: AuthUser }>>('/api/auth/me');
+  return response.data.data.user;
+}
+
+// ── Forgot password ────────────────────────────────────────
+
+export async function forgotPassword(input: ForgotPasswordInput): Promise<string> {
+  const response = await apiClient.post<ApiResponse>(
+    '/api/auth/forgot-password',
+    input,
+  );
+  return response.data.message;
+}
+
+// ── Reset password ─────────────────────────────────────────
+
+export async function resetPassword(input: ResetPasswordInput): Promise<string> {
+  const response = await apiClient.post<ApiResponse>(
+    '/api/auth/reset-password',
+    input,
+  );
+  return response.data.message;
+}
+
+// ── Update current user role ───────────────────────────────
+
+export async function updateRole(role: string): Promise<AuthUser> {
+  const response = await apiClient.patch<ApiResponse<AuthUser>>('/api/auth/role', {
+    role,
+  });
+  
+  // Update auth store with the new user object
+  useAuthStore.getState().setAuth(
+    useAuthStore.getState().accessToken!,
+    response.data.data
+  );
+  
+  return response.data.data;
+}

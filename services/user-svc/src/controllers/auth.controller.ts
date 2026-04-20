@@ -8,12 +8,15 @@ import {
   resetPassword,
   deleteAccount,
   getCurrentUser,
+  updateUserRole,
 } from "../services/auth.service";
 import { rotateRefreshToken, revokeRefreshToken } from "../services/token.service";
 import {
   setRefreshTokenCookie,
   clearRefreshTokenCookie,
   getRefreshTokenFromCookie,
+  getRefreshTokenFromAuthHeader,
+  setRefreshTokenHeader,
 } from "../utils/cookie.util";
 
 // ─────────────────────────────────────────────────────
@@ -21,10 +24,22 @@ import {
 // Thin layer: parse input → call service → format response
 // ─────────────────────────────────────────────────────
 
+function attachRefreshToken(res: Response, refreshToken: string) {
+  setRefreshTokenCookie(res, refreshToken);
+  setRefreshTokenHeader(res, refreshToken);
+}
+
 // ─── POST /auth/register ───────────────────────────────
 export const register = asyncHandler(async (req: Request, res: Response) => {
-  const result = await registerUser(req.body);
-  res.status(201).json({ success: true, message: result.message, data: {} });
+  const { accessToken, refreshToken, user } = await registerUser(req.body);
+
+  attachRefreshToken(res, refreshToken);
+
+  res.status(201).json({
+    success: true,
+    message: "Account created successfully",
+    data: { accessToken, user },
+  });
 });
 
 // ─── GET /auth/verify-email?token= ────────────────────
@@ -42,8 +57,7 @@ export const verifyEmailHandler = asyncHandler(
 export const login = asyncHandler(async (req: Request, res: Response) => {
   const { accessToken, refreshToken, user } = await loginUser(req.body);
 
-  // Set refresh token in HTTP-only cookie
-  setRefreshTokenCookie(res, refreshToken);
+  attachRefreshToken(res, refreshToken);
 
   res.status(200).json({
     success: true,
@@ -54,14 +68,15 @@ export const login = asyncHandler(async (req: Request, res: Response) => {
 
 // ─── POST /auth/refresh ────────────────────────────────
 export const refresh = asyncHandler(async (req: Request, res: Response) => {
-  const rawToken = getRefreshTokenFromCookie(req.cookies);
+  const rawToken =
+    getRefreshTokenFromCookie(req.cookies) ??
+    getRefreshTokenFromAuthHeader(req.headers.authorization);
   if (!rawToken) throw createError("No refresh token found. Please log in.", 401);
 
   const { accessToken, refreshToken: newRefreshToken } =
     await rotateRefreshToken(rawToken);
 
-  // Set rotated token as new cookie
-  setRefreshTokenCookie(res, newRefreshToken);
+  attachRefreshToken(res, newRefreshToken);
 
   res.status(200).json({
     success: true,
@@ -72,7 +87,9 @@ export const refresh = asyncHandler(async (req: Request, res: Response) => {
 
 // ─── POST /auth/logout ─────────────────────────────────
 export const logout = asyncHandler(async (req: Request, res: Response) => {
-  const rawToken = getRefreshTokenFromCookie(req.cookies);
+  const rawToken =
+    getRefreshTokenFromCookie(req.cookies) ??
+    getRefreshTokenFromAuthHeader(req.headers.authorization);
 
   if (rawToken) {
     await revokeRefreshToken(rawToken);
@@ -120,4 +137,11 @@ export const me = asyncHandler(async (req: Request, res: Response) => {
   const userId = req.user!.sub;
   const user = await getCurrentUser(userId);
   res.status(200).json({ success: true, message: "User fetched", data: { user } });
+});
+
+// ─── PATCH /auth/role ──────────────────────────────────
+export const updateRoleHandler = asyncHandler(async (req: Request, res: Response) => {
+  const userId = req.user!.sub;
+  const result = await updateUserRole(userId, req.body);
+  res.status(200).json({ success: true, message: result.message, data: result.user });
 });

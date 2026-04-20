@@ -21,7 +21,7 @@
     "docker:logs": "docker-compose logs -f"
   },
   "devDependencies": {
-    "prisma": "^7.7.0",
+    "prisma": "^5.10.0",
     "turbo": "^2.0.0"
   },
   "engines": {
@@ -29,6 +29,6 @@
     "npm": ">=9.0.0"
   },
   "dependencies": {
-    "@prisma/client": "^7.7.0"
+    "@prisma/client": "^5.10.0"
   }
 }

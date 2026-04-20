@@ -21,6 +21,7 @@ export const RegisterSchema = z.object({
       /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/,
       "Password must include uppercase, lowercase, and a number"
     ),
+  role: z.enum(["pwd", "caregiver", "therapist", "ngo", "other"]).optional(),
 });
 
 export const LoginSchema = z.object({
@@ -50,8 +51,13 @@ export const ResetPasswordSchema = z.object({
     ),
 });
 
+export const UpdateRoleSchema = z.object({
+  role: z.enum(["pwd", "caregiver", "therapist", "ngo", "other"]),
+});
+
 // Inferred types
 export type RegisterInput = z.infer<typeof RegisterSchema>;
 export type LoginInput = z.infer<typeof LoginSchema>;
 export type ForgotPasswordInput = z.infer<typeof ForgotPasswordSchema>;
 export type ResetPasswordInput = z.infer<typeof ResetPasswordSchema>;
+export type UpdateRoleInput = z.infer<typeof UpdateRoleSchema>;

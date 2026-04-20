@@ -4,6 +4,7 @@ import cors from "cors";
 import cookieParser from "cookie-parser";
 import prisma from "./models/prisma.client";
 import authRoutes from "./routes/auth.routes";
+import profileRoutes from "./routes/profile.routes";
 import { errorHandler, notFoundHandler } from "./middleware/error.middleware";
 
 // ─────────────────────────────────────────────────────
@@ -38,6 +39,7 @@ app.get("/health", (_req, res) => {
 
 // ─── API Routes ────────────────────────────────────────
 app.use("/api/auth", authRoutes);
+app.use("/api/users/profiles", profileRoutes);
 
 // ─── 404 Handler ───────────────────────────────────────
 app.use(notFoundHandler);

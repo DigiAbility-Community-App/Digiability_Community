@@ -9,6 +9,7 @@ import {
   resetPasswordHandler,
   deleteAccountHandler,
   me,
+  updateRoleHandler,
 } from "../controllers/auth.controller";
 import { authenticate } from "../middleware/auth.middleware";
 import { validate } from "../middleware/validate.middleware";
@@ -17,6 +18,7 @@ import {
   LoginSchema,
   ForgotPasswordSchema,
   ResetPasswordSchema,
+  UpdateRoleSchema,
 } from "../utils/validation.util";
 
 // ─────────────────────────────────────────────────────
@@ -37,6 +39,7 @@ router.post("/reset-password",    validate(ResetPasswordSchema),   resetPassword
 
 // ── Protected Routes (require valid access token) ─────
 router.get("/me",                 authenticate,                    me);
+router.patch("/role",             authenticate, validate(UpdateRoleSchema), updateRoleHandler);
 router.delete("/delete-account",  authenticate,                    deleteAccountHandler);
 
 export default router;
