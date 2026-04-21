@@ -1,0 +1,34 @@
+{
+  "name": "digiability-community",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Digiability Community — Turborepo Monorepo",
+  "workspaces": [
+    "apps/*",
+    "packages/*",
+    "services/*"
+  ],
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "test": "turbo run test",
+    "user-svc:dev": "npm run dev --workspace=@digiability/user-svc",
+    "user-svc:migrate": "npm run db:migrate --workspace=@digiability/user-svc",
+    "user-svc:generate": "npm run db:generate --workspace=@digiability/user-svc",
+    "docker:up": "docker-compose up -d",
+    "docker:down": "docker-compose down",
+    "docker:logs": "docker-compose logs -f"
+  },
+  "devDependencies": {
+    "prisma": "^5.10.0",
+    "turbo": "^2.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.10.0"
+  }
+}
