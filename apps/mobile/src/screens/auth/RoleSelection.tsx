@@ -5,10 +5,13 @@ import {
   StyleSheet,
   TouchableOpacity,
   SafeAreaView,
+  ActivityIndicator,
+  Alert,
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
+import { updateRole } from "@services/authService";
 
-type RoleType = "pwd" | "parent" | "therapist" | "ngo";
+type RoleType = "pwd" | "caregiver" | "therapist" | "ngo";
 
 const roles = [
   {
@@ -17,7 +20,7 @@ const roles = [
     subtitle: "I have a disability",
   },
   {
-    id: "parent",
+    id: "caregiver",
     title: "Parent or Caregiver",
     subtitle: "I care for someone",
   },
@@ -35,18 +38,29 @@ const roles = [
 
 const RoleSelectionScreen = () => {
   const [selected, setSelected] = useState<RoleType>("pwd");
+  const [loading, setLoading] = useState(false);
   const navigation = useNavigation<any>();
 
-  // ✅ Clean Role-based Navigation
   const routeMap: Record<RoleType, string> = {
     pwd: "PWDProfile",
-    parent: "ParentProfile",
-    therapist: "TherapistProfile",
-    ngo: "NgoProfile",
+    caregiver: "CaregiverProfile",
+    therapist: "EducatorProfile",
+    ngo: "NGOProfile",
   };
 
-  const handleContinue = () => {
-    navigation.navigate(routeMap[selected]);
+  const handleContinue = async () => {
+    setLoading(true);
+    try {
+      await updateRole(selected);
+      navigation.navigate(routeMap[selected]);
+    } catch (error: unknown) {
+      const message =
+        (error as { response?: { data?: { message?: string } } })?.response?.data
+          ?.message ?? "We could not save your role.";
+      Alert.alert("Unable to continue", message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -106,8 +120,16 @@ const RoleSelectionScreen = () => {
       })}
 
       {/* Continue Button */}
-      <TouchableOpacity style={styles.button} onPress={handleContinue}>
-        <Text style={styles.buttonText}>Continue</Text>
+      <TouchableOpacity
+        style={[styles.button, loading && styles.buttonDisabled]}
+        onPress={handleContinue}
+        disabled={loading}
+      >
+        {loading ? (
+          <ActivityIndicator color="#fff" />
+        ) : (
+          <Text style={styles.buttonText}>Continue</Text>
+        )}
       </TouchableOpacity>
     </SafeAreaView>
   );
@@ -226,6 +248,10 @@ const styles = StyleSheet.create({
     padding: 16,
     borderRadius: 12,
     alignItems: "center",
+  },
+
+  buttonDisabled: {
+    opacity: 0.7,
   },
 
   buttonText: {

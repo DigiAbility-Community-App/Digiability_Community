@@ -5,6 +5,7 @@ import {
     StyleSheet,
     TouchableOpacity,
     SafeAreaView,
+    ScrollView,
     Switch,
     ActivityIndicator,
     Alert,
@@ -42,16 +43,20 @@ const AccessibilityScreen = ({ navigation }: Props) => {
         const loadPreferences = async () => {
             if (!user?.id) return;
 
-            const savedPreferences = await getAccessibilityPreferences(user.id);
-            if (!savedPreferences || !isMounted) return;
+            try {
+                const savedPreferences = await getAccessibilityPreferences(user.id);
+                if (!savedPreferences || !isMounted) return;
 
-            setTextSize(savedPreferences.textSize);
-            setHighContrast(savedPreferences.highContrast);
-            setScreenReader(savedPreferences.screenReader);
-            setReduceMotion(savedPreferences.reduceMotion);
-            setPushNotif(savedPreferences.pushNotif);
-            setEmailNotif(savedPreferences.emailNotif);
-            setSmsNotif(savedPreferences.smsNotif);
+                setTextSize(savedPreferences.textSize);
+                setHighContrast(savedPreferences.highContrast);
+                setScreenReader(savedPreferences.screenReader);
+                setReduceMotion(savedPreferences.reduceMotion);
+                setPushNotif(savedPreferences.pushNotif);
+                setEmailNotif(savedPreferences.emailNotif);
+                setSmsNotif(savedPreferences.smsNotif);
+            } catch {
+                // Accessibility preferences are optional during onboarding.
+            }
         };
 
         loadPreferences();
@@ -61,8 +66,16 @@ const AccessibilityScreen = ({ navigation }: Props) => {
         };
     }, [user?.id]);
 
+    const continueToHome = () => {
+        navigation.reset({
+            index: 0,
+            routes: [{ name: "Home" }],
+        });
+    };
+
     const handleContinue = async () => {
         if (!user?.id) {
+            continueToHome();
             return;
         }
 
@@ -78,117 +91,120 @@ const AccessibilityScreen = ({ navigation }: Props) => {
                 emailNotif,
                 smsNotif,
             });
-
-            navigation.reset({
-                index: 0,
-                routes: [{ name: "Home" }],
-            });
         } catch {
-            Alert.alert("Unable to save", "Please try again.");
+            Alert.alert(
+                "Preferences skipped",
+                "Accessibility settings were not saved yet, but you can continue and update them later."
+            );
         } finally {
             setLoading(false);
+            continueToHome();
         }
     };
 
     return (
         <SafeAreaView style={styles.container}>
-            {/* HEADER */}
-            <View style={styles.header}>
-                <TouchableOpacity onPress={() => navigation.goBack()}>
-                    <Text style={styles.back}>←</Text>
-                </TouchableOpacity>
-            </View>
-
-            {/* PROGRESS */}
-            <View style={styles.progress}>
-                <View style={styles.inactiveDot} />
-                <View style={styles.activeBar} />
-                <View style={styles.inactiveDot} />
-            </View>
-
-            {/* TITLE */}
-            <Text style={styles.title}>Make the app work for you</Text>
-            <Text style={styles.subtitle}>
-                You can change these anytime in Settings
-            </Text>
-
-            {/* TEXT SIZE */}
-            <Text style={styles.sectionTitle}>Text Size</Text>
-            <View style={styles.segment}>
-                {(["Small", "Medium", "Large"] as TextSize[]).map((size) => (
-                    <TouchableOpacity
-                        key={size}
-                        style={[
-                            styles.segmentBtn,
-                            textSize === size && styles.activeSegment,
-                        ]}
-                        onPress={() => setTextSize(size)}
-                    >
-                        <Text
-                            style={
-                                textSize === size
-                                    ? styles.activeText
-                                    : styles.inactiveText
-                            }
-                        >
-                            {size}
-                        </Text>
-                    </TouchableOpacity>
-                ))}
-            </View>
-
-            {/* DISPLAY */}
-            <Text style={styles.sectionTitle}>Display</Text>
-            <View style={styles.row}>
-                <Text>High Contrast</Text>
-                <Switch value={highContrast} onValueChange={setHighContrast} />
-            </View>
-
-            <View style={styles.row}>
-                <Text>Screen Reader</Text>
-                <Switch value={screenReader} onValueChange={setScreenReader} />
-            </View>
-
-            <View style={styles.row}>
-                <Text>Reduce Motion</Text>
-                <Switch value={reduceMotion} onValueChange={setReduceMotion} />
-            </View>
-
-            {/* LANGUAGE */}
-            <Text style={styles.sectionTitle}>Language</Text>
-            <View style={styles.dropdown}>
-                <Text>English</Text>
-            </View>
-
-            {/* NOTIFICATIONS */}
-            <Text style={styles.sectionTitle}>Notifications</Text>
-            <View style={styles.row}>
-                <Text>Push Notifications</Text>
-                <Switch value={pushNotif} onValueChange={setPushNotif} />
-            </View>
-
-            <View style={styles.row}>
-                <Text>Email</Text>
-                <Switch value={emailNotif} onValueChange={setEmailNotif} />
-            </View>
-
-            <View style={styles.row}>
-                <Text>SMS</Text>
-                <Switch value={smsNotif} onValueChange={setSmsNotif} />
-            </View>
-
-            {/* BUTTON */}
-            <TouchableOpacity
-                style={[styles.button, loading && styles.buttonDisabled]}
-                onPress={handleContinue}
-                disabled={loading}
+            <ScrollView
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={styles.content}
             >
-                {loading ? (
-                    <ActivityIndicator color="#fff" />
-                ) : (
-                    <Text style={styles.buttonText}>Continue</Text>
-                )}
-            </TouchableOpacity>
+                {/* HEADER */}
+                <View style={styles.header}>
+                    <TouchableOpacity onPress={() => navigation.goBack()}>
+                        <Text style={styles.back}>←</Text>
+                    </TouchableOpacity>
+                </View>
+
+                {/* PROGRESS */}
+                <View style={styles.progress}>
+                    <View style={styles.inactiveDot} />
+                    <View style={styles.activeBar} />
+                    <View style={styles.inactiveDot} />
+                </View>
+
+                {/* TITLE */}
+                <Text style={styles.title}>Make the app work for you</Text>
+                <Text style={styles.subtitle}>
+                    You can change these anytime in Settings
+                </Text>
+
+                {/* TEXT SIZE */}
+                <Text style={styles.sectionTitle}>Text Size</Text>
+                <View style={styles.segment}>
+                    {(["Small", "Medium", "Large"] as TextSize[]).map((size) => (
+                        <TouchableOpacity
+                            key={size}
+                            style={[
+                                styles.segmentBtn,
+                                textSize === size && styles.activeSegment,
+                            ]}
+                            onPress={() => setTextSize(size)}
+                        >
+                            <Text
+                                style={
+                                    textSize === size
+                                        ? styles.activeText
+                                        : styles.inactiveText
+                                }
+                            >
+                                {size}
+                            </Text>
+                        </TouchableOpacity>
+                    ))}
+                </View>
+
+                {/* DISPLAY */}
+                <Text style={styles.sectionTitle}>Display</Text>
+                <View style={styles.row}>
+                    <Text>High Contrast</Text>
+                    <Switch value={highContrast} onValueChange={setHighContrast} />
+                </View>
+
+                <View style={styles.row}>
+                    <Text>Screen Reader</Text>
+                    <Switch value={screenReader} onValueChange={setScreenReader} />
+                </View>
+
+                <View style={styles.row}>
+                    <Text>Reduce Motion</Text>
+                    <Switch value={reduceMotion} onValueChange={setReduceMotion} />
+                </View>
+
+                {/* LANGUAGE */}
+                <Text style={styles.sectionTitle}>Language</Text>
+                <View style={styles.dropdown}>
+                    <Text>English</Text>
+                </View>
+
+                {/* NOTIFICATIONS */}
+                <Text style={styles.sectionTitle}>Notifications</Text>
+                <View style={styles.row}>
+                    <Text>Push Notifications</Text>
+                    <Switch value={pushNotif} onValueChange={setPushNotif} />
+                </View>
+
+                <View style={styles.row}>
+                    <Text>Email</Text>
+                    <Switch value={emailNotif} onValueChange={setEmailNotif} />
+                </View>
+
+                <View style={styles.row}>
+                    <Text>SMS</Text>
+                    <Switch value={smsNotif} onValueChange={setSmsNotif} />
+                </View>
+
+                <TouchableOpacity
+                    style={[styles.button, loading && styles.buttonDisabled]}
+                    onPress={handleContinue}
+                    disabled={loading}
+                >
+                    {loading ? (
+                        <ActivityIndicator color="#fff" />
+                    ) : (
+                        <Text style={styles.buttonText}>Continue</Text>
+                    )}
+                </TouchableOpacity>
+            </ScrollView>
         </SafeAreaView>
     );
 };
@@ -199,7 +215,11 @@ const styles = StyleSheet.create({
     container: {
         flex: 1,
         backgroundColor: "#F6F6F6",
+    },
+
+    content: {
         padding: 16,
+        paddingBottom: 32,
     },
 
     header: {
@@ -297,11 +317,12 @@ const styles = StyleSheet.create({
     },
 
     button: {
-        marginTop: "auto",
+        marginTop: 28,
         backgroundColor: "#8A38F5",
         padding: 16,
         borderRadius: 12,
         alignItems: "center",
+        marginBottom: 8,
     },
 
     buttonDisabled: {

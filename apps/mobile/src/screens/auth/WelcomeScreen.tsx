@@ -9,7 +9,6 @@ import {
   SafeAreaView,
   StatusBar,
   ActivityIndicator,
-  Alert,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -21,6 +20,28 @@ import { login, register } from "@services/authService";
 type Props = {
   navigation: NativeStackNavigationProp<AuthStackParamList, "Welcome">;
 };
+
+type ApiErrorShape = {
+  response?: {
+    data?: {
+      message?: string;
+      errors?: Array<{
+        field?: string;
+        message?: string;
+      }>;
+    };
+  };
+};
+
+function getApiErrorMessage(error: unknown, fallback: string) {
+  const apiError = error as ApiErrorShape;
+  const fieldMessage = apiError.response?.data?.errors?.[0]?.message;
+  const message = apiError.response?.data?.message;
+
+  if (fieldMessage) return fieldMessage;
+  if (message) return message;
+  return fallback;
+}
 
 const WelcomeScreen = ({ navigation }: Props) => {
   const [activeTab, setActiveTab] = useState<"SignUp" | "Login">("SignUp");
@@ -57,6 +78,10 @@ const WelcomeScreen = ({ navigation }: Props) => {
       setError("Password must be at least 8 characters.");
       return;
     }
+    if (!/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/.test(signUpPassword)) {
+      setError("Password must include uppercase, lowercase, and a number.");
+      return;
+    }
     setLoading(true);
     try {
       await register({
@@ -65,10 +90,7 @@ const WelcomeScreen = ({ navigation }: Props) => {
         password: signUpPassword,
       });
     } catch (err: unknown) {
-      const msg =
-        (err as { response?: { data?: { message?: string } } })?.response?.data
-          ?.message ?? "Registration failed. Please try again.";
-      setError(msg);
+      setError(getApiErrorMessage(err, "Registration failed. Please try again."));
     } finally {
       setLoading(false);
     }
@@ -90,10 +112,7 @@ const WelcomeScreen = ({ navigation }: Props) => {
       // authStore is updated inside authService.login()
       // RootNavigator will auto-switch to Home when isAuthenticated = true
     } catch (err: unknown) {
-      const msg =
-        (err as { response?: { data?: { message?: string } } })?.response?.data
-          ?.message ?? "Login failed. Check your credentials.";
-      setError(msg);
+      setError(getApiErrorMessage(err, "Login failed. Check your credentials."));
     } finally {
       setLoading(false);
     }

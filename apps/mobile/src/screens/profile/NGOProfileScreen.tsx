@@ -85,7 +85,11 @@ const NGOProfileScreen = ({ navigation }: Props) => {
       <ScrollView showsVerticalScrollIndicator={false}>
         
         {/* TITLE */}
-        <Text style={styles.title}>Tell us about your organization</Text>
+        {/* HEADER */}
+        <View style={styles.header}>
+          <Text style={styles.step}>STEP 2</Text>
+          <Text style={styles.title}>Tell us about yourself</Text>
+        </View>
 
         {/* BASIC INFO */}
         <View style={styles.section}>
@@ -202,6 +206,16 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#FBF9F8",
+  },
+  
+  header: {
+    padding: 20,
+  },
+
+  step: {
+    fontSize: 12,
+    color: "#7D7387",
+    fontWeight: "bold",
   },
 
   title: {

@@ -65,13 +65,9 @@ const CaregiverProfileScreen = ({ navigation }: Props) => {
         
         {/* HEADER */}
         <View style={styles.header}>
-          <Text style={styles.bigTitle}>Who do you care for?</Text>
+          
           <Text style={styles.step}>STEP 2 OF 3</Text>
-
-          {/* Progress Bar */}
-          <View style={styles.progressBg}>
-            <View style={styles.progressFill} />
-          </View>
+          <Text style={styles.title}>Who do you care for?</Text>
         </View>
 
         {/* FORM */}
@@ -154,7 +150,7 @@ const styles = StyleSheet.create({
     padding: 20,
   },
 
-  bigTitle: {
+  title: {
     fontSize: 28,
     fontWeight: "bold",
     marginBottom: 10,

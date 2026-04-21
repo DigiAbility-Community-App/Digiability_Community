@@ -24,60 +24,62 @@ export type MainStackParamList = {
 
 const Stack = createNativeStackNavigator<MainStackParamList>();
 
+function getFallbackRoute(user: ReturnType<typeof useAuthStore.getState>['user']):
+  keyof MainStackParamList {
+  if (!user) {
+    return 'Home';
+  }
+
+  if (!user.role) {
+    return 'RoleSelection';
+  }
+
+  if (!user.profileComplete) {
+    return isOnboardingRole(user.role)
+      ? getProfileRouteForRole(user.role)
+      : 'Accessibility';
+  }
+
+  return 'Accessibility';
+}
+
 const MainNavigator = () => {
   const user = useAuthStore((s) => s.user);
-  const [initialRoute, setInitialRoute] = useState<keyof MainStackParamList | null>(null);
+  const [initialRoute, setInitialRoute] = useState<keyof MainStackParamList>(
+    () => getFallbackRoute(useAuthStore.getState().user)
+  );
 
   useEffect(() => {
     let isMounted = true;
 
     const resolveInitialRoute = async () => {
-      if (!user) {
-        if (isMounted) {
-          setInitialRoute('Home');
-        }
-        return;
-      }
-
-      if (!user.role) {
-        if (isMounted) {
-          setInitialRoute('RoleSelection');
-        }
-        return;
-      }
-
-      if (!user.profileComplete) {
-        if (isMounted) {
-          setInitialRoute(
-            isOnboardingRole(user.role)
-              ? getProfileRouteForRole(user.role)
-              : 'Accessibility'
-          );
-        }
-        return;
-      }
-
-      const accessibilityCompleted = await hasCompletedAccessibility(user.id);
+      const fallbackRoute = getFallbackRoute(user);
       if (isMounted) {
-        setInitialRoute(accessibilityCompleted ? 'Home' : 'Accessibility');
+        setInitialRoute(fallbackRoute);
+      }
+
+      if (!user?.id || !user.role || !user.profileComplete) {
+        return;
+      }
+
+      try {
+        const accessibilityCompleted = await hasCompletedAccessibility(user.id);
+        if (isMounted) {
+          setInitialRoute(accessibilityCompleted ? 'Home' : 'Accessibility');
+        }
+      } catch {
+        if (isMounted) {
+          setInitialRoute('Accessibility');
+        }
       }
     };
 
-    setInitialRoute(null);
     resolveInitialRoute();
 
     return () => {
       isMounted = false;
     };
   }, [user?.id, user?.role, user?.profileComplete]);
-
-  if (!initialRoute) {
-    return (
-      <View style={styles.loader}>
-        <ActivityIndicator size="large" color="#500088" />
-      </View>
-    );
-  }
 
   return (
     <Stack.Navigator
@@ -97,12 +99,3 @@ const MainNavigator = () => {
 };
 
 export default MainNavigator;
-
-const styles = StyleSheet.create({
-  loader: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#faf8ff',
-  },
-});
