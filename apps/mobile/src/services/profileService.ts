@@ -7,71 +7,26 @@ interface ApiResponse<T> {
   data: T;
 }
 
-type PWDPayload = {
+// ─────────────────────────────────────────────
+// Unified profile payload — same fields for all roles.
+// The role tag is already stored on the User record.
+// ─────────────────────────────────────────────
+type UserProfilePayload = {
+  fullName?: string;
   username?: string;
-  dob?: string;
-  disabilityType?: string;
-  disabilitySince?: number;
-  houseNo?: string;
-  street?: string;
+  dob?: string;      // ISO 8601 string
+  gender?: string;
   city?: string;
-  district?: string;
   state?: string;
-};
-
-type CaregiverPayload = {
-  careeName?: string;
-  relation?: string;
-  careeDob?: string;
-  careDisability?: string;
-  careSince?: number;
-};
-
-type TherapistPayload = {
-  username?: string;
-  dob?: string;
-  specialty?: string;
-  institution?: string;
-  yearsOfExperience?: number;
-  focusAreas?: string[];
-  city?: string;
-  district?: string;
-  state?: string;
-};
-
-type NGOPayload = {
-  contactPersonName?: string;
-  username?: string;
-  organizationName?: string;
-  registrationNumber?: string;
-  organizationType?: string;
-  servicesOffered?: string[];
-  city?: string;
-  pincode?: string;
-  website?: string;
 };
 
 function isConflictError(error: unknown) {
   return axios.isAxiosError(error) && error.response?.status === 409;
 }
 
-async function createOrUpdateProfile<T>(
-  createPath: string,
-  updatePath: string,
-  payload: Record<string, unknown>
-): Promise<T> {
-  try {
-    const response = await apiClient.post<ApiResponse<T>>(createPath, payload);
-    return response.data.data;
-  } catch (error) {
-    if (!isConflictError(error)) {
-      throw error;
-    }
-
-    const response = await apiClient.put<ApiResponse<T>>(updatePath, payload);
-    return response.data.data;
-  }
-}
+// ─────────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────────
 
 export function optionalString(value?: string) {
   const trimmed = value?.trim();
@@ -80,10 +35,7 @@ export function optionalString(value?: string) {
 
 export function optionalNumber(value?: string) {
   const trimmed = value?.trim();
-  if (!trimmed) {
-    return undefined;
-  }
-
+  if (!trimmed) return undefined;
   const numeric = Number(trimmed);
   return Number.isFinite(numeric) ? numeric : undefined;
 }
@@ -98,19 +50,13 @@ export function parseDateInput(
   format: 'DMY' | 'MDY'
 ) {
   const trimmed = value?.trim();
-  if (!trimmed) {
-    return undefined;
-  }
+  if (!trimmed) return undefined;
 
   const normalized = trimmed.replace(/\./g, '/').replace(/-/g, '/');
-  const parts = normalized.split('/').map((part) => part.trim());
-  if (parts.length !== 3) {
-    return undefined;
-  }
+  const parts = normalized.split('/').map((p) => p.trim());
+  if (parts.length !== 3) return undefined;
 
-  let year: number;
-  let month: number;
-  let day: number;
+  let year: number, month: number, day: number;
 
   if (parts[0].length === 4) {
     year = Number(parts[0]);
@@ -139,41 +85,61 @@ export function parseDateInput(
   }
 
   const isoDate = new Date(Date.UTC(year, month - 1, day));
-  if (Number.isNaN(isoDate.getTime())) {
-    return undefined;
-  }
+  if (Number.isNaN(isoDate.getTime())) return undefined;
 
   return isoDate.toISOString();
 }
 
-export async function submitPWDProfile(userId: string, payload: PWDPayload) {
-  return createOrUpdateProfile(
-    '/api/users/profiles/pwd',
-    `/api/users/profiles/pwd/${userId}`,
-    payload
-  );
+// ─────────────────────────────────────────────
+// Single profile submit — creates or updates
+// ─────────────────────────────────────────────
+
+export async function submitUserProfile(
+  _userId: string,
+  payload: UserProfilePayload
+) {
+  try {
+    const response = await apiClient.post<ApiResponse<unknown>>(
+      '/api/users/profile',
+      payload
+    );
+    return response.data.data;
+  } catch (error) {
+    if (!isConflictError(error)) throw error;
+    // Profile already exists — update instead
+    const response = await apiClient.put<ApiResponse<unknown>>(
+      '/api/users/profile',
+      payload
+    );
+    return response.data.data;
+  }
 }
 
-export async function submitCaregiverProfile(userId: string, payload: CaregiverPayload) {
-  return createOrUpdateProfile(
-    '/api/users/profiles/caregiver',
-    `/api/users/profiles/caregiver/${userId}`,
-    payload
-  );
-}
+// ─────────────────────────────────────────────
+// Role-specific profile details submit
+// Sent after the basic profile step.
+// ─────────────────────────────────────────────
 
-export async function submitTherapistProfile(userId: string, payload: TherapistPayload) {
-  return createOrUpdateProfile(
-    '/api/users/profiles/therapist',
-    `/api/users/profiles/therapist/${userId}`,
-    payload
-  );
-}
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type ProfileDetailsPayload = Record<string, any>;
 
-export async function submitNGOProfile(userId: string, payload: NGOPayload) {
-  return createOrUpdateProfile(
-    '/api/users/profiles/ngo',
-    `/api/users/profiles/ngo/${userId}`,
-    payload
-  );
+export async function submitProfileDetails(
+  _userId: string,
+  payload: ProfileDetailsPayload
+) {
+  try {
+    const response = await apiClient.post<ApiResponse<unknown>>(
+      '/api/users/profile/details',
+      payload
+    );
+    return response.data.data;
+  } catch (error) {
+    if (!isConflictError(error)) throw error;
+    // Details already saved — update instead
+    const response = await apiClient.put<ApiResponse<unknown>>(
+      '/api/users/profile/details',
+      payload
+    );
+    return response.data.data;
+  }
 }

@@ -7,49 +7,80 @@ import {
   SafeAreaView,
   ActivityIndicator,
   Alert,
+  StatusBar,
 } from "react-native";
+
+import { LinearGradient } from "expo-linear-gradient";
 import { useNavigation } from "@react-navigation/native";
 import { updateRole } from "@services/authService";
 
-type RoleType = "pwd" | "caregiver" | "therapist" | "ngo";
+type RoleType =
+  | "pwd"
+  | "caregiver"
+  | "therapist"
+  | "ngo"
+  | "volunteer"
+  | "student";
 
 const roles = [
   {
     id: "pwd",
-    title: "PwD or Individual",
+    title: "PwD",
     subtitle: "I have a disability",
+    icon: "♿",
   },
   {
     id: "caregiver",
-    title: "Parent or Caregiver",
+    title: "Caregiver",
     subtitle: "I care for someone",
+    icon: "👨‍👩‍👧",
   },
   {
     id: "therapist",
-    title: "Educator or Therapist",
+    title: "Therapist",
     subtitle: "I work with PwDs",
+    icon: "🩺",
   },
   {
     id: "ngo",
-    title: "NGO or Organization",
+    title: "NGO",
     subtitle: "We support PwDs",
+    icon: "🏢",
+  },
+  {
+    id: "volunteer",
+    title: "Volunteer",
+    subtitle: "I want to help",
+    icon: "🤝",
+  },
+  {
+    id: "student",
+    title: "Student",
+    subtitle: "Learning & supporting",
+    icon: "🎓",
   },
 ];
 
 const RoleSelectionScreen = () => {
   const [selected, setSelected] = useState<RoleType>("pwd");
   const [loading, setLoading] = useState(false);
+
   const navigation = useNavigation<any>();
 
+  // All roles share the same unified profile screen.
+  // The role tag is already stored on the user record.
   const routeMap: Record<RoleType, string> = {
-    pwd: "PWDProfile",
-    caregiver: "CaregiverProfile",
-    therapist: "EducatorProfile",
-    ngo: "NGOProfile",
+    pwd: "Profile",
+    caregiver: "Profile",
+    therapist: "Profile",
+    ngo: "Profile",
+    volunteer: "Profile",
+    student: "Profile",
   };
 
   const handleContinue = async () => {
     setLoading(true);
+
     try {
       await updateRole(selected);
       navigation.navigate(routeMap[selected]);
@@ -57,6 +88,7 @@ const RoleSelectionScreen = () => {
       const message =
         (error as { response?: { data?: { message?: string } } })?.response?.data
           ?.message ?? "We could not save your role.";
+
       Alert.alert("Unable to continue", message);
     } finally {
       setLoading(false);
@@ -65,72 +97,99 @@ const RoleSelectionScreen = () => {
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Progress */}
-      <View style={styles.progressContainer}>
-        <View style={styles.activeDot} />
-        <View style={styles.inactiveDot} />
-        <View style={styles.inactiveDot} />
+      <StatusBar barStyle="dark-content" backgroundColor="#F6F6F6" />
+
+      {/* HEADER */}
+      <View style={styles.topHeader}>
+        <View style={styles.progressWrapper}>
+          <View style={styles.inactiveProgress} />
+          <View style={styles.activeProgress} />
+          <View style={styles.inactiveProgress} />
+          <View style={styles.inactiveProgress} />
+        </View>
       </View>
 
-      <Text style={styles.stepText}>STEP 1</Text>
+      {/* MAIN */}
+      <View style={styles.main}>
+        {/* Heading */}
+        <View style={styles.headingSection}>
+          <Text style={styles.title}>I am a...</Text>
 
-      {/* Title */}
-      <View style={styles.header}>
-        <Text style={styles.title}>Choose Your Role</Text>
-        <Text style={styles.subtitle}>
-          Help us personalize your experience
+          <Text style={styles.subtitle}>
+            Select the role that best describes you.
+          </Text>
+        </View>
+
+        {/* GRID */}
+        <View style={styles.grid}>
+          {roles.map((role) => {
+            const isSelected = selected === role.id;
+
+            return (
+              <TouchableOpacity
+                key={role.id}
+                activeOpacity={0.85}
+                style={[
+                  styles.card,
+                  isSelected && styles.selectedCard,
+                ]}
+                onPress={() => setSelected(role.id as RoleType)}
+              >
+                {/* Tick */}
+                {isSelected && (
+                  <View style={styles.tickContainer}>
+                    <Text style={styles.tick}>✓</Text>
+                  </View>
+                )}
+
+                {/* Icon */}
+                <View style={styles.iconWrapper}>
+                  <Text style={styles.icon}>{role.icon}</Text>
+                </View>
+
+                {/* Text */}
+                <Text style={styles.cardTitle}>
+                  {role.title}
+                </Text>
+
+                <Text style={styles.cardSubtitle}>
+                  {role.subtitle}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
+        {/* Note */}
+        <Text style={styles.note}>
+          You can update your role later from settings.
         </Text>
       </View>
 
-      {/* Role Cards */}
-      {roles.map((role) => {
-        const isSelected = selected === role.id;
-
-        return (
-          <TouchableOpacity
-            key={role.id}
-            style={[
-              styles.card,
-              isSelected && styles.selectedCard,
-            ]}
-            onPress={() => setSelected(role.id as RoleType)}
+      {/* FOOTER */}
+      <View style={styles.footer}>
+        <TouchableOpacity
+          activeOpacity={0.9}
+          disabled={loading}
+          onPress={handleContinue}
+          style={styles.buttonContainer}
+        >
+          <LinearGradient
+            colors={["#500088", "#6B21A8"]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.button}
           >
-            {/* Icon Placeholder */}
-            <View style={styles.iconBox} />
-
-            {/* Text */}
-            <View style={{ flex: 1 }}>
-              <Text style={styles.cardTitle}>{role.title}</Text>
-              <Text style={styles.cardSubtitle}>
-                {role.subtitle}
+            {loading ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text style={styles.buttonText}>
+                Continue
               </Text>
-            </View>
-
-            {/* Radio Button */}
-            <View
-              style={[
-                styles.radioOuter,
-                isSelected && styles.radioSelected,
-              ]}
-            >
-              {isSelected && <View style={styles.radioInner} />}
-            </View>
-          </TouchableOpacity>
-        );
-      })}
-
-      {/* Continue Button */}
-      <TouchableOpacity
-        style={[styles.button, loading && styles.buttonDisabled]}
-        onPress={handleContinue}
-        disabled={loading}
-      >
-        {loading ? (
-          <ActivityIndicator color="#fff" />
-        ) : (
-          <Text style={styles.buttonText}>Continue</Text>
-        )}
-      </TouchableOpacity>
+            )}
+          </LinearGradient>
+        </TouchableOpacity>
+      </View>
     </SafeAreaView>
   );
 };
@@ -141,121 +200,179 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#F6F6F6",
-    padding: 20,
   },
 
-  progressContainer: {
-    flexDirection: "row",
-    gap: 6,
-    justifyContent: "center",
-    marginTop: 10,
-  },
-
-  activeDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: "#8A38F5",
-  },
-
-  inactiveDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    borderWidth: 1,
-    borderColor: "#636363",
-  },
-
-  stepText: {
-    textAlign: "center",
-    fontSize: 12,
-    marginTop: 5,
-    color: "#636363",
-  },
-
-  header: {
-    marginTop: 30,
-    marginBottom: 20,
+  // HEADER
+  topHeader: {
+    paddingTop: 20,
+    paddingHorizontal: 24,
+    paddingBottom: 10,
     alignItems: "center",
+  },
+
+  progressWrapper: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+
+  activeProgress: {
+    width: 24,
+    height: 8,
+    borderRadius: 999,
+    backgroundColor: "#6B21A8",
+  },
+
+  inactiveProgress: {
+    width: 8,
+    height: 8,
+    borderRadius: 999,
+    backgroundColor: "rgba(207,194,212,0.5)",
+  },
+
+  // MAIN
+  main: {
+    flex: 1,
+    paddingHorizontal: 24,
+    paddingTop: 40,
+  },
+
+  headingSection: {
+    marginBottom: 32,
   },
 
   title: {
-    fontSize: 22,
-    fontWeight: "bold",
+    fontSize: 30,
+    fontWeight: "700",
+    color: "#232222",
+    marginBottom: 6,
+    fontFamily: "PlusJakartaSans-Bold",
   },
 
   subtitle: {
-    color: "#666",
-    marginTop: 5,
+    fontSize: 15,
+    lineHeight: 22,
+    color: "#636363",
+    fontFamily: "PlusJakartaSans-Regular",
+  },
+
+  // GRID
+  grid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-between",
+    rowGap: 18,
   },
 
   card: {
-    flexDirection: "row",
+    width: "47%",
+    backgroundColor: "#FFFFFF",
+    borderRadius: 18,
+    paddingVertical: 24,
+    paddingHorizontal: 16,
     alignItems: "center",
-    backgroundColor: "#fff",
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 12,
+
+    shadowColor: "#000",
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
+    elevation: 3,
+
+    minHeight: 155,
   },
 
   selectedCard: {
     backgroundColor: "#F3EAFF",
-    borderLeftWidth: 4,
-    borderLeftColor: "#8A38F5",
-  },
-
-  iconBox: {
-    width: 48,
-    height: 48,
-    borderRadius: 12,
-    backgroundColor: "#eee",
-    marginRight: 12,
-  },
-
-  cardTitle: {
-    fontWeight: "bold",
-  },
-
-  cardSubtitle: {
-    color: "#666",
-    fontSize: 12,
-  },
-
-  radioOuter: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
     borderWidth: 2,
-    borderColor: "#ccc",
+    borderColor: "#8A38F5",
+  },
+
+  tickContainer: {
+    position: "absolute",
+    top: 12,
+    right: 12,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: "#8A38F5",
     justifyContent: "center",
     alignItems: "center",
   },
 
-  radioSelected: {
-    borderColor: "#8A38F5",
+  tick: {
+    color: "#fff",
+    fontSize: 12,
+    fontWeight: "700",
   },
 
-  radioInner: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: "#8A38F5",
+  iconWrapper: {
+    width: 58,
+    height: 58,
+    borderRadius: 18,
+    backgroundColor: "rgba(138,56,245,0.12)",
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 18,
+  },
+
+  icon: {
+    fontSize: 28,
+  },
+
+  cardTitle: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#232222",
+    textAlign: "center",
+    marginBottom: 8,
+    fontFamily: "PlusJakartaSans-Bold",
+  },
+
+  cardSubtitle: {
+    fontSize: 12,
+    lineHeight: 18,
+    color: "#636363",
+    textAlign: "center",
+    fontFamily: "PlusJakartaSans-Regular",
+  },
+
+  // NOTE
+  note: {
+    textAlign: "center",
+    marginTop: 34,
+    fontSize: 12,
+    fontStyle: "italic",
+    color: "#636363",
+  },
+
+  // FOOTER
+  footer: {
+    paddingHorizontal: 24,
+    paddingBottom: 28,
+    paddingTop: 12,
+    backgroundColor: "#F6F6F6",
+  },
+
+  buttonContainer: {
+    borderRadius: 14,
+    overflow: "hidden",
+
+    shadowColor: "#500088",
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+    elevation: 8,
   },
 
   button: {
-    marginTop: "auto",
-    backgroundColor: "#8A38F5",
-    padding: 16,
-    borderRadius: 12,
+    height: 60,
+    justifyContent: "center",
     alignItems: "center",
-  },
-
-  buttonDisabled: {
-    opacity: 0.7,
+    borderRadius: 14,
   },
 
   buttonText: {
-    color: "#fff",
-    fontWeight: "bold",
+    color: "#FFFFFF",
+    fontSize: 18,
+    fontWeight: "700",
+    fontFamily: "Nunito-Bold",
   },
 });

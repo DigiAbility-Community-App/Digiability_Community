@@ -1,6 +1,12 @@
 import type { MainStackParamList } from './MainNavigator';
 
-export type OnboardingRole = 'pwd' | 'caregiver' | 'therapist' | 'ngo';
+export type OnboardingRole =
+  | 'pwd'
+  | 'caregiver'
+  | 'therapist'
+  | 'ngo'
+  | 'volunteer'
+  | 'student';
 
 export function isOnboardingRole(
   role: string | null | undefined
@@ -9,21 +15,17 @@ export function isOnboardingRole(
     role === 'pwd' ||
     role === 'caregiver' ||
     role === 'therapist' ||
-    role === 'ngo'
+    role === 'ngo' ||
+    role === 'volunteer' ||
+    role === 'student'
   );
 }
 
+/**
+ * All roles go to the same unified Profile screen.
+ */
 export function getProfileRouteForRole(
-  role: OnboardingRole
+  _role: OnboardingRole
 ): keyof MainStackParamList {
-  switch (role) {
-    case 'pwd':
-      return 'PWDProfile';
-    case 'caregiver':
-      return 'CaregiverProfile';
-    case 'therapist':
-      return 'EducatorProfile';
-    case 'ngo':
-      return 'NGOProfile';
-  }
+  return 'Profile';
 }
