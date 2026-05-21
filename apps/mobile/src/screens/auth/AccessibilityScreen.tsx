@@ -10,9 +10,13 @@ import {
     ActivityIndicator,
     Alert,
 } from "react-native";
+
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import { LinearGradient } from "expo-linear-gradient";
+
 import { MainStackParamList } from "@navigation/MainNavigator";
 import { useAuthStore } from "@store/authStore";
+
 import {
     defaultAccessibilityPreferences,
     getAccessibilityPreferences,
@@ -21,20 +25,43 @@ import {
 } from "@services/storageService";
 
 type Props = {
-    navigation: NativeStackNavigationProp<MainStackParamList, "Accessibility">;
+    navigation: NativeStackNavigationProp<
+        MainStackParamList,
+        "Accessibility"
+    >;
 };
 
 const AccessibilityScreen = ({ navigation }: Props) => {
     const user = useAuthStore((state) => state.user);
-    const [textSize, setTextSize] = useState<TextSize>(defaultAccessibilityPreferences.textSize);
 
-    const [highContrast, setHighContrast] = useState(defaultAccessibilityPreferences.highContrast);
-    const [screenReader, setScreenReader] = useState(defaultAccessibilityPreferences.screenReader);
-    const [reduceMotion, setReduceMotion] = useState(defaultAccessibilityPreferences.reduceMotion);
+    const [textSize, setTextSize] = useState<TextSize>(
+        defaultAccessibilityPreferences.textSize
+    );
 
-    const [pushNotif, setPushNotif] = useState(defaultAccessibilityPreferences.pushNotif);
-    const [emailNotif, setEmailNotif] = useState(defaultAccessibilityPreferences.emailNotif);
-    const [smsNotif, setSmsNotif] = useState(defaultAccessibilityPreferences.smsNotif);
+    const [highContrast, setHighContrast] = useState(
+        defaultAccessibilityPreferences.highContrast
+    );
+
+    const [screenReader, setScreenReader] = useState(
+        defaultAccessibilityPreferences.screenReader
+    );
+
+    const [reduceMotion, setReduceMotion] = useState(
+        defaultAccessibilityPreferences.reduceMotion
+    );
+
+    const [pushNotif, setPushNotif] = useState(
+        defaultAccessibilityPreferences.pushNotif
+    );
+
+    const [emailNotif, setEmailNotif] = useState(
+        defaultAccessibilityPreferences.emailNotif
+    );
+
+    const [smsNotif, setSmsNotif] = useState(
+        defaultAccessibilityPreferences.smsNotif
+    );
+
     const [loading, setLoading] = useState(false);
 
     React.useEffect(() => {
@@ -44,7 +71,9 @@ const AccessibilityScreen = ({ navigation }: Props) => {
             if (!user?.id) return;
 
             try {
-                const savedPreferences = await getAccessibilityPreferences(user.id);
+                const savedPreferences =
+                    await getAccessibilityPreferences(user.id);
+
                 if (!savedPreferences || !isMounted) return;
 
                 setTextSize(savedPreferences.textSize);
@@ -55,7 +84,7 @@ const AccessibilityScreen = ({ navigation }: Props) => {
                 setEmailNotif(savedPreferences.emailNotif);
                 setSmsNotif(savedPreferences.smsNotif);
             } catch {
-                // Accessibility preferences are optional during onboarding.
+                // Optional during onboarding
             }
         };
 
@@ -66,20 +95,27 @@ const AccessibilityScreen = ({ navigation }: Props) => {
         };
     }, [user?.id]);
 
-    const continueToHome = () => {
-        navigation.reset({
-            index: 0,
-            routes: [{ name: "Home" }],
-        });
+    const continueToNext = () => {
+        if (!user?.role) {
+            navigation.replace("RoleSelection");
+        } else if (!user?.profileComplete) {
+            navigation.replace("Profile");
+        } else {
+            navigation.reset({
+                index: 0,
+                routes: [{ name: "Home" }],
+            });
+        }
     };
 
     const handleContinue = async () => {
         if (!user?.id) {
-            continueToHome();
+            continueToNext();
             return;
         }
 
         setLoading(true);
+
         try {
             await saveAccessibilityPreferences(user.id, {
                 textSize,
@@ -98,113 +134,293 @@ const AccessibilityScreen = ({ navigation }: Props) => {
             );
         } finally {
             setLoading(false);
-            continueToHome();
+            continueToNext();
         }
     };
 
     return (
         <SafeAreaView style={styles.container}>
+            {/* HEADER */}
+            <View style={styles.header}>
+                <View style={styles.headerLeft}>
+                    <TouchableOpacity
+                        style={styles.backButton}
+                        onPress={() => navigation.goBack()}
+                    >
+                        <Text style={styles.backArrow}>←</Text>
+                    </TouchableOpacity>
+
+                    <Text style={styles.headerTitle}>
+                        Preferences
+                    </Text>
+                </View>
+
+                {/* Progress */}
+                <View style={styles.progressWrapper}>
+                    <View style={styles.activeProgress} />
+                    <View style={styles.progressDot} />
+                    <View style={styles.progressDot} />
+                    <View style={styles.progressDot} />
+                </View>
+            </View>
+
             <ScrollView
                 showsVerticalScrollIndicator={false}
                 contentContainerStyle={styles.content}
             >
-                {/* HEADER */}
-                <View style={styles.header}>
-                    <TouchableOpacity onPress={() => navigation.goBack()}>
-                        <Text style={styles.back}>←</Text>
-                    </TouchableOpacity>
+                {/* HERO */}
+                <View style={styles.heroSection}>
+                    <Text style={styles.heroTitle}>
+                        Accessibility Preferences
+                    </Text>
+
+                    <Text style={styles.heroSubtitle}>
+                        Customize the app for your needs
+                    </Text>
                 </View>
 
-                {/* PROGRESS */}
-                <View style={styles.progress}>
-                    <View style={styles.inactiveDot} />
-                    <View style={styles.activeBar} />
-                    <View style={styles.inactiveDot} />
-                </View>
+                {/* VISUAL */}
+                <View style={styles.section}>
+                    <Text style={styles.sectionHeading}>
+                        VISUAL
+                    </Text>
 
-                {/* TITLE */}
-                <Text style={styles.title}>Make the app work for you</Text>
-                <Text style={styles.subtitle}>
-                    You can change these anytime in Settings
-                </Text>
-
-                {/* TEXT SIZE */}
-                <Text style={styles.sectionTitle}>Text Size</Text>
-                <View style={styles.segment}>
-                    {(["Small", "Medium", "Large"] as TextSize[]).map((size) => (
-                        <TouchableOpacity
-                            key={size}
-                            style={[
-                                styles.segmentBtn,
-                                textSize === size && styles.activeSegment,
-                            ]}
-                            onPress={() => setTextSize(size)}
-                        >
-                            <Text
-                                style={
-                                    textSize === size
-                                        ? styles.activeText
-                                        : styles.inactiveText
-                                }
-                            >
-                                {size}
+                    {/* TEXT SIZE */}
+                    <View style={styles.card}>
+                        <View style={styles.cardText}>
+                            <Text style={styles.cardTitle}>
+                                Text Size
                             </Text>
-                        </TouchableOpacity>
-                    ))}
+
+                            <Text style={styles.cardSubtitle}>
+                                Adjust font size for better readability
+                            </Text>
+                        </View>
+
+                        <View style={styles.segment}>
+                            {(["Small", "Medium", "Large"] as TextSize[]).map(
+                                (size) => (
+                                    <TouchableOpacity
+                                        key={size}
+                                        style={[
+                                            styles.segmentBtn,
+                                            textSize === size &&
+                                            styles.activeSegment,
+                                        ]}
+                                        onPress={() => setTextSize(size)}
+                                    >
+                                        <Text
+                                            style={
+                                                textSize === size
+                                                    ? styles.activeSegmentText
+                                                    : styles.segmentText
+                                            }
+                                        >
+                                            {size}
+                                        </Text>
+                                    </TouchableOpacity>
+                                )
+                            )}
+                        </View>
+                    </View>
+
+                    {/* HIGH CONTRAST */}
+                    <View style={styles.switchCard}>
+                        <View style={styles.switchText}>
+                            <Text style={styles.cardTitle}>
+                                High Contrast
+                            </Text>
+
+                            <Text style={styles.cardSubtitle}>
+                                Improve visibility with stronger colors
+                            </Text>
+                        </View>
+
+                        <Switch
+                            value={highContrast}
+                            onValueChange={setHighContrast}
+                            trackColor={{
+                                false: "#CFC2D4",
+                                true: "#6B21A8",
+                            }}
+                            thumbColor="#FFFFFF"
+                        />
+                    </View>
+
+                    {/* SCREEN READER */}
+                    <View style={styles.switchCard}>
+                        <View style={styles.switchText}>
+                            <Text style={styles.cardTitle}>
+                                Screen Reader
+                            </Text>
+
+                            <Text style={styles.cardSubtitle}>
+                                Enable spoken feedback support
+                            </Text>
+                        </View>
+
+                        <Switch
+                            value={screenReader}
+                            onValueChange={setScreenReader}
+                            trackColor={{
+                                false: "#CFC2D4",
+                                true: "#6B21A8",
+                            }}
+                            thumbColor="#FFFFFF"
+                        />
+                    </View>
+
+                    {/* REDUCE MOTION */}
+                    <View style={styles.switchCard}>
+                        <View style={styles.switchText}>
+                            <Text style={styles.cardTitle}>
+                                Reduce Motion
+                            </Text>
+
+                            <Text style={styles.cardSubtitle}>
+                                Minimize animations and transitions
+                            </Text>
+                        </View>
+
+                        <Switch
+                            value={reduceMotion}
+                            onValueChange={setReduceMotion}
+                            trackColor={{
+                                false: "#CFC2D4",
+                                true: "#6B21A8",
+                            }}
+                            thumbColor="#FFFFFF"
+                        />
+                    </View>
                 </View>
 
-                {/* DISPLAY */}
-                <Text style={styles.sectionTitle}>Display</Text>
-                <View style={styles.row}>
-                    <Text>High Contrast</Text>
-                    <Switch value={highContrast} onValueChange={setHighContrast} />
+                {/* AUDIO */}
+                <View style={styles.section}>
+                    <Text style={styles.sectionHeading}>
+                        AUDIO
+                    </Text>
+
+                    <View style={styles.switchCard}>
+                        <View style={styles.switchText}>
+                            <Text style={styles.cardTitle}>
+                                Push Notifications
+                            </Text>
+
+                            <Text style={styles.cardSubtitle}>
+                                Receive important updates instantly
+                            </Text>
+                        </View>
+
+                        <Switch
+                            value={pushNotif}
+                            onValueChange={setPushNotif}
+                            trackColor={{
+                                false: "#CFC2D4",
+                                true: "#6B21A8",
+                            }}
+                            thumbColor="#FFFFFF"
+                        />
+                    </View>
+
+                    <View style={styles.switchCard}>
+                        <View style={styles.switchText}>
+                            <Text style={styles.cardTitle}>
+                                Email Notifications
+                            </Text>
+
+                            <Text style={styles.cardSubtitle}>
+                                Receive updates through email
+                            </Text>
+                        </View>
+
+                        <Switch
+                            value={emailNotif}
+                            onValueChange={setEmailNotif}
+                            trackColor={{
+                                false: "#CFC2D4",
+                                true: "#6B21A8",
+                            }}
+                            thumbColor="#FFFFFF"
+                        />
+                    </View>
                 </View>
 
-                <View style={styles.row}>
-                    <Text>Screen Reader</Text>
-                    <Switch value={screenReader} onValueChange={setScreenReader} />
-                </View>
+                {/* MOTOR */}
+                <View style={styles.section}>
+                    <Text style={styles.sectionHeading}>
+                        MOTOR
+                    </Text>
 
-                <View style={styles.row}>
-                    <Text>Reduce Motion</Text>
-                    <Switch value={reduceMotion} onValueChange={setReduceMotion} />
-                </View>
+                    <View style={styles.switchCard}>
+                        <View style={styles.switchText}>
+                            <Text style={styles.cardTitle}>
+                                SMS Notifications
+                            </Text>
 
-                {/* LANGUAGE */}
-                <Text style={styles.sectionTitle}>Language</Text>
-                <View style={styles.dropdown}>
-                    <Text>English</Text>
-                </View>
+                            <Text style={styles.cardSubtitle}>
+                                Get alerts through SMS messages
+                            </Text>
+                        </View>
 
-                {/* NOTIFICATIONS */}
-                <Text style={styles.sectionTitle}>Notifications</Text>
-                <View style={styles.row}>
-                    <Text>Push Notifications</Text>
-                    <Switch value={pushNotif} onValueChange={setPushNotif} />
-                </View>
+                        <Switch
+                            value={smsNotif}
+                            onValueChange={setSmsNotif}
+                            trackColor={{
+                                false: "#CFC2D4",
+                                true: "#6B21A8",
+                            }}
+                            thumbColor="#FFFFFF"
+                        />
+                    </View>
 
-                <View style={styles.row}>
-                    <Text>Email</Text>
-                    <Switch value={emailNotif} onValueChange={setEmailNotif} />
-                </View>
+                    <View style={styles.switchCard}>
+                        <View style={styles.switchText}>
+                            <Text style={styles.cardTitle}>
+                                Reduce Gestures
+                            </Text>
 
-                <View style={styles.row}>
-                    <Text>SMS</Text>
-                    <Switch value={smsNotif} onValueChange={setSmsNotif} />
-                </View>
+                            <Text style={styles.cardSubtitle}>
+                                Easier interactions with simpler taps
+                            </Text>
+                        </View>
 
+                        <Switch
+                            value={reduceMotion}
+                            onValueChange={setReduceMotion}
+                            trackColor={{
+                                false: "#CFC2D4",
+                                true: "#6B21A8",
+                            }}
+                            thumbColor="#FFFFFF"
+                        />
+                    </View>
+                </View>
+            </ScrollView>
+
+            {/* FOOTER */}
+            <View style={styles.footer}>
                 <TouchableOpacity
-                    style={[styles.button, loading && styles.buttonDisabled]}
+                    activeOpacity={0.9}
                     onPress={handleContinue}
                     disabled={loading}
+                    style={styles.buttonContainer}
                 >
-                    {loading ? (
-                        <ActivityIndicator color="#fff" />
-                    ) : (
-                        <Text style={styles.buttonText}>Continue</Text>
-                    )}
+                    <LinearGradient
+                        colors={["#500088", "#6B21A8"]}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
+                        style={styles.button}
+                    >
+                        {loading ? (
+                            <ActivityIndicator color="#fff" />
+                        ) : (
+                            <Text style={styles.buttonText}>
+                                Continue
+                            </Text>
+                        )}
+                    </LinearGradient>
                 </TouchableOpacity>
-            </ScrollView>
+            </View>
         </SafeAreaView>
     );
 };
@@ -214,123 +430,234 @@ export default AccessibilityScreen;
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: "#F6F6F6",
+        backgroundColor: "#F9F8FF",
     },
 
-    content: {
-        padding: 16,
-        paddingBottom: 32,
-    },
-
+    // HEADER
     header: {
-        height: 50,
-        justifyContent: "center",
+        height: 64,
+        paddingHorizontal: 24,
+        flexDirection: "row",
+        justifyContent: "space-between",
+        alignItems: "center",
+        backgroundColor: "rgba(249,248,255,0.9)",
     },
 
-    back: {
-        fontSize: 20,
-    },
-
-    progress: {
+    headerLeft: {
         flexDirection: "row",
         alignItems: "center",
+    },
+
+    backButton: {
+        width: 32,
+        height: 32,
+        borderRadius: 999,
         justifyContent: "center",
-        marginVertical: 10,
-        gap: 6,
+        alignItems: "center",
+        marginRight: 12,
     },
 
-    inactiveDot: {
-        width: 8,
-        height: 8,
-        borderRadius: 4,
-        borderWidth: 1,
-        borderColor: "#aaa",
+    backArrow: {
+        fontSize: 20,
+        color: "#581C87",
+        fontWeight: "700",
     },
 
-    activeBar: {
+    headerTitle: {
+        fontSize: 18,
+        fontWeight: "600",
+        color: "#581C87",
+    },
+
+    progressWrapper: {
+        flexDirection: "row",
+        gap: 8,
+    },
+
+    activeProgress: {
         width: 24,
         height: 8,
-        borderRadius: 4,
-        backgroundColor: "#8A38F5",
+        borderRadius: 999,
+        backgroundColor: "#6B21A8",
     },
 
-    title: {
-        fontSize: 22,
-        fontWeight: "bold",
-        marginTop: 10,
+    progressDot: {
+        width: 8,
+        height: 8,
+        borderRadius: 999,
+        backgroundColor: "rgba(207,194,212,0.4)",
     },
 
-    subtitle: {
-        color: "#666",
-        marginBottom: 20,
+    // CONTENT
+    content: {
+        paddingHorizontal: 24,
+        paddingTop: 30,
+        paddingBottom: 180,
     },
 
-    sectionTitle: {
-        fontSize: 18,
-        fontWeight: "bold",
-        marginTop: 20,
+    heroSection: {
+        marginBottom: 40,
     },
 
+    heroTitle: {
+        fontSize: 30,
+        lineHeight: 38,
+        fontWeight: "700",
+        color: "#1A1B20",
+        marginBottom: 8,
+
+        fontFamily: "Inter-Bold",
+    },
+
+    heroSubtitle: {
+        fontSize: 16,
+        lineHeight: 24,
+        color: "#4C4452",
+
+        fontFamily: "Inter-Regular",
+    },
+
+    // SECTION
+    section: {
+        marginBottom: 40,
+    },
+
+    sectionHeading: {
+        fontSize: 12,
+        letterSpacing: 1.2,
+        fontWeight: "700",
+        color: "#6B21A8",
+        marginBottom: 16,
+    },
+
+    // CARD
+    card: {
+        backgroundColor: "#FFFFFF",
+        borderRadius: 16,
+        padding: 16,
+        marginBottom: 12,
+
+        borderWidth: 1,
+        borderColor: "rgba(0,0,0,0.05)",
+
+        shadowColor: "#000",
+        shadowOpacity: 0.05,
+        shadowRadius: 4,
+        elevation: 2,
+    },
+
+    cardText: {
+        marginBottom: 16,
+    },
+
+    cardTitle: {
+        fontSize: 16,
+        fontWeight: "700",
+        color: "#1A1B20",
+        marginBottom: 4,
+
+        fontFamily: "Inter-Bold",
+    },
+
+    cardSubtitle: {
+        fontSize: 14,
+        lineHeight: 20,
+        color: "#4C4452",
+
+        fontFamily: "Inter-Regular",
+    },
+
+    // SEGMENT
     segment: {
         flexDirection: "row",
-        backgroundColor: "#fff",
-        borderRadius: 10,
+        backgroundColor: "#F4F3FA",
+        borderRadius: 14,
         padding: 4,
-        marginTop: 10,
     },
 
     segmentBtn: {
         flex: 1,
-        padding: 10,
+        paddingVertical: 10,
+        borderRadius: 10,
         alignItems: "center",
-        borderRadius: 8,
     },
 
     activeSegment: {
-        backgroundColor: "#8A38F5",
+        backgroundColor: "#6B21A8",
     },
 
-    activeText: {
-        color: "#fff",
-        fontWeight: "bold",
+    segmentText: {
+        color: "#4C4452",
+        fontWeight: "600",
     },
 
-    inactiveText: {
-        color: "#666",
+    activeSegmentText: {
+        color: "#FFFFFF",
+        fontWeight: "700",
     },
 
-    row: {
+    // SWITCH CARD
+    switchCard: {
+        height: 100,
+        backgroundColor: "#FFFFFF",
+        borderRadius: 16,
+        padding: 16,
+        marginBottom: 12,
+
         flexDirection: "row",
         justifyContent: "space-between",
         alignItems: "center",
-        marginTop: 15,
-        backgroundColor: "#fff",
-        padding: 12,
-        borderRadius: 10,
+
+        borderWidth: 1,
+        borderColor: "rgba(0,0,0,0.05)",
+
+        shadowColor: "#000",
+        shadowOpacity: 0.05,
+        shadowRadius: 4,
+        elevation: 2,
     },
 
-    dropdown: {
-        backgroundColor: "#fff",
-        padding: 15,
-        borderRadius: 10,
-        marginTop: 10,
+    switchText: {
+        flex: 1,
+        paddingRight: 16,
+    },
+
+    // FOOTER
+    footer: {
+        position: "absolute",
+        bottom: 0,
+        left: 0,
+        right: 0,
+
+        paddingHorizontal: 24,
+        paddingTop: 24,
+        paddingBottom: 24,
+
+        backgroundColor: "#F9F8FF",
+    },
+
+    buttonContainer: {
+        borderRadius: 999,
+        overflow: "hidden",
+
+        shadowColor: "#500088",
+        shadowOpacity: 0.3,
+        shadowRadius: 12,
+        elevation: 8,
     },
 
     button: {
-        marginTop: 28,
-        backgroundColor: "#8A38F5",
-        padding: 16,
-        borderRadius: 12,
+        height: 56,
+        justifyContent: "center",
         alignItems: "center",
-        marginBottom: 8,
-    },
-
-    buttonDisabled: {
-        opacity: 0.7,
+        borderRadius: 999,
     },
 
     buttonText: {
-        color: "#fff",
-        fontWeight: "bold",
+        color: "#FFFFFF",
+        fontSize: 16,
+        fontWeight: "700",
+
+        fontFamily: "Inter-Bold",
     },
 });
