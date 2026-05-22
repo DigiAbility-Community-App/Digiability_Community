@@ -16,6 +16,13 @@
     "user-svc:dev": "npm run dev --workspace=@digiability/user-svc",
     "user-svc:migrate": "npm run db:migrate --workspace=@digiability/user-svc",
     "user-svc:generate": "npm run db:generate --workspace=@digiability/user-svc",
+    "chat-svc:dev": "npm run dev --workspace=@digiability/chat-svc",
+    "chat-svc:migrate": "npm run db:migrate --workspace=@digiability/chat-svc",
+    "chat-svc:generate": "npm run db:generate --workspace=@digiability/chat-svc",
+    "chat-svc:worker:msg": "npm run worker:msg --workspace=@digiability/chat-svc",
+    "chat-svc:worker:delivery": "npm run worker:delivery --workspace=@digiability/chat-svc",
+    "group-svc:dev": "npm run dev --workspace=@digiability/group-svc",
+    "notif-svc:dev": "npm run dev --workspace=@digiability/notif-svc",
     "docker:up": "docker-compose up -d",
     "docker:down": "docker-compose down",
     "docker:logs": "docker-compose logs -f"

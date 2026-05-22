@@ -19,9 +19,18 @@ export type AuthStackParamList = {
 const Stack = createNativeStackNavigator<AuthStackParamList>();
 
 const AuthNavigator = () => {
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const user = useAuthStore((s) => s.user);
+
+  // If user is authenticated but not verified, jump straight to OTP
+  const initialRoute = (isAuthenticated && user && !user.isEmailVerified) ? 'Otp' : 'Splash';
+
+  // We provide default params for Otp if they jump straight there from a restored session
+  const initialParams = initialRoute === 'Otp' ? { email: user!.email, name: user!.name } : undefined;
+
   return (
     <Stack.Navigator
-      initialRouteName="Splash"
+      initialRouteName={initialRoute}
       screenOptions={{ headerShown: false }}
     >
       <Stack.Screen name="Splash" component={SplashScreen} />

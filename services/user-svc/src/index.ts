@@ -68,10 +68,13 @@ function getDatabaseHelpMessage() {
 // ─── Global Middleware ─────────────────────────────────
 app.use(
   cors({
-    origin: process.env.CLIENT_BASE_URL ?? "http://localhost:3000",
+    origin: process.env.NODE_ENV === "production"
+      ? process.env.CLIENT_BASE_URL ?? "http://localhost:3000"
+      : true,   // Allow all origins in development (mobile devices, emulators)
     credentials: true,          // Required for cross-origin cookies
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
+    exposedHeaders: ["x-refresh-token", "set-cookie"],
   })
 );
 app.use(express.json({ limit: "10kb" }));     // Guard against large payloads

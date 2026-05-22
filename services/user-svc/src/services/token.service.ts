@@ -1,10 +1,11 @@
+import crypto from "crypto";
 import prisma from "../models/prisma.client";
 import { generateToken, hashToken } from "../utils/hash.util";
 import { signAccessToken } from "../utils/jwt.util";
 
 // ─────────────────────────────────────────────────────
 // Token Service
-// Manages refresh tokens, email verification tokens,
+// Manages refresh tokens, email verification OTPs,
 // and password reset tokens.
 // ─────────────────────────────────────────────────────
 
@@ -12,7 +13,6 @@ const REFRESH_TOKEN_EXPIRES_DAYS = parseInt(
   process.env.REFRESH_TOKEN_EXPIRES_DAYS ?? "30",
   10
 );
-const EMAIL_VERIFICATION_EXPIRES_HOURS = 24;
 const PASSWORD_RESET_EXPIRES_HOURS = 1;
 
 // ─── Refresh Tokens ────────────────────────────────────
@@ -101,61 +101,96 @@ export async function revokeAllUserRefreshTokens(userId: string): Promise<void> 
   });
 }
 
-// ─── Email Verification Tokens ─────────────────────────
+// ─── Email Verification OTPs ───────────────────────────
+
+const EMAIL_OTP_EXPIRES_MINUTES = 10;
+const EMAIL_OTP_MAX_ATTEMPTS = 5;
 
 /**
- * Create an email verification token for a user.
- * Returns the raw token (to be sent via email link).
+ * Generate a 6-digit OTP (cryptographically secure).
  */
-export async function createEmailVerificationToken(
-  userId: string
-): Promise<string> {
-  const { rawToken, tokenHash } = generateToken(32);
-
-  const expiresAt = new Date();
-  expiresAt.setHours(
-    expiresAt.getHours() + EMAIL_VERIFICATION_EXPIRES_HOURS
-  );
-
-  // Delete any existing tokens for this user first
-  await prisma.emailVerificationToken.deleteMany({ where: { userId } });
-
-  await prisma.emailVerificationToken.create({
-    data: { userId, token: tokenHash, expiresAt },
-  });
-
-  return rawToken;
+function generateOtp(): { rawOtp: string; otpHash: string } {
+  const rawOtp = crypto.randomInt(100000, 999999).toString();
+  const otpHash = hashToken(rawOtp);
+  return { rawOtp, otpHash };
 }
 
 /**
- * Validate an email verification token.
- * Returns the associated userId if valid.
+ * Create an email verification OTP for a user.
+ * Deletes any existing OTPs for this user first.
+ * Returns the raw 6-digit OTP (to be sent via email).
  */
-export async function validateEmailVerificationToken(
-  rawToken: string
+export async function createEmailVerificationOtp(
+  userId: string
 ): Promise<string> {
-  const tokenHash = hashToken(rawToken);
+  const { rawOtp, otpHash } = generateOtp();
 
-  const stored = await prisma.emailVerificationToken.findFirst({
-    where: { token: tokenHash },
+  const expiresAt = new Date();
+  expiresAt.setMinutes(expiresAt.getMinutes() + EMAIL_OTP_EXPIRES_MINUTES);
+
+  // Delete any existing OTPs for this user first
+  await prisma.emailVerificationOtp.deleteMany({ where: { userId } });
+
+  await prisma.emailVerificationOtp.create({
+    data: {
+      userId,
+      otpHash,
+      attempts: 0,
+      maxAttempts: EMAIL_OTP_MAX_ATTEMPTS,
+      expiresAt,
+    },
   });
 
-  if (!stored) throw new Error("Invalid or expired verification link");
-  if (stored.expiresAt < new Date())
-    throw new Error("Verification link has expired");
+  return rawOtp;
+}
+
+/**
+ * Validate an email verification OTP.
+ * Increments attempt counter on failure.
+ * Returns the associated userId if valid.
+ */
+export async function validateEmailVerificationOtp(
+  userId: string,
+  rawOtp: string
+): Promise<string> {
+  const stored = await prisma.emailVerificationOtp.findFirst({
+    where: { userId },
+    orderBy: { createdAt: "desc" },
+  });
+
+  if (!stored) throw new Error("No verification OTP found. Please request a new one.");
+  if (stored.expiresAt < new Date()) throw new Error("OTP has expired. Please request a new one.");
+  if (stored.attempts >= stored.maxAttempts) {
+    throw new Error("Too many failed attempts. Please request a new OTP.");
+  }
+
+  const otpHash = hashToken(rawOtp);
+
+  if (otpHash !== stored.otpHash) {
+    // Increment attempt counter
+    await prisma.emailVerificationOtp.update({
+      where: { id: stored.id },
+      data: { attempts: { increment: 1 } },
+    });
+    const remaining = stored.maxAttempts - stored.attempts - 1;
+    throw new Error(
+      remaining > 0
+        ? `Invalid OTP. ${remaining} attempt${remaining === 1 ? "" : "s"} remaining.`
+        : "Too many failed attempts. Please request a new OTP."
+    );
+  }
 
   return stored.userId;
 }
 
 /**
- * Delete a used email verification token.
+ * Delete all email verification OTPs for a user (after successful verification).
  */
-export async function deleteEmailVerificationToken(
-  rawToken: string
+export async function deleteEmailVerificationOtp(
+  userId: string
 ): Promise<void> {
-  const tokenHash = hashToken(rawToken);
-  await prisma.emailVerificationToken.deleteMany({
-    where: { token: tokenHash },
+  await prisma.emailVerificationOtp.deleteMany({
+    where: { userId },
   });
 }
 

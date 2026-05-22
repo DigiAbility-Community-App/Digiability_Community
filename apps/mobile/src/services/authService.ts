@@ -144,6 +144,36 @@ export async function resetPassword(input: ResetPasswordInput): Promise<string> 
   return response.data.message;
 }
 
+// ── Verify email OTP ───────────────────────────────────
+
+export async function verifyEmailOtp(email: string, otp: string): Promise<string> {
+  const response = await apiClient.post<ApiResponse>(
+    '/api/auth/verify-email',
+    { email, otp },
+  );
+
+  // Update auth store with verified status
+  const currentUser = useAuthStore.getState().user;
+  if (currentUser) {
+    useAuthStore.getState().setAuth(
+      useAuthStore.getState().accessToken!,
+      { ...currentUser, isEmailVerified: true }
+    );
+  }
+
+  return response.data.message;
+}
+
+// ── Resend verification OTP ────────────────────────────
+
+export async function resendVerificationOtp(email: string): Promise<string> {
+  const response = await apiClient.post<ApiResponse>(
+    '/api/auth/resend-otp',
+    { email },
+  );
+  return response.data.message;
+}
+
 // ── Update current user role ───────────────────────────────
 
 export async function updateRole(role: string): Promise<AuthUser> {
