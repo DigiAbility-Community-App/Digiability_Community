@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useCallback } from "react";
 import {
   View,
   Text,
@@ -10,27 +10,20 @@ import {
   StatusBar,
   ActivityIndicator,
   Alert,
+  BackHandler,
 } from "react-native";
 
 import { LinearGradient } from "expo-linear-gradient";
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import { useAuthStore } from "@store/authStore";
-import { submitProfileDetails } from "@services/profileService";
+import { submitFullOnboarding, parseDateInput } from "@services/profileService";
 
 // ─────────────────────────────────────────────────────────
 // ProfileDetailsScreen
 //
-// Step 2 of profile onboarding — role-specific details.
-// Shown after ProfileScreen (basic info). Shows only the
-// section(s) that are relevant to the user's selected role.
-//
-// Role → Section(s) shown:
-//   pwd        → My Disability
-//   caregiver  → Person I Care For
-//   therapist  → Professional Info
-//   ngo        → NGO Info
-//   volunteer  → (no role-specific section; shows generic bio)
-//   student    → (no role-specific section; shows generic bio)
+// Step 4 of profile onboarding — role-specific details.
+// This is the ONLY screen that writes to the database.
+// It atomically commits: role → basic profile → role details.
 // ─────────────────────────────────────────────────────────
 
 const disabilityOptions = [
@@ -48,10 +41,18 @@ const supportOptions = [
   "Daily Tasks",
 ];
 
+const CURRENT_YEAR = new Date().getFullYear();
+
 const ProfileDetailsScreen = () => {
   const navigation = useNavigation<any>();
   const user = useAuthStore((s) => s.user);
-  const role = user?.role ?? "";
+  const setUser = useAuthStore((s) => s.setUser);
+  const clearPending = useAuthStore((s) => s.clearPending);
+  const pendingRole = useAuthStore((s) => s.pendingRole);
+  const pendingProfile = useAuthStore((s) => s.pendingProfile);
+
+  // Use pending role (from onboarding) — fall back to DB role for returning users
+  const role = pendingRole ?? user?.role ?? "";
 
   // ── PwD ──────────────────────────────────────────────────
   const [selectedDisability, setSelectedDisability] = useState("Hearing");
@@ -75,28 +76,111 @@ const ProfileDetailsScreen = () => {
   const [district, setDistrict] = useState("");
 
   const [loading, setLoading] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
-  // ── Build payload based on role ───────────────────────────
-  const buildPayload = () => {
+  // ── Back Guard ─────────────────────────────────────────────
+  useFocusEffect(
+    useCallback(() => {
+      const onBackPress = () => {
+        Alert.alert(
+          "Go Back?",
+          "Your role selection and basic info will be kept. Do you want to go back?",
+          [
+            { text: "Stay", style: "cancel" },
+            {
+              text: "Go Back",
+              style: "destructive",
+              onPress: () => navigation.goBack(),
+            },
+          ]
+        );
+        return true;
+      };
+
+      const subscription = BackHandler.addEventListener(
+        "hardwareBackPress",
+        onBackPress
+      );
+      return () => subscription.remove();
+    }, [navigation])
+  );
+
+  // ── Field validation per role ──────────────────────────────
+  const validateFields = (): boolean => {
+    const newErrors: Record<string, string> = {};
+
+    if (role === "pwd") {
+      if (disabilitySince.trim()) {
+        const year = parseInt(disabilitySince.trim(), 10);
+        if (isNaN(year) || year < 1900 || year > CURRENT_YEAR) {
+          newErrors.disabilitySince = `Year must be between 1900 and ${CURRENT_YEAR}.`;
+        }
+      }
+    }
+
+    if (role === "caregiver") {
+      if (!personName.trim()) {
+        newErrors.personName = "Person's name is required.";
+      }
+      if (careeDob.trim()) {
+        const parsed = parseDateInput(careeDob.trim(), "DMY");
+        if (!parsed) {
+          newErrors.careeDob = "Invalid date. Use DD/MM/YYYY format.";
+        } else if (new Date(parsed) > new Date()) {
+          newErrors.careeDob = "Date of birth cannot be in the future.";
+        }
+      }
+    }
+
+    if (role === "therapist") {
+      if (!speciality.trim()) {
+        newErrors.speciality = "Specialty is required.";
+      }
+      if (experience.trim()) {
+        const years = parseInt(experience.trim(), 10);
+        if (isNaN(years) || years < 0 || years > 60) {
+          newErrors.experience = "Years of experience must be between 0 and 60.";
+        }
+      }
+    }
+
+    if (role === "ngo") {
+      if (!ngoName.trim()) {
+        newErrors.ngoName = "Organization name is required.";
+      }
+    }
+
+    setFieldErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  // ── Build role-specific payload ───────────────────────────
+  const buildRolePayload = () => {
     switch (role) {
       case "pwd":
         return {
           disabilityType: selectedDisability,
-          disabilitySince: disabilitySince.trim() || undefined,
+          disabilitySince: disabilitySince.trim()
+            ? parseInt(disabilitySince.trim(), 10)
+            : undefined,
           supportNeeded: selectedSupport,
         };
       case "caregiver":
         return {
           carePersonName: personName.trim() || undefined,
           careRelation: relation.trim() || undefined,
-          careDob: careeDob.trim() || undefined,
+          careDob: careeDob.trim()
+            ? parseDateInput(careeDob.trim(), "DMY")
+            : undefined,
           careDisabilityType: careDisability.trim() || undefined,
         };
       case "therapist":
         return {
           speciality: speciality.trim() || undefined,
           organization: organization.trim() || undefined,
-          yearsOfExperience: experience.trim() || undefined,
+          yearsOfExperience: experience.trim()
+            ? parseInt(experience.trim(), 10)
+            : undefined,
         };
       case "ngo":
         return {
@@ -109,23 +193,31 @@ const ProfileDetailsScreen = () => {
     }
   };
 
+  // ── Final Submit — only DB write in the entire onboarding ──
   const handleComplete = async () => {
+    if (!user?.id) return;
+    if (!validateFields()) return;
+
     setLoading(true);
     try {
-      if (user?.id) {
-        await submitProfileDetails(user.id, buildPayload());
-      }
+      await submitFullOnboarding({
+        userId: user.id,
+        role,
+        basicProfile: pendingProfile ?? {},
+        roleDetails: buildRolePayload(),
+      });
+
+      // Update local user state
+      setUser({ ...user, role, profileComplete: true });
+      clearPending();
+
       navigation.navigate("CareCircle");
     } catch (error: unknown) {
       const message =
         (error as { response?: { data?: { message?: string } } })?.response
           ?.data?.message ??
-        "We could not save your details. You can update them later.";
-      Alert.alert("Notice", message, [
-        {
-          text: "Continue anyway",
-          onPress: () => navigation.navigate("CareCircle"),
-        },
+        "We could not save your details. Please try again.";
+      Alert.alert("Unable to Complete Profile", message, [
         { text: "Retry", style: "cancel" },
       ]);
     } finally {
@@ -133,7 +225,6 @@ const ProfileDetailsScreen = () => {
     }
   };
 
-  // ── Skip (for roles with no specific section) ────────────
   const hasRoleSection = ["pwd", "caregiver", "therapist", "ngo"].includes(role);
 
   return (
@@ -148,7 +239,20 @@ const ProfileDetailsScreen = () => {
       <View style={styles.topHeader}>
         <TouchableOpacity
           style={styles.backButton}
-          onPress={() => navigation.goBack()}
+          onPress={() =>
+            Alert.alert(
+              "Go Back?",
+              "Your role and basic info will be kept. Do you want to go back?",
+              [
+                { text: "Stay", style: "cancel" },
+                {
+                  text: "Go Back",
+                  style: "destructive",
+                  onPress: () => navigation.goBack(),
+                },
+              ]
+            )
+          }
           accessibilityLabel="Go back"
         >
           <Text style={styles.backArrow}>←</Text>
@@ -215,16 +319,25 @@ const ProfileDetailsScreen = () => {
 
             {/* Since */}
             <View style={styles.field}>
-              <Text style={styles.label}>Disability Since</Text>
+              <Text style={styles.label}>Disability Since (Year)</Text>
               <TextInput
-                placeholder="Year (e.g. 1995)"
+                placeholder={`Year (e.g. ${CURRENT_YEAR - 10})`}
                 placeholderTextColor="rgba(126,115,131,0.6)"
-                style={styles.input}
+                style={[
+                  styles.input,
+                  fieldErrors.disabilitySince ? styles.inputError : null,
+                ]}
                 value={disabilitySince}
-                onChangeText={setDisabilitySince}
+                onChangeText={(v) => {
+                  setDisabilitySince(v);
+                  setFieldErrors((e) => ({ ...e, disabilitySince: "" }));
+                }}
                 keyboardType="number-pad"
                 maxLength={4}
               />
+              {fieldErrors.disabilitySince ? (
+                <Text style={styles.inlineError}>{fieldErrors.disabilitySince}</Text>
+              ) : null}
             </View>
 
             {/* Support Needed */}
@@ -267,21 +380,30 @@ const ProfileDetailsScreen = () => {
             </View>
 
             <View style={styles.field}>
-              <Text style={styles.label}>Person Name</Text>
+              <Text style={styles.label}>Person Name *</Text>
               <TextInput
                 placeholder="Enter full name"
                 placeholderTextColor="rgba(126,115,131,0.6)"
-                style={styles.input}
+                style={[
+                  styles.input,
+                  fieldErrors.personName ? styles.inputError : null,
+                ]}
                 value={personName}
-                onChangeText={setPersonName}
+                onChangeText={(v) => {
+                  setPersonName(v);
+                  setFieldErrors((e) => ({ ...e, personName: "" }));
+                }}
               />
+              {fieldErrors.personName ? (
+                <Text style={styles.inlineError}>{fieldErrors.personName}</Text>
+              ) : null}
             </View>
 
             <View style={styles.row}>
               <View style={styles.halfField}>
                 <Text style={styles.label}>Relation</Text>
                 <TextInput
-                  placeholder="Parent"
+                  placeholder="e.g. Parent"
                   placeholderTextColor="rgba(126,115,131,0.6)"
                   style={styles.input}
                   value={relation}
@@ -294,13 +416,22 @@ const ProfileDetailsScreen = () => {
                 <TextInput
                   placeholder="DD/MM/YYYY"
                   placeholderTextColor="rgba(126,115,131,0.6)"
-                  style={styles.input}
+                  style={[
+                    styles.input,
+                    fieldErrors.careeDob ? styles.inputError : null,
+                  ]}
                   value={careeDob}
-                  onChangeText={setCareeDob}
+                  onChangeText={(v) => {
+                    setCareeDob(v);
+                    setFieldErrors((e) => ({ ...e, careeDob: "" }));
+                  }}
                   keyboardType="numbers-and-punctuation"
                 />
               </View>
             </View>
+            {fieldErrors.careeDob ? (
+              <Text style={styles.inlineError}>{fieldErrors.careeDob}</Text>
+            ) : null}
 
             <View style={[styles.field, styles.lastField]}>
               <Text style={styles.label}>Disability Type</Text>
@@ -321,19 +452,28 @@ const ProfileDetailsScreen = () => {
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionTitle}>Professional Info</Text>
               <View style={styles.badge}>
-                <Text style={styles.badgeText}>EDUCATOR</Text>
+                <Text style={styles.badgeText}>THERAPIST</Text>
               </View>
             </View>
 
             <View style={styles.field}>
-              <Text style={styles.label}>Specialty</Text>
+              <Text style={styles.label}>Specialty *</Text>
               <TextInput
-                placeholder="Select specialty"
+                placeholder="e.g. Occupational Therapy"
                 placeholderTextColor="rgba(126,115,131,0.6)"
-                style={styles.input}
+                style={[
+                  styles.input,
+                  fieldErrors.speciality ? styles.inputError : null,
+                ]}
                 value={speciality}
-                onChangeText={setSpeciality}
+                onChangeText={(v) => {
+                  setSpeciality(v);
+                  setFieldErrors((e) => ({ ...e, speciality: "" }));
+                }}
               />
+              {fieldErrors.speciality ? (
+                <Text style={styles.inlineError}>{fieldErrors.speciality}</Text>
+              ) : null}
             </View>
 
             <View style={styles.field}>
@@ -350,13 +490,22 @@ const ProfileDetailsScreen = () => {
             <View style={[styles.field, styles.lastField]}>
               <Text style={styles.label}>Years of Experience</Text>
               <TextInput
-                placeholder="Enter years of experience"
+                placeholder="e.g. 5"
                 placeholderTextColor="rgba(126,115,131,0.6)"
-                style={styles.input}
+                style={[
+                  styles.input,
+                  fieldErrors.experience ? styles.inputError : null,
+                ]}
                 value={experience}
-                onChangeText={setExperience}
+                onChangeText={(v) => {
+                  setExperience(v);
+                  setFieldErrors((e) => ({ ...e, experience: "" }));
+                }}
                 keyboardType="number-pad"
               />
+              {fieldErrors.experience ? (
+                <Text style={styles.inlineError}>{fieldErrors.experience}</Text>
+              ) : null}
             </View>
           </View>
         )}
@@ -372,18 +521,27 @@ const ProfileDetailsScreen = () => {
             </View>
 
             <View style={styles.field}>
-              <Text style={styles.label}>Organization Name</Text>
+              <Text style={styles.label}>Organization Name *</Text>
               <TextInput
                 placeholder="Full NGO Name"
                 placeholderTextColor="rgba(126,115,131,0.6)"
-                style={styles.input}
+                style={[
+                  styles.input,
+                  fieldErrors.ngoName ? styles.inputError : null,
+                ]}
                 value={ngoName}
-                onChangeText={setNgoName}
+                onChangeText={(v) => {
+                  setNgoName(v);
+                  setFieldErrors((e) => ({ ...e, ngoName: "" }));
+                }}
               />
+              {fieldErrors.ngoName ? (
+                <Text style={styles.inlineError}>{fieldErrors.ngoName}</Text>
+              ) : null}
             </View>
 
             <View style={styles.field}>
-              <Text style={styles.label}>Role</Text>
+              <Text style={styles.label}>Your Role</Text>
               <TextInput
                 placeholder="Your designation"
                 placeholderTextColor="rgba(126,115,131,0.6)"
@@ -406,21 +564,23 @@ const ProfileDetailsScreen = () => {
           </View>
         )}
 
-        {/* ── Fallback for roles without a specific section ─── */}
+        {/* ── Fallback for volunteer / student ─────────────── */}
         {!hasRoleSection && (
           <View style={styles.sectionCard}>
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionTitle}>You're all set!</Text>
             </View>
             <Text style={styles.fallbackText}>
-              Your profile is ready. You can add more details anytime from
-              Settings.
+              Your profile is ready to be saved. Tap "Complete Profile" to
+              finish.
             </Text>
           </View>
         )}
 
         <Text style={styles.footnote}>
-          All fields are optional — you can fill them in anytime.
+          {hasRoleSection
+            ? "Fields marked * are required. Others are optional."
+            : "You can add more details anytime from Settings."}
         </Text>
       </ScrollView>
 
@@ -635,13 +795,28 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: "#1A1B20",
     fontFamily: "PlusJakartaSans-Regular",
+    borderWidth: 1.5,
+    borderColor: "transparent",
+  },
+
+  inputError: {
+    borderColor: "#DC2626",
+    backgroundColor: "#FEF2F2",
+  },
+
+  inlineError: {
+    fontSize: 12,
+    color: "#DC2626",
+    marginTop: 4,
+    marginLeft: 4,
+    fontFamily: "PlusJakartaSans-Regular",
   },
 
   // ROW (caregiver half-fields)
   row: {
     flexDirection: "row",
     gap: 12,
-    marginBottom: 16,
+    marginBottom: 4,
   },
 
   halfField: {

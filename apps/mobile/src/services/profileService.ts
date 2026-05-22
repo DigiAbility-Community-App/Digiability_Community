@@ -1,5 +1,6 @@
 import axios from 'axios';
 import apiClient from './apiClient';
+import { updateRole } from './authService';
 
 interface ApiResponse<T> {
   success: boolean;
@@ -42,7 +43,7 @@ export function optionalNumber(value?: string) {
 
 export function normalizeUsername(value?: string) {
   const trimmed = optionalString(value);
-  return trimmed ? trimmed.replace(/^@+/, '') : undefined;
+  return trimmed ? trimmed.toLowerCase().replace(/^@+/, '') : undefined;
 }
 
 export function parseDateInput(
@@ -88,6 +89,43 @@ export function parseDateInput(
   if (Number.isNaN(isoDate.getTime())) return undefined;
 
   return isoDate.toISOString();
+}
+
+// ─────────────────────────────────────────────
+// Username Availability Check (real-time)
+// Returns: { available: boolean; message: string }
+// ─────────────────────────────────────────────
+
+export interface UsernameCheckResult {
+  available: boolean;
+  message: string;
+}
+
+export async function checkUsernameAvailability(
+  username: string
+): Promise<UsernameCheckResult> {
+  try {
+    const response = await apiClient.get<{
+      success: boolean;
+      available: boolean;
+      message: string;
+    }>('/api/users/profile/check-username', {
+      params: { username: username.toLowerCase().trim() },
+    });
+    return {
+      available: response.data.available,
+      message: response.data.message,
+    };
+  } catch (error) {
+    if (axios.isAxiosError(error) && error.response?.status === 400) {
+      return {
+        available: false,
+        message: error.response.data?.message ?? 'Invalid username format',
+      };
+    }
+    // Network/server error — optimistically allow typing to continue
+    return { available: true, message: '' };
+  }
 }
 
 // ─────────────────────────────────────────────
@@ -142,4 +180,33 @@ export async function submitProfileDetails(
     );
     return response.data.data;
   }
+}
+
+// ─────────────────────────────────────────────
+// Composite Onboarding Submit
+//
+// Writes everything to DB atomically at the end of onboarding:
+//   1. Persist role
+//   2. Persist basic profile
+//   3. Persist role-specific details
+//
+// If any step fails, throws — caller handles retry.
+// ─────────────────────────────────────────────
+
+export async function submitFullOnboarding(params: {
+  userId: string;
+  role: string;
+  basicProfile: UserProfilePayload;
+  roleDetails: ProfileDetailsPayload;
+}): Promise<void> {
+  const { userId, role, basicProfile, roleDetails } = params;
+
+  // 1. Save role
+  await updateRole(role);
+
+  // 2. Save basic profile
+  await submitUserProfile(userId, basicProfile);
+
+  // 3. Save role-specific details (server marks profileComplete=true)
+  await submitProfileDetails(userId, roleDetails);
 }

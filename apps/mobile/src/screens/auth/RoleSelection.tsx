@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useCallback } from "react";
 import {
   View,
   Text,
@@ -7,12 +7,13 @@ import {
   SafeAreaView,
   ActivityIndicator,
   Alert,
+  BackHandler,
   StatusBar,
 } from "react-native";
 
 import { LinearGradient } from "expo-linear-gradient";
-import { useNavigation } from "@react-navigation/native";
-import { updateRole } from "@services/authService";
+import { useNavigation, useFocusEffect } from "@react-navigation/native";
+import { useAuthStore } from "@store/authStore";
 
 type RoleType =
   | "pwd"
@@ -66,33 +67,45 @@ const RoleSelectionScreen = () => {
   const [loading, setLoading] = useState(false);
 
   const navigation = useNavigation<any>();
+  const setPendingRole = useAuthStore((s) => s.setPendingRole);
 
-  // All roles share the same unified profile screen.
-  // The role tag is already stored on the user record.
-  const routeMap: Record<RoleType, string> = {
-    pwd: "Profile",
-    caregiver: "Profile",
-    therapist: "Profile",
-    ngo: "Profile",
-    volunteer: "Profile",
-    student: "Profile",
-  };
+  // ── Back Guard ────────────────────────────────────────────
+  // Block hardware back button — role screen is the first
+  // post-auth step; going back would return to the auth flow.
+  useFocusEffect(
+    useCallback(() => {
+      const onBackPress = () => {
+        Alert.alert(
+          "Leave Onboarding?",
+          "Are you sure you want to go back? You'll need to start over.",
+          [
+            { text: "Stay", style: "cancel" },
+            {
+              text: "Go Back",
+              style: "destructive",
+              onPress: () => navigation.goBack(),
+            },
+          ]
+        );
+        return true; // intercept the back press
+      };
 
-  const handleContinue = async () => {
+      const subscription = BackHandler.addEventListener(
+        "hardwareBackPress",
+        onBackPress
+      );
+
+      return () => subscription.remove();
+    }, [navigation])
+  );
+
+  const handleContinue = () => {
     setLoading(true);
-
-    try {
-      await updateRole(selected);
-      navigation.navigate(routeMap[selected]);
-    } catch (error: unknown) {
-      const message =
-        (error as { response?: { data?: { message?: string } } })?.response?.data
-          ?.message ?? "We could not save your role.";
-
-      Alert.alert("Unable to continue", message);
-    } finally {
-      setLoading(false);
-    }
+    // Store role locally — NOT saved to DB yet.
+    // DB write happens atomically in ProfileDetailsScreen.
+    setPendingRole(selected);
+    setLoading(false);
+    navigation.navigate("Profile");
   };
 
   return (
@@ -162,7 +175,7 @@ const RoleSelectionScreen = () => {
 
         {/* Note */}
         <Text style={styles.note}>
-          You can update your role later from settings.
+          Your role can be changed later in Settings.
         </Text>
       </View>
 

@@ -47,9 +47,10 @@ cp services/user-svc/.env.example services/user-svc/.env
 
 | Variable       | Example                                                     | Description |
 |----------------|-------------------------------------------------------------|-------------|
-| `DATABASE_URL` | `postgresql://digiability:digiability_secret@localhost:5432/digiability_users?schema=public` | Prisma connection string |
+| `DATABASE_URL` | `postgresql://digiability:digiability_secret@localhost:5432/digiability_db?schema=public` | Prisma connection string |
 
-> The database name (`digiability_users`) is auto-created by the Docker init script. Make sure the user/password match your root `.env`.
+> When `user-svc` runs on your machine, use `localhost` because Docker publishes Postgres on host port `5432`.
+> When `user-svc` runs inside Docker Compose, `docker-compose.yml` overrides `DATABASE_URL` to use the service host `postgres`.
 
 ### JWT (RS256)
 
