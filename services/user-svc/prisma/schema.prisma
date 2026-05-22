@@ -3,6 +3,7 @@
 
 generator client {
   provider = "prisma-client-js"
+  output   = "../src/generated/client"
 }
 
 datasource db {
@@ -39,7 +40,7 @@ model User {
 
   // Relations
   refreshTokens            RefreshToken[]
-  emailVerificationTokens  EmailVerificationToken[]
+  emailVerificationOtps    EmailVerificationOtp[]
   passwordResetTokens      PasswordResetToken[]
   pwdProfile               PWDProfile?
   caregiverProfile         CaregiverProfile?
@@ -177,20 +178,22 @@ model NGOProfile {
 }
 
 // ─────────────────────────────────────────────
-// EMAIL VERIFICATION TOKEN
+// EMAIL VERIFICATION OTP
 // ─────────────────────────────────────────────
-model EmailVerificationToken {
-  id        String   @id @default(uuid())
-  userId    String
-  token     String   // stored as SHA-256 hash
-  expiresAt DateTime
-  createdAt DateTime @default(now())
+model EmailVerificationOtp {
+  id          String   @id @default(uuid())
+  userId      String
+  otpHash     String   // SHA-256 hash of 6-digit OTP
+  attempts    Int      @default(0)  // track failed verification attempts
+  maxAttempts Int      @default(5)  // lock after N failures
+  expiresAt   DateTime
+  createdAt   DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
-  @@index([token])
-  @@map("email_verification_tokens")
+  @@index([otpHash])
+  @@map("email_verification_otps")
 }
 
 // ─────────────────────────────────────────────

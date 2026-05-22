@@ -89,6 +89,11 @@ const WelcomeScreen = ({ navigation }: Props) => {
         email: signUpEmail.trim().toLowerCase(),
         password: signUpPassword,
       });
+      // Navigate to OTP screen for email verification
+      navigation.navigate('Otp', {
+        email: signUpEmail.trim().toLowerCase(),
+        name: name.trim(),
+      });
     } catch (err: unknown) {
       setError(getApiErrorMessage(err, "Registration failed. Please try again."));
     } finally {

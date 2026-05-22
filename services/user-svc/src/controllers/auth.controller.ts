@@ -2,13 +2,16 @@ import { Request, Response } from "express";
 import { asyncHandler, createError } from "../middleware/error.middleware";
 import {
   registerUser,
-  verifyEmail,
+  verifyEmailOtp,
+  resendVerificationOtp,
   loginUser,
   forgotPassword,
   resetPassword,
   deleteAccount,
   getCurrentUser,
   updateUserRole,
+  getUsersByIds,
+  searchUsers,
 } from "../services/auth.service";
 import { rotateRefreshToken, revokeRefreshToken } from "../services/token.service";
 import {
@@ -37,18 +40,25 @@ export const register = asyncHandler(async (req: Request, res: Response) => {
 
   res.status(201).json({
     success: true,
-    message: "Account created successfully",
+    message: "Account created successfully. Please verify your email with the OTP sent.",
     data: { accessToken, user },
   });
 });
 
-// ─── GET /auth/verify-email?token= ────────────────────
+// ─── POST /auth/verify-email ──────────────────────────
 export const verifyEmailHandler = asyncHandler(
   async (req: Request, res: Response) => {
-    const token = req.query.token as string;
-    if (!token) throw createError("Verification token is required", 400);
+    const { email, otp } = req.body;
+    const result = await verifyEmailOtp(email, otp);
+    res.status(200).json({ success: true, message: result.message, data: {} });
+  }
+);
 
-    const result = await verifyEmail(token);
+// ─── POST /auth/resend-otp ────────────────────────────
+export const resendOtpHandler = asyncHandler(
+  async (req: Request, res: Response) => {
+    const { email } = req.body;
+    const result = await resendVerificationOtp(email);
     res.status(200).json({ success: true, message: result.message, data: {} });
   }
 );
@@ -144,4 +154,32 @@ export const updateRoleHandler = asyncHandler(async (req: Request, res: Response
   const userId = req.user!.sub;
   const result = await updateUserRole(userId, req.body);
   res.status(200).json({ success: true, message: result.message, data: result.user });
+});
+
+// ─── POST /auth/users/batch ────────────────────────────
+// Returns minimal user info ({ id, name }) for a list of IDs.
+// Used by chat screens to resolve participant display names.
+export const batchLookupUsers = asyncHandler(async (req: Request, res: Response) => {
+  const { ids } = req.body;
+
+  if (!Array.isArray(ids) || ids.length === 0) {
+    res.status(400).json({
+      success: false,
+      message: "ids must be a non-empty array of user IDs",
+    });
+    return;
+  }
+
+  const users = await getUsersByIds(ids);
+  res.status(200).json({ success: true, data: { users } });
+});
+
+// ─── GET /auth/users/search ────────────────────────────
+// Searches community members by name for group creation.
+export const searchUsersHandler = asyncHandler(async (req: Request, res: Response) => {
+  const query = (req.query.q as string) || "";
+  const userId = req.user!.sub;
+
+  const users = await searchUsers(query, userId);
+  res.status(200).json({ success: true, data: { users } });
 });

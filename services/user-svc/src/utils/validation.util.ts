@@ -55,9 +55,29 @@ export const UpdateRoleSchema = z.object({
   role: z.enum(["pwd", "caregiver", "therapist", "ngo", "other"]),
 });
 
+export const VerifyOtpSchema = z.object({
+  email: z
+    .string({ required_error: "Email is required" })
+    .email("Invalid email address")
+    .toLowerCase(),
+  otp: z
+    .string({ required_error: "OTP is required" })
+    .length(6, "OTP must be exactly 6 digits")
+    .regex(/^\d{6}$/, "OTP must be 6 digits"),
+});
+
+export const ResendOtpSchema = z.object({
+  email: z
+    .string({ required_error: "Email is required" })
+    .email("Invalid email address")
+    .toLowerCase(),
+});
+
 // Inferred types
 export type RegisterInput = z.infer<typeof RegisterSchema>;
 export type LoginInput = z.infer<typeof LoginSchema>;
 export type ForgotPasswordInput = z.infer<typeof ForgotPasswordSchema>;
 export type ResetPasswordInput = z.infer<typeof ResetPasswordSchema>;
 export type UpdateRoleInput = z.infer<typeof UpdateRoleSchema>;
+export type VerifyOtpInput = z.infer<typeof VerifyOtpSchema>;
+export type ResendOtpInput = z.infer<typeof ResendOtpSchema>;

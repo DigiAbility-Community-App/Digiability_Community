@@ -8,6 +8,7 @@ import PWDProfileScreen from '@screens/profile/PWDProfileScreen';
 import CaregiverProfileScreen from '@screens/profile/CaregiverProfileScreen';
 import EducatorProfileScreen from '@screens/profile/EducatorProfileScreen';
 import NGOProfileScreen from '@screens/profile/NGOProfileScreen';
+import ChatsStack from './ChatsStack';
 import { useAuthStore } from '@store/authStore';
 import { hasCompletedAccessibility } from '@services/storageService';
 import { getProfileRouteForRole, isOnboardingRole } from './onboarding';
@@ -20,6 +21,7 @@ export type MainStackParamList = {
   CaregiverProfile: undefined;
   EducatorProfile: undefined;
   NGOProfile: undefined;
+  Chats: undefined;
 };
 
 const Stack = createNativeStackNavigator<MainStackParamList>();
@@ -94,6 +96,7 @@ const MainNavigator = () => {
       <Stack.Screen name="EducatorProfile" component={EducatorProfileScreen} />
       <Stack.Screen name="NGOProfile" component={NGOProfileScreen} />
       <Stack.Screen name="Home" component={HomeScreen} />
+      <Stack.Screen name="Chats" component={ChatsStack} />
     </Stack.Navigator>
   );
 };

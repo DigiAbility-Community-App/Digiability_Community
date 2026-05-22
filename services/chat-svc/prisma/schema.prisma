@@ -1,0 +1,209 @@
+// ─────────────────────────────────────────────────────────────
+// Prisma Schema — chat-svc
+// Owns: Conversations, Messages, Delivery State, Receipts
+// Uses separate PostgreSQL schema ("chat") to avoid coupling
+// with user-svc tables. Users are referenced by ID only.
+// ─────────────────────────────────────────────────────────────
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────
+// ENUMS
+// ─────────────────────────────────────────────
+
+enum ConversationType {
+  DIRECT
+  GROUP
+}
+
+enum MemberRole {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
+enum MessageType {
+  TEXT
+  IMAGE
+  FILE
+  AUDIO
+  VIDEO
+  SYSTEM
+}
+
+enum MessageStatus {
+  CREATED     // Accepted into stream, not yet persisted
+  PERSISTED   // Written to DB
+  DELETED     // Soft-deleted
+}
+
+enum DeliveryStatus {
+  PENDING
+  DELIVERED
+  READ
+}
+
+enum ReceiptType {
+  SENT
+  DELIVERED
+  READ
+}
+
+// ─────────────────────────────────────────────
+// CONVERSATION
+// Represents a 1:1 DM or a group/care-circle
+// ─────────────────────────────────────────────
+model Conversation {
+  id          String           @id @default(uuid())
+  type        ConversationType
+  name        String?          // null for DMs, set for groups
+  avatarUrl   String?
+  createdBy   String           // userId who created it
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  deletedAt   DateTime?        // soft delete
+
+  // Denormalized for fast query: last message preview
+  lastMessageId   String?
+  lastMessageAt   DateTime?
+  lastMessageText String?
+
+  members  ConversationMember[]
+  messages Message[]
+
+  @@index([type])
+  @@index([lastMessageAt(sort: Desc)])
+  @@index([createdBy])
+  @@map("conversations")
+}
+
+// ─────────────────────────────────────────────
+// CONVERSATION MEMBER
+// Links users to conversations with roles + read cursors
+// ─────────────────────────────────────────────
+model ConversationMember {
+  id             String   @id @default(uuid())
+  conversationId String
+  userId         String
+  role           MemberRole @default(MEMBER)
+
+  // Read cursor: the sequence number of the last message this user has read
+  // in this conversation. Used for unread count and reconnect sync.
+  lastReadSequenceNo BigInt   @default(0)
+
+  // User preferences for this conversation
+  isMuted        Boolean  @default(false)
+  isPinned       Boolean  @default(false)
+
+  joinedAt       DateTime @default(now())
+  leftAt         DateTime?  // null = active member
+  updatedAt      DateTime @updatedAt
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@unique([conversationId, userId])
+  @@index([userId])
+  @@index([conversationId])
+  @@index([userId, leftAt])  // For listing active conversations
+  @@map("conversation_members")
+}
+
+// ─────────────────────────────────────────────
+// MESSAGE (Postgres Stub)
+// Full message content is stored in Cassandra.
+// This lightweight stub exists ONLY to maintain FK integrity
+// for MessageRecipient and MessageReceipt tables.
+// ─────────────────────────────────────────────
+model Message {
+  id              String        @id @default(uuid())
+  conversationId  String
+  senderId        String
+  sequenceNo      BigInt        @default(0)
+
+  createdAt       DateTime      @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  recipients   MessageRecipient[]
+  receipts     MessageReceipt[]
+
+  @@index([conversationId])
+  @@index([senderId])
+  @@map("messages")
+}
+
+// ─────────────────────────────────────────────
+// MESSAGE RECIPIENT
+// Per-user delivery state for each message.
+// One row per (message, recipient user). NOT per device —
+// delivery to any device marks the user as delivered.
+// ─────────────────────────────────────────────
+model MessageRecipient {
+  id          String         @id @default(uuid())
+  messageId   String
+  userId      String         // recipient userId
+
+  status      DeliveryStatus @default(PENDING)
+  deliveredAt DateTime?
+  readAt      DateTime?
+
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, userId])
+  @@index([userId, status])
+  @@index([messageId])
+  @@map("message_recipients")
+}
+
+// ─────────────────────────────────────────────
+// MESSAGE RECEIPT
+// Audit log of receipt events. Immutable append-only.
+// Used for debugging, analytics, and receipt history.
+// ─────────────────────────────────────────────
+model MessageReceipt {
+  id          String      @id @default(uuid())
+  messageId   String
+  userId      String
+  type        ReceiptType
+  deviceId    String?     // which device sent this receipt
+  
+  createdAt   DateTime    @default(now())
+
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@index([messageId, type])
+  @@index([userId, createdAt(sort: Desc)])
+  @@map("message_receipts")
+}
+
+// ─────────────────────────────────────────────
+// OUTBOX EVENT
+// Transactional outbox pattern: if the Redis XADD fails after
+// DB commit, a background sweep picks up unsent events.
+// Provides at-least-once guarantee for event emission.
+// ─────────────────────────────────────────────
+model OutboxEvent {
+  id          String   @id @default(uuid())
+  streamName  String
+  eventType   String
+  payload     String   // JSON
+  published   Boolean  @default(false)
+  retryCount  Int      @default(0)
+  
+  createdAt   DateTime @default(now())
+  publishedAt DateTime?
+
+  @@index([published, createdAt])
+  @@index([streamName, published])
+  @@map("outbox_events")
+}

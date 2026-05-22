@@ -7,6 +7,7 @@ import MainNavigator from './MainNavigator';
 import { useAuthStore } from '@store/authStore';
 import { getMe } from '@services/authService';
 import { REFRESH_TOKEN_KEY } from '@services/apiClient';
+import { initSocket, closeSocket } from '@services/socketService';
 
 // ─────────────────────────────────────────────────────────
 // RootNavigator
@@ -25,6 +26,7 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 
 const RootNavigator = () => {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const user = useAuthStore((s) => s.user);
   const setUser = useAuthStore((s) => s.setUser);
   const [isRestoringSession, setIsRestoringSession] = useState(true);
 
@@ -61,6 +63,19 @@ const RootNavigator = () => {
     };
   }, [setUser]);
 
+  // Manage WebSocket connection lifecycle
+  useEffect(() => {
+    if (isAuthenticated && !isRestoringSession) {
+      initSocket();
+    } else if (!isAuthenticated && !isRestoringSession) {
+      closeSocket();
+    }
+    
+    return () => {
+      // Don't close on every unmount, only when auth state changes
+    };
+  }, [isAuthenticated, isRestoringSession]);
+
   if (isRestoringSession) {
     return (
       <View style={styles.loader}>
@@ -71,7 +86,7 @@ const RootNavigator = () => {
 
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
-      {isAuthenticated ? (
+      {isAuthenticated && user?.isEmailVerified ? (
         <Stack.Screen name="Main" component={MainNavigator} />
       ) : (
         <Stack.Screen name="Auth" component={AuthNavigator} />

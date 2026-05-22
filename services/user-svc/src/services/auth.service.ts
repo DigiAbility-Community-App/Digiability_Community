@@ -3,9 +3,9 @@ import { hashPassword, comparePassword } from "../utils/hash.util";
 import { signAccessToken } from "../utils/jwt.util";
 import { createError } from "../middleware/error.middleware";
 import {
-  createEmailVerificationToken,
-  validateEmailVerificationToken,
-  deleteEmailVerificationToken,
+  createEmailVerificationOtp,
+  validateEmailVerificationOtp,
+  deleteEmailVerificationOtp,
   createRefreshToken,
   createPasswordResetToken,
   validatePasswordResetToken,
@@ -13,7 +13,7 @@ import {
   revokeAllUserRefreshTokens,
 } from "./token.service";
 import {
-  sendVerificationEmail,
+  sendVerificationOtpEmail,
   sendPasswordResetEmail,
 } from "./email.service";
 import type {
@@ -23,28 +23,74 @@ import type {
   ResetPasswordInput,
   UpdateRoleInput,
 } from "../utils/validation.util";
-import { Role } from "@prisma/client";
+import { Role } from "../generated/client";
 
 // ─────────────────────────────────────────────────────
 // Auth Service — Core business logic
 // ─────────────────────────────────────────────────────
 
-// ─── Email Verification ────────────────────────────────
+// ─── Email Verification (OTP) ──────────────────────────
 
-export async function verifyEmail(rawToken: string): Promise<{ message: string }> {
-  // 1. Validate token
-  const userId = await validateEmailVerificationToken(rawToken);
+export async function verifyEmailOtp(
+  email: string,
+  otp: string
+): Promise<{ message: string }> {
+  // 1. Find user by email
+  const user = await prisma.user.findUnique({ where: { email } });
+  if (!user) throw createError("Invalid email or OTP", 400);
 
-  // 2. Mark user as verified
+  // 2. Validate OTP
+  await validateEmailVerificationOtp(user.id, otp);
+
+  // 3. Mark user as verified
   await prisma.user.update({
-    where: { id: userId },
+    where: { id: user.id },
     data: { isEmailVerified: true },
   });
 
-  // 3. Delete used token
-  await deleteEmailVerificationToken(rawToken);
+  // 4. Delete used OTP
+  await deleteEmailVerificationOtp(user.id);
 
   return { message: "Email verified successfully. You can now log in." };
+}
+
+// ─── Resend Verification OTP ───────────────────────────
+
+export async function resendVerificationOtp(
+  email: string
+): Promise<{ message: string }> {
+  const user = await prisma.user.findUnique({ where: { email } });
+  if (!user) {
+    // Don't reveal whether email exists
+    return { message: "If an account with that email exists, a new OTP has been sent." };
+  }
+
+  if (user.isEmailVerified) {
+    return { message: "Email is already verified." };
+  }
+
+  // Rate limit: check if an OTP was created in the last 60 seconds
+  const recentOtp = await prisma.emailVerificationOtp.findFirst({
+    where: { userId: user.id },
+    orderBy: { createdAt: "desc" },
+  });
+
+  if (recentOtp) {
+    const secondsSinceCreation = (Date.now() - recentOtp.createdAt.getTime()) / 1000;
+    if (secondsSinceCreation < 60) {
+      throw createError(
+        `Please wait ${Math.ceil(60 - secondsSinceCreation)} seconds before requesting a new OTP.`,
+        429
+      );
+    }
+  }
+
+  const rawOtp = await createEmailVerificationOtp(user.id);
+  sendVerificationOtpEmail(user.email, user.name, rawOtp).catch((err) =>
+    console.error("[EmailService] Failed to send verification OTP:", err)
+  );
+
+  return { message: "If an account with that email exists, a new OTP has been sent." };
 }
 
 // ─── Login ─────────────────────────────────────────────
@@ -94,9 +140,9 @@ export async function registerUser(input: RegisterInput): Promise<LoginResult> {
     data: { name, email, password: hashedPassword, role },
   });
 
-  const rawToken = await createEmailVerificationToken(user.id);
-  sendVerificationEmail(user.email, user.name, rawToken).catch((err) =>
-    console.error("[EmailService] Failed to send verification email:", err)
+  const rawOtp = await createEmailVerificationOtp(user.id);
+  sendVerificationOtpEmail(user.email, user.name, rawOtp).catch((err) =>
+    console.error("[EmailService] Failed to send verification OTP:", err)
   );
 
   const accessToken = signAccessToken({ sub: user.id, email: user.email });
@@ -244,4 +290,57 @@ export async function updateUserRole(userId: string, input: UpdateRoleInput) {
     },
   });
   return { message: "Role updated successfully", user };
+}
+
+// ─── Batch User Lookup ─────────────────────────────────
+// Returns minimal user info (id, name) for a list of IDs.
+// Used by the mobile app to resolve participant names in
+// conversation lists without making N+1 requests.
+
+export async function getUsersByIds(ids: string[]) {
+  const uniqueIds = [...new Set(ids)];
+  if (uniqueIds.length === 0) return [];
+  if (uniqueIds.length > 100) {
+    throw createError("Too many IDs — max 100 per request", 400);
+  }
+
+  const users = await prisma.user.findMany({
+    where: { id: { in: uniqueIds } },
+    select: {
+      id: true,
+      name: true,
+    },
+  });
+
+  return users;
+}
+
+// ─── User Search ───────────────────────────────────────
+// Searches users by name (case-insensitive partial match).
+// Used by the mobile app to find community members when
+// creating Care Circles (group conversations).
+
+export async function searchUsers(query: string, excludeUserId?: string) {
+  if (!query || query.trim().length < 1) return [];
+
+  const BOT_USER_ID = "00000000-0000-0000-0000-000000000001";
+
+  const users = await prisma.user.findMany({
+    where: {
+      AND: [
+        { name: { contains: query.trim(), mode: "insensitive" } },
+        { id: { notIn: [excludeUserId, BOT_USER_ID].filter(Boolean) as string[] } },
+        { isEmailVerified: true },
+      ],
+    },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+    },
+    take: 20,
+    orderBy: { name: "asc" },
+  });
+
+  return users;
 }
