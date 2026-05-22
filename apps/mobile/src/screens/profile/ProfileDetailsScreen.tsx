@@ -14,6 +14,7 @@ import {
 } from "react-native";
 
 import { LinearGradient } from "expo-linear-gradient";
+import DateTimePicker from "@react-native-community/datetimepicker";
 import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import { useAuthStore } from "@store/authStore";
 import { submitFullOnboarding, parseDateInput } from "@services/profileService";
@@ -63,6 +64,7 @@ const ProfileDetailsScreen = () => {
   const [personName, setPersonName] = useState("");
   const [relation, setRelation] = useState("");
   const [careeDob, setCareeDob] = useState("");
+  const [showDatePicker, setShowDatePicker] = useState(false);
   const [careDisability, setCareDisability] = useState("");
 
   // ── Therapist / Educator ──────────────────────────────────
@@ -74,6 +76,15 @@ const ProfileDetailsScreen = () => {
   const [ngoName, setNgoName] = useState("");
   const [ngoRole, setNgoRole] = useState("");
   const [district, setDistrict] = useState("");
+
+  // ── Student ───────────────────────────────────────────────
+  const [schoolName, setSchoolName] = useState("");
+  const [course, setCourse] = useState("");
+  const [yearOfStudy, setYearOfStudy] = useState("");
+
+  // ── Volunteer ─────────────────────────────────────────────
+  const [volunteerOrg, setVolunteerOrg] = useState("");
+  const [skills, setSkills] = useState("");
 
   const [loading, setLoading] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
@@ -104,6 +115,29 @@ const ProfileDetailsScreen = () => {
       return () => subscription.remove();
     }, [navigation])
   );
+
+  const handleDateChange = (event: any, selectedDate?: Date) => {
+    setShowDatePicker(false);
+    if (selectedDate) {
+      const day = String(selectedDate.getDate()).padStart(2, "0");
+      const month = String(selectedDate.getMonth() + 1).padStart(2, "0");
+      const year = selectedDate.getFullYear();
+      setCareeDob(`${day}/${month}/${year}`);
+      setFieldErrors((e) => ({ ...e, careeDob: "" }));
+    }
+  };
+
+  const getPickerDate = (): Date => {
+    if (careeDob) {
+      const parsed = parseDateInput(careeDob, "DMY");
+      if (parsed) {
+        return new Date(parsed);
+      }
+    }
+    const d = new Date();
+    d.setFullYear(d.getFullYear() - 10);
+    return d;
+  };
 
   // ── Field validation per role ──────────────────────────────
   const validateFields = (): boolean => {
@@ -150,6 +184,15 @@ const ProfileDetailsScreen = () => {
       }
     }
 
+    if (role === "student") {
+      if (yearOfStudy.trim()) {
+        const year = parseInt(yearOfStudy.trim(), 10);
+        if (isNaN(year) || year < 1 || year > 6) {
+          newErrors.yearOfStudy = "Year of study must be between 1 and 6.";
+        }
+      }
+    }
+
     setFieldErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -188,6 +231,19 @@ const ProfileDetailsScreen = () => {
           ngoRole: ngoRole.trim() || undefined,
           district: district.trim() || undefined,
         };
+      case "student":
+        return {
+          organization: schoolName.trim() || undefined,
+          speciality: course.trim() || undefined,
+          yearsOfExperience: yearOfStudy.trim()
+            ? parseInt(yearOfStudy.trim(), 10)
+            : undefined,
+        };
+      case "volunteer":
+        return {
+          organization: volunteerOrg.trim() || undefined,
+          speciality: skills.trim() || undefined,
+        };
       default:
         return {};
     }
@@ -213,10 +269,14 @@ const ProfileDetailsScreen = () => {
 
       navigation.navigate("CareCircle");
     } catch (error: unknown) {
-      const message =
-        (error as { response?: { data?: { message?: string } } })?.response
-          ?.data?.message ??
-        "We could not save your details. Please try again.";
+      // Log full response for debugging
+      const apiErr = error as { response?: { data?: { message?: string; errors?: Array<{ field?: string; message?: string }> } } };
+      console.error("[ProfileComplete] response:", JSON.stringify(apiErr?.response?.data));
+
+      // Show the first specific Zod field error if present, otherwise the top-level message
+      const fieldError = apiErr?.response?.data?.errors?.[0]?.message;
+      const topMessage = apiErr?.response?.data?.message;
+      const message = fieldError ?? topMessage ?? "We could not save your details. Please try again.";
       Alert.alert("Unable to Complete Profile", message, [
         { text: "Retry", style: "cancel" },
       ]);
@@ -225,7 +285,7 @@ const ProfileDetailsScreen = () => {
     }
   };
 
-  const hasRoleSection = ["pwd", "caregiver", "therapist", "ngo"].includes(role);
+  const hasRoleSection = ["pwd", "caregiver", "therapist", "ngo", "student", "volunteer"].includes(role);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -413,25 +473,35 @@ const ProfileDetailsScreen = () => {
 
               <View style={styles.halfField}>
                 <Text style={styles.label}>DOB</Text>
-                <TextInput
-                  placeholder="DD/MM/YYYY"
-                  placeholderTextColor="rgba(126,115,131,0.6)"
+                <TouchableOpacity
+                  activeOpacity={0.8}
+                  onPress={() => setShowDatePicker(true)}
                   style={[
                     styles.input,
+                    styles.dobPressable,
                     fieldErrors.careeDob ? styles.inputError : null,
                   ]}
-                  value={careeDob}
-                  onChangeText={(v) => {
-                    setCareeDob(v);
-                    setFieldErrors((e) => ({ ...e, careeDob: "" }));
-                  }}
-                  keyboardType="numbers-and-punctuation"
-                />
+                >
+                  <Text style={[styles.dobText, !careeDob && styles.placeholderText]}>
+                    {careeDob || "DD/MM/YYYY"}
+                  </Text>
+                  <Text style={styles.calendarIcon}>📅</Text>
+                </TouchableOpacity>
               </View>
             </View>
             {fieldErrors.careeDob ? (
               <Text style={styles.inlineError}>{fieldErrors.careeDob}</Text>
             ) : null}
+
+            {showDatePicker && (
+              <DateTimePicker
+                value={getPickerDate()}
+                mode="date"
+                display="default"
+                maximumDate={new Date()}
+                onChange={handleDateChange}
+              />
+            )}
 
             <View style={[styles.field, styles.lastField]}>
               <Text style={styles.label}>Disability Type</Text>
@@ -559,6 +629,95 @@ const ProfileDetailsScreen = () => {
                 style={styles.input}
                 value={district}
                 onChangeText={setDistrict}
+              />
+            </View>
+          </View>
+        )}
+
+        {/* ── SECTION G: Student Info ───────────────────────── */}
+        {role === "student" && (
+          <View style={styles.sectionCard}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Student Info</Text>
+              <View style={styles.badge}>
+                <Text style={styles.badgeText}>STUDENT</Text>
+              </View>
+            </View>
+
+            <View style={styles.field}>
+              <Text style={styles.label}>School / University Name</Text>
+              <TextInput
+                placeholder="Enter institution name"
+                placeholderTextColor="rgba(126,115,131,0.6)"
+                style={styles.input}
+                value={schoolName}
+                onChangeText={setSchoolName}
+              />
+            </View>
+
+            <View style={styles.field}>
+              <Text style={styles.label}>Course / Major</Text>
+              <TextInput
+                placeholder="e.g. Special Education, Psychology"
+                placeholderTextColor="rgba(126,115,131,0.6)"
+                style={styles.input}
+                value={course}
+                onChangeText={setCourse}
+              />
+            </View>
+
+            <View style={[styles.field, styles.lastField]}>
+              <Text style={styles.label}>Year of Study</Text>
+              <TextInput
+                placeholder="e.g. 2"
+                placeholderTextColor="rgba(126,115,131,0.6)"
+                style={[
+                  styles.input,
+                  fieldErrors.yearOfStudy ? styles.inputError : null,
+                ]}
+                value={yearOfStudy}
+                onChangeText={(v) => {
+                  setYearOfStudy(v);
+                  setFieldErrors((e) => ({ ...e, yearOfStudy: "" }));
+                }}
+                keyboardType="number-pad"
+              />
+              {fieldErrors.yearOfStudy ? (
+                <Text style={styles.inlineError}>{fieldErrors.yearOfStudy}</Text>
+              ) : null}
+            </View>
+          </View>
+        )}
+
+        {/* ── SECTION H: Volunteer Info ─────────────────────── */}
+        {role === "volunteer" && (
+          <View style={styles.sectionCard}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Volunteer Info</Text>
+              <View style={styles.yellowBadge}>
+                <Text style={styles.yellowBadgeText}>VOLUNTEER</Text>
+              </View>
+            </View>
+
+            <View style={styles.field}>
+              <Text style={styles.label}>Organization / Affiliation</Text>
+              <TextInput
+                placeholder="Enter organization name (if any)"
+                placeholderTextColor="rgba(126,115,131,0.6)"
+                style={styles.input}
+                value={volunteerOrg}
+                onChangeText={setVolunteerOrg}
+              />
+            </View>
+
+            <View style={[styles.field, styles.lastField]}>
+              <Text style={styles.label}>Skills / Interests</Text>
+              <TextInput
+                placeholder="e.g. Sign Language, Mentoring, Event Help"
+                placeholderTextColor="rgba(126,115,131,0.6)"
+                style={styles.input}
+                value={skills}
+                onChangeText={setSkills}
               />
             </View>
           </View>
@@ -917,5 +1076,22 @@ const styles = StyleSheet.create({
     fontSize: 20,
     color: "#000000",
     fontWeight: "700",
+  },
+  dobPressable: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  dobText: {
+    fontSize: 15,
+    color: "#1A1B20",
+    fontFamily: "PlusJakartaSans-Regular",
+  },
+  placeholderText: {
+    color: "rgba(126,115,131,0.6)",
+  },
+  calendarIcon: {
+    fontSize: 18,
+    color: "#4C4452",
   },
 });

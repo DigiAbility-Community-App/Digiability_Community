@@ -53,59 +53,130 @@ const WelcomeScreen = ({ navigation }: Props) => {
   const [name, setName] = useState("");
   const [signUpEmail, setSignUpEmail] = useState("");
   const [signUpPassword, setSignUpPassword] = useState("");
+  const [showSignUpPassword, setShowSignUpPassword] = useState(false);
 
   // Login
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
+  const [showLoginPassword, setShowLoginPassword] = useState(false);
 
   // Shared
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
-  const clearError = () => setError(null);
+  // Errors
+  const [signUpErrors, setSignUpErrors] = useState<{
+    name?: string;
+    email?: string;
+    password?: string;
+  }>({});
+
+  const [loginErrors, setLoginErrors] = useState<{
+    email?: string;
+    password?: string;
+  }>({});
+
+  const [signUpGeneralError, setSignUpGeneralError] = useState<string | null>(null);
+  const [loginGeneralError, setLoginGeneralError] = useState<string | null>(null);
 
   const handleTabChange = (tab: "SignUp" | "Login") => {
-    clearError();
+    // Clear inputs when switching tabs
+    setName("");
+    setSignUpEmail("");
+    setSignUpPassword("");
+    setLoginEmail("");
+    setLoginPassword("");
+
+    // Clear errors when switching tabs
+    setSignUpErrors({});
+    setLoginErrors({});
+    setSignUpGeneralError(null);
+    setLoginGeneralError(null);
+
+    // Reset password visibility toggles
+    setShowSignUpPassword(false);
+    setShowLoginPassword(false);
+
     setActiveTab(tab);
+  };
+
+  // Validation helpers
+  const validateSignUpEmail = (emailVal: string) => {
+    const trimmed = emailVal.trim();
+    if (!trimmed) {
+      return "Email is required.";
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
+      return "Please enter a valid email address.";
+    }
+    return undefined;
+  };
+
+  const validateSignUpName = (nameVal: string) => {
+    const trimmed = nameVal.trim();
+    if (!trimmed) {
+      return "Full name is required.";
+    }
+    if (trimmed.length < 2) {
+      return "Name must be at least 2 characters.";
+    }
+    if (!/^[a-zA-Z\s'-]{2,100}$/.test(trimmed)) {
+      return "Name may only contain letters, spaces, hyphens, or apostrophes.";
+    }
+    return undefined;
+  };
+
+  const validateSignUpPassword = (passwordVal: string) => {
+    const trimmed = passwordVal.trim();
+    if (!trimmed) {
+      return "Password is required.";
+    }
+    if (trimmed.length < 8) {
+      return "Password must be at least 8 characters.";
+    }
+    if (!/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/.test(trimmed)) {
+      return "Password must include uppercase, lowercase, and a number.";
+    }
+    return undefined;
+  };
+
+  const validateLoginEmail = (emailVal: string) => {
+    const trimmed = emailVal.trim();
+    if (!trimmed) {
+      return "Email is required.";
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
+      return "Please enter a valid email address.";
+    }
+    return undefined;
+  };
+
+  const validateLoginPassword = (passwordVal: string) => {
+    if (!passwordVal.trim()) {
+      return "Password is required.";
+    }
+    return undefined;
   };
 
   // Signup
   const handleSignUp = async () => {
-    clearError();
+    setSignUpGeneralError(null);
+
+    const nameErr = validateSignUpName(name);
+    const emailErr = validateSignUpEmail(signUpEmail);
+    const passwordErr = validateSignUpPassword(signUpPassword);
+
+    if (nameErr || emailErr || passwordErr) {
+      setSignUpErrors({
+        name: nameErr,
+        email: emailErr,
+        password: passwordErr,
+      });
+      return;
+    }
 
     const trimmedName = name.trim();
     const trimmedEmail = signUpEmail.trim().toLowerCase();
     const trimmedPassword = signUpPassword.trim();
-
-    if (!trimmedName || !trimmedEmail || !trimmedPassword) {
-      setError("Please fill in all fields.");
-      return;
-    }
-
-    if (trimmedName.length < 2) {
-      setError("Name must be at least 2 characters.");
-      return;
-    }
-
-    if (!/^[a-zA-Z\s'-]{2,100}$/.test(trimmedName)) {
-      setError("Name may only contain letters, spaces, hyphens, or apostrophes.");
-      return;
-    }
-
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
-      setError("Please enter a valid email address.");
-      return;
-    }
-
-    if (trimmedPassword.length < 8) {
-      setError("Password must be at least 8 characters.");
-      return;
-    }
-
-    if (!/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/.test(trimmedPassword)) {
-      setError("Password must include uppercase, lowercase, and a number.");
-      return;
-    }
 
     setLoading(true);
 
@@ -117,7 +188,7 @@ const WelcomeScreen = ({ navigation }: Props) => {
       });
     } catch (err: unknown) {
       console.error("[SignUpError]", err);
-      setError(getApiErrorMessage(err, "Registration failed."));
+      setSignUpGeneralError(getApiErrorMessage(err, "Registration failed."));
     } finally {
       setLoading(false);
     }
@@ -125,23 +196,32 @@ const WelcomeScreen = ({ navigation }: Props) => {
 
   // Login
   const handleLogin = async () => {
-    clearError();
+    setLoginGeneralError(null);
 
-    if (!loginEmail.trim() || !loginPassword.trim()) {
-      setError("Please enter your email and password.");
+    const emailErr = validateLoginEmail(loginEmail);
+    const passwordErr = validateLoginPassword(loginPassword);
+
+    if (emailErr || passwordErr) {
+      setLoginErrors({
+        email: emailErr,
+        password: passwordErr,
+      });
       return;
     }
+
+    const trimmedEmail = loginEmail.trim().toLowerCase();
+    const trimmedPassword = loginPassword;
 
     setLoading(true);
 
     try {
       await login({
-        email: loginEmail.trim().toLowerCase(),
-        password: loginPassword,
+        email: trimmedEmail,
+        password: trimmedPassword,
       });
     } catch (err: unknown) {
       console.error("[LoginError]", err);
-      setError(getApiErrorMessage(err, "Login failed."));
+      setLoginGeneralError(getApiErrorMessage(err, "Login failed."));
     } finally {
       setLoading(false);
     }
@@ -232,10 +312,13 @@ const WelcomeScreen = ({ navigation }: Props) => {
             </TouchableOpacity>
           </View>
 
-          {/* ERROR */}
-          {error && (
+          {/* GENERAL ERROR BANNER */}
+          {((activeTab === "SignUp" && signUpGeneralError) ||
+            (activeTab === "Login" && loginGeneralError)) && (
             <View style={styles.errorBanner}>
-              <Text style={styles.errorText}>{error}</Text>
+              <Text style={styles.errorText}>
+                {activeTab === "SignUp" ? signUpGeneralError : loginGeneralError}
+              </Text>
             </View>
           )}
 
@@ -248,10 +331,22 @@ const WelcomeScreen = ({ navigation }: Props) => {
                 <TextInput
                   placeholder="Enter your full name"
                   placeholderTextColor="rgba(126,115,131,0.5)"
-                  style={styles.input}
+                  style={[styles.input, signUpErrors.name ? styles.inputError : null]}
                   value={name}
-                  onChangeText={setName}
+                  onChangeText={(val) => {
+                    setName(val);
+                    if (signUpErrors.name) {
+                      setSignUpErrors((prev) => ({ ...prev, name: undefined }));
+                    }
+                  }}
+                  onBlur={() => {
+                    const err = validateSignUpName(name);
+                    setSignUpErrors((prev) => ({ ...prev, name: err }));
+                  }}
                 />
+                {signUpErrors.name ? (
+                  <Text style={styles.fieldError}>{signUpErrors.name}</Text>
+                ) : null}
               </View>
 
               <View>
@@ -260,25 +355,57 @@ const WelcomeScreen = ({ navigation }: Props) => {
                 <TextInput
                   placeholder="you@example.com"
                   placeholderTextColor="rgba(126,115,131,0.5)"
-                  style={styles.input}
+                  style={[styles.input, signUpErrors.email ? styles.inputError : null]}
                   value={signUpEmail}
-                  onChangeText={setSignUpEmail}
+                  onChangeText={(val) => {
+                    setSignUpEmail(val);
+                    if (signUpErrors.email) {
+                      setSignUpErrors((prev) => ({ ...prev, email: undefined }));
+                    }
+                  }}
+                  onBlur={() => {
+                    const err = validateSignUpEmail(signUpEmail);
+                    setSignUpErrors((prev) => ({ ...prev, email: err }));
+                  }}
                   keyboardType="email-address"
                   autoCapitalize="none"
                 />
+                {signUpErrors.email ? (
+                  <Text style={styles.fieldError}>{signUpErrors.email}</Text>
+                ) : null}
               </View>
 
               <View>
                 <Text style={styles.label}>PASSWORD</Text>
 
-                <TextInput
-                  placeholder="Min. 8 characters"
-                  placeholderTextColor="rgba(126,115,131,0.5)"
-                  style={styles.input}
-                  value={signUpPassword}
-                  onChangeText={setSignUpPassword}
-                  secureTextEntry
-                />
+                <View style={[styles.passwordInputContainer, signUpErrors.password ? styles.inputError : null]}>
+                  <TextInput
+                    placeholder="Min. 8 characters"
+                    placeholderTextColor="rgba(126,115,131,0.5)"
+                    style={styles.passwordInput}
+                    value={signUpPassword}
+                    onChangeText={(val) => {
+                      setSignUpPassword(val);
+                      if (signUpErrors.password) {
+                        setSignUpErrors((prev) => ({ ...prev, password: undefined }));
+                      }
+                    }}
+                    onBlur={() => {
+                      const err = validateSignUpPassword(signUpPassword);
+                      setSignUpErrors((prev) => ({ ...prev, password: err }));
+                    }}
+                    secureTextEntry={!showSignUpPassword}
+                  />
+                  <TouchableOpacity
+                    style={styles.eyeButton}
+                    onPress={() => setShowSignUpPassword(!showSignUpPassword)}
+                  >
+                    <Text style={styles.eyeText}>{showSignUpPassword ? "Hide" : "Show"}</Text>
+                  </TouchableOpacity>
+                </View>
+                {signUpErrors.password ? (
+                  <Text style={styles.fieldError}>{signUpErrors.password}</Text>
+                ) : null}
               </View>
 
               <TouchableOpacity
@@ -313,25 +440,57 @@ const WelcomeScreen = ({ navigation }: Props) => {
                 <TextInput
                   placeholder="you@example.com"
                   placeholderTextColor="rgba(126,115,131,0.5)"
-                  style={styles.input}
+                  style={[styles.input, loginErrors.email ? styles.inputError : null]}
                   value={loginEmail}
-                  onChangeText={setLoginEmail}
+                  onChangeText={(val) => {
+                    setLoginEmail(val);
+                    if (loginErrors.email) {
+                      setLoginErrors((prev) => ({ ...prev, email: undefined }));
+                    }
+                  }}
+                  onBlur={() => {
+                    const err = validateLoginEmail(loginEmail);
+                    setLoginErrors((prev) => ({ ...prev, email: err }));
+                  }}
                   keyboardType="email-address"
                   autoCapitalize="none"
                 />
+                {loginErrors.email ? (
+                  <Text style={styles.fieldError}>{loginErrors.email}</Text>
+                ) : null}
               </View>
 
               <View>
                 <Text style={styles.label}>PASSWORD</Text>
 
-                <TextInput
-                  placeholder="Your password"
-                  placeholderTextColor="rgba(126,115,131,0.5)"
-                  style={styles.input}
-                  value={loginPassword}
-                  onChangeText={setLoginPassword}
-                  secureTextEntry
-                />
+                <View style={[styles.passwordInputContainer, loginErrors.password ? styles.inputError : null]}>
+                  <TextInput
+                    placeholder="Your password"
+                    placeholderTextColor="rgba(126,115,131,0.5)"
+                    style={styles.passwordInput}
+                    value={loginPassword}
+                    onChangeText={(val) => {
+                      setLoginPassword(val);
+                      if (loginErrors.password) {
+                        setLoginErrors((prev) => ({ ...prev, password: undefined }));
+                      }
+                    }}
+                    onBlur={() => {
+                      const err = validateLoginPassword(loginPassword);
+                      setLoginErrors((prev) => ({ ...prev, password: err }));
+                    }}
+                    secureTextEntry={!showLoginPassword}
+                  />
+                  <TouchableOpacity
+                    style={styles.eyeButton}
+                    onPress={() => setShowLoginPassword(!showLoginPassword)}
+                  >
+                    <Text style={styles.eyeText}>{showLoginPassword ? "Hide" : "Show"}</Text>
+                  </TouchableOpacity>
+                </View>
+                {loginErrors.password ? (
+                  <Text style={styles.fieldError}>{loginErrors.password}</Text>
+                ) : null}
               </View>
 
               <TouchableOpacity style={styles.forgotBtn}>
@@ -538,6 +697,49 @@ const styles = StyleSheet.create({
     paddingVertical: 17,
     fontSize: 16,
     color: "#1A1B20",
+    borderWidth: 1.5,
+    borderColor: "transparent",
+  },
+
+  inputError: {
+    borderColor: "#DC2626",
+    backgroundColor: "#FEF2F2",
+  },
+
+  fieldError: {
+    fontSize: 12,
+    color: "#DC2626",
+    marginTop: 4,
+    marginLeft: 4,
+  },
+
+  passwordInputContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F4F3FA",
+    borderRadius: 12,
+    paddingHorizontal: 18,
+    borderWidth: 1.5,
+    borderColor: "transparent",
+  },
+
+  passwordInput: {
+    flex: 1,
+    paddingVertical: 17,
+    fontSize: 16,
+    color: "#1A1B20",
+  },
+
+  eyeButton: {
+    paddingLeft: 10,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+
+  eyeText: {
+    color: "#500088",
+    fontWeight: "700",
+    fontSize: 14,
   },
 
   forgotBtn: {

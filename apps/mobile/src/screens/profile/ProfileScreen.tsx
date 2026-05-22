@@ -13,6 +13,7 @@ import {
   BackHandler,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
+import DateTimePicker from "@react-native-community/datetimepicker";
 import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import { useAuthStore } from "@store/authStore";
 import {
@@ -34,16 +35,22 @@ const ROLE_LABELS: Record<string, string> = {
   student: "Student",
 };
 
-// Username format regex (mirrors backend)
+// Username format regex
 const USERNAME_REGEX = /^[a-z0-9_.]{3,20}$/;
 
 type FieldErrors = {
   fullName?: string;
   username?: string;
   dob?: string;
+  pincode?: string;
 };
 
-type UsernameStatus = "idle" | "checking" | "available" | "taken" | "invalid";
+type UsernameStatus =
+  | "idle"
+  | "checking"
+  | "available"
+  | "taken"
+  | "invalid";
 
 const ProfileScreen = () => {
   const navigation = useNavigation<any>();
@@ -54,22 +61,32 @@ const ProfileScreen = () => {
   const [fullName, setFullName] = useState("");
   const [username, setUsername] = useState("");
   const [dob, setDob] = useState("");
+  const [showDatePicker, setShowDatePicker] = useState(false);
   const [gender, setGender] = useState("");
+
+  // LOCATION STATES
+  const [pincode, setPincode] = useState("");
+  const [area, setArea] = useState("");
   const [city, setCity] = useState("");
   const [state, setState] = useState("");
+  const [locationLoading, setLocationLoading] = useState(false);
+
   const [loading, setLoading] = useState(false);
 
   const [errors, setErrors] = useState<FieldErrors>({});
-  const [usernameStatus, setUsernameStatus] = useState<UsernameStatus>("idle");
+  const [usernameStatus, setUsernameStatus] =
+    useState<UsernameStatus>("idle");
   const [usernameMessage, setUsernameMessage] = useState("");
 
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null
+  );
 
   const roleLabel = pendingRole
     ? ROLE_LABELS[pendingRole] ?? pendingRole
     : user?.role
-    ? ROLE_LABELS[user.role] ?? user.role
-    : "";
+      ? ROLE_LABELS[user.role] ?? user.role
+      : "";
 
   // ── Back Guard ─────────────────────────────────────────────
   useFocusEffect(
@@ -94,13 +111,98 @@ const ProfileScreen = () => {
         "hardwareBackPress",
         onBackPress
       );
+
       return () => subscription.remove();
     }, [navigation])
   );
 
-  // ── Real-time username check ───────────────────────────────
+  // ── PINCODE FETCH ──────────────────────────────────────────
+  const fetchLocationFromPincode = async (pin: string) => {
+    if (pin.length !== 6) return;
+
+    try {
+      setLocationLoading(true);
+
+      const response = await fetch(
+        `https://api.postalpincode.in/pincode/${pin}`
+      );
+
+      const data = await response.json();
+
+      if (
+        data[0]?.Status === "Success" &&
+        data[0]?.PostOffice?.length > 0
+      ) {
+        const postOffice = data[0].PostOffice[0];
+
+        setArea(postOffice.Name || "");
+        setCity(postOffice.District || "");
+        setState(postOffice.State || "");
+      } else {
+        setArea("");
+        setCity("");
+        setState("");
+
+        Alert.alert(
+          "Invalid Pincode",
+          "Please enter a valid pincode."
+        );
+      }
+    } catch (error) {
+      console.log("Pincode fetch error:", error);
+
+      Alert.alert(
+        "Error",
+        "Unable to fetch location. Please try again."
+      );
+    } finally {
+      setLocationLoading(false);
+    }
+  };
+
+  const handleDateChange = (
+    event: any,
+    selectedDate?: Date
+  ) => {
+    setShowDatePicker(false);
+
+    if (selectedDate) {
+      const day = String(selectedDate.getDate()).padStart(2, "0");
+      const month = String(
+        selectedDate.getMonth() + 1
+      ).padStart(2, "0");
+      const year = selectedDate.getFullYear();
+
+      setDob(`${day}/${month}/${year}`);
+
+      if (errors.dob) {
+        setErrors((e) => ({
+          ...e,
+          dob: undefined,
+        }));
+      }
+    }
+  };
+
+  const getPickerDate = (): Date => {
+    if (dob) {
+      const parsed = parseDateInput(dob, "DMY");
+
+      if (parsed) {
+        return new Date(parsed);
+      }
+    }
+
+    const d = new Date();
+    d.setFullYear(d.getFullYear() - 18);
+
+    return d;
+  };
+
+  // ── USERNAME CHECK ─────────────────────────────────────────
   const handleUsernameChange = (value: string) => {
     setUsername(value);
+
     const normalized = normalizeUsername(value) ?? "";
 
     if (!normalized) {
@@ -111,87 +213,128 @@ const ProfileScreen = () => {
 
     if (!USERNAME_REGEX.test(normalized)) {
       setUsernameStatus("invalid");
+
       setUsernameMessage(
         "3–20 characters: lowercase letters, numbers, _ or . only"
       );
+
       return;
     }
 
     setUsernameStatus("checking");
     setUsernameMessage("Checking availability...");
 
-    if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current);
+    }
+
     debounceRef.current = setTimeout(async () => {
-      const result = await checkUsernameAvailability(normalized);
-      setUsernameStatus(result.available ? "available" : "taken");
+      const result =
+        await checkUsernameAvailability(normalized);
+
+      setUsernameStatus(
+        result.available ? "available" : "taken"
+      );
+
       setUsernameMessage(result.message);
     }, 500);
   };
 
-  // ── Validation ─────────────────────────────────────────────
+  // ── VALIDATION ─────────────────────────────────────────────
   const validate = (): boolean => {
     const newErrors: FieldErrors = {};
 
     const trimmedName = fullName.trim();
+
     if (!trimmedName) {
       newErrors.fullName = "Full name is required.";
     } else if (trimmedName.length < 2) {
-      newErrors.fullName = "Name must be at least 2 characters.";
-    } else if (!/^[a-zA-Z\s'-]{2,100}$/.test(trimmedName)) {
+      newErrors.fullName =
+        "Name must be at least 2 characters.";
+    } else if (
+      !/^[a-zA-Z\s'-]{2,100}$/.test(trimmedName)
+    ) {
       newErrors.fullName =
         "Name may only contain letters, spaces, hyphens, or apostrophes.";
     }
 
-    const normalizedUser = normalizeUsername(username);
+    const normalizedUser =
+      normalizeUsername(username);
+
     if (!normalizedUser) {
       newErrors.username = "Username is required.";
-    } else if (!USERNAME_REGEX.test(normalizedUser)) {
+    } else if (
+      !USERNAME_REGEX.test(normalizedUser)
+    ) {
       newErrors.username =
         "3–20 characters: lowercase letters, numbers, _ or . only";
     } else if (usernameStatus === "taken") {
-      newErrors.username = "This username is already taken.";
+      newErrors.username =
+        "This username is already taken.";
     } else if (usernameStatus === "checking") {
-      newErrors.username = "Please wait while we verify your username.";
+      newErrors.username =
+        "Please wait while we verify your username.";
     }
 
     if (dob.trim()) {
-      const parsed = parseDateInput(dob.trim(), "DMY");
+      const parsed = parseDateInput(
+        dob.trim(),
+        "DMY"
+      );
+
       if (!parsed) {
-        newErrors.dob = "Invalid date. Use DD/MM/YYYY format.";
+        newErrors.dob =
+          "Invalid date. Use DD/MM/YYYY format.";
       } else {
         const birthDate = new Date(parsed);
         const now = new Date();
+
         const minAge = new Date(
           now.getFullYear() - 5,
           now.getMonth(),
           now.getDate()
         );
+
         if (birthDate > now) {
-          newErrors.dob = "Date of birth cannot be in the future.";
+          newErrors.dob =
+            "Date of birth cannot be in the future.";
         } else if (birthDate > minAge) {
-          newErrors.dob = "You must be at least 5 years old.";
+          newErrors.dob =
+            "You must be at least 5 years old.";
         }
       }
     }
 
+    if (pincode.trim() && pincode.trim().length !== 6) {
+      newErrors.pincode = "Pincode must be exactly 6 digits.";
+    }
+
     setErrors(newErrors);
+
     return Object.keys(newErrors).length === 0;
   };
 
   const handleContinue = () => {
     if (!user) return;
+
     if (!validate()) return;
 
-    const normalizedUser = normalizeUsername(username);
-    const parsedDob = dob.trim() ? parseDateInput(dob.trim(), "DMY") : undefined;
+    const normalizedUser =
+      normalizeUsername(username);
 
-    // Store data locally — NOT written to DB yet.
-    // The full DB write happens in ProfileDetailsScreen.
+    const parsedDob = dob.trim()
+      ? parseDateInput(dob.trim(), "DMY")
+      : undefined;
+
     setPendingProfile({
       fullName: optionalString(fullName),
       username: normalizedUser,
       dob: parsedDob,
       gender: optionalString(gender),
+
+      // LOCATION
+      pincode: optionalString(pincode),
+      area: optionalString(area),
       city: optionalString(city),
       state: optionalString(state),
     });
@@ -199,22 +342,39 @@ const ProfileScreen = () => {
     navigation.navigate("ProfileDetails");
   };
 
-  // ── Username status indicator ──────────────────────────────
+  // ── USERNAME INDICATOR ─────────────────────────────────────
   const renderUsernameIndicator = () => {
     if (usernameStatus === "idle") return null;
+
     if (usernameStatus === "checking") {
-      return <ActivityIndicator size="small" color="#7C3AED" style={styles.indicator} />;
+      return (
+        <ActivityIndicator
+          size="small"
+          color="#7C3AED"
+          style={styles.indicator}
+        />
+      );
     }
+
     const color =
       usernameStatus === "available"
         ? "#059669"
         : usernameStatus === "invalid"
-        ? "#B45309"
-        : "#DC2626";
+          ? "#B45309"
+          : "#DC2626";
+
     const icon =
-      usernameStatus === "available" ? "✓" : "✗";
+      usernameStatus === "available"
+        ? "✓"
+        : "✗";
+
     return (
-      <Text style={[styles.usernameIndicatorText, { color }]}>
+      <Text
+        style={[
+          styles.usernameIndicatorText,
+          { color },
+        ]}
+      >
         {icon} {usernameMessage}
       </Text>
     );
@@ -222,9 +382,11 @@ const ProfileScreen = () => {
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#F6F6F6" />
+      <StatusBar
+        barStyle="dark-content"
+        backgroundColor="#F6F6F6"
+      />
 
-      {/* HEADER */}
       <View style={styles.topHeader}>
         <TouchableOpacity
           style={styles.backButton}
@@ -233,16 +395,19 @@ const ProfileScreen = () => {
               "Go Back?",
               "Your role selection will be kept. Do you want to go back?",
               [
-                { text: "Stay", style: "cancel" },
+                {
+                  text: "Stay",
+                  style: "cancel",
+                },
                 {
                   text: "Go Back",
                   style: "destructive",
-                  onPress: () => navigation.goBack(),
+                  onPress: () =>
+                    navigation.goBack(),
                 },
               ]
             )
           }
-          accessibilityLabel="Go back"
         >
           <Text style={styles.backArrow}>←</Text>
         </TouchableOpacity>
@@ -262,29 +427,40 @@ const ProfileScreen = () => {
       >
         {/* HERO */}
         <View style={styles.heroSection}>
-          <Text style={styles.heroTitle}>Your Profile</Text>
-          <Text style={styles.heroSubtitle}>
-            Only share what you're comfortable with
+          <Text style={styles.heroTitle}>
+            Your Profile
           </Text>
 
-          {/* Role Badge */}
+          <Text style={styles.heroSubtitle}>
+            Only share what you're comfortable
+            with
+          </Text>
+
           {roleLabel ? (
             <View style={styles.roleBadge}>
-              <Text style={styles.roleBadgeText}>{roleLabel}</Text>
+              <Text style={styles.roleBadgeText}>
+                {roleLabel}
+              </Text>
             </View>
           ) : null}
         </View>
 
-        {/* BASIC INFO CARD */}
+        {/* BASIC INFO */}
         <View style={styles.card}>
-          <Text style={styles.sectionLabel}>BASIC INFO</Text>
+          <Text style={styles.sectionLabel}>
+            BASIC INFO
+          </Text>
 
-          {/* Full Name */}
-          <Text style={styles.fieldLabel}>Full Name *</Text>
+          <Text style={styles.fieldLabel}>
+            Full Name *
+          </Text>
+
           <View
             style={[
               styles.inputContainer,
-              errors.fullName ? styles.inputError : null,
+              errors.fullName
+                ? styles.inputError
+                : null,
             ]}
           >
             <TextInput
@@ -294,23 +470,37 @@ const ProfileScreen = () => {
               value={fullName}
               onChangeText={(v) => {
                 setFullName(v);
-                if (errors.fullName) setErrors((e) => ({ ...e, fullName: undefined }));
+
+                if (errors.fullName) {
+                  setErrors((e) => ({
+                    ...e,
+                    fullName: undefined,
+                  }));
+                }
               }}
             />
           </View>
+
           {errors.fullName ? (
-            <Text style={styles.fieldError}>{errors.fullName}</Text>
+            <Text style={styles.fieldError}>
+              {errors.fullName}
+            </Text>
           ) : null}
 
-          {/* Username */}
-          <Text style={styles.fieldLabel}>Username *</Text>
+          <Text style={styles.fieldLabel}>
+            Username *
+          </Text>
+
           <View
             style={[
               styles.usernameInputContainer,
-              errors.username ? styles.inputError : null,
+              errors.username
+                ? styles.inputError
+                : null,
             ]}
           >
             <Text style={styles.atSymbol}>@</Text>
+
             <TextInput
               placeholder="your_username"
               placeholderTextColor="#A89BB0"
@@ -321,53 +511,92 @@ const ProfileScreen = () => {
               autoCorrect={false}
             />
           </View>
+
           {renderUsernameIndicator()}
+
           {errors.username ? (
-            <Text style={styles.fieldError}>{errors.username}</Text>
+            <Text style={styles.fieldError}>
+              {errors.username}
+            </Text>
           ) : null}
 
-          {/* DOB */}
-          <Text style={styles.fieldLabel}>Date of Birth</Text>
-          <View
+          <Text style={styles.fieldLabel}>
+            Date of Birth
+          </Text>
+
+          <TouchableOpacity
+            activeOpacity={0.8}
+            onPress={() =>
+              setShowDatePicker(true)
+            }
             style={[
               styles.inputContainer,
-              errors.dob ? styles.inputError : null,
+              styles.dobPressable,
+              errors.dob
+                ? styles.inputError
+                : null,
             ]}
           >
-            <TextInput
-              placeholder="DD/MM/YYYY"
-              placeholderTextColor="#A89BB0"
-              style={styles.input}
-              value={dob}
-              onChangeText={(v) => {
-                setDob(v);
-                if (errors.dob) setErrors((e) => ({ ...e, dob: undefined }));
-              }}
-              keyboardType="numbers-and-punctuation"
-            />
-          </View>
+            <Text
+              style={[
+                styles.dobText,
+                !dob &&
+                styles.placeholderText,
+              ]}
+            >
+              {dob || "Select Date of Birth"}
+            </Text>
+
+            <Text style={styles.calendarIcon}>
+              📅
+            </Text>
+          </TouchableOpacity>
+
           {errors.dob ? (
-            <Text style={styles.fieldError}>{errors.dob}</Text>
+            <Text style={styles.fieldError}>
+              {errors.dob}
+            </Text>
           ) : null}
+
+          {showDatePicker && (
+            <DateTimePicker
+              value={getPickerDate()}
+              mode="date"
+              display="default"
+              maximumDate={new Date()}
+              onChange={handleDateChange}
+            />
+          )}
         </View>
 
-        {/* GENDER CARD */}
+        {/* GENDER */}
         <View style={styles.card}>
-          <Text style={styles.sectionLabel}>GENDER</Text>
+          <Text style={styles.sectionLabel}>
+            GENDER
+          </Text>
+
           <View style={styles.genderGrid}>
             {GENDERS.map((g) => {
               const selected = gender === g;
+
               return (
                 <TouchableOpacity
                   key={g}
                   activeOpacity={0.8}
-                  onPress={() => setGender(g)}
-                  style={[styles.genderChip, selected && styles.genderChipSelected]}
+                  onPress={() =>
+                    setGender(g)
+                  }
+                  style={[
+                    styles.genderChip,
+                    selected &&
+                    styles.genderChipSelected,
+                  ]}
                 >
                   <Text
                     style={[
                       styles.genderChipText,
-                      selected && styles.genderChipTextSelected,
+                      selected &&
+                      styles.genderChipTextSelected,
                     ]}
                   >
                     {g}
@@ -378,41 +607,131 @@ const ProfileScreen = () => {
           </View>
         </View>
 
-        {/* LOCATION CARD */}
+        {/* LOCATION */}
         <View style={styles.card}>
-          <Text style={styles.sectionLabel}>LOCATION</Text>
+          <Text style={styles.sectionLabel}>
+            LOCATION
+          </Text>
 
-          <Text style={styles.fieldLabel}>City</Text>
-          <View style={styles.inputContainer}>
+          {/* PINCODE */}
+          <Text style={styles.fieldLabel}>
+            Pincode
+          </Text>
+
+          <View
+            style={[
+              styles.inputContainer,
+              errors.pincode
+                ? styles.inputError
+                : null,
+            ]}
+          >
             <TextInput
-              placeholder="e.g. Mumbai"
+              placeholder="e.g. 411033"
               placeholderTextColor="#A89BB0"
               style={styles.input}
-              value={city}
-              onChangeText={setCity}
+              keyboardType="numeric"
+              maxLength={6}
+              value={pincode}
+              onChangeText={(text) => {
+                const cleaned =
+                  text.replace(
+                    /[^0-9]/g,
+                    ""
+                  );
+
+                setPincode(cleaned);
+
+                if (errors.pincode) {
+                  setErrors((e) => ({
+                    ...e,
+                    pincode: undefined,
+                  }));
+                }
+
+                if (cleaned.length === 6) {
+                  fetchLocationFromPincode(
+                    cleaned
+                  );
+                } else {
+                  setArea("");
+                  setCity("");
+                  setState("");
+                }
+              }}
             />
           </View>
 
-          <Text style={styles.fieldLabel}>State</Text>
+          {errors.pincode ? (
+            <Text style={styles.fieldError}>
+              {errors.pincode}
+            </Text>
+          ) : null}
+
+          {locationLoading && (
+            <ActivityIndicator
+              size="small"
+              color="#6B21A8"
+              style={{ marginVertical: 10 }}
+            />
+          )}
+
+          {/* AREA */}
+          <Text style={styles.fieldLabel}>
+            Area
+          </Text>
+
           <View style={styles.inputContainer}>
             <TextInput
-              placeholder="e.g. Maharashtra"
+              placeholder="Auto fetched area"
+              placeholderTextColor="#A89BB0"
+              style={styles.input}
+              value={area}
+              editable={false}
+            />
+          </View>
+
+          {/* CITY */}
+          <Text style={styles.fieldLabel}>
+            City
+          </Text>
+
+          <View style={styles.inputContainer}>
+            <TextInput
+              placeholder="Auto fetched city"
+              placeholderTextColor="#A89BB0"
+              style={styles.input}
+              value={city}
+              editable={false}
+            />
+          </View>
+
+          {/* STATE */}
+          <Text style={styles.fieldLabel}>
+            State
+          </Text>
+
+          <View style={styles.inputContainer}>
+            <TextInput
+              placeholder="Auto fetched state"
               placeholderTextColor="#A89BB0"
               style={styles.input}
               value={state}
-              onChangeText={setState}
+              editable={false}
             />
           </View>
 
           <View style={styles.noticeBox}>
             <Text style={styles.noticeText}>
-              📍 Your location helps us connect you with nearby services
+              📍 Your location helps us connect
+              you with nearby services
             </Text>
           </View>
         </View>
 
         <Text style={styles.footnote}>
-          Fields marked * are required. You can edit your profile anytime.
+          Fields marked * are required. You can
+          edit your profile anytime.
         </Text>
 
         {/* BUTTON */}
@@ -431,7 +750,9 @@ const ProfileScreen = () => {
             {loading ? (
               <ActivityIndicator color="#fff" />
             ) : (
-              <Text style={styles.buttonText}>Continue</Text>
+              <Text style={styles.buttonText}>
+                Continue
+              </Text>
             )}
           </LinearGradient>
         </TouchableOpacity>
@@ -448,7 +769,6 @@ const styles = StyleSheet.create({
     backgroundColor: "#F6F6F6",
   },
 
-  // HEADER
   topHeader: {
     paddingTop: 20,
     paddingHorizontal: 24,
@@ -490,7 +810,8 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 999,
-    backgroundColor: "rgba(207,194,212,0.5)",
+    backgroundColor:
+      "rgba(207,194,212,0.5)",
   },
 
   scrollContent: {
@@ -498,7 +819,6 @@ const styles = StyleSheet.create({
     paddingBottom: 40,
   },
 
-  // HERO
   heroSection: {
     marginTop: 16,
     marginBottom: 24,
@@ -509,13 +829,11 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: "#232222",
     marginBottom: 6,
-    fontFamily: "PlusJakartaSans-Bold",
   },
 
   heroSubtitle: {
     fontSize: 15,
     color: "#636363",
-    fontFamily: "PlusJakartaSans-Regular",
     marginBottom: 14,
   },
 
@@ -533,10 +851,8 @@ const styles = StyleSheet.create({
     color: "#6B21A8",
     fontWeight: "700",
     fontSize: 13,
-    fontFamily: "PlusJakartaSans-Bold",
   },
 
-  // CARD
   card: {
     backgroundColor: "#FFFFFF",
     borderRadius: 20,
@@ -554,7 +870,6 @@ const styles = StyleSheet.create({
     letterSpacing: 1.1,
     color: "#4C4452",
     marginBottom: 16,
-    fontFamily: "PlusJakartaSans-Bold",
   },
 
   fieldLabel: {
@@ -563,7 +878,6 @@ const styles = StyleSheet.create({
     color: "#4C4452",
     marginBottom: 8,
     marginTop: 4,
-    fontFamily: "PlusJakartaSans-Regular",
   },
 
   inputContainer: {
@@ -584,7 +898,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     fontSize: 15,
     color: "#1A1B20",
-    fontFamily: "PlusJakartaSans-Regular",
   },
 
   fieldError: {
@@ -592,7 +905,6 @@ const styles = StyleSheet.create({
     color: "#DC2626",
     marginBottom: 10,
     marginLeft: 4,
-    fontFamily: "PlusJakartaSans-Regular",
   },
 
   usernameInputContainer: {
@@ -618,14 +930,12 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 15,
     color: "#1A1B20",
-    fontFamily: "PlusJakartaSans-Regular",
   },
 
   usernameIndicatorText: {
     fontSize: 12,
     marginBottom: 6,
     marginLeft: 4,
-    fontFamily: "PlusJakartaSans-Regular",
   },
 
   indicator: {
@@ -634,7 +944,6 @@ const styles = StyleSheet.create({
     marginLeft: 4,
   },
 
-  // GENDER
   genderGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -660,17 +969,15 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: "#636363",
     fontWeight: "600",
-    fontFamily: "PlusJakartaSans-Regular",
   },
 
   genderChipTextSelected: {
     color: "#6B21A8",
-    fontFamily: "PlusJakartaSans-Bold",
   },
 
-  // NOTICE
   noticeBox: {
-    backgroundColor: "rgba(138,56,245,0.07)",
+    backgroundColor:
+      "rgba(138,56,245,0.07)",
     borderRadius: 12,
     paddingHorizontal: 14,
     paddingVertical: 10,
@@ -680,7 +987,6 @@ const styles = StyleSheet.create({
   noticeText: {
     color: "#4C4452",
     fontSize: 12,
-    fontFamily: "PlusJakartaSans-Regular",
     lineHeight: 18,
   },
 
@@ -690,10 +996,8 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginBottom: 20,
     fontStyle: "italic",
-    fontFamily: "PlusJakartaSans-Regular",
   },
 
-  // BUTTON
   buttonContainer: {
     borderRadius: 14,
     overflow: "hidden",
@@ -715,6 +1019,27 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontSize: 18,
     fontWeight: "700",
-    fontFamily: "Nunito-Bold",
+  },
+
+  dobPressable: {
+    height: 52,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+  },
+
+  dobText: {
+    fontSize: 15,
+    color: "#1A1B20",
+  },
+
+  placeholderText: {
+    color: "#A89BB0",
+  },
+
+  calendarIcon: {
+    fontSize: 18,
+    color: "#4C4452",
   },
 });

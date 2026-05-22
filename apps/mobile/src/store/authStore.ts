@@ -23,6 +23,8 @@ export interface PendingBasicProfile {
   gender?: string;
   city?: string;
   state?: string;
+  pincode?: string;
+  area?: string;
 }
 
 interface AuthState {

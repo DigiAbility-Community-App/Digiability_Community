@@ -43,7 +43,8 @@ const basicProfileSchema = z.object({
 const profileDetailsSchema = z.object({
   // PwD Fields
   disabilityType: z.string().optional(),
-  disabilitySince: z.number().optional().or(z.string().optional()),
+  // Accept number or numeric string (parseInt is done client-side but guard both)
+  disabilitySince: z.union([z.number(), z.string(), z.undefined()]).optional(),
   supportNeeded: z.string().optional(),
 
   // Caregiver Fields
@@ -55,7 +56,7 @@ const profileDetailsSchema = z.object({
   // Therapist Fields
   speciality: z.string().optional(),
   organization: z.string().optional(),
-  yearsOfExperience: z.number().optional().or(z.string().optional()),
+  yearsOfExperience: z.union([z.number(), z.string(), z.undefined()]).optional(),
 
   // NGO Fields
   ngoName: z.string().optional(),
@@ -65,7 +66,7 @@ const profileDetailsSchema = z.object({
   // Verification
   verificationStatus: z.string().optional(),
   verificationDoc: z.string().optional(),
-});
+}).passthrough(); // allow extra unknown fields to pass without failing
 
 const pwdProfileSchema = z.object({
   username: z.string().min(3).max(20).optional(),

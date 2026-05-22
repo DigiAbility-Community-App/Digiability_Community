@@ -19,6 +19,8 @@ type UserProfilePayload = {
   gender?: string;
   city?: string;
   state?: string;
+  pincode?: string;
+  area?: string;
 };
 
 function isConflictError(error: unknown) {
