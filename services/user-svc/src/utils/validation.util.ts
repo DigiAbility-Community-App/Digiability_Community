@@ -52,7 +52,7 @@ export const ResetPasswordSchema = z.object({
 });
 
 export const UpdateRoleSchema = z.object({
-  role: z.enum(["pwd", "caregiver", "therapist", "ngo", "other"]),
+  role: z.enum(["pwd", "caregiver", "therapist", "ngo", "volunteer", "student"]),
 });
 
 export const VerifyOtpSchema = z.object({

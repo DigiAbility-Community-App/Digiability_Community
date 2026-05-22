@@ -4,44 +4,40 @@ import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import HomeScreen from '@screens/home/HomeScreen';
 import RoleSelectionScreen from '@screens/auth/RoleSelection';
 import AccessibilityScreen from '@screens/auth/AccessibilityScreen';
-import PWDProfileScreen from '@screens/profile/PWDProfileScreen';
-import CaregiverProfileScreen from '@screens/profile/CaregiverProfileScreen';
-import EducatorProfileScreen from '@screens/profile/EducatorProfileScreen';
-import NGOProfileScreen from '@screens/profile/NGOProfileScreen';
-import ChatsStack from './ChatsStack';
+import ProfileScreen from '@screens/profile/ProfileScreen';
+import ProfileDetailsScreen from '@screens/profile/ProfileDetailsScreen';
+import CareCircleScreen from '@screens/profile/CareCircleScreen';
 import { useAuthStore } from '@store/authStore';
 import { hasCompletedAccessibility } from '@services/storageService';
-import { getProfileRouteForRole, isOnboardingRole } from './onboarding';
 
 export type MainStackParamList = {
   Home: undefined;
   Accessibility: undefined;
   RoleSelection: undefined;
-  PWDProfile: undefined;
-  CaregiverProfile: undefined;
-  EducatorProfile: undefined;
-  NGOProfile: undefined;
-  Chats: undefined;
+  Profile: undefined;
+  ProfileDetails: undefined;
+  CareCircle: undefined;
+
 };
 
 const Stack = createNativeStackNavigator<MainStackParamList>();
 
-function getFallbackRoute(user: ReturnType<typeof useAuthStore.getState>['user']):
-  keyof MainStackParamList {
-  if (!user) {
-    return 'Home';
-  }
-
-  if (!user.role) {
-    return 'RoleSelection';
-  }
-
-  if (!user.profileComplete) {
-    return isOnboardingRole(user.role)
-      ? getProfileRouteForRole(user.role)
-      : 'Accessibility';
-  }
-
+/**
+ * Determine the initial route synchronously based on known user state.
+ * Async check (accessibility) is handled in the useEffect below.
+ *
+ * Priority order:
+ *   1. No role        → RoleSelection
+ *   2. No profile     → Profile
+ *   3. Default        → Accessibility (will be upgraded to Home async)
+ */
+function getFallbackRoute(
+  user: ReturnType<typeof useAuthStore.getState>['user']
+): keyof MainStackParamList {
+  if (!user) return 'Home';
+  if (!user.role) return 'RoleSelection';
+  if (!user.profileComplete) return 'Profile';
+  // Will be resolved to 'Home' after async accessibility check
   return 'Accessibility';
 }
 
@@ -55,19 +51,19 @@ const MainNavigator = () => {
     let isMounted = true;
 
     const resolveInitialRoute = async () => {
-      const fallbackRoute = getFallbackRoute(user);
-      if (isMounted) {
-        setInitialRoute(fallbackRoute);
-      }
-
+      // If user hasn't set role or profile, use sync route immediately.
       if (!user?.id || !user.role || !user.profileComplete) {
+        if (isMounted) {
+          setInitialRoute(getFallbackRoute(user));
+        }
         return;
       }
 
+      // Profile complete — check if accessibility has been configured.
       try {
-        const accessibilityCompleted = await hasCompletedAccessibility(user.id);
+        const accessibilityDone = await hasCompletedAccessibility(user.id);
         if (isMounted) {
-          setInitialRoute(accessibilityCompleted ? 'Home' : 'Accessibility');
+          setInitialRoute(accessibilityDone ? 'Home' : 'Accessibility');
         }
       } catch {
         if (isMounted) {
@@ -89,12 +85,11 @@ const MainNavigator = () => {
       initialRouteName={initialRoute}
       screenOptions={{ headerShown: false }}
     >
-      <Stack.Screen name="RoleSelection" component={RoleSelectionScreen} />
       <Stack.Screen name="Accessibility" component={AccessibilityScreen} />
-      <Stack.Screen name="PWDProfile" component={PWDProfileScreen} />
-      <Stack.Screen name="CaregiverProfile" component={CaregiverProfileScreen} />
-      <Stack.Screen name="EducatorProfile" component={EducatorProfileScreen} />
-      <Stack.Screen name="NGOProfile" component={NGOProfileScreen} />
+      <Stack.Screen name="RoleSelection" component={RoleSelectionScreen} />
+      <Stack.Screen name="Profile" component={ProfileScreen} />
+      <Stack.Screen name="ProfileDetails" component={ProfileDetailsScreen} />
+      <Stack.Screen name="CareCircle" component={CareCircleScreen} />
       <Stack.Screen name="Home" component={HomeScreen} />
       <Stack.Screen name="Chats" component={ChatsStack} />
     </Stack.Navigator>
@@ -102,3 +97,12 @@ const MainNavigator = () => {
 };
 
 export default MainNavigator;
+
+const styles = StyleSheet.create({
+  loader: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F6F6F6',
+  },
+});

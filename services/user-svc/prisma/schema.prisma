@@ -19,33 +19,31 @@ enum Role {
   caregiver
   therapist
   ngo
-  other
+  volunteer
+  student
 }
 
 // ─────────────────────────────────────────────
 // USER
 // ─────────────────────────────────────────────
 model User {
-  id              String   @id @default(uuid())
+  id              String    @id @default(uuid())
   name            String
-  email           String   @unique
+  email           String    @unique
   password        String
   phoneNo         String?
   lastSeen        DateTime?
-  isEmailVerified Boolean  @default(false)
+  isEmailVerified Boolean   @default(false)
   role            Role?
-  profileComplete Boolean  @default(false)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  profileComplete Boolean   @default(false)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   // Relations
-  refreshTokens            RefreshToken[]
-  emailVerificationOtps    EmailVerificationOtp[]
-  passwordResetTokens      PasswordResetToken[]
-  pwdProfile               PWDProfile?
-  caregiverProfile         CaregiverProfile?
-  therapistProfile         TherapistProfile?
-  ngoProfile               NGOProfile?
+  refreshTokens           RefreshToken[]
+  emailVerificationTokens EmailVerificationToken[]
+  passwordResetTokens     PasswordResetToken[]
+  userProfile             UserProfile?
 
   @@index([email])
   @@index([role])
@@ -53,147 +51,71 @@ model User {
 }
 
 // ─────────────────────────────────────────────
-// PWD PROFILE (Person with Disability)
+// USER PROFILE
+// One profile per user. Role is stored on User.role
+// (pwd, caregiver, therapist, ngo, volunteer, student).
+// All users fill the same profile form.
 // ─────────────────────────────────────────────
-model PWDProfile {
-  id              String   @id @default(uuid())
-  userId          String   @unique
-  username        String?  @unique
-  dob             DateTime?
-  disabilityType  String?  // Visual, Hearing, Physical, Cognitive, Multiple, etc.
-  disabilitySince Int?     // Year
-  
-  // Address
-  houseNo         String?
-  street          String?
-  city            String?
-  district        String?
-  state           String?
-  
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
+model UserProfile {
+  id        String    @id @default(uuid())
+  userId    String    @unique
+  username  String?   @unique
+  fullName  String?
+  dob       DateTime?
+  gender    String?
+  city      String?
+  state     String?
+
+  // PwD Fields
+  disabilityType  String?
+  disabilitySince Int?
+  supportNeeded   String?
+
+  // Caregiver Fields
+  carePersonName     String?
+  careRelation       String?
+  careDob            DateTime?
+  careDisabilityType String?
+
+  // Therapist Fields
+  speciality        String?
+  organization      String?
+  yearsOfExperience Int?
+
+  // NGO Fields
+  ngoName           String?
+  ngoRole           String?
+  district          String?
+
+  // Verification (for Therapist / NGO roles)
+  verificationStatus String?  @default("pending") // pending, verified, rejected
+  verificationDoc    String?  // URL to uploaded document
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   @@index([userId])
   @@index([username])
-  @@map("pwd_profiles")
+  @@map("user_profiles")
 }
 
 // ─────────────────────────────────────────────
-// CAREGIVER PROFILE (Parent/Caregiver)
+// EMAIL VERIFICATION TOKEN
 // ─────────────────────────────────────────────
-model CaregiverProfile {
-  id              String   @id @default(uuid())
-  userId          String   @unique
-  
-  // Person they care for
-  careeName       String?
-  relation        String?  // Son, Daughter, Father, Mother, etc.
-  careeDob        DateTime?
-  careDisability  String?
-  careSince       Int?     // Year
-  
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
-  @@index([userId])
-  @@map("caregiver_profiles")
-}
-
-// ─────────────────────────────────────────────
-// THERAPIST PROFILE (Educator/Therapist)
-// ─────────────────────────────────────────────
-model TherapistProfile {
-  id                  String   @id @default(uuid())
-  userId              String   @unique
-  username            String?  @unique
-  dob                 DateTime?
-  
-  // Professional Info
-  specialty           String?
-  institution         String?
-  yearsOfExperience   Int?
-  
-  // Focus Areas (Disabilities they work with)
-  focusAreas          String[] @default([]) // Visual, Hearing, Physical, Cognitive, Multiple
-  
-  // Location
-  city                String?
-  district            String?
-  state               String?
-  
-  verificationStatus  String?  @default("pending") // pending, verified, rejected
-  verificationDoc     String?  // URL to uploaded document
-  
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
-  
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
-  @@index([userId])
-  @@index([username])
-  @@index([verificationStatus])
-  @@map("therapist_profiles")
-}
-
-// ─────────────────────────────────────────────
-// NGO PROFILE (Organization)
-// ─────────────────────────────────────────────
-model NGOProfile {
-  id                  String   @id @default(uuid())
-  userId              String   @unique
-  
-  // Organization Info
-  contactPersonName   String?
-  username            String?  @unique
-  organizationName    String?
-  registrationNumber  String?
-  organizationType    String?  // Trust, NGO, Foundation, Company, etc.
-  
-  // Services Offered
-  servicesOffered     String[] @default([]) // Therapy, Education, Training, Assistive Tech, Counselling, Other
-  
-  // Location
-  city                String?
-  pincode             String?
-  
-  // Additional
-  website             String?
-  
-  verificationStatus  String?  @default("pending") // pending, verified, rejected
-  verificationDoc     String?  // URL to uploaded document
-  
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
-  
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
-  @@index([userId])
-  @@index([username])
-  @@index([verificationStatus])
-  @@map("ngo_profiles")
-}
-
-// ─────────────────────────────────────────────
-// EMAIL VERIFICATION OTP
-// ─────────────────────────────────────────────
-model EmailVerificationOtp {
-  id          String   @id @default(uuid())
-  userId      String
-  otpHash     String   // SHA-256 hash of 6-digit OTP
-  attempts    Int      @default(0)  // track failed verification attempts
-  maxAttempts Int      @default(5)  // lock after N failures
-  expiresAt   DateTime
-  createdAt   DateTime @default(now())
+model EmailVerificationToken {
+  id        String   @id @default(uuid())
+  userId    String
+  token     String   // stored as SHA-256 hash
+  expiresAt DateTime
+  createdAt DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
-  @@index([otpHash])
-  @@map("email_verification_otps")
+  @@index([token])
+  @@map("email_verification_tokens")
 }
 
 // ─────────────────────────────────────────────

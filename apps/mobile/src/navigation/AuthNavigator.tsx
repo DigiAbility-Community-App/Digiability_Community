@@ -2,17 +2,18 @@ import React from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import WelcomeScreen from '@screens/auth/WelcomeScreen';
 import SplashScreen from '@screens/auth/SplashScreen';
-import OtpScreen from '@screens/auth/OtpScreen';
-import { useAuthStore } from '@store/authStore';
 
 // ─────────────────────────────────────────────────────────
-// Auth Navigator (email/password + OTP verification flow)
+// Auth Navigator (email/password flow)
+//
+// Screens:
+//   Splash   → animated brand screen
+//   Welcome  → Sign Up (name/email/password) + Login tabs
 // ─────────────────────────────────────────────────────────
 
 export type AuthStackParamList = {
   Splash: undefined;
   Welcome: undefined;
-  Otp: { email: string; name: string };
 };
 
 const Stack = createNativeStackNavigator<AuthStackParamList>();
@@ -34,11 +35,6 @@ const AuthNavigator = () => {
     >
       <Stack.Screen name="Splash" component={SplashScreen} />
       <Stack.Screen name="Welcome" component={WelcomeScreen} />
-      <Stack.Screen 
-        name="Otp" 
-        component={OtpScreen} 
-        initialParams={initialParams}
-      />
     </Stack.Navigator>
   );
 };
