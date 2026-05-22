@@ -13,8 +13,10 @@ import { initSocket, closeSocket } from '@services/socketService';
 // RootNavigator
 // Reactively switches between Auth and Main stacks based on
 // in-memory auth state (Zustand). When isAuthenticated flips
-// to true (after login) or false (after logout), React
-// Navigation automatically re-renders the correct stack.
+// to true (after login/signup) the user goes directly to the
+// Main stack where the onboarding flow begins:
+//   Accessibility → RoleSelection → Profile → ProfileDetails
+//   → CareCircle → Home
 // ─────────────────────────────────────────────────────────
 
 export type RootStackParamList = {
@@ -86,7 +88,7 @@ const RootNavigator = () => {
 
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
-      {isAuthenticated && user?.isEmailVerified ? (
+      {isAuthenticated ? (
         <Stack.Screen name="Main" component={MainNavigator} />
       ) : (
         <Stack.Screen name="Auth" component={AuthNavigator} />

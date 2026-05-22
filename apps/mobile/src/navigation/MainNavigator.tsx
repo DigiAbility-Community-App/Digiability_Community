@@ -7,6 +7,7 @@ import AccessibilityScreen from '@screens/auth/AccessibilityScreen';
 import ProfileScreen from '@screens/profile/ProfileScreen';
 import ProfileDetailsScreen from '@screens/profile/ProfileDetailsScreen';
 import CareCircleScreen from '@screens/profile/CareCircleScreen';
+import ChatsStack from './ChatsStack';
 import { useAuthStore } from '@store/authStore';
 import { hasCompletedAccessibility } from '@services/storageService';
 
@@ -17,27 +18,29 @@ export type MainStackParamList = {
   Profile: undefined;
   ProfileDetails: undefined;
   CareCircle: undefined;
-
+  Chats: undefined;
 };
 
 const Stack = createNativeStackNavigator<MainStackParamList>();
 
 /**
  * Determine the initial route synchronously based on known user state.
- * Async check (accessibility) is handled in the useEffect below.
+ * Async accessibility check is done in the useEffect below.
  *
- * Priority order:
- *   1. No role        → RoleSelection
- *   2. No profile     → Profile
- *   3. Default        → Accessibility (will be upgraded to Home async)
+ * Priority order for new/incomplete users:
+ *   1. No role        → Accessibility  (first step of onboarding)
+ *   2. Has role, no profile → Profile  (accessibility was already done)
+ *   3. Complete user  → Accessibility  (will be upgraded to Home async)
  */
 function getFallbackRoute(
   user: ReturnType<typeof useAuthStore.getState>['user']
 ): keyof MainStackParamList {
   if (!user) return 'Home';
-  if (!user.role) return 'RoleSelection';
+  // New user — no role chosen yet: start the full onboarding from Accessibility
+  if (!user.role) return 'Accessibility';
+  // Has role but profile not complete: skip back to Profile
   if (!user.profileComplete) return 'Profile';
-  // Will be resolved to 'Home' after async accessibility check
+  // Returning user: will be resolved to 'Home' after async accessibility check
   return 'Accessibility';
 }
 
@@ -51,24 +54,33 @@ const MainNavigator = () => {
     let isMounted = true;
 
     const resolveInitialRoute = async () => {
-      // If user hasn't set role or profile, use sync route immediately.
-      if (!user?.id || !user.role || !user.profileComplete) {
-        if (isMounted) {
-          setInitialRoute(getFallbackRoute(user));
-        }
+      if (!user?.id) {
+        if (isMounted) setInitialRoute('Home');
         return;
       }
 
-      // Profile complete — check if accessibility has been configured.
+      // New user — no role yet: always start at Accessibility.
+      // AccessibilityScreen.continueToNext() will push to RoleSelection.
+      if (!user.role) {
+        if (isMounted) setInitialRoute('Accessibility');
+        return;
+      }
+
+      // Has role but profile not complete: go straight to Profile.
+      // They have already completed Accessibility in a previous session.
+      if (!user.profileComplete) {
+        if (isMounted) setInitialRoute('Profile');
+        return;
+      }
+
+      // Fully onboarded — check if accessibility preferences exist.
       try {
         const accessibilityDone = await hasCompletedAccessibility(user.id);
         if (isMounted) {
           setInitialRoute(accessibilityDone ? 'Home' : 'Accessibility');
         }
       } catch {
-        if (isMounted) {
-          setInitialRoute('Accessibility');
-        }
+        if (isMounted) setInitialRoute('Accessibility');
       }
     };
 

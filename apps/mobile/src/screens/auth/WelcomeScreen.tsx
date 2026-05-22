@@ -115,11 +115,9 @@ const WelcomeScreen = ({ navigation }: Props) => {
         email: trimmedEmail,
         password: trimmedPassword,
       });
-      // Navigate to OTP screen for email verification
-      navigation.navigate('Otp', {
-        email: signUpEmail.trim().toLowerCase(),
-        name: name.trim(),
-      });
+      // register() calls setAuth() in the auth store → isAuthenticated flips
+      // to true → RootNavigator auto-switches to Main stack (Accessibility first).
+      // No manual navigation required.
     } catch (err: unknown) {
       console.error("[SignUpError]", err);
       setError(getApiErrorMessage(err, "Registration failed."));

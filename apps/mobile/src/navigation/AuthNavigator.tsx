@@ -4,11 +4,13 @@ import WelcomeScreen from '@screens/auth/WelcomeScreen';
 import SplashScreen from '@screens/auth/SplashScreen';
 
 // ─────────────────────────────────────────────────────────
-// Auth Navigator (email/password flow)
+// Auth Navigator
 //
-// Screens:
-//   Splash   → animated brand screen
-//   Welcome  → Sign Up (name/email/password) + Login tabs
+// Flow: Splash → Welcome (Sign Up / Login)
+//
+// After a successful signup or login the auth store sets
+// isAuthenticated = true and RootNavigator automatically
+// switches to the Main stack (Accessibility first).
 // ─────────────────────────────────────────────────────────
 
 export type AuthStackParamList = {
@@ -19,18 +21,9 @@ export type AuthStackParamList = {
 const Stack = createNativeStackNavigator<AuthStackParamList>();
 
 const AuthNavigator = () => {
-  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
-  const user = useAuthStore((s) => s.user);
-
-  // If user is authenticated but not verified, jump straight to OTP
-  const initialRoute = (isAuthenticated && user && !user.isEmailVerified) ? 'Otp' : 'Splash';
-
-  // We provide default params for Otp if they jump straight there from a restored session
-  const initialParams = initialRoute === 'Otp' ? { email: user!.email, name: user!.name } : undefined;
-
   return (
     <Stack.Navigator
-      initialRouteName={initialRoute}
+      initialRouteName="Splash"
       screenOptions={{ headerShown: false }}
     >
       <Stack.Screen name="Splash" component={SplashScreen} />
