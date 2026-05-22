@@ -2,5 +2,43 @@
   "name": "@digiability/chat-svc",
   "version": "1.0.0",
   "private": true,
-  "description": "Chat microservice (placeholder)"
+  "description": "Realtime Chat Microservice — WebSocket gateway, message lifecycle, delivery",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "worker:msg": "ts-node-dev --respawn --transpile-only src/workers/msg-svc.worker.ts",
+    "worker:delivery": "ts-node-dev --respawn --transpile-only src/workers/delivery.worker.ts",
+    "worker:msg:start": "node dist/workers/msg-svc.worker.js",
+    "worker:delivery:start": "node dist/workers/delivery.worker.js",
+    "worker:bot": "ts-node-dev --respawn --transpile-only src/workers/bot.worker.ts",
+    "worker:bot:start": "node dist/workers/bot.worker.js",
+    "db:generate": "prisma generate --schema=./prisma/schema.prisma",
+    "db:migrate": "prisma migrate dev --schema=./prisma/schema.prisma",
+    "db:push": "prisma db push --schema=./prisma/schema.prisma",
+    "db:studio": "prisma studio --schema=./prisma/schema.prisma"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.14.0",
+    "cassandra-driver": "^4.7.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "ioredis": "^5.4.1",
+    "jsonwebtoken": "^9.0.2",
+    "ulid": "^2.3.0",
+    "ws": "^8.17.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/jsonwebtoken": "^9.0.6",
+    "@types/node": "^20.14.0",
+    "@types/ws": "^8.5.10",
+    "prisma": "^5.14.0",
+    "ts-node-dev": "^2.0.0",
+    "typescript": "^5.4.5"
+  }
 }

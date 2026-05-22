@@ -24,7 +24,15 @@ function getTransporter(): Transporter {
 
 // ─── HTML Email Templates ──────────────────────────────
 
-function verificationEmailHTML(verifyUrl: string, name: string): string {
+function otpVerificationEmailHTML(otp: string, name: string): string {
+  const digits = otp.split("");
+  const digitBoxes = digits
+    .map(
+      (d) =>
+        `<td style="width:48px;height:56px;background:#f0ecfa;border-radius:10px;text-align:center;font-size:28px;font-weight:800;color:#500088;letter-spacing:2px;border:2px solid #e0d4f5;">${d}</td>`
+    )
+    .join('<td style="width:8px;"></td>');
+
   return `
   <!DOCTYPE html>
   <html lang="en">
@@ -47,20 +55,20 @@ function verificationEmailHTML(verifyUrl: string, name: string): string {
           <!-- Body -->
           <tr>
             <td style="padding:40px;">
-              <h2 style="color:#1e1b4b;margin:0 0 16px;font-size:20px;">Hey ${name}, confirm your email 👋</h2>
+              <h2 style="color:#1e1b4b;margin:0 0 16px;font-size:20px;">Hey ${name}, verify your email 👋</h2>
               <p style="color:#4b5563;line-height:1.7;margin:0 0 24px;">
-                Thanks for signing up! Click the button below to verify your email address and get started. This link expires in <strong>24 hours</strong>.
+                Thanks for signing up! Use the verification code below to confirm your email address. This code expires in <strong>10 minutes</strong>.
               </p>
               <div style="text-align:center;margin:32px 0;">
-                <a href="${verifyUrl}"
-                   style="display:inline-block;padding:14px 32px;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;text-decoration:none;border-radius:8px;font-size:16px;font-weight:600;">
-                  ✓ Verify Email Address
-                </a>
+                <table cellpadding="0" cellspacing="0" style="margin:0 auto;">
+                  <tr>${digitBoxes}</tr>
+                </table>
               </div>
+              <p style="color:#4b5563;text-align:center;font-size:14px;margin:0 0 24px;">
+                Enter this code in the app to verify your account.
+              </p>
               <p style="color:#9ca3af;font-size:13px;line-height:1.6;margin:0;">
-                If you didn't create an account, you can safely ignore this email.<br/>
-                If the button doesn't work, copy this link:<br/>
-                <a href="${verifyUrl}" style="color:#6366f1;word-break:break-all;">${verifyUrl}</a>
+                If you didn't create an account, you can safely ignore this email.
               </p>
             </td>
           </tr>
@@ -135,26 +143,23 @@ function resetPasswordEmailHTML(resetUrl: string, name: string): string {
 // ─── Public API ────────────────────────────────────────
 
 /**
- * Send account verification email.
+ * Send account verification OTP email.
  */
-export async function sendVerificationEmail(
+export async function sendVerificationOtpEmail(
   to: string,
   name: string,
-  rawToken: string
+  otp: string
 ): Promise<void> {
-  const baseUrl = process.env.CLIENT_BASE_URL ?? "http://localhost:3000";
-  const verifyUrl = `${baseUrl}/verify-email?token=${rawToken}`;
-
-  // Log link to console in development so you don't have to check Mailtrap
+  // Log OTP to console in development so you don't have to check email
   if (process.env.NODE_ENV === "development") {
-    console.log(`\n[EmailService / DEV] Verification Link for ${to}:\n${verifyUrl}\n`);
+    console.log(`\n[EmailService / DEV] Verification OTP for ${to}: ${otp}\n`);
   }
 
   await getTransporter().sendMail({
     from: process.env.EMAIL_FROM,
     to,
-    subject: "Verify your Digiability account",
-    html: verificationEmailHTML(verifyUrl, name),
+    subject: `${otp} — Verify your Digiability account`,
+    html: otpVerificationEmailHTML(otp, name),
   });
 }
 
@@ -181,3 +186,4 @@ export async function sendPasswordResetEmail(
     html: resetPasswordEmailHTML(resetUrl, name),
   });
 }
+

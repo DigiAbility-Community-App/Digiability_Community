@@ -7,11 +7,13 @@ import {
   ScrollView,
   TouchableOpacity,
 } from "react-native";
+import { useNavigation } from "@react-navigation/native";
 import { logout } from "@services/authService";
 import { useAuthStore } from "@store/authStore";
 
 const HomeScreen = () => {
   const user = useAuthStore((s) => s.user);
+  const navigation = useNavigation<any>();
 
   const handleLogout = async () => {
     await logout();
@@ -101,10 +103,18 @@ const HomeScreen = () => {
 
       {/* BOTTOM NAV */}
       <View style={styles.navbar}>
-        <Text style={styles.activeTab}>Home</Text>
-        <Text style={styles.tab}>Explore</Text>
-        <Text style={styles.tab}>Chat</Text>
-        <Text style={styles.tab}>Profile</Text>
+        <TouchableOpacity>
+          <Text style={styles.activeTab}>Home</Text>
+        </TouchableOpacity>
+        <TouchableOpacity>
+          <Text style={styles.tab}>Explore</Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={() => navigation.navigate('Chats')}>
+          <Text style={styles.tab}>Chat</Text>
+        </TouchableOpacity>
+        <TouchableOpacity>
+          <Text style={styles.tab}>Profile</Text>
+        </TouchableOpacity>
       </View>
     </SafeAreaView>
   );

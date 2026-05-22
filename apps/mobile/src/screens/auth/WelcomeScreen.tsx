@@ -186,6 +186,11 @@ const WelcomeScreen = ({ navigation }: Props) => {
         email: trimmedEmail,
         password: trimmedPassword,
       });
+      // Navigate to OTP screen for email verification
+      navigation.navigate('Otp', {
+        email: signUpEmail.trim().toLowerCase(),
+        name: name.trim(),
+      });
     } catch (err: unknown) {
       console.error("[SignUpError]", err);
       setSignUpGeneralError(getApiErrorMessage(err, "Registration failed."));

@@ -91,6 +91,7 @@ const MainNavigator = () => {
       <Stack.Screen name="ProfileDetails" component={ProfileDetailsScreen} />
       <Stack.Screen name="CareCircle" component={CareCircleScreen} />
       <Stack.Screen name="Home" component={HomeScreen} />
+      <Stack.Screen name="Chats" component={ChatsStack} />
     </Stack.Navigator>
   );
 };
