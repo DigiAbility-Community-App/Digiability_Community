@@ -73,17 +73,36 @@ const WelcomeScreen = ({ navigation }: Props) => {
   const handleSignUp = async () => {
     clearError();
 
-    if (!name.trim() || !signUpEmail.trim() || !signUpPassword.trim()) {
+    const trimmedName = name.trim();
+    const trimmedEmail = signUpEmail.trim().toLowerCase();
+    const trimmedPassword = signUpPassword.trim();
+
+    if (!trimmedName || !trimmedEmail || !trimmedPassword) {
       setError("Please fill in all fields.");
       return;
     }
 
-    if (signUpPassword.length < 8) {
+    if (trimmedName.length < 2) {
+      setError("Name must be at least 2 characters.");
+      return;
+    }
+
+    if (!/^[a-zA-Z\s'-]{2,100}$/.test(trimmedName)) {
+      setError("Name may only contain letters, spaces, hyphens, or apostrophes.");
+      return;
+    }
+
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+      setError("Please enter a valid email address.");
+      return;
+    }
+
+    if (trimmedPassword.length < 8) {
       setError("Password must be at least 8 characters.");
       return;
     }
 
-    if (!/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/.test(signUpPassword)) {
+    if (!/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/.test(trimmedPassword)) {
       setError("Password must include uppercase, lowercase, and a number.");
       return;
     }
@@ -92,9 +111,9 @@ const WelcomeScreen = ({ navigation }: Props) => {
 
     try {
       await register({
-        name: name.trim(),
-        email: signUpEmail.trim().toLowerCase(),
-        password: signUpPassword,
+        name: trimmedName,
+        email: trimmedEmail,
+        password: trimmedPassword,
       });
     } catch (err: unknown) {
       console.error("[SignUpError]", err);

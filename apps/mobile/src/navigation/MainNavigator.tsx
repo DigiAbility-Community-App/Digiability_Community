@@ -17,6 +17,7 @@ export type MainStackParamList = {
   Profile: undefined;
   ProfileDetails: undefined;
   CareCircle: undefined;
+
 };
 
 const Stack = createNativeStackNavigator<MainStackParamList>();

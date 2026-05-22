@@ -90,8 +90,10 @@ export async function registerUser(input: RegisterInput): Promise<LoginResult> {
 
   const hashedPassword = await hashPassword(password);
 
+  const dbRole = role ? (role as Role) : null;
+
   const user = await prisma.user.create({
-    data: { name, email, password: hashedPassword, role },
+    data: { name, email, password: hashedPassword, role: dbRole },
   });
 
   const rawToken = await createEmailVerificationToken(user.id);
@@ -227,8 +229,6 @@ export async function getCurrentUser(userId: string) {
   if (!user) throw new Error("User not found");
   return user;
 }
-
-// ─── Update User Role ──────────────────────────────────
 
 export async function updateUserRole(userId: string, input: UpdateRoleInput) {
   const user = await prisma.user.update({

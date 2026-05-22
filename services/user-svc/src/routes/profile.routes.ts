@@ -12,10 +12,6 @@ import {
 
 const router = Router();
 
-// ─────────────────────────────────────────────
-// MIDDLEWARE
-// ─────────────────────────────────────────────
-
 // Ensure all profile routes are authenticated
 router.use(authenticate);
 
@@ -28,9 +24,52 @@ const getUserIdFromAuthToken = (req: Request): string => {
 // VALIDATION SCHEMAS
 // ─────────────────────────────────────────────
 
+const USERNAME_REGEX = /^[a-z0-9_.]{3,20}$/;
+
+const basicProfileSchema = z.object({
+  username: z
+    .string()
+    .min(3, 'Username must be at least 3 characters')
+    .max(20, 'Username must be at most 20 characters')
+    .regex(USERNAME_REGEX, 'Username may only contain lowercase letters, numbers, underscores, and dots')
+    .optional(),
+  fullName: z.string().min(2, 'Full name must be at least 2 characters').optional(),
+  dob: z.string().optional(),
+  gender: z.string().optional(),
+  city: z.string().optional(),
+  state: z.string().optional(),
+});
+
+const profileDetailsSchema = z.object({
+  // PwD Fields
+  disabilityType: z.string().optional(),
+  disabilitySince: z.number().optional().or(z.string().optional()),
+  supportNeeded: z.string().optional(),
+
+  // Caregiver Fields
+  carePersonName: z.string().optional(),
+  careRelation: z.string().optional(),
+  careDob: z.string().optional(),
+  careDisabilityType: z.string().optional(),
+
+  // Therapist Fields
+  speciality: z.string().optional(),
+  organization: z.string().optional(),
+  yearsOfExperience: z.number().optional().or(z.string().optional()),
+
+  // NGO Fields
+  ngoName: z.string().optional(),
+  ngoRole: z.string().optional(),
+  district: z.string().optional(),
+
+  // Verification
+  verificationStatus: z.string().optional(),
+  verificationDoc: z.string().optional(),
+});
+
 const pwdProfileSchema = z.object({
   username: z.string().min(3).max(20).optional(),
-  dob: z.string().datetime().optional(),
+  dob: z.string().optional(),
   disabilityType: z.string().optional(),
   disabilitySince: z.number().min(1900).max(new Date().getFullYear()).optional(),
   houseNo: z.string().optional(),
@@ -43,14 +82,14 @@ const pwdProfileSchema = z.object({
 const caregiverProfileSchema = z.object({
   careeName: z.string().optional(),
   relation: z.string().optional(),
-  careeDob: z.string().datetime().optional(),
+  careeDob: z.string().optional(),
   careDisability: z.string().optional(),
   careSince: z.number().min(1900).max(new Date().getFullYear()).optional(),
 });
 
 const therapistProfileSchema = z.object({
   username: z.string().min(3).max(20).optional(),
-  dob: z.string().datetime().optional(),
+  dob: z.string().optional(),
   specialty: z.string().optional(),
   institution: z.string().optional(),
   yearsOfExperience: z.number().min(0).optional(),
@@ -75,27 +114,45 @@ const ngoProfileSchema = z.object({
 });
 
 // ─────────────────────────────────────────────
-// PWD PROFILE ROUTES
+// UNIFIED PROFILE ENDPOINTS
 // ─────────────────────────────────────────────
 
-// POST /api/users/profiles/pwd - Create PWD profile
-router.post('/pwd', validate(pwdProfileSchema), async (req: Request, res: Response) => {
+// GET /api/users/profile/check-username?username=... - Real-time availability check
+router.get('/check-username', async (req: Request, res: Response) => {
   try {
-    const userId = getUserIdFromAuthToken(req);
-    
-    // Check if profile already exists
-    const existingProfile = await pwdProfileService.findByUserId(userId);
-    if (existingProfile) {
-      return res.status(409).json({
+    const username = (req.query.username as string ?? '').toLowerCase().trim();
+
+    if (!username || !USERNAME_REGEX.test(username)) {
+      return res.status(400).json({
         success: false,
-        message: 'PWD profile already exists for this user',
+        available: false,
+        message: 'Invalid username format. Use 3–20 lowercase letters, numbers, underscores, or dots.',
       });
     }
 
-    // Check username uniqueness
+    const userId = getUserIdFromAuthToken(req);
+    const existing = await profileService.findByUsername(username);
+    const available = !existing || existing.userId === userId;
+
+    return res.json({
+      success: true,
+      available,
+      message: available ? 'Username is available' : 'Username is already taken',
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message || 'Failed to check username' });
+  }
+});
+
+// POST /api/users/profile - Create basic profile
+router.post('/', validate(basicProfileSchema), async (req: Request, res: Response) => {
+  try {
+    const userId = getUserIdFromAuthToken(req);
+    
+    // Check username uniqueness if provided
     if (req.body.username) {
-      const existingUsername = await pwdProfileService.findByUsername(req.body.username);
-      if (existingUsername) {
+      const existingUsername = await profileService.findByUsername(req.body.username);
+      if (existingUsername && existingUsername.userId !== userId) {
         return res.status(409).json({
           success: false,
           message: 'Username already taken',
@@ -103,639 +160,417 @@ router.post('/pwd', validate(pwdProfileSchema), async (req: Request, res: Respon
       }
     }
 
-    const profile = await pwdProfileService.create(userId, req.body);
-    await profileService.markAsComplete(userId);
-    
+    const profile = await profileService.upsertBasicProfile(userId, req.body);
     res.status(201).json({
       success: true,
       data: profile,
-      message: 'PWD profile created successfully',
+      message: 'Basic profile created successfully',
     });
   } catch (error: any) {
     res.status(500).json({
       success: false,
-      message: error.message || 'Failed to create PWD profile',
+      message: error.message || 'Failed to create basic profile',
     });
   }
 });
 
-// GET /api/users/profiles/pwd/me - Get current user's PWD profile
+// PUT /api/users/profile - Update basic profile
+router.put('/', validate(basicProfileSchema), async (req: Request, res: Response) => {
+  try {
+    const userId = getUserIdFromAuthToken(req);
+    
+    // Check username uniqueness if provided
+    if (req.body.username) {
+      const existingUsername = await profileService.findByUsername(req.body.username);
+      if (existingUsername && existingUsername.userId !== userId) {
+        return res.status(409).json({
+          success: false,
+          message: 'Username already taken',
+        });
+      }
+    }
+
+    const profile = await profileService.upsertBasicProfile(userId, req.body);
+    res.json({
+      success: true,
+      data: profile,
+      message: 'Basic profile updated successfully',
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to update basic profile',
+    });
+  }
+});
+
+// Helper — check whether role-specific required fields are provided for markAsComplete
+function hasRequiredRoleFields(role: string | undefined | null, body: Record<string, any>): boolean {
+  if (!role) return false;
+  switch (role) {
+    case 'pwd':       return !!body.disabilityType;
+    case 'caregiver': return !!body.carePersonName;
+    case 'therapist': return !!body.speciality;
+    case 'ngo':       return !!body.ngoName;
+    // volunteer and student have no required role-specific fields
+    case 'volunteer':
+    case 'student':   return true;
+    default:          return false;
+  }
+}
+
+// POST /api/users/profile/details - Create/update role-specific profile details
+router.post('/details', validate(profileDetailsSchema), async (req: Request, res: Response) => {
+  try {
+    const userId = getUserIdFromAuthToken(req);
+    const profile = await profileService.upsertProfileDetails(userId, req.body);
+
+    // Only mark complete when the user's role fields are actually present
+    const userRecord = await profileService.getUserWithProfile(userId);
+    if (hasRequiredRoleFields(userRecord?.role, req.body)) {
+      await profileService.markAsComplete(userId);
+    }
+
+    res.status(201).json({
+      success: true,
+      data: profile,
+      message: 'Profile details saved successfully',
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to save profile details',
+    });
+  }
+});
+
+// PUT /api/users/profile/details - Update role-specific profile details
+router.put('/details', validate(profileDetailsSchema), async (req: Request, res: Response) => {
+  try {
+    const userId = getUserIdFromAuthToken(req);
+    const profile = await profileService.upsertProfileDetails(userId, req.body);
+
+    const userRecord = await profileService.getUserWithProfile(userId);
+    if (hasRequiredRoleFields(userRecord?.role, req.body)) {
+      await profileService.markAsComplete(userId);
+    }
+
+    res.json({
+      success: true,
+      data: profile,
+      message: 'Profile details updated successfully',
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to update profile details',
+    });
+  }
+});
+
+// GET /api/users/profile/me - Get current user's profile
+router.get('/me', async (req: Request, res: Response) => {
+  try {
+    const userId = getUserIdFromAuthToken(req);
+    const profile = await profileService.findByUserId(userId);
+    if (!profile) {
+      return res.status(404).json({
+        success: false,
+        message: 'Profile not found',
+      });
+    }
+    res.json({
+      success: true,
+      data: profile,
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to fetch profile',
+    });
+  }
+});
+
+// ─────────────────────────────────────────────
+// COMPATIBILITY ENDPOINTS (PWD)
+// ─────────────────────────────────────────────
+
+router.post('/pwd', validate(pwdProfileSchema), async (req: Request, res: Response) => {
+  try {
+    const userId = getUserIdFromAuthToken(req);
+    if (req.body.username) {
+      const existingUsername = await pwdProfileService.findByUsername(req.body.username);
+      if (existingUsername && existingUsername.userId !== userId) {
+        return res.status(409).json({
+          success: false,
+          message: 'Username already taken',
+        });
+      }
+    }
+    const profile = await pwdProfileService.create(userId, req.body);
+    await profileService.markAsComplete(userId);
+    res.status(201).json({ success: true, data: profile });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
 router.get('/pwd/me', async (req: Request, res: Response) => {
   try {
     const userId = getUserIdFromAuthToken(req);
     const profile = await pwdProfileService.findByUserId(userId);
-    
-    if (!profile) {
-      return res.status(404).json({
-        success: false,
-        message: 'PWD profile not found',
-      });
-    }
-
-    res.json({
-      success: true,
-      data: profile,
-    });
+    if (!profile) return res.status(404).json({ success: false, message: 'Profile not found' });
+    res.json({ success: true, data: profile });
   } catch (error: any) {
-    res.status(500).json({
-      success: false,
-      message: error.message || 'Failed to fetch PWD profile',
-    });
+    res.status(500).json({ success: false, message: error.message });
   }
 });
 
-// GET /api/users/profiles/pwd/:userId - Get PWD profile by user ID
 router.get('/pwd/:userId', async (req: Request, res: Response) => {
   try {
-    const { userId } = req.params;
-    const profile = await pwdProfileService.findByUserId(userId);
-    
-    if (!profile) {
-      return res.status(404).json({
-        success: false,
-        message: 'PWD profile not found',
-      });
-    }
-
-    res.json({
-      success: true,
-      data: profile,
-    });
+    const profile = await pwdProfileService.findByUserId(req.params.userId);
+    if (!profile) return res.status(404).json({ success: false, message: 'Profile not found' });
+    res.json({ success: true, data: profile });
   } catch (error: any) {
-    res.status(500).json({
-      success: false,
-      message: error.message || 'Failed to fetch PWD profile',
-    });
+    res.status(500).json({ success: false, message: error.message });
   }
 });
 
-// PUT /api/users/profiles/pwd/:userId - Update PWD profile
 router.put('/pwd/:userId', validate(pwdProfileSchema), async (req: Request, res: Response) => {
   try {
     const { userId } = req.params;
-    const authUserId = getUserIdFromAuthToken(req);
-
-    // Allow only self-update or admin
-    if (userId !== authUserId) {
-      return res.status(403).json({
-        success: false,
-        message: 'Not authorized to update this profile',
-      });
-    }
-
-    // Check username uniqueness (if changing)
     if (req.body.username) {
       const existingUsername = await pwdProfileService.findByUsername(req.body.username);
       if (existingUsername && existingUsername.userId !== userId) {
-        return res.status(409).json({
-          success: false,
-          message: 'Username already taken',
-        });
+        return res.status(409).json({ success: false, message: 'Username already taken' });
       }
     }
-
     const profile = await pwdProfileService.update(userId, req.body);
-    await profileService.markAsComplete(userId);
-    
-    res.json({
-      success: true,
-      data: profile,
-      message: 'PWD profile updated successfully',
-    });
+    res.json({ success: true, data: profile });
   } catch (error: any) {
-    res.status(500).json({
-      success: false,
-      message: error.message || 'Failed to update PWD profile',
-    });
+    res.status(500).json({ success: false, message: error.message });
   }
 });
 
-// DELETE /api/users/profiles/pwd/:userId - Delete PWD profile
 router.delete('/pwd/:userId', async (req: Request, res: Response) => {
   try {
-    const { userId } = req.params;
-    const authUserId = getUserIdFromAuthToken(req);
-
-    if (userId !== authUserId) {
-      return res.status(403).json({
-        success: false,
-        message: 'Not authorized to delete this profile',
-      });
-    }
-
-    await pwdProfileService.delete(userId);
-    
-    res.json({
-      success: true,
-      message: 'PWD profile deleted successfully',
-    });
+    await pwdProfileService.delete(req.params.userId);
+    res.json({ success: true, message: 'Profile deleted successfully' });
   } catch (error: any) {
-    res.status(500).json({
-      success: false,
-      message: error.message || 'Failed to delete PWD profile',
-    });
+    res.status(500).json({ success: false, message: error.message });
   }
 });
 
 // ─────────────────────────────────────────────
-// CAREGIVER PROFILE ROUTES
+// COMPATIBILITY ENDPOINTS (CAREGIVER)
 // ─────────────────────────────────────────────
 
-// POST /api/users/profiles/caregiver - Create caregiver profile
 router.post('/caregiver', validate(caregiverProfileSchema), async (req: Request, res: Response) => {
   try {
     const userId = getUserIdFromAuthToken(req);
-    
-    const existingProfile = await caregiverProfileService.findByUserId(userId);
-    if (existingProfile) {
-      return res.status(409).json({
-        success: false,
-        message: 'Caregiver profile already exists for this user',
-      });
-    }
-
     const profile = await caregiverProfileService.create(userId, req.body);
     await profileService.markAsComplete(userId);
-    
-    res.status(201).json({
-      success: true,
-      data: profile,
-      message: 'Caregiver profile created successfully',
-    });
+    res.status(201).json({ success: true, data: profile });
   } catch (error: any) {
-    res.status(500).json({
-      success: false,
-      message: error.message || 'Failed to create caregiver profile',
-    });
+    res.status(500).json({ success: false, message: error.message });
   }
 });
 
-// GET /api/users/profiles/caregiver/me - Get current user's caregiver profile
 router.get('/caregiver/me', async (req: Request, res: Response) => {
   try {
     const userId = getUserIdFromAuthToken(req);
     const profile = await caregiverProfileService.findByUserId(userId);
-    
-    if (!profile) {
-      return res.status(404).json({
-        success: false,
-        message: 'Caregiver profile not found',
-      });
-    }
-
-    res.json({
-      success: true,
-      data: profile,
-    });
+    if (!profile) return res.status(404).json({ success: false, message: 'Profile not found' });
+    res.json({ success: true, data: profile });
   } catch (error: any) {
-    res.status(500).json({
-      success: false,
-      message: error.message || 'Failed to fetch caregiver profile',
-    });
+    res.status(500).json({ success: false, message: error.message });
   }
 });
 
-// GET /api/users/profiles/caregiver/:userId - Get caregiver profile by user ID
 router.get('/caregiver/:userId', async (req: Request, res: Response) => {
   try {
-    const { userId } = req.params;
-    const profile = await caregiverProfileService.findByUserId(userId);
-    
-    if (!profile) {
-      return res.status(404).json({
-        success: false,
-        message: 'Caregiver profile not found',
-      });
-    }
-
-    res.json({
-      success: true,
-      data: profile,
-    });
+    const profile = await caregiverProfileService.findByUserId(req.params.userId);
+    if (!profile) return res.status(404).json({ success: false, message: 'Profile not found' });
+    res.json({ success: true, data: profile });
   } catch (error: any) {
-    res.status(500).json({
-      success: false,
-      message: error.message || 'Failed to fetch caregiver profile',
-    });
+    res.status(500).json({ success: false, message: error.message });
   }
 });
 
-// PUT /api/users/profiles/caregiver/:userId - Update caregiver profile
 router.put('/caregiver/:userId', validate(caregiverProfileSchema), async (req: Request, res: Response) => {
   try {
-    const { userId } = req.params;
-    const authUserId = getUserIdFromAuthToken(req);
-
-    if (userId !== authUserId) {
-      return res.status(403).json({
-        success: false,
-        message: 'Not authorized to update this profile',
-      });
-    }
-
-    const profile = await caregiverProfileService.update(userId, req.body);
-    await profileService.markAsComplete(userId);
-    
-    res.json({
-      success: true,
-      data: profile,
-      message: 'Caregiver profile updated successfully',
-    });
+    const profile = await caregiverProfileService.update(req.params.userId, req.body);
+    res.json({ success: true, data: profile });
   } catch (error: any) {
-    res.status(500).json({
-      success: false,
-      message: error.message || 'Failed to update caregiver profile',
-    });
+    res.status(500).json({ success: false, message: error.message });
   }
 });
 
-// DELETE /api/users/profiles/caregiver/:userId - Delete caregiver profile
 router.delete('/caregiver/:userId', async (req: Request, res: Response) => {
   try {
-    const { userId } = req.params;
-    const authUserId = getUserIdFromAuthToken(req);
-
-    if (userId !== authUserId) {
-      return res.status(403).json({
-        success: false,
-        message: 'Not authorized to delete this profile',
-      });
-    }
-
-    await caregiverProfileService.delete(userId);
-    
-    res.json({
-      success: true,
-      message: 'Caregiver profile deleted successfully',
-    });
+    await caregiverProfileService.delete(req.params.userId);
+    res.json({ success: true, message: 'Profile deleted successfully' });
   } catch (error: any) {
-    res.status(500).json({
-      success: false,
-      message: error.message || 'Failed to delete caregiver profile',
-    });
+    res.status(500).json({ success: false, message: error.message });
   }
 });
 
 // ─────────────────────────────────────────────
-// THERAPIST PROFILE ROUTES
+// COMPATIBILITY ENDPOINTS (THERAPIST)
 // ─────────────────────────────────────────────
 
-// POST /api/users/profiles/therapist - Create therapist profile
 router.post('/therapist', validate(therapistProfileSchema), async (req: Request, res: Response) => {
   try {
     const userId = getUserIdFromAuthToken(req);
-    
-    const existingProfile = await therapistProfileService.findByUserId(userId);
-    if (existingProfile) {
-      return res.status(409).json({
-        success: false,
-        message: 'Therapist profile already exists for this user',
-      });
-    }
-
     if (req.body.username) {
       const existingUsername = await therapistProfileService.findByUsername(req.body.username);
-      if (existingUsername) {
-        return res.status(409).json({
-          success: false,
-          message: 'Username already taken',
-        });
+      if (existingUsername && existingUsername.userId !== userId) {
+        return res.status(409).json({ success: false, message: 'Username already taken' });
       }
     }
-
     const profile = await therapistProfileService.create(userId, req.body);
     await profileService.markAsComplete(userId);
-    
-    res.status(201).json({
-      success: true,
-      data: profile,
-      message: 'Therapist profile created successfully',
-    });
+    res.status(201).json({ success: true, data: profile });
   } catch (error: any) {
-    res.status(500).json({
-      success: false,
-      message: error.message || 'Failed to create therapist profile',
-    });
+    res.status(500).json({ success: false, message: error.message });
   }
 });
 
-// GET /api/users/profiles/therapist/me - Get current user's therapist profile
+router.get('/therapist/list/verified', async (req: Request, res: Response) => {
+  try {
+    const { city, specialty } = req.query;
+    const profiles = await therapistProfileService.listVerified({
+      city: city as string,
+      specialty: specialty as string,
+    });
+    res.json({ success: true, data: profiles });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
 router.get('/therapist/me', async (req: Request, res: Response) => {
   try {
     const userId = getUserIdFromAuthToken(req);
     const profile = await therapistProfileService.findByUserId(userId);
-    
-    if (!profile) {
-      return res.status(404).json({
-        success: false,
-        message: 'Therapist profile not found',
-      });
-    }
-
-    res.json({
-      success: true,
-      data: profile,
-    });
+    if (!profile) return res.status(404).json({ success: false, message: 'Profile not found' });
+    res.json({ success: true, data: profile });
   } catch (error: any) {
-    res.status(500).json({
-      success: false,
-      message: error.message || 'Failed to fetch therapist profile',
-    });
+    res.status(500).json({ success: false, message: error.message });
   }
 });
 
-// GET /api/users/profiles/therapist/:userId - Get therapist profile by user ID
 router.get('/therapist/:userId', async (req: Request, res: Response) => {
   try {
-    const { userId } = req.params;
-    const profile = await therapistProfileService.findByUserId(userId);
-    
-    if (!profile) {
-      return res.status(404).json({
-        success: false,
-        message: 'Therapist profile not found',
-      });
-    }
-
-    res.json({
-      success: true,
-      data: profile,
-    });
+    const profile = await therapistProfileService.findByUserId(req.params.userId);
+    if (!profile) return res.status(404).json({ success: false, message: 'Profile not found' });
+    res.json({ success: true, data: profile });
   } catch (error: any) {
-    res.status(500).json({
-      success: false,
-      message: error.message || 'Failed to fetch therapist profile',
-    });
+    res.status(500).json({ success: false, message: error.message });
   }
 });
 
-// PUT /api/users/profiles/therapist/:userId - Update therapist profile
 router.put('/therapist/:userId', validate(therapistProfileSchema), async (req: Request, res: Response) => {
   try {
     const { userId } = req.params;
-    const authUserId = getUserIdFromAuthToken(req);
-
-    if (userId !== authUserId) {
-      return res.status(403).json({
-        success: false,
-        message: 'Not authorized to update this profile',
-      });
-    }
-
     if (req.body.username) {
       const existingUsername = await therapistProfileService.findByUsername(req.body.username);
       if (existingUsername && existingUsername.userId !== userId) {
-        return res.status(409).json({
-          success: false,
-          message: 'Username already taken',
-        });
+        return res.status(409).json({ success: false, message: 'Username already taken' });
       }
     }
-
     const profile = await therapistProfileService.update(userId, req.body);
-    await profileService.markAsComplete(userId);
-    
-    res.json({
-      success: true,
-      data: profile,
-      message: 'Therapist profile updated successfully',
-    });
+    res.json({ success: true, data: profile });
   } catch (error: any) {
-    res.status(500).json({
-      success: false,
-      message: error.message || 'Failed to update therapist profile',
-    });
+    res.status(500).json({ success: false, message: error.message });
   }
 });
 
-// DELETE /api/users/profiles/therapist/:userId - Delete therapist profile
 router.delete('/therapist/:userId', async (req: Request, res: Response) => {
   try {
-    const { userId } = req.params;
-    const authUserId = getUserIdFromAuthToken(req);
-
-    if (userId !== authUserId) {
-      return res.status(403).json({
-        success: false,
-        message: 'Not authorized to delete this profile',
-      });
-    }
-
-    await therapistProfileService.delete(userId);
-    
-    res.json({
-      success: true,
-      message: 'Therapist profile deleted successfully',
-    });
+    await therapistProfileService.delete(req.params.userId);
+    res.json({ success: true, message: 'Profile deleted successfully' });
   } catch (error: any) {
-    res.status(500).json({
-      success: false,
-      message: error.message || 'Failed to delete therapist profile',
-    });
-  }
-});
-
-// GET /api/users/profiles/therapist/list/verified - List verified therapists
-router.get('/therapist/list/verified', async (req: Request, res: Response) => {
-  try {
-    const { city, specialty, focusArea } = req.query;
-    
-    const profiles = await therapistProfileService.listVerified({
-      city: city as string,
-      specialty: specialty as string,
-      focusArea: focusArea as string,
-    });
-
-    res.json({
-      success: true,
-      data: profiles,
-    });
-  } catch (error: any) {
-    res.status(500).json({
-      success: false,
-      message: error.message || 'Failed to fetch therapist list',
-    });
+    res.status(500).json({ success: false, message: error.message });
   }
 });
 
 // ─────────────────────────────────────────────
-// NGO PROFILE ROUTES
+// COMPATIBILITY ENDPOINTS (NGO)
 // ─────────────────────────────────────────────
 
-// POST /api/users/profiles/ngo - Create NGO profile
 router.post('/ngo', validate(ngoProfileSchema), async (req: Request, res: Response) => {
   try {
     const userId = getUserIdFromAuthToken(req);
-    
-    const existingProfile = await ngoProfileService.findByUserId(userId);
-    if (existingProfile) {
-      return res.status(409).json({
-        success: false,
-        message: 'NGO profile already exists for this user',
-      });
-    }
-
     if (req.body.username) {
       const existingUsername = await ngoProfileService.findByUsername(req.body.username);
-      if (existingUsername) {
-        return res.status(409).json({
-          success: false,
-          message: 'Username already taken',
-        });
+      if (existingUsername && existingUsername.userId !== userId) {
+        return res.status(409).json({ success: false, message: 'Username already taken' });
       }
     }
-
     const profile = await ngoProfileService.create(userId, req.body);
     await profileService.markAsComplete(userId);
-    
-    res.status(201).json({
-      success: true,
-      data: profile,
-      message: 'NGO profile created successfully',
-    });
+    res.status(201).json({ success: true, data: profile });
   } catch (error: any) {
-    res.status(500).json({
-      success: false,
-      message: error.message || 'Failed to create NGO profile',
-    });
+    res.status(500).json({ success: false, message: error.message });
   }
 });
 
-// GET /api/users/profiles/ngo/me - Get current user's NGO profile
+router.get('/ngo/list/verified', async (req: Request, res: Response) => {
+  try {
+    const { city } = req.query;
+    const profiles = await ngoProfileService.listVerified({
+      city: city as string,
+    });
+    res.json({ success: true, data: profiles });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
 router.get('/ngo/me', async (req: Request, res: Response) => {
   try {
     const userId = getUserIdFromAuthToken(req);
     const profile = await ngoProfileService.findByUserId(userId);
-    
-    if (!profile) {
-      return res.status(404).json({
-        success: false,
-        message: 'NGO profile not found',
-      });
-    }
-
-    res.json({
-      success: true,
-      data: profile,
-    });
+    if (!profile) return res.status(404).json({ success: false, message: 'Profile not found' });
+    res.json({ success: true, data: profile });
   } catch (error: any) {
-    res.status(500).json({
-      success: false,
-      message: error.message || 'Failed to fetch NGO profile',
-    });
+    res.status(500).json({ success: false, message: error.message });
   }
 });
 
-// GET /api/users/profiles/ngo/:userId - Get NGO profile by user ID
 router.get('/ngo/:userId', async (req: Request, res: Response) => {
   try {
-    const { userId } = req.params;
-    const profile = await ngoProfileService.findByUserId(userId);
-    
-    if (!profile) {
-      return res.status(404).json({
-        success: false,
-        message: 'NGO profile not found',
-      });
-    }
-
-    res.json({
-      success: true,
-      data: profile,
-    });
+    const profile = await ngoProfileService.findByUserId(req.params.userId);
+    if (!profile) return res.status(404).json({ success: false, message: 'Profile not found' });
+    res.json({ success: true, data: profile });
   } catch (error: any) {
-    res.status(500).json({
-      success: false,
-      message: error.message || 'Failed to fetch NGO profile',
-    });
+    res.status(500).json({ success: false, message: error.message });
   }
 });
 
-// PUT /api/users/profiles/ngo/:userId - Update NGO profile
 router.put('/ngo/:userId', validate(ngoProfileSchema), async (req: Request, res: Response) => {
   try {
     const { userId } = req.params;
-    const authUserId = getUserIdFromAuthToken(req);
-
-    if (userId !== authUserId) {
-      return res.status(403).json({
-        success: false,
-        message: 'Not authorized to update this profile',
-      });
-    }
-
     if (req.body.username) {
       const existingUsername = await ngoProfileService.findByUsername(req.body.username);
       if (existingUsername && existingUsername.userId !== userId) {
-        return res.status(409).json({
-          success: false,
-          message: 'Username already taken',
-        });
+        return res.status(409).json({ success: false, message: 'Username already taken' });
       }
     }
-
     const profile = await ngoProfileService.update(userId, req.body);
-    await profileService.markAsComplete(userId);
-    
-    res.json({
-      success: true,
-      data: profile,
-      message: 'NGO profile updated successfully',
-    });
+    res.json({ success: true, data: profile });
   } catch (error: any) {
-    res.status(500).json({
-      success: false,
-      message: error.message || 'Failed to update NGO profile',
-    });
+    res.status(500).json({ success: false, message: error.message });
   }
 });
 
-// DELETE /api/users/profiles/ngo/:userId - Delete NGO profile
 router.delete('/ngo/:userId', async (req: Request, res: Response) => {
   try {
-    const { userId } = req.params;
-    const authUserId = getUserIdFromAuthToken(req);
-
-    if (userId !== authUserId) {
-      return res.status(403).json({
-        success: false,
-        message: 'Not authorized to delete this profile',
-      });
-    }
-
-    await ngoProfileService.delete(userId);
-    
-    res.json({
-      success: true,
-      message: 'NGO profile deleted successfully',
-    });
+    await ngoProfileService.delete(req.params.userId);
+    res.json({ success: true, message: 'Profile deleted successfully' });
   } catch (error: any) {
-    res.status(500).json({
-      success: false,
-      message: error.message || 'Failed to delete NGO profile',
-    });
-  }
-});
-
-// GET /api/users/profiles/ngo/list/verified - List verified NGOs
-router.get('/ngo/list/verified', async (req: Request, res: Response) => {
-  try {
-    const { city, service } = req.query;
-    
-    const profiles = await ngoProfileService.listVerified({
-      city: city as string,
-      service: service as string,
-    });
-
-    res.json({
-      success: true,
-      data: profiles,
-    });
-  } catch (error: any) {
-    res.status(500).json({
-      success: false,
-      message: error.message || 'Failed to fetch NGO list',
-    });
+    res.status(500).json({ success: false, message: error.message });
   }
 });
 

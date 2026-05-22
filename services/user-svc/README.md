@@ -50,6 +50,9 @@ npm run dev
 # → http://localhost:4001
 ```
 
+Use `localhost` in `services/user-svc/.env` when the service runs on your machine.
+If you run `user-svc` with Docker Compose instead, the compose file overrides `DATABASE_URL` to use the Postgres service host `postgres`.
+
 ---
 
 ## Architecture

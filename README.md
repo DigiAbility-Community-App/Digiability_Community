@@ -155,11 +155,13 @@ REDIS_PORT=6379
 
 # services/user-svc/.env
 NODE_ENV=development
-PORT=3001
-DATABASE_URL=postgresql://digiability:password@localhost:5432/digiability_db
-JWT_SECRET=your_jwt_secret_key
-JWT_EXPIRE=15m
-REFRESH_TOKEN_EXPIRE=7d
+PORT=4001
+DATABASE_URL=postgresql://digiability:your_secure_password@localhost:5432/digiability_db?schema=public
+JWT_PRIVATE_KEY="-----BEGIN RSA PRIVATE KEY-----\n...\n-----END RSA PRIVATE KEY-----"
+JWT_PUBLIC_KEY="-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----"
+JWT_EXPIRES_IN=15m
+REFRESH_TOKEN_EXPIRES_DAYS=30
+COOKIE_SECRET=replace_with_a_strong_random_string
 ```
 
 See [docs/env-guide.md](./docs/env-guide.md) for complete variables.

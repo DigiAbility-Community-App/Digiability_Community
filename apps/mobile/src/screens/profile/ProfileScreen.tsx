@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useRef, useCallback } from "react";
 import {
   View,
   Text,
@@ -10,11 +10,17 @@ import {
   StatusBar,
   ActivityIndicator,
   Alert,
+  BackHandler,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import { useAuthStore } from "@store/authStore";
-import { submitUserProfile, parseDateInput, normalizeUsername, optionalString } from "@services/profileService";
+import {
+  checkUsernameAvailability,
+  normalizeUsername,
+  parseDateInput,
+  optionalString,
+} from "@services/profileService";
 
 const GENDERS = ["Male", "Female", "Non-binary", "Prefer not to say"];
 
@@ -28,10 +34,22 @@ const ROLE_LABELS: Record<string, string> = {
   student: "Student",
 };
 
+// Username format regex (mirrors backend)
+const USERNAME_REGEX = /^[a-z0-9_.]{3,20}$/;
+
+type FieldErrors = {
+  fullName?: string;
+  username?: string;
+  dob?: string;
+};
+
+type UsernameStatus = "idle" | "checking" | "available" | "taken" | "invalid";
+
 const ProfileScreen = () => {
   const navigation = useNavigation<any>();
   const user = useAuthStore((s) => s.user);
-  const setUser = useAuthStore((s) => s.setUser);
+  const setPendingProfile = useAuthStore((s) => s.setPendingProfile);
+  const pendingRole = useAuthStore((s) => s.pendingRole);
 
   const [fullName, setFullName] = useState("");
   const [username, setUsername] = useState("");
@@ -41,41 +59,165 @@ const ProfileScreen = () => {
   const [state, setState] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const roleLabel = user?.role ? ROLE_LABELS[user.role] ?? user.role : "";
+  const [errors, setErrors] = useState<FieldErrors>({});
+  const [usernameStatus, setUsernameStatus] = useState<UsernameStatus>("idle");
+  const [usernameMessage, setUsernameMessage] = useState("");
 
-  const handleContinue = async () => {
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const roleLabel = pendingRole
+    ? ROLE_LABELS[pendingRole] ?? pendingRole
+    : user?.role
+    ? ROLE_LABELS[user.role] ?? user.role
+    : "";
+
+  // ── Back Guard ─────────────────────────────────────────────
+  useFocusEffect(
+    useCallback(() => {
+      const onBackPress = () => {
+        Alert.alert(
+          "Go Back?",
+          "Your role selection will be kept. Do you want to go back to role selection?",
+          [
+            { text: "Stay", style: "cancel" },
+            {
+              text: "Go Back",
+              style: "destructive",
+              onPress: () => navigation.goBack(),
+            },
+          ]
+        );
+        return true;
+      };
+
+      const subscription = BackHandler.addEventListener(
+        "hardwareBackPress",
+        onBackPress
+      );
+      return () => subscription.remove();
+    }, [navigation])
+  );
+
+  // ── Real-time username check ───────────────────────────────
+  const handleUsernameChange = (value: string) => {
+    setUsername(value);
+    const normalized = normalizeUsername(value) ?? "";
+
+    if (!normalized) {
+      setUsernameStatus("idle");
+      setUsernameMessage("");
+      return;
+    }
+
+    if (!USERNAME_REGEX.test(normalized)) {
+      setUsernameStatus("invalid");
+      setUsernameMessage(
+        "3–20 characters: lowercase letters, numbers, _ or . only"
+      );
+      return;
+    }
+
+    setUsernameStatus("checking");
+    setUsernameMessage("Checking availability...");
+
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(async () => {
+      const result = await checkUsernameAvailability(normalized);
+      setUsernameStatus(result.available ? "available" : "taken");
+      setUsernameMessage(result.message);
+    }, 500);
+  };
+
+  // ── Validation ─────────────────────────────────────────────
+  const validate = (): boolean => {
+    const newErrors: FieldErrors = {};
+
+    const trimmedName = fullName.trim();
+    if (!trimmedName) {
+      newErrors.fullName = "Full name is required.";
+    } else if (trimmedName.length < 2) {
+      newErrors.fullName = "Name must be at least 2 characters.";
+    } else if (!/^[a-zA-Z\s'-]{2,100}$/.test(trimmedName)) {
+      newErrors.fullName =
+        "Name may only contain letters, spaces, hyphens, or apostrophes.";
+    }
+
+    const normalizedUser = normalizeUsername(username);
+    if (!normalizedUser) {
+      newErrors.username = "Username is required.";
+    } else if (!USERNAME_REGEX.test(normalizedUser)) {
+      newErrors.username =
+        "3–20 characters: lowercase letters, numbers, _ or . only";
+    } else if (usernameStatus === "taken") {
+      newErrors.username = "This username is already taken.";
+    } else if (usernameStatus === "checking") {
+      newErrors.username = "Please wait while we verify your username.";
+    }
+
+    if (dob.trim()) {
+      const parsed = parseDateInput(dob.trim(), "DMY");
+      if (!parsed) {
+        newErrors.dob = "Invalid date. Use DD/MM/YYYY format.";
+      } else {
+        const birthDate = new Date(parsed);
+        const now = new Date();
+        const minAge = new Date(
+          now.getFullYear() - 5,
+          now.getMonth(),
+          now.getDate()
+        );
+        if (birthDate > now) {
+          newErrors.dob = "Date of birth cannot be in the future.";
+        } else if (birthDate > minAge) {
+          newErrors.dob = "You must be at least 5 years old.";
+        }
+      }
+    }
+
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  const handleContinue = () => {
     if (!user) return;
+    if (!validate()) return;
 
-    if (!fullName.trim()) {
-      Alert.alert("Required", "Please enter your full name.");
-      return;
-    }
-    if (!username.trim()) {
-      Alert.alert("Required", "Please choose a username.");
-      return;
-    }
+    const normalizedUser = normalizeUsername(username);
+    const parsedDob = dob.trim() ? parseDateInput(dob.trim(), "DMY") : undefined;
 
-    setLoading(true);
-    try {
-      await submitUserProfile(user.id, {
-        fullName: optionalString(fullName),
-        username: normalizeUsername(username),
-        dob: parseDateInput(dob, "DMY"),
-        gender: optionalString(gender),
-        city: optionalString(city),
-        state: optionalString(state),
-      });
+    // Store data locally — NOT written to DB yet.
+    // The full DB write happens in ProfileDetailsScreen.
+    setPendingProfile({
+      fullName: optionalString(fullName),
+      username: normalizedUser,
+      dob: parsedDob,
+      gender: optionalString(gender),
+      city: optionalString(city),
+      state: optionalString(state),
+    });
 
-      setUser({ ...user, profileComplete: true });
-      navigation.navigate("ProfileDetails");
-    } catch (error: unknown) {
-      const message =
-        (error as { response?: { data?: { message?: string } } })?.response
-          ?.data?.message ?? "We could not save your profile. Please try again.";
-      Alert.alert("Unable to continue", message);
-    } finally {
-      setLoading(false);
+    navigation.navigate("ProfileDetails");
+  };
+
+  // ── Username status indicator ──────────────────────────────
+  const renderUsernameIndicator = () => {
+    if (usernameStatus === "idle") return null;
+    if (usernameStatus === "checking") {
+      return <ActivityIndicator size="small" color="#7C3AED" style={styles.indicator} />;
     }
+    const color =
+      usernameStatus === "available"
+        ? "#059669"
+        : usernameStatus === "invalid"
+        ? "#B45309"
+        : "#DC2626";
+    const icon =
+      usernameStatus === "available" ? "✓" : "✗";
+    return (
+      <Text style={[styles.usernameIndicatorText, { color }]}>
+        {icon} {usernameMessage}
+      </Text>
+    );
   };
 
   return (
@@ -84,6 +226,27 @@ const ProfileScreen = () => {
 
       {/* HEADER */}
       <View style={styles.topHeader}>
+        <TouchableOpacity
+          style={styles.backButton}
+          onPress={() =>
+            Alert.alert(
+              "Go Back?",
+              "Your role selection will be kept. Do you want to go back?",
+              [
+                { text: "Stay", style: "cancel" },
+                {
+                  text: "Go Back",
+                  style: "destructive",
+                  onPress: () => navigation.goBack(),
+                },
+              ]
+            )
+          }
+          accessibilityLabel="Go back"
+        >
+          <Text style={styles.backArrow}>←</Text>
+        </TouchableOpacity>
+
         <View style={styles.progressWrapper}>
           <View style={styles.inactiveProgress} />
           <View style={styles.inactiveProgress} />
@@ -118,42 +281,74 @@ const ProfileScreen = () => {
 
           {/* Full Name */}
           <Text style={styles.fieldLabel}>Full Name *</Text>
-          <View style={styles.inputContainer}>
+          <View
+            style={[
+              styles.inputContainer,
+              errors.fullName ? styles.inputError : null,
+            ]}
+          >
             <TextInput
               placeholder="e.g. Priya Sharma"
               placeholderTextColor="#A89BB0"
               style={styles.input}
               value={fullName}
-              onChangeText={setFullName}
+              onChangeText={(v) => {
+                setFullName(v);
+                if (errors.fullName) setErrors((e) => ({ ...e, fullName: undefined }));
+              }}
             />
           </View>
+          {errors.fullName ? (
+            <Text style={styles.fieldError}>{errors.fullName}</Text>
+          ) : null}
 
           {/* Username */}
           <Text style={styles.fieldLabel}>Username *</Text>
-          <View style={styles.usernameInputContainer}>
+          <View
+            style={[
+              styles.usernameInputContainer,
+              errors.username ? styles.inputError : null,
+            ]}
+          >
             <Text style={styles.atSymbol}>@</Text>
             <TextInput
               placeholder="your_username"
               placeholderTextColor="#A89BB0"
               style={styles.usernameInput}
               value={username}
-              onChangeText={setUsername}
+              onChangeText={handleUsernameChange}
               autoCapitalize="none"
+              autoCorrect={false}
             />
           </View>
+          {renderUsernameIndicator()}
+          {errors.username ? (
+            <Text style={styles.fieldError}>{errors.username}</Text>
+          ) : null}
 
           {/* DOB */}
           <Text style={styles.fieldLabel}>Date of Birth</Text>
-          <View style={styles.inputContainer}>
+          <View
+            style={[
+              styles.inputContainer,
+              errors.dob ? styles.inputError : null,
+            ]}
+          >
             <TextInput
               placeholder="DD/MM/YYYY"
               placeholderTextColor="#A89BB0"
               style={styles.input}
               value={dob}
-              onChangeText={setDob}
+              onChangeText={(v) => {
+                setDob(v);
+                if (errors.dob) setErrors((e) => ({ ...e, dob: undefined }));
+              }}
               keyboardType="numbers-and-punctuation"
             />
           </View>
+          {errors.dob ? (
+            <Text style={styles.fieldError}>{errors.dob}</Text>
+          ) : null}
         </View>
 
         {/* GENDER CARD */}
@@ -236,7 +431,7 @@ const ProfileScreen = () => {
             {loading ? (
               <ActivityIndicator color="#fff" />
             ) : (
-              <Text style={styles.buttonText}>Complete Profile</Text>
+              <Text style={styles.buttonText}>Continue</Text>
             )}
           </LinearGradient>
         </TouchableOpacity>
@@ -258,7 +453,24 @@ const styles = StyleSheet.create({
     paddingTop: 20,
     paddingHorizontal: 24,
     paddingBottom: 10,
+    flexDirection: "row",
     alignItems: "center",
+    justifyContent: "space-between",
+  },
+
+  backButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "rgba(80,0,136,0.08)",
+  },
+
+  backArrow: {
+    fontSize: 18,
+    color: "#581C87",
+    fontWeight: "700",
   },
 
   progressWrapper: {
@@ -357,7 +569,14 @@ const styles = StyleSheet.create({
   inputContainer: {
     backgroundColor: "#F4F3FA",
     borderRadius: 14,
-    marginBottom: 14,
+    marginBottom: 6,
+    borderWidth: 1.5,
+    borderColor: "transparent",
+  },
+
+  inputError: {
+    borderColor: "#DC2626",
+    backgroundColor: "#FEF2F2",
   },
 
   input: {
@@ -368,14 +587,24 @@ const styles = StyleSheet.create({
     fontFamily: "PlusJakartaSans-Regular",
   },
 
+  fieldError: {
+    fontSize: 12,
+    color: "#DC2626",
+    marginBottom: 10,
+    marginLeft: 4,
+    fontFamily: "PlusJakartaSans-Regular",
+  },
+
   usernameInputContainer: {
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "#F4F3FA",
     borderRadius: 14,
     paddingHorizontal: 16,
-    marginBottom: 14,
+    marginBottom: 4,
     height: 52,
+    borderWidth: 1.5,
+    borderColor: "transparent",
   },
 
   atSymbol: {
@@ -390,6 +619,19 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: "#1A1B20",
     fontFamily: "PlusJakartaSans-Regular",
+  },
+
+  usernameIndicatorText: {
+    fontSize: 12,
+    marginBottom: 6,
+    marginLeft: 4,
+    fontFamily: "PlusJakartaSans-Regular",
+  },
+
+  indicator: {
+    alignSelf: "flex-start",
+    marginBottom: 6,
+    marginLeft: 4,
   },
 
   // GENDER
