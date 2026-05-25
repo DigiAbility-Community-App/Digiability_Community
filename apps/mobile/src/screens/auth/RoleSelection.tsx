@@ -9,19 +9,32 @@ import {
   Alert,
   BackHandler,
   StatusBar,
+  ScrollView,
 } from "react-native";
 
 import { LinearGradient } from "expo-linear-gradient";
-import { useNavigation, useFocusEffect } from "@react-navigation/native";
+import {
+  useNavigation,
+  useFocusEffect,
+} from "@react-navigation/native";
+
 import { useAuthStore } from "@store/authStore";
+
+// -------------------------
+// ROLE TYPES
+// -------------------------
 
 type RoleType =
   | "pwd"
   | "caregiver"
-  | "therapist"
-  | "ngo"
-  | "volunteer"
-  | "student";
+  | "educator"
+  | "ngo_worker"
+  | "skill_trainer"
+  | "community_member";
+
+// -------------------------
+// ROLE DATA
+// -------------------------
 
 const roles = [
   {
@@ -30,113 +43,247 @@ const roles = [
     subtitle: "I have a disability",
     icon: "♿",
   },
+
   {
     id: "caregiver",
     title: "Caregiver",
     subtitle: "I care for someone",
-    icon: "👨‍👩‍👧",
+    icon: "♡",
   },
+
   {
-    id: "therapist",
-    title: "Therapist",
-    subtitle: "I work with PwDs",
-    icon: "🩺",
+    id: "educator",
+    title: "Educator",
+    subtitle: "I teach or do therapy",
+    icon: "📖",
   },
+
   {
-    id: "ngo",
-    title: "NGO",
-    subtitle: "We support PwDs",
+    id: "ngo_worker",
+    title: "NGO Worker",
+    subtitle: "I work with an NGO",
     icon: "🏢",
   },
+
   {
-    id: "volunteer",
-    title: "Volunteer",
-    subtitle: "I want to help",
-    icon: "🤝",
+    id: "skill_trainer",
+    title: "Skill Trainer",
+    subtitle: "I train or hire PwDs",
+    icon: "💼",
   },
+
   {
-    id: "student",
-    title: "Student",
-    subtitle: "Learning & supporting",
-    icon: "🎓",
+    id: "community_member",
+    title: "Community Member",
+    subtitle: "I want to support",
+    icon: "👥",
   },
 ];
 
 const RoleSelectionScreen = () => {
-  const [selected, setSelected] = useState<RoleType>("pwd");
-  const [loading, setLoading] = useState(false);
+  // -------------------------
+  // STATES
+  // -------------------------
+
+  const [selected, setSelected] =
+    useState<RoleType[]>([
+      "pwd",
+      "caregiver",
+    ]);
+
+  const [loading, setLoading] =
+    useState(false);
 
   const navigation = useNavigation<any>();
-  const setPendingRole = useAuthStore((s) => s.setPendingRole);
 
-  // ── Back Guard ────────────────────────────────────────────
-  // Block hardware back button — role screen is the first
-  // post-auth step; going back would return to the auth flow.
+  const setPendingRole =
+    useAuthStore(
+      (s) => s.setPendingRole
+    );
+
+  // -------------------------
+  // BACK HANDLER
+  // -------------------------
+
   useFocusEffect(
     useCallback(() => {
       const onBackPress = () => {
         Alert.alert(
           "Leave Onboarding?",
-          "Are you sure you want to go back? You'll need to start over.",
+          "Are you sure you want to go back?",
           [
-            { text: "Stay", style: "cancel" },
+            {
+              text: "Stay",
+              style: "cancel",
+            },
+
             {
               text: "Go Back",
               style: "destructive",
-              onPress: () => navigation.goBack(),
+              onPress: () =>
+                navigation.goBack(),
             },
           ]
         );
-        return true; // intercept the back press
+
+        return true;
       };
 
-      const subscription = BackHandler.addEventListener(
-        "hardwareBackPress",
-        onBackPress
-      );
+      const subscription =
+        BackHandler.addEventListener(
+          "hardwareBackPress",
+          onBackPress
+        );
 
-      return () => subscription.remove();
+      return () =>
+        subscription.remove();
     }, [navigation])
   );
 
+  // -------------------------
+  // SELECT ROLE
+  // -------------------------
+
+  const handleRoleSelect = (
+    roleId: RoleType
+  ) => {
+    if (
+      selected.includes(roleId)
+    ) {
+      setSelected(
+        selected.filter(
+          (item) =>
+            item !== roleId
+        )
+      );
+    } else {
+      setSelected([
+        ...selected,
+        roleId,
+      ]);
+    }
+  };
+
+  // -------------------------
+  // CONTINUE
+  // -------------------------
+
   const handleContinue = () => {
+    if (selected.length === 0) {
+      Alert.alert(
+        "Select Role",
+        "Please select at least one role."
+      );
+
+      return;
+    }
+
     setLoading(true);
-    // Store role locally — NOT saved to DB yet.
-    // DB write happens atomically in ProfileDetailsScreen.
-    setPendingRole(selected);
-    setLoading(false);
-    navigation.navigate("Profile");
+
+    // SAVE ROLES
+    setPendingRole(
+      selected.join(",")
+    );
+
+    setTimeout(() => {
+      setLoading(false);
+
+      navigation.navigate(
+        "Profile"
+      );
+    }, 700);
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#F6F6F6" />
+    <SafeAreaView
+      style={styles.container}
+    >
+      <StatusBar
+        backgroundColor="#F5F5F5"
+        barStyle="dark-content"
+      />
 
       {/* HEADER */}
-      <View style={styles.topHeader}>
-        <View style={styles.progressWrapper}>
-          <View style={styles.inactiveProgress} />
-          <View style={styles.activeProgress} />
-          <View style={styles.inactiveProgress} />
-          <View style={styles.inactiveProgress} />
+      <View style={styles.header}>
+        {/* BACK */}
+        <TouchableOpacity
+          style={styles.backButton}
+          onPress={() =>
+            navigation.goBack()
+          }
+        >
+          <Text style={styles.backIcon}>
+            ←
+          </Text>
+        </TouchableOpacity>
+
+        {/* PROGRESS */}
+        <View
+          style={
+            styles.progressWrapper
+          }
+        >
+          <View
+            style={
+              styles.inactiveDot
+            }
+          />
+
+          <View
+            style={
+              styles.activeBar
+            }
+          />
+
+          <View
+            style={
+              styles.inactiveDot
+            }
+          />
+
+          <View
+            style={
+              styles.inactiveDot
+            }
+          />
         </View>
       </View>
 
-      {/* MAIN */}
-      <View style={styles.main}>
-        {/* Heading */}
-        <View style={styles.headingSection}>
-          <Text style={styles.title}>I am a...</Text>
+      {/* BODY */}
+      <ScrollView
+        showsVerticalScrollIndicator={
+          false
+        }
+        contentContainerStyle={
+          styles.scrollContent
+        }
+      >
+        {/* TITLE */}
+        <View
+          style={
+            styles.headingSection
+          }
+        >
+          <Text style={styles.title}>
+            I am a...
+          </Text>
 
-          <Text style={styles.subtitle}>
-            Select the role that best describes you.
+          <Text
+            style={styles.subtitle}
+          >
+            Select all that apply.
+            You can be more than
+            one.
           </Text>
         </View>
 
-        {/* GRID */}
+        {/* ROLE GRID */}
         <View style={styles.grid}>
           {roles.map((role) => {
-            const isSelected = selected === role.id;
+            const isSelected =
+              selected.includes(
+                role.id as RoleType
+              );
 
             return (
               <TouchableOpacity
@@ -144,28 +291,63 @@ const RoleSelectionScreen = () => {
                 activeOpacity={0.85}
                 style={[
                   styles.card,
-                  isSelected && styles.selectedCard,
+
+                  isSelected &&
+                  styles.selectedCard,
                 ]}
-                onPress={() => setSelected(role.id as RoleType)}
+                onPress={() =>
+                  handleRoleSelect(
+                    role.id as RoleType
+                  )
+                }
               >
-                {/* Tick */}
+                {/* CHECK */}
                 {isSelected && (
-                  <View style={styles.tickContainer}>
-                    <Text style={styles.tick}>✓</Text>
+                  <View
+                    style={
+                      styles.checkCircle
+                    }
+                  >
+                    <Text
+                      style={
+                        styles.checkText
+                      }
+                    >
+                      ✓
+                    </Text>
                   </View>
                 )}
 
-                {/* Icon */}
-                <View style={styles.iconWrapper}>
-                  <Text style={styles.icon}>{role.icon}</Text>
+                {/* ICON */}
+                <View
+                  style={
+                    styles.iconWrap
+                  }
+                >
+                  <Text
+                    style={
+                      styles.icon
+                    }
+                  >
+                    {role.icon}
+                  </Text>
                 </View>
 
-                {/* Text */}
-                <Text style={styles.cardTitle}>
+                {/* TITLE */}
+                <Text
+                  style={
+                    styles.cardTitle
+                  }
+                >
                   {role.title}
                 </Text>
 
-                <Text style={styles.cardSubtitle}>
+                {/* SUBTITLE */}
+                <Text
+                  style={
+                    styles.cardSubtitle
+                  }
+                >
                   {role.subtitle}
                 </Text>
               </TouchableOpacity>
@@ -173,30 +355,39 @@ const RoleSelectionScreen = () => {
           })}
         </View>
 
-        {/* Note */}
+        {/* NOTE */}
         <Text style={styles.note}>
-          Your role can be changed later in Settings.
+          You can update your roles
+          anytime in Profile
         </Text>
-      </View>
+
+        <View
+          style={{ height: 120 }}
+        />
+      </ScrollView>
 
       {/* FOOTER */}
       <View style={styles.footer}>
         <TouchableOpacity
           activeOpacity={0.9}
-          disabled={loading}
           onPress={handleContinue}
-          style={styles.buttonContainer}
+          disabled={loading}
         >
           <LinearGradient
-            colors={["#500088", "#6B21A8"]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
+            colors={[
+              "#6B21A8",
+              "#7E22CE",
+            ]}
             style={styles.button}
           >
             {loading ? (
               <ActivityIndicator color="#fff" />
             ) : (
-              <Text style={styles.buttonText}>
+              <Text
+                style={
+                  styles.buttonText
+                }
+              >
                 Continue
               </Text>
             )}
@@ -209,183 +400,241 @@ const RoleSelectionScreen = () => {
 
 export default RoleSelectionScreen;
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#F6F6F6",
-  },
+// -------------------------
+// STYLES
+// -------------------------
 
-  // HEADER
-  topHeader: {
-    paddingTop: 20,
-    paddingHorizontal: 24,
-    paddingBottom: 10,
-    alignItems: "center",
-  },
+const styles =
+  StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor:
+        "#F5F5F5",
+    },
 
-  progressWrapper: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
+    // HEADER
+    header: {
+      height: 64,
 
-  activeProgress: {
-    width: 24,
-    height: 8,
-    borderRadius: 999,
-    backgroundColor: "#6B21A8",
-  },
+      flexDirection: "row",
+      justifyContent:
+        "space-between",
+      alignItems: "center",
 
-  inactiveProgress: {
-    width: 8,
-    height: 8,
-    borderRadius: 999,
-    backgroundColor: "rgba(207,194,212,0.5)",
-  },
+      paddingHorizontal: 24,
+      backgroundColor:
+        "#F5F5F5",
+    },
 
-  // MAIN
-  main: {
-    flex: 1,
-    paddingHorizontal: 24,
-    paddingTop: 40,
-  },
+    backButton: {
+      width: 32,
+      height: 32,
 
-  headingSection: {
-    marginBottom: 32,
-  },
+      justifyContent:
+        "center",
+      alignItems: "center",
+    },
 
-  title: {
-    fontSize: 30,
-    fontWeight: "700",
-    color: "#232222",
-    marginBottom: 6,
-    fontFamily: "PlusJakartaSans-Bold",
-  },
+    backIcon: {
+      fontSize: 24,
+      color: "#6B21A8",
+      fontWeight: "700",
+    },
 
-  subtitle: {
-    fontSize: 15,
-    lineHeight: 22,
-    color: "#636363",
-    fontFamily: "PlusJakartaSans-Regular",
-  },
+    progressWrapper: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 8,
+    },
 
-  // GRID
-  grid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    justifyContent: "space-between",
-    rowGap: 18,
-  },
+    activeBar: {
+      width: 24,
+      height: 8,
+      borderRadius: 999,
+      backgroundColor:
+        "#7E22CE",
+    },
 
-  card: {
-    width: "47%",
-    backgroundColor: "#FFFFFF",
-    borderRadius: 18,
-    paddingVertical: 24,
-    paddingHorizontal: 16,
-    alignItems: "center",
+    inactiveDot: {
+      width: 8,
+      height: 8,
+      borderRadius: 999,
+      backgroundColor:
+        "#E5DDED",
+    },
 
-    shadowColor: "#000",
-    shadowOpacity: 0.05,
-    shadowRadius: 6,
-    elevation: 3,
+    // BODY
+    scrollContent: {
+      paddingHorizontal: 24,
+      paddingTop: 24,
+      paddingBottom: 140,
+    },
 
-    minHeight: 155,
-  },
+    headingSection: {
+      marginBottom: 32,
+    },
 
-  selectedCard: {
-    backgroundColor: "#F3EAFF",
-    borderWidth: 2,
-    borderColor: "#8A38F5",
-  },
+    title: {
+      fontSize: 24,
+      fontWeight: "700",
+      color: "#1A1B20",
+      marginBottom: 6,
+    },
 
-  tickContainer: {
-    position: "absolute",
-    top: 12,
-    right: 12,
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: "#8A38F5",
-    justifyContent: "center",
-    alignItems: "center",
-  },
+    subtitle: {
+      fontSize: 16,
+      color: "#666",
+      lineHeight: 24,
+    },
 
-  tick: {
-    color: "#fff",
-    fontSize: 12,
-    fontWeight: "700",
-  },
+    // GRID
+    grid: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      justifyContent:
+        "space-between",
+    },
 
-  iconWrapper: {
-    width: 58,
-    height: 58,
-    borderRadius: 18,
-    backgroundColor: "rgba(138,56,245,0.12)",
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 18,
-  },
+    card: {
+      width: "47%",
 
-  icon: {
-    fontSize: 28,
-  },
+      minHeight: 132,
 
-  cardTitle: {
-    fontSize: 15,
-    fontWeight: "700",
-    color: "#232222",
-    textAlign: "center",
-    marginBottom: 8,
-    fontFamily: "PlusJakartaSans-Bold",
-  },
+      backgroundColor:
+        "#FFFFFF",
 
-  cardSubtitle: {
-    fontSize: 12,
-    lineHeight: 18,
-    color: "#636363",
-    textAlign: "center",
-    fontFamily: "PlusJakartaSans-Regular",
-  },
+      borderRadius: 20,
 
-  // NOTE
-  note: {
-    textAlign: "center",
-    marginTop: 34,
-    fontSize: 12,
-    fontStyle: "italic",
-    color: "#636363",
-  },
+      padding: 18,
 
-  // FOOTER
-  footer: {
-    paddingHorizontal: 24,
-    paddingBottom: 28,
-    paddingTop: 12,
-    backgroundColor: "#F6F6F6",
-  },
+      marginBottom: 18,
 
-  buttonContainer: {
-    borderRadius: 14,
-    overflow: "hidden",
+      justifyContent:
+        "center",
+      alignItems: "center",
 
-    shadowColor: "#500088",
-    shadowOpacity: 0.2,
-    shadowRadius: 12,
-    elevation: 8,
-  },
+      position: "relative",
 
-  button: {
-    height: 60,
-    justifyContent: "center",
-    alignItems: "center",
-    borderRadius: 14,
-  },
+      shadowColor: "#000",
+      shadowOpacity: 0.04,
+      shadowRadius: 8,
+      shadowOffset: {
+        width: 0,
+        height: 2,
+      },
 
-  buttonText: {
-    color: "#FFFFFF",
-    fontSize: 18,
-    fontWeight: "700",
-    fontFamily: "Nunito-Bold",
-  },
-});
+      elevation: 2,
+    },
+
+    selectedCard: {
+      backgroundColor:
+        "#F3EAFF",
+
+      borderWidth: 2,
+      borderColor:
+        "#8A38F5",
+    },
+
+    checkCircle: {
+      position: "absolute",
+      top: 10,
+      right: 10,
+
+      width: 28,
+      height: 28,
+
+      borderRadius: 999,
+
+      backgroundColor:
+        "#8A38F5",
+
+      justifyContent:
+        "center",
+      alignItems: "center",
+    },
+
+    checkText: {
+      color: "#FFFFFF",
+      fontSize: 14,
+      fontWeight: "700",
+    },
+
+    iconWrap: {
+      marginBottom: 14,
+    },
+
+    icon: {
+      fontSize: 34,
+      color: "#8A38F5",
+    },
+
+    cardTitle: {
+      fontSize: 16,
+      fontWeight: "700",
+      color: "#1A1B20",
+
+      textAlign: "center",
+
+      marginBottom: 6,
+    },
+
+    cardSubtitle: {
+      fontSize: 13,
+      lineHeight: 18,
+
+      textAlign: "center",
+
+      color: "#666",
+    },
+
+    // NOTE
+    note: {
+      marginTop: 26,
+
+      textAlign: "center",
+
+      fontSize: 14,
+      color: "#666",
+    },
+
+    // FOOTER
+    footer: {
+      position: "absolute",
+      bottom: 0,
+      left: 0,
+      right: 0,
+
+      paddingHorizontal: 24,
+      paddingBottom: 30,
+      paddingTop: 20,
+
+      backgroundColor:
+        "#F5F5F5",
+    },
+
+    button: {
+      height: 60,
+
+      borderRadius: 16,
+
+      justifyContent:
+        "center",
+      alignItems: "center",
+
+      shadowColor: "#6B21A8",
+      shadowOpacity: 0.3,
+      shadowRadius: 12,
+      shadowOffset: {
+        width: 0,
+        height: 6,
+      },
+
+      elevation: 8,
+    },
+
+    buttonText: {
+      color: "#FFFFFF",
+      fontSize: 20,
+      fontWeight: "700",
+    },
+  });

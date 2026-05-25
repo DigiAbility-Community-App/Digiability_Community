@@ -7,6 +7,8 @@ import AccessibilityScreen from '@screens/auth/AccessibilityScreen';
 import ProfileScreen from '@screens/profile/ProfileScreen';
 import ProfileDetailsScreen from '@screens/profile/ProfileDetailsScreen';
 import CareCircleScreen from '@screens/profile/CareCircleScreen';
+import NotificationsScreen from '@screens/home/NotificationScreen';
+import HomeProfileScreen from '@screens/profile/HomeProfileScreen';
 import ChatsStack from './ChatsStack';
 import { useAuthStore } from '@store/authStore';
 import { hasCompletedAccessibility } from '@services/storageService';
@@ -19,6 +21,8 @@ export type MainStackParamList = {
   ProfileDetails: undefined;
   CareCircle: undefined;
   Chats: undefined;
+  Notifications: undefined;
+  HomeProfile: undefined;
 };
 
 const Stack = createNativeStackNavigator<MainStackParamList>();
@@ -104,6 +108,8 @@ const MainNavigator = () => {
       <Stack.Screen name="CareCircle" component={CareCircleScreen} />
       <Stack.Screen name="Home" component={HomeScreen} />
       <Stack.Screen name="Chats" component={ChatsStack} />
+      <Stack.Screen name="Notifications" component={NotificationsScreen} />
+      <Stack.Screen name="HomeProfile" component={HomeProfileScreen} />
     </Stack.Navigator>
   );
 };
