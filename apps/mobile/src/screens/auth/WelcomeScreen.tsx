@@ -6,8 +6,6 @@ import {
   TextInput,
   TouchableOpacity,
   Image,
-  SafeAreaView,
-  StatusBar,
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
@@ -19,6 +17,12 @@ import { LinearGradient } from "expo-linear-gradient";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { AuthStackParamList } from "@navigation/AuthNavigator";
 import { login, register } from "@services/authService";
+import { useTheme } from "../../theme/ThemeContext";
+import { AccessibleText } from "../../components/shared/AccessibleText";
+import { AccessibleButton } from "../../components/shared/AccessibleButton";
+import { Input } from "../../components/shared/Input";
+import ScreenWrapper from "../../components/layout/ScreenWrapper";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 type Props = {
   navigation: NativeStackNavigationProp<AuthStackParamList, "Welcome">;
@@ -47,6 +51,8 @@ function getApiErrorMessage(error: unknown, fallback: string) {
 }
 
 const WelcomeScreen = ({ navigation }: Props) => {
+  const { colors, spacing, highContrast } = useTheme();
+  const insets = useSafeAreaInsets();
   const [activeTab, setActiveTab] = useState<"SignUp" | "Login">("SignUp");
 
   // SignUp
@@ -151,15 +157,13 @@ const WelcomeScreen = ({ navigation }: Props) => {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" />
-
+    <ScreenWrapper statusBarStyle="light">
       {/* HEADER */}
       <LinearGradient
-        colors={["#7C3AED", "#500088"]}
+        colors={highContrast ? ["#000000", "#000000"] : ["#7C3AED", "#500088"]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
-        style={styles.header}
+        style={[styles.header, { paddingTop: insets.top }]}
       >
         {/* Decorative Blur */}
         <View style={styles.topGlow} />
@@ -177,11 +181,13 @@ const WelcomeScreen = ({ navigation }: Props) => {
             />
           </View>
 
-          <Text style={styles.title}>Welcome to DigiAbility</Text>
+          <AccessibleText variant="heroTitle" style={{ color: '#FFFFFF' }}>
+            Welcome to DigiAbility
+          </AccessibleText>
 
-          <Text style={styles.subtitle}>
+          <AccessibleText variant="subtitle" style={{ color: 'rgba(255,255,255,0.8)', marginTop: spacing.xs }}>
             Your support network awaits
-          </Text>
+          </AccessibleText>
         </View>
       </LinearGradient>
 
@@ -191,7 +197,7 @@ const WelcomeScreen = ({ navigation }: Props) => {
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
         <ScrollView
-          style={styles.bottomCard}
+          style={[styles.bottomCard, { backgroundColor: colors.card }]}
           contentContainerStyle={styles.bottomContent}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
@@ -201,194 +207,179 @@ const WelcomeScreen = ({ navigation }: Props) => {
             <TouchableOpacity
               style={[
                 styles.tabBtn,
-                activeTab === "SignUp" && styles.activeTabBtn,
+                activeTab === "SignUp" && { borderBottomColor: colors.primary },
               ]}
               onPress={() => handleTabChange("SignUp")}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: activeTab === "SignUp" }}
+              accessibilityLabel="Sign Up Tab"
+              accessibilityHint="Double tap to switch to registration form"
             >
-              <Text
-                style={
-                  activeTab === "SignUp"
-                    ? styles.activeTabText
-                    : styles.inactiveTabText
-                }
+              <AccessibleText
+                variant="title"
+                style={{
+                  color: activeTab === "SignUp" ? colors.primary : colors.subtext,
+                }}
               >
                 Sign Up
-              </Text>
+              </AccessibleText>
             </TouchableOpacity>
 
             <TouchableOpacity
               style={[
                 styles.tabBtn,
-                activeTab === "Login" && styles.activeTabBtn,
+                activeTab === "Login" && { borderBottomColor: colors.primary },
               ]}
               onPress={() => handleTabChange("Login")}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: activeTab === "Login" }}
+              accessibilityLabel="Login Tab"
+              accessibilityHint="Double tap to switch to login form"
             >
-              <Text
-                style={
-                  activeTab === "Login"
-                    ? styles.activeTabText
-                    : styles.inactiveTabText
-                }
+              <AccessibleText
+                variant="title"
+                style={{
+                  color: activeTab === "Login" ? colors.primary : colors.subtext,
+                }}
               >
                 Login
-              </Text>
+              </AccessibleText>
             </TouchableOpacity>
           </View>
 
           {/* ERROR */}
           {error && (
             <View style={styles.errorBanner}>
-              <Text style={styles.errorText}>{error}</Text>
+              <AccessibleText variant="body" color="#C62828" accessibilityRole="alert">
+                ⚠️ {error}
+              </AccessibleText>
             </View>
           )}
 
           {/* SIGNUP */}
           {activeTab === "SignUp" && (
             <View style={styles.form}>
-              <View>
-                <Text style={styles.label}>FULL NAME</Text>
+              <Input
+                label="Full Name"
+                placeholder="Enter your full name"
+                value={name}
+                onChangeText={setName}
+                accessibilityHint="Enter your first and last name"
+              />
 
-                <TextInput
-                  placeholder="Enter your full name"
-                  placeholderTextColor="rgba(126,115,131,0.5)"
-                  style={styles.input}
-                  value={name}
-                  onChangeText={setName}
-                />
-              </View>
+              <Input
+                label="Email"
+                placeholder="you@example.com"
+                value={signUpEmail}
+                onChangeText={setSignUpEmail}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                accessibilityHint="Enter your email address"
+              />
 
-              <View>
-                <Text style={styles.label}>EMAIL</Text>
+              <Input
+                label="Password"
+                placeholder="Min. 8 characters"
+                value={signUpPassword}
+                onChangeText={setSignUpPassword}
+                secureTextEntry={true}
+                accessibilityHint="Enter a password containing uppercase, lowercase, and a number"
+              />
 
-                <TextInput
-                  placeholder="you@example.com"
-                  placeholderTextColor="rgba(126,115,131,0.5)"
-                  style={styles.input}
-                  value={signUpEmail}
-                  onChangeText={setSignUpEmail}
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                />
-              </View>
-
-              <View>
-                <Text style={styles.label}>PASSWORD</Text>
-
-                <TextInput
-                  placeholder="Min. 8 characters"
-                  placeholderTextColor="rgba(126,115,131,0.5)"
-                  style={styles.input}
-                  value={signUpPassword}
-                  onChangeText={setSignUpPassword}
-                  secureTextEntry
-                />
-              </View>
-
-              <TouchableOpacity
-                style={styles.ctaButton}
+              <AccessibleButton
+                accessibilityLabel="Create Account"
+                accessibilityHint="Submit registration details and continue"
                 onPress={handleSignUp}
                 disabled={loading}
               >
-                <LinearGradient
-                  colors={["#500088", "#6B21A8"]}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={styles.gradientButton}
-                >
-                  {loading ? (
-                    <ActivityIndicator color="#fff" />
-                  ) : (
-                    <Text style={styles.ctaText}>
-                      Create Account
-                    </Text>
-                  )}
-                </LinearGradient>
-              </TouchableOpacity>
+                {loading ? <ActivityIndicator color="#fff" /> : "Create Account"}
+              </AccessibleButton>
             </View>
           )}
 
           {/* LOGIN */}
           {activeTab === "Login" && (
             <View style={styles.form}>
-              <View>
-                <Text style={styles.label}>EMAIL</Text>
+              <Input
+                label="Email"
+                placeholder="you@example.com"
+                value={loginEmail}
+                onChangeText={setLoginEmail}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                accessibilityHint="Enter your registered email address"
+              />
 
-                <TextInput
-                  placeholder="you@example.com"
-                  placeholderTextColor="rgba(126,115,131,0.5)"
-                  style={styles.input}
-                  value={loginEmail}
-                  onChangeText={setLoginEmail}
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                />
-              </View>
-
-              <View>
-                <Text style={styles.label}>PASSWORD</Text>
-
-                <TextInput
-                  placeholder="Your password"
-                  placeholderTextColor="rgba(126,115,131,0.5)"
-                  style={styles.input}
-                  value={loginPassword}
-                  onChangeText={setLoginPassword}
-                  secureTextEntry
-                />
-              </View>
-
-              <TouchableOpacity style={styles.forgotBtn}>
-                <Text style={styles.forgotText}>
-                  Forgot password?
-                </Text>
-              </TouchableOpacity>
+              <Input
+                label="Password"
+                placeholder="Your password"
+                value={loginPassword}
+                onChangeText={setLoginPassword}
+                secureTextEntry={true}
+                accessibilityHint="Enter your account password"
+              />
 
               <TouchableOpacity
-                style={styles.ctaButton}
+                style={styles.forgotBtn}
+                accessibilityRole="button"
+                accessibilityLabel="Forgot Password"
+                accessibilityHint="Launches recovery steps for lost passwords"
+              >
+                <AccessibleText variant="body" color={colors.primary} style={{ fontWeight: '600' }}>
+                  Forgot password?
+                </AccessibleText>
+              </TouchableOpacity>
+
+              <AccessibleButton
+                accessibilityLabel="Login"
+                accessibilityHint="Submit credentials to log in"
                 onPress={handleLogin}
                 disabled={loading}
               >
-                <LinearGradient
-                  colors={["#500088", "#6B21A8"]}
-                  style={styles.gradientButton}
-                >
-                  {loading ? (
-                    <ActivityIndicator color="#fff" />
-                  ) : (
-                    <Text style={styles.ctaText}>Login</Text>
-                  )}
-                </LinearGradient>
-              </TouchableOpacity>
+                {loading ? <ActivityIndicator color="#fff" /> : "Login"}
+              </AccessibleButton>
             </View>
           )}
 
           {/* DIVIDER */}
           <View style={styles.divider}>
             <View style={styles.line} />
-            <Text style={styles.or}>or</Text>
+            <AccessibleText variant="caption" style={{ marginHorizontal: spacing.md }}>
+              or
+            </AccessibleText>
             <View style={styles.line} />
           </View>
 
           {/* SOCIAL */}
           <View style={styles.socialRow}>
-            <TouchableOpacity style={styles.socialBtn}>
-              <Text style={styles.socialText}>🌐 Google</Text>
-            </TouchableOpacity>
+            <AccessibleButton
+              variant="outline"
+              accessibilityLabel="Sign in with Google"
+              style={{ flex: 1 }}
+              onPress={() => {}}
+            >
+              🌐 Google
+            </AccessibleButton>
 
-            <TouchableOpacity style={styles.socialBtn}>
-              <Text style={styles.socialText}>🍎 Apple</Text>
-            </TouchableOpacity>
+            <AccessibleButton
+              variant="outline"
+              accessibilityLabel="Sign in with Apple"
+              style={{ flex: 1 }}
+              onPress={() => {}}
+            >
+              🍎 Apple
+            </AccessibleButton>
           </View>
 
           {/* FOOTER */}
-          <Text style={styles.footer}>
+          <AccessibleText variant="caption" style={{ marginTop: spacing.xl, textAlign: 'center', lineHeight: 22 }}>
             By continuing, you agree to our{" "}
-            <Text style={styles.footerLink}>Terms</Text> &{" "}
-            <Text style={styles.footerLink}>Privacy Policy</Text>
-          </Text>
+            <AccessibleText variant="caption" color={colors.primary} style={{ fontWeight: '700' }}>Terms</AccessibleText> &{" "}
+            <AccessibleText variant="caption" color={colors.primary} style={{ fontWeight: '700' }}>Privacy Policy</AccessibleText>
+          </AccessibleText>
         </ScrollView>
       </KeyboardAvoidingView>
-    </SafeAreaView>
+    </ScreenWrapper>
   );
 };
 

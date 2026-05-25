@@ -13,6 +13,8 @@ export interface AuthUser {
   role?: string | null;
   profileComplete: boolean;
   isEmailVerified: boolean;
+  fullName?: string;
+  username?: string;
 }
 
 // Basic profile fields collected during onboarding (not yet in DB)

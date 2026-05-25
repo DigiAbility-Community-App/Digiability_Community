@@ -3,13 +3,11 @@ import {
   View,
   Text,
   StyleSheet,
-  SafeAreaView,
   TextInput,
   TouchableOpacity,
   FlatList,
   ScrollView,
   ActivityIndicator,
-  StatusBar,
   Animated,
   Alert,
   KeyboardAvoidingView,
@@ -20,6 +18,8 @@ import { ChatsStackParamList } from "@navigation/ChatsStack";
 import { chatService } from "@services/chatService";
 import { useAuthStore } from "@store/authStore";
 import { useChatStore } from "@store/chatStore";
+import ScreenWrapper from "../../components/layout/ScreenWrapper";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 // ─────────────────────────────────────────────────────────
 // Create Group (Care Circle) Screen
@@ -45,6 +45,7 @@ interface UserResult {
 const CreateGroupScreen = ({ navigation }: Props) => {
   const user = useAuthStore((s) => s.user);
   const addConversation = useChatStore((s) => s.addConversation);
+  const insets = useSafeAreaInsets();
 
   const [groupName, setGroupName] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
@@ -211,14 +212,13 @@ const CreateGroupScreen = ({ navigation }: Props) => {
   const canCreate = groupName.trim().length > 0 && selectedMembers.length > 0;
 
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" />
-
+    <ScreenWrapper statusBarStyle="light">
       {/* ── Header ────────────────────────────────────────── */}
       <Animated.View
         style={[
           styles.header,
           {
+            paddingTop: insets.top + 8,
             opacity: headerAnim,
             transform: [
               {
@@ -407,7 +407,7 @@ const CreateGroupScreen = ({ navigation }: Props) => {
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
-    </SafeAreaView>
+    </ScreenWrapper>
   );
 };
 

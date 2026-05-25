@@ -1,20 +1,25 @@
 import React from "react";
-
 import {
     View,
-    Text,
     StyleSheet,
-    SafeAreaView,
     ScrollView,
     TouchableOpacity,
     Image,
 } from "react-native";
-
-import { LinearGradient } from "expo-linear-gradient";
 import { useNavigation } from "@react-navigation/native";
+import { useAuthStore } from "../../store/authStore";
+import { useTheme } from "../../theme/ThemeContext";
+import { AccessibleText } from "../../components/shared/AccessibleText";
+import { AccessibleButton } from "../../components/shared/AccessibleButton";
+import ScreenWrapper from "../../components/layout/ScreenWrapper";
+import AppHeader from "../../components/layout/AppHeader";
+import AppFooter from "../../components/layout/AppFooter";
 
 const ProfileScreen = () => {
     const navigation = useNavigation<any>();
+    const user = useAuthStore((state) => state.user);
+    const clearAuth = useAuthStore((state) => state.clearAuth);
+    const { colors, spacing, highContrast } = useTheme();
 
     const familySupport = [
         {
@@ -23,14 +28,12 @@ const ProfileScreen = () => {
             icon: "👨‍👩‍👧",
             bg: "#F1DBFF",
         },
-
         {
             title: "Emergency SOS",
             subtitle: "Safety settings",
             icon: "🚨",
             bg: "#FEE2E2",
         },
-
         {
             title: "Medical Records",
             subtitle: "Synced securely",
@@ -45,19 +48,16 @@ const ProfileScreen = () => {
             subtitle: "",
             icon: "♿",
         },
-
         {
             title: "Notifications",
             subtitle: "Push enabled",
             icon: "🔔",
         },
-
         {
             title: "Privacy & Security",
             subtitle: "",
             icon: "🔒",
         },
-
         {
             title: "Language",
             subtitle: "English",
@@ -70,184 +70,176 @@ const ProfileScreen = () => {
             title: "Help Center",
             icon: "❓",
         },
-
         {
             title: "Contact Support",
             icon: "📞",
         },
     ];
 
+    const cardBorder = highContrast
+        ? { borderWidth: 2, borderColor: '#000000' }
+        : { borderWidth: 1, borderColor: 'rgba(0,0,0,0.05)' };
+
     return (
-        <SafeAreaView style={styles.container}>
+        <ScreenWrapper>
             {/* HEADER */}
-            <View style={styles.header}>
-                <View style={styles.headerLeft}>
-                    <Text style={styles.logo}>
-                        ♿
-                    </Text>
-
-                    <Text style={styles.headerTitle}>
-                        Profile
-                    </Text>
-                </View>
-
-                <TouchableOpacity>
-                    <Text style={styles.headerIcon}>
-                        ⚙️
-                    </Text>
-                </TouchableOpacity>
-            </View>
+            <AppHeader
+                title="Profile"
+                rightActions={
+                    <TouchableOpacity
+                        style={styles.headerRightTouch}
+                        accessibilityRole="button"
+                        accessibilityLabel="Settings"
+                        accessibilityHint="Opens profile settings"
+                        activeOpacity={0.7}
+                    >
+                        <AccessibleText style={styles.headerIcon}>
+                            ⚙️
+                        </AccessibleText>
+                    </TouchableOpacity>
+                }
+            />
 
             {/* BODY */}
             <ScrollView
-                showsVerticalScrollIndicator={
-                    false
-                }
-                contentContainerStyle={
-                    styles.scrollContent
-                }
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={styles.scrollContent}
             >
                 {/* PROFILE CARD */}
-                <View style={styles.profileCard}>
+                <View style={[styles.profileCard, { backgroundColor: colors.card, borderTopColor: colors.primary }, cardBorder]}>
                     {/* TOP */}
                     <View style={styles.profileTop}>
                         <Image
-                            source={{
-                                uri: "https://i.pravatar.cc/300",
-                            }}
+                            source={require("../../../assets/user icon.png")}
                             style={styles.avatar}
                         />
 
-                        <Text style={styles.userName}>
-                            Prathmesh
-                        </Text>
+                        <AccessibleText variant="title" style={{ color: colors.primary, fontSize: 24 }}>
+                            {user?.name || "User"}
+                        </AccessibleText>
 
-                        <Text style={styles.userRole}>
+                        <AccessibleText variant="body" style={{ color: colors.subtext, marginTop: 4, marginBottom: 20 }}>
                             Community Member
-                        </Text>
+                        </AccessibleText>
 
-                        <TouchableOpacity
+                        <AccessibleButton
+                            variant="outline"
+                            accessibilityLabel="Edit Profile"
+                            accessibilityHint="Navigates to edit profile screen"
                             style={styles.editBtn}
-                            onPress={() =>
-                                navigation.navigate("Profile")
-                            }
+                            textStyle={styles.editBtnText}
+                            onPress={() => navigation.navigate("EditProfile")}
                         >
-                            <Text style={styles.editBtnText}>
-                                Edit Profile
-                            </Text>
-                        </TouchableOpacity>
+                            Edit Profile
+                        </AccessibleButton>
                     </View>
 
                     {/* STATS */}
-                    <View style={styles.statsRow}>
+                    <View style={[styles.statsRow, { backgroundColor: colors.surface }]}>
                         <View style={styles.statItem}>
-                            <Text
-                                style={styles.statNumber}
+                            <AccessibleText
+                                variant="title"
+                                style={{ color: colors.primary, fontSize: 20 }}
                             >
                                 12
-                            </Text>
+                            </AccessibleText>
 
-                            <Text
-                                style={styles.statLabel}
+                            <AccessibleText
+                                variant="overline"
+                                style={{ color: colors.subtext }}
                             >
                                 FORUMS
-                            </Text>
+                            </AccessibleText>
                         </View>
 
                         <View style={styles.statDivider} />
 
                         <View style={styles.statItem}>
-                            <Text
-                                style={styles.statNumber}
+                            <AccessibleText
+                                variant="title"
+                                style={{ color: colors.primary, fontSize: 20 }}
                             >
                                 4
-                            </Text>
+                            </AccessibleText>
 
-                            <Text
-                                style={styles.statLabel}
+                            <AccessibleText
+                                variant="overline"
+                                style={{ color: colors.subtext }}
                             >
                                 GROUPS
-                            </Text>
+                            </AccessibleText>
                         </View>
 
                         <View style={styles.statDivider} />
 
                         <View style={styles.statItem}>
-                            <Text
-                                style={styles.statNumber}
+                            <AccessibleText
+                                variant="title"
+                                style={{ color: colors.primary, fontSize: 20 }}
                             >
                                 8
-                            </Text>
+                            </AccessibleText>
 
-                            <Text
-                                style={styles.statLabel}
+                            <AccessibleText
+                                variant="overline"
+                                style={{ color: colors.subtext }}
                             >
                                 POSTS
-                            </Text>
+                            </AccessibleText>
                         </View>
                     </View>
                 </View>
 
                 {/* FAMILY SUPPORT */}
                 <View style={styles.section}>
-                    <Text style={styles.sectionTitle}>
+                    <AccessibleText variant="overline" style={{ marginBottom: 12, paddingHorizontal: 8 }}>
                         FAMILY & SUPPORT
-                    </Text>
+                    </AccessibleText>
 
-                    <View style={styles.sectionCard}>
+                    <View style={[styles.sectionCard, { backgroundColor: colors.surface }, cardBorder]}>
                         {familySupport.map(
                             (item, index) => (
                                 <TouchableOpacity
                                     key={index}
-                                    style={styles.menuItem}
-                                >
-                                    <View
-                                        style={
-                                            styles.menuLeft
+                                    style={[styles.menuItem, { backgroundColor: colors.card, borderBottomWidth: 1, borderBottomColor: colors.border }]}
+                                    accessibilityRole="button"
+                                    accessibilityLabel={`${item.title}, ${item.subtitle}`}
+                                    accessibilityHint={`Double tap to view ${item.title}`}
+                                    onPress={() => {
+                                        if (item.title === "Care Circle") {
+                                            navigation.navigate("CareCircle");
                                         }
-                                    >
+                                    }}
+                                >
+                                    <View style={styles.menuLeft}>
                                         <View
                                             style={[
                                                 styles.iconWrap,
                                                 {
-                                                    backgroundColor:
-                                                        item.bg,
+                                                    backgroundColor: highContrast ? '#FFFFFF' : item.bg,
                                                 },
+                                                highContrast && { borderWidth: 1, borderColor: '#000000' }
                                             ]}
                                         >
-                                            <Text
-                                                style={
-                                                    styles.menuIcon
-                                                }
-                                            >
+                                            <AccessibleText style={styles.menuIcon}>
                                                 {item.icon}
-                                            </Text>
+                                            </AccessibleText>
                                         </View>
 
                                         <View>
-                                            <Text
-                                                style={
-                                                    styles.menuTitle
-                                                }
-                                            >
+                                            <AccessibleText variant="title" style={{ fontSize: 16 }}>
                                                 {item.title}
-                                            </Text>
+                                            </AccessibleText>
 
-                                            <Text
-                                                style={
-                                                    styles.menuSubtitle
-                                                }
-                                            >
+                                            <AccessibleText variant="caption">
                                                 {item.subtitle}
-                                            </Text>
+                                            </AccessibleText>
                                         </View>
                                     </View>
 
-                                    <Text
-                                        style={styles.arrow}
-                                    >
+                                    <AccessibleText style={styles.arrow}>
                                         ›
-                                    </Text>
+                                    </AccessibleText>
                                 </TouchableOpacity>
                             )
                         )}
@@ -256,77 +248,49 @@ const ProfileScreen = () => {
 
                 {/* ACCOUNT SETTINGS */}
                 <View style={styles.section}>
-                    <Text style={styles.sectionTitle}>
+                    <AccessibleText variant="overline" style={{ marginBottom: 12, paddingHorizontal: 8 }}>
                         ACCOUNT SETTINGS
-                    </Text>
+                    </AccessibleText>
 
-                    <View style={styles.sectionCard}>
+                    <View style={[styles.sectionCard, { backgroundColor: colors.surface }, cardBorder]}>
                         {accountSettings.map(
                             (item, index) => (
                                 <TouchableOpacity
                                     key={index}
-                                    style={styles.menuItem}
+                                    style={[styles.menuItem, { backgroundColor: colors.card, borderBottomWidth: 1, borderBottomColor: colors.border }]}
+                                    accessibilityRole="button"
+                                    accessibilityLabel={`${item.title} settings`}
+                                    accessibilityHint={`Double tap to view ${item.title} options`}
                                     onPress={() => {
-                                        if (
-                                            item.title ===
-                                            "Accessibility"
-                                        ) {
-                                            navigation.navigate(
-                                                "Accessibility"
-                                            );
+                                        if (item.title === "Accessibility") {
+                                            navigation.navigate("Accessibility");
                                         }
-
-                                        if (
-                                            item.title ===
-                                            "Notifications"
-                                        ) {
-                                            navigation.navigate(
-                                                "Notifications"
-                                            );
+                                        if (item.title === "Notifications") {
+                                            navigation.navigate("Notifications");
                                         }
                                     }}
                                 >
-                                    <View
-                                        style={
-                                            styles.menuLeft
-                                        }
-                                    >
-                                        <Text
-                                            style={
-                                                styles.settingsIcon
-                                            }
-                                        >
+                                    <View style={styles.menuLeft}>
+                                        <AccessibleText style={[styles.settingsIcon, { color: colors.text }]}>
                                             {item.icon}
-                                        </Text>
+                                        </AccessibleText>
 
                                         <View>
-                                            <Text
-                                                style={
-                                                    styles.menuTitle
-                                                }
-                                            >
+                                            <AccessibleText variant="title" style={{ fontSize: 16 }}>
                                                 {item.title}
-                                            </Text>
+                                            </AccessibleText>
 
                                             {!!item.subtitle && (
-                                                <Text
-                                                    style={
-                                                        styles.menuSubtitle
-                                                    }
-                                                >
-                                                    {
-                                                        item.subtitle
-                                                    }
-                                                </Text>
+                                                <AccessibleText variant="caption">
+                                                    {item.subtitle}
+                                                </AccessibleText>
                                             )}
                                         </View>
                                     </View>
 
-                                    <Text
-                                        style={styles.arrow}
-                                    >
+                                    <AccessibleText style={styles.arrow}>
                                         ›
-                                    </Text>
+                                    </AccessibleText>
                                 </TouchableOpacity>
                             )
                         )}
@@ -335,44 +299,33 @@ const ProfileScreen = () => {
 
                 {/* SUPPORT */}
                 <View style={styles.section}>
-                    <Text style={styles.sectionTitle}>
+                    <AccessibleText variant="overline" style={{ marginBottom: 12, paddingHorizontal: 8 }}>
                         SUPPORT
-                    </Text>
+                    </AccessibleText>
 
-                    <View style={styles.sectionCard}>
+                    <View style={[styles.sectionCard, { backgroundColor: colors.surface }, cardBorder]}>
                         {supportItems.map(
                             (item, index) => (
                                 <TouchableOpacity
                                     key={index}
-                                    style={styles.menuItem}
+                                    style={[styles.menuItem, { backgroundColor: colors.card, borderBottomWidth: 1, borderBottomColor: colors.border }]}
+                                    accessibilityRole="button"
+                                    accessibilityLabel={item.title}
+                                    accessibilityHint={`Double tap to open ${item.title}`}
                                 >
-                                    <View
-                                        style={
-                                            styles.menuLeft
-                                        }
-                                    >
-                                        <Text
-                                            style={
-                                                styles.settingsIcon
-                                            }
-                                        >
+                                    <View style={styles.menuLeft}>
+                                        <AccessibleText style={[styles.settingsIcon, { color: colors.text }]}>
                                             {item.icon}
-                                        </Text>
+                                        </AccessibleText>
 
-                                        <Text
-                                            style={
-                                                styles.menuTitle
-                                            }
-                                        >
+                                        <AccessibleText variant="title" style={{ fontSize: 16 }}>
                                             {item.title}
-                                        </Text>
+                                        </AccessibleText>
                                     </View>
 
-                                    <Text
-                                        style={styles.arrow}
-                                    >
+                                    <AccessibleText style={styles.arrow}>
                                         ›
-                                    </Text>
+                                    </AccessibleText>
                                 </TouchableOpacity>
                             )
                         )}
@@ -380,66 +333,21 @@ const ProfileScreen = () => {
                 </View>
 
                 {/* LOGOUT */}
-                <TouchableOpacity
+                <AccessibleButton
+                    variant="danger"
+                    accessibilityLabel="Logout"
+                    accessibilityHint="Logs you out of the application"
                     style={styles.logoutBtn}
+                    onPress={() => clearAuth()}
                 >
-                    <Text style={styles.logoutIcon}>
-                        ↩
-                    </Text>
-
-                    <Text style={styles.logoutText}>
-                        LOGOUT
-                    </Text>
-                </TouchableOpacity>
+                    LOGOUT
+                </AccessibleButton>
 
                 <View style={{ height: 120 }} />
             </ScrollView>
 
-            {/* NAVBAR */}
-            <View style={styles.navbar}>
-                <TouchableOpacity
-                    onPress={() =>
-                        navigation.navigate("Home")
-                    }
-                >
-                    <Text style={styles.navText}>
-                        Home
-                    </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity>
-                    <Text style={styles.navText}>
-                        Community
-                    </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity>
-                    <Text style={styles.navText}>
-                        Services
-                    </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity>
-                    <Text style={styles.navText}>
-                        Learn
-                    </Text>
-                </TouchableOpacity>
-
-                <LinearGradient
-                    colors={[
-                        "#500088",
-                        "#6B21A8",
-                    ]}
-                    style={styles.activeNav}
-                >
-                    <Text
-                        style={styles.activeNavText}
-                    >
-                        Profile
-                    </Text>
-                </LinearGradient>
-            </View>
-        </SafeAreaView>
+            <AppFooter activeTab="Profile" />
+        </ScreenWrapper>
     );
 };
 
@@ -448,39 +356,18 @@ export default ProfileScreen;
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: "#F5F5F5",
-    },
-
-    header: {
-        height: 72,
-        backgroundColor: "#500088",
-
-        flexDirection: "row",
-        justifyContent: "space-between",
-        alignItems: "center",
-
-        paddingHorizontal: 24,
-    },
-
-    headerLeft: {
-        flexDirection: "row",
-        alignItems: "center",
-    },
-
-    logo: {
-        fontSize: 24,
-        marginRight: 12,
-        color: "#fff",
-    },
-
-    headerTitle: {
-        color: "#fff",
-        fontSize: 20,
-        fontWeight: "700",
+        backgroundColor: "#FAF8FF",
     },
 
     headerIcon: {
         fontSize: 20,
+    },
+
+    headerRightTouch: {
+        minWidth: 48,
+        minHeight: 48,
+        justifyContent: "center",
+        alignItems: "center",
     },
 
     scrollContent: {
@@ -509,24 +396,13 @@ const styles = StyleSheet.create({
         marginBottom: 16,
     },
 
-    userName: {
-        fontSize: 24,
-        fontWeight: "700",
-        color: "#500088",
-    },
-
-    userRole: {
-        color: "#4C4452",
-        marginTop: 4,
-        marginBottom: 20,
-    },
-
     editBtn: {
         borderWidth: 2,
         borderColor: "#500088",
         paddingHorizontal: 24,
         paddingVertical: 10,
         borderRadius: 12,
+        marginTop: 10,
     },
 
     editBtnText: {
@@ -550,30 +426,8 @@ const styles = StyleSheet.create({
         backgroundColor: "#DDD",
     },
 
-    statNumber: {
-        fontSize: 20,
-        fontWeight: "800",
-        color: "#500088",
-    },
-
-    statLabel: {
-        marginTop: 4,
-        fontSize: 10,
-        fontWeight: "700",
-        color: "#4C4452",
-    },
-
     section: {
         marginBottom: 24,
-    },
-
-    sectionTitle: {
-        fontSize: 12,
-        fontWeight: "800",
-        letterSpacing: 2,
-        color: "#4C4452",
-        marginBottom: 12,
-        paddingHorizontal: 8,
     },
 
     sectionCard: {
@@ -585,14 +439,11 @@ const styles = StyleSheet.create({
     menuItem: {
         backgroundColor: "#fff",
         minHeight: 64,
-
         flexDirection: "row",
         justifyContent: "space-between",
         alignItems: "center",
-
         paddingHorizontal: 16,
         paddingVertical: 14,
-
         marginBottom: 1,
     },
 
@@ -605,10 +456,8 @@ const styles = StyleSheet.create({
         width: 40,
         height: 40,
         borderRadius: 12,
-
         justifyContent: "center",
         alignItems: "center",
-
         marginRight: 16,
     },
 
@@ -621,18 +470,6 @@ const styles = StyleSheet.create({
         marginRight: 16,
     },
 
-    menuTitle: {
-        fontSize: 16,
-        fontWeight: "700",
-        color: "#1A1B20",
-    },
-
-    menuSubtitle: {
-        marginTop: 2,
-        fontSize: 12,
-        color: "#4C4452",
-    },
-
     arrow: {
         fontSize: 24,
         color: "#CFC2D4",
@@ -640,67 +477,13 @@ const styles = StyleSheet.create({
 
     logoutBtn: {
         height: 56,
-
         borderWidth: 2,
         borderColor: "#BA1A1A",
         borderRadius: 16,
-
         justifyContent: "center",
         alignItems: "center",
-
         flexDirection: "row",
     },
 
-    logoutIcon: {
-        fontSize: 18,
-        color: "#BA1A1A",
-        marginRight: 8,
-    },
-
-    logoutText: {
-        color: "#BA1A1A",
-        fontWeight: "800",
-        letterSpacing: 1,
-    },
-
-    navbar: {
-        position: "absolute",
-
-        bottom: 0,
-        left: 0,
-        right: 0,
-
-        height: 75,
-
-        backgroundColor:
-            "rgba(249,248,255,0.9)",
-
-        flexDirection: "row",
-        justifyContent: "space-around",
-        alignItems: "center",
-
-        borderTopLeftRadius: 24,
-        borderTopRightRadius: 24,
-
-        paddingBottom: 10,
-    },
-
-    navText: {
-        color: "#64748B",
-        fontSize: 11,
-        textTransform: "uppercase",
-    },
-
-    activeNav: {
-        paddingHorizontal: 18,
-        paddingVertical: 10,
-        borderRadius: 16,
-    },
-
-    activeNavText: {
-        color: "#FFFFFF",
-        fontSize: 11,
-        fontWeight: "700",
-        textTransform: "uppercase",
-    },
+    // Legacy navbar style removed
 });

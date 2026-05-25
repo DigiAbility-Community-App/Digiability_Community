@@ -210,3 +210,59 @@ export async function submitFullOnboarding(params: {
   // 3. Save role-specific details (server marks profileComplete=true)
   await submitProfileDetails(userId, roleDetails);
 }
+
+// ─────────────────────────────────────────────
+// Get user profile (for editing)
+// ─────────────────────────────────────────────
+
+function formatIsoToDmy(isoString?: string | null) {
+  if (!isoString) return '';
+  const date = new Date(isoString);
+  if (isNaN(date.getTime())) return '';
+  const day = String(date.getUTCDate()).padStart(2, '0');
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const year = date.getUTCFullYear();
+  return `${day}/${month}/${year}`;
+}
+
+export async function getUserProfile(userId: string) {
+  const response = await apiClient.get<ApiResponse<any>>('/api/users/profile/me');
+  const profile = response.data.data;
+  if (profile) {
+    profile.dob = formatIsoToDmy(profile.dob);
+    profile.roleDetails = profile; // Map flat model fields to roleDetails key for compatibility
+  }
+  return profile;
+}
+
+// ─────────────────────────────────────────────
+// Update user profile (for editing)
+// ─────────────────────────────────────────────
+
+export async function updateUserProfile(params: {
+  userId: string;
+  basicProfile: any;
+  roleDetails: any;
+}) {
+  const { userId, basicProfile, roleDetails } = params;
+  
+  // Parse DOB if provided in DD/MM/YYYY format
+  const parsedDob = basicProfile.dob?.trim()
+    ? parseDateInput(basicProfile.dob.trim(), 'DMY')
+    : undefined;
+    
+  // 1. Update basic profile
+  const basicRes = await apiClient.put<ApiResponse<any>>('/api/users/profile', {
+    ...basicProfile,
+    dob: parsedDob,
+  });
+  
+  // 2. Update role details
+  const detailsRes = await apiClient.put<ApiResponse<any>>('/api/users/profile/details', roleDetails);
+  
+  return {
+    basicProfile: basicRes.data.data,
+    roleDetails: detailsRes.data.data,
+  };
+}
+

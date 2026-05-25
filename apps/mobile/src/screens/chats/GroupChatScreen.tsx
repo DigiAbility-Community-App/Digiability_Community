@@ -3,13 +3,11 @@ import {
   View,
   Text,
   StyleSheet,
-  SafeAreaView,
   FlatList,
   TouchableOpacity,
   TextInput,
   KeyboardAvoidingView,
   Platform,
-  StatusBar,
   ActivityIndicator,
 } from "react-native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -19,6 +17,8 @@ import { useAuthStore } from "@store/authStore";
 import { useChatStore, ChatMessage } from "@store/chatStore";
 import { chatService } from "@services/chatService";
 import { sendSocketMessage } from "@services/socketService";
+import ScreenWrapper from "../../components/layout/ScreenWrapper";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 // ─────────────────────────────────────────────────────────
 // Group Chat Screen — Care Circle / Group Thread
@@ -42,6 +42,7 @@ const MEMBER_COLORS = [
 
 const GroupChatScreen = ({ navigation, route }: Props) => {
   const { conversationId, groupName, memberCount } = route.params;
+  const insets = useSafeAreaInsets();
   const user = useAuthStore((s) => s.user);
   const storeMessages = useChatStore((s) => s.messages[conversationId] || []);
   const setMessages = useChatStore((s) => s.setMessages);
@@ -211,9 +212,8 @@ const GroupChatScreen = ({ navigation, route }: Props) => {
 
   if (isLoading) {
     return (
-      <SafeAreaView style={styles.container}>
-        <StatusBar barStyle="light-content" />
-        <View style={styles.header}>
+      <ScreenWrapper>
+        <View style={[styles.header, { paddingTop: insets.top + 10 }]}>
           <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
             <Text style={styles.backText}>←</Text>
           </TouchableOpacity>
@@ -232,16 +232,14 @@ const GroupChatScreen = ({ navigation, route }: Props) => {
         <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
           <ActivityIndicator size="large" color="#8A38F5" />
         </View>
-      </SafeAreaView>
+      </ScreenWrapper>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" />
-
-      {/* ── Header ───────────────────────────────────────── */}
-      <View style={styles.header}>
+    <ScreenWrapper>
+      {/* ── Header — paddingTop clears the translucent status bar via safe-area insets */}
+      <View style={[styles.header, { paddingTop: insets.top + 10 }]}>
         <TouchableOpacity
           style={styles.backBtn}
           onPress={() => navigation.goBack()}
@@ -334,7 +332,7 @@ const GroupChatScreen = ({ navigation, route }: Props) => {
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
-    </SafeAreaView>
+    </ScreenWrapper>
   );
 };
 
@@ -352,7 +350,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: "#500088",
     paddingHorizontal: 12,
-    paddingVertical: 12,
+    // paddingTop is dynamic via insets (applied inline)
+    paddingBottom: 12,
     borderBottomLeftRadius: 20,
     borderBottomRightRadius: 20,
   },

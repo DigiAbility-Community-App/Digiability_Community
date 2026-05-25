@@ -1,16 +1,21 @@
 import React, { useEffect, useState } from "react";
 import {
   View,
-  Text,
   StyleSheet,
-  SafeAreaView,
   ScrollView,
   TouchableOpacity,
   ActivityIndicator,
+  Image,
 } from "react-native";
-
 import { LinearGradient } from "expo-linear-gradient";
 import { useNavigation } from "@react-navigation/native";
+import { useAuthStore } from "@store/authStore";
+import { useTheme } from "../../theme/ThemeContext";
+import { AccessibleText } from "../../components/shared/AccessibleText";
+import { AccessibleButton } from "../../components/shared/AccessibleButton";
+import ScreenWrapper from "../../components/layout/ScreenWrapper";
+import AppHeader from "../../components/layout/AppHeader";
+import AppFooter from "../../components/layout/AppFooter";
 
 // ----------------------
 // TYPES
@@ -34,6 +39,8 @@ type CommunityPostType = {
 
 const HomeScreen = () => {
   const navigation = useNavigation<any>();
+  const user = useAuthStore((state) => state.user);
+  const { colors, spacing, highContrast } = useTheme();
 
   // ----------------------
   // STATES
@@ -137,50 +144,26 @@ const HomeScreen = () => {
 
   if (loading) {
     return (
-      <SafeAreaView style={styles.loaderContainer}>
+      <ScreenWrapper style={styles.loaderContainer}>
         <ActivityIndicator
           size="large"
-          color="#500088"
+          color={colors.primary}
         />
 
-        <Text style={styles.loadingText}>
+        <AccessibleText variant="body" style={{ color: colors.primary, marginTop: spacing.xs, textAlign: 'center' }}>
           Loading Home...
-        </Text>
-      </SafeAreaView>
+        </AccessibleText>
+      </ScreenWrapper>
     );
   }
 
+  const cardBorder = highContrast
+    ? { borderWidth: 2, borderColor: '#000000' }
+    : { borderWidth: 1, borderColor: 'rgba(0,0,0,0.05)' };
+
   return (
-    <SafeAreaView style={styles.container}>
-      {/* HEADER */}
-      <View style={styles.header}>
-        <View style={styles.headerContainer}>
-          {/* LEFT */}
-          <View style={styles.logoSection}>
-            <Text style={styles.logo}>♿</Text>
-
-            <Text style={styles.headerTitle}>
-              DigiAbility
-            </Text>
-          </View>
-
-          {/* RIGHT */}
-          <TouchableOpacity
-            style={styles.notificationBtn}
-            onPress={() =>
-              navigation.navigate(
-                "Notifications"
-              )
-            }
-          >
-            <Text style={styles.notificationIcon}>
-              🔔
-            </Text>
-
-            <View style={styles.badge} />
-          </TouchableOpacity>
-        </View>
-      </View>
+    <ScreenWrapper>
+      <AppHeader showLogo title="DigiAbility" showNotification hasUnreadNotifications={true} />
 
       {/* BODY */}
       <ScrollView
@@ -188,170 +171,187 @@ const HomeScreen = () => {
         contentContainerStyle={styles.scrollContent}
       >
         {/* GREETING */}
-        <View style={styles.greetingCard}>
-          <Text style={styles.welcomeText}>
-            Welcome back 👋
-          </Text>
+        <View style={[styles.greetingCard, { backgroundColor: colors.card }, cardBorder]}>
+          <AccessibleText variant="body" style={{ color: colors.subtext }}>
+            Welcome 👋
+          </AccessibleText>
 
-          <Text style={styles.userName}>
-            Prathmesh
-          </Text>
+          <AccessibleText variant="heroTitle" style={{ color: colors.primary }}>
+            {user?.name || "User"}
+          </AccessibleText>
         </View>
 
         {/* QUICK ACTIONS */}
         <View style={styles.quickGrid}>
           {/* CARE CIRCLE */}
           <TouchableOpacity
-            style={styles.quickCard}
+            style={[styles.quickCard, { backgroundColor: colors.card }, cardBorder]}
             onPress={() =>
               navigation.navigate(
                 "CareCircle"
               )
             }
+            accessibilityRole="button"
+            accessibilityLabel="Care Circle Card"
+            accessibilityHint="Double tap to view members in your care circle"
           >
             <View
               style={[
                 styles.quickIconWrap,
-                { backgroundColor: "#F1DBFF" },
+                { backgroundColor: highContrast ? '#FFFFFF' : '#F1DBFF' },
+                highContrast && { borderWidth: 2, borderColor: '#000000' }
               ]}
             >
-              <Text style={styles.quickEmoji}>
+              <AccessibleText style={styles.quickEmoji}>
                 👨‍👩‍👧
-              </Text>
+              </AccessibleText>
             </View>
 
-            <Text style={styles.quickTitle}>
+            <AccessibleText variant="title" style={{ fontSize: 16 }}>
               Care Circle
-            </Text>
+            </AccessibleText>
 
-            <Text style={styles.quickSubtitle}>
+            <AccessibleText variant="caption">
               View members
-            </Text>
+            </AccessibleText>
           </TouchableOpacity>
 
           {/* PROFILE */}
           <TouchableOpacity
-            style={styles.quickCard}
+            style={[styles.quickCard, { backgroundColor: colors.card }, cardBorder]}
             onPress={() =>
               navigation.navigate("HomeProfile")
             }
+            accessibilityRole="button"
+            accessibilityLabel="Profile Card"
+            accessibilityHint="Double tap to navigate to profile details"
           >
             <View
               style={[
                 styles.quickIconWrap,
-                { backgroundColor: "#FFDAD6" },
+                { backgroundColor: highContrast ? '#FFFFFF' : '#FFDAD6' },
+                highContrast && { borderWidth: 2, borderColor: '#000000' }
               ]}
             >
-              <Text style={styles.quickEmoji}>
+              <AccessibleText style={styles.quickEmoji}>
                 👤
-              </Text>
+              </AccessibleText>
             </View>
 
-            <Text style={styles.quickTitle}>
+            <AccessibleText variant="title" style={{ fontSize: 16 }}>
               Profile
-            </Text>
+            </AccessibleText>
 
-            <Text style={styles.quickSubtitle}>
+            <AccessibleText variant="caption">
               View your profile
-            </Text>
+            </AccessibleText>
           </TouchableOpacity>
 
           {/* EVENTS */}
           <TouchableOpacity
-            style={styles.quickCard}
+            style={[styles.quickCard, { backgroundColor: colors.card }, cardBorder]}
             onPress={() =>
               navigation.navigate("Events")
             }
+            accessibilityRole="button"
+            accessibilityLabel="Events Card"
+            accessibilityHint="Double tap to view upcoming community programs"
           >
             <View
               style={[
                 styles.quickIconWrap,
-                { backgroundColor: "#FFDDB8" },
+                { backgroundColor: highContrast ? '#FFFFFF' : '#FFDDB8' },
+                highContrast && { borderWidth: 2, borderColor: '#000000' }
               ]}
             >
-              <Text style={styles.quickEmoji}>
+              <AccessibleText style={styles.quickEmoji}>
                 📅
-              </Text>
+              </AccessibleText>
             </View>
 
-            <Text style={styles.quickTitle}>
+            <AccessibleText variant="title" style={{ fontSize: 16 }}>
               Events
-            </Text>
+            </AccessibleText>
 
-            <Text style={styles.quickSubtitle}>
+            <AccessibleText variant="caption">
               Upcoming programs
-            </Text>
+            </AccessibleText>
           </TouchableOpacity>
 
           {/* COMMUNITY */}
           <TouchableOpacity
-            style={styles.quickCard}
+            style={[styles.quickCard, { backgroundColor: colors.card }, cardBorder]}
             onPress={() =>
               navigation.navigate(
                 "Community"
               )
             }
+            accessibilityRole="button"
+            accessibilityLabel="Community Card"
+            accessibilityHint="Double tap to explore community discussions"
           >
             <View
               style={[
                 styles.quickIconWrap,
-                { backgroundColor: "#DCFCE7" },
+                { backgroundColor: highContrast ? '#FFFFFF' : '#DCFCE7' },
+                highContrast && { borderWidth: 2, borderColor: '#000000' }
               ]}
             >
-              <Text style={styles.quickEmoji}>
+              <AccessibleText style={styles.quickEmoji}>
                 💬
-              </Text>
+              </AccessibleText>
             </View>
 
-            <Text style={styles.quickTitle}>
+            <AccessibleText variant="title" style={{ fontSize: 16 }}>
               Community
-            </Text>
+            </AccessibleText>
 
-            <Text style={styles.quickSubtitle}>
+            <AccessibleText variant="caption">
               Explore discussions
-            </Text>
+            </AccessibleText>
           </TouchableOpacity>
         </View>
 
         {/* EVENTS SECTION */}
         <View style={styles.section}>
           <View style={styles.rowBetween}>
-            <Text style={styles.sectionTitle}>
+            <AccessibleText variant="title">
               Upcoming Events
-            </Text>
+            </AccessibleText>
 
             <TouchableOpacity
               onPress={() =>
                 navigation.navigate("Events")
               }
+              accessibilityRole="button"
+              accessibilityLabel="View All Upcoming Events"
             >
-              <Text style={styles.viewAll}>
+              <AccessibleText variant="body" style={{ color: colors.primary, fontWeight: '700' }}>
                 View All
-              </Text>
+              </AccessibleText>
             </TouchableOpacity>
           </View>
 
           {/* NO EVENTS */}
           {events.length === 0 ? (
-            <View style={styles.emptyCard}>
-              <Text style={styles.emptyEmoji}>
+            <View style={[styles.emptyCard, { backgroundColor: colors.card }, cardBorder]}>
+              <AccessibleText style={styles.emptyEmoji}>
                 📭
-              </Text>
+              </AccessibleText>
 
-              <Text style={styles.emptyTitle}>
+              <AccessibleText variant="title" style={{ fontSize: 18 }}>
                 No Events Available
-              </Text>
+              </AccessibleText>
 
-              <Text style={styles.emptyDesc}>
-                Currently no event is
-                available.
-              </Text>
+              <AccessibleText variant="body" style={{ color: colors.subtext, textAlign: 'center', marginTop: 4 }}>
+                Currently no event is available.
+              </AccessibleText>
             </View>
           ) : (
             events.map((event) => (
               <TouchableOpacity
                 key={event.id}
-                style={styles.eventCard}
+                style={[styles.eventCard, { backgroundColor: colors.card }, cardBorder]}
                 onPress={() =>
                   navigation.navigate(
                     "EventDetails",
@@ -360,22 +360,21 @@ const HomeScreen = () => {
                     }
                   )
                 }
+                accessibilityRole="button"
+                accessibilityLabel={`Event: ${event.title}`}
+                accessibilityHint="Double tap to view event details"
               >
                 {/* DATE */}
                 <LinearGradient
-                  colors={[
-                    "#500088",
-                    "#6B21A8",
-                  ]}
-                  style={styles.eventDate}
+                  colors={highContrast ? ["#000000", "#000000"] : ["#500088", "#6B21A8"]}
+                  style={[styles.eventDate, highContrast && { borderWidth: 2, borderColor: '#FFFFFF' }]}
                 >
-                  <Text
-                    style={
-                      styles.eventDateText
-                    }
+                  <AccessibleText
+                    variant="body"
+                    style={{ color: '#FFFFFF', fontWeight: '700', textAlign: 'center' }}
                   >
                     {event.date}
-                  </Text>
+                  </AccessibleText>
                 </LinearGradient>
 
                 {/* CONTENT */}
@@ -384,21 +383,13 @@ const HomeScreen = () => {
                     styles.eventContent
                   }
                 >
-                  <Text
-                    style={
-                      styles.eventTitle
-                    }
-                  >
+                  <AccessibleText variant="title" style={{ fontSize: 16 }}>
                     {event.title}
-                  </Text>
+                  </AccessibleText>
 
-                  <Text
-                    style={
-                      styles.eventLocation
-                    }
-                  >
+                  <AccessibleText variant="body" style={{ color: colors.subtext, marginTop: 4 }}>
                     📍 {event.location}
-                  </Text>
+                  </AccessibleText>
                 </View>
               </TouchableOpacity>
             ))
@@ -408,9 +399,9 @@ const HomeScreen = () => {
         {/* COMMUNITY SECTION */}
         <View style={styles.section}>
           <View style={styles.rowBetween}>
-            <Text style={styles.sectionTitle}>
+            <AccessibleText variant="title">
               Community Updates
-            </Text>
+            </AccessibleText>
 
             <TouchableOpacity
               onPress={() =>
@@ -418,37 +409,39 @@ const HomeScreen = () => {
                   "Community"
                 )
               }
+              accessibilityRole="button"
+              accessibilityLabel="View All Community Updates"
             >
-              <Text style={styles.viewAll}>
+              <AccessibleText variant="body" style={{ color: colors.primary, fontWeight: '700' }}>
                 View All
-              </Text>
+              </AccessibleText>
             </TouchableOpacity>
           </View>
 
           {/* NO POSTS */}
-          {communityPosts.length ===
-            0 ? (
-            <View style={styles.emptyCard}>
-              <Text style={styles.emptyEmoji}>
+          {communityPosts.length === 0 ? (
+            <View style={[styles.emptyCard, { backgroundColor: colors.card }, cardBorder]}>
+              <AccessibleText style={styles.emptyEmoji}>
                 💬
-              </Text>
+              </AccessibleText>
 
-              <Text style={styles.emptyTitle}>
+              <AccessibleText variant="title" style={{ fontSize: 18 }}>
                 No Posts Yet
-              </Text>
+              </AccessibleText>
 
-              <Text style={styles.emptyDesc}>
-                Community discussions
-                will appear here.
-              </Text>
+              <AccessibleText variant="body" style={{ color: colors.subtext, textAlign: 'center', marginTop: 4 }}>
+                Community discussions will appear here.
+              </AccessibleText>
             </View>
           ) : (
             communityPosts.map((post) => (
               <TouchableOpacity
                 key={post.id}
-                style={
-                  styles.communityCard
-                }
+                style={[
+                  styles.communityCard,
+                  { backgroundColor: colors.card },
+                  cardBorder
+                ]}
                 onPress={() =>
                   navigation.navigate(
                     "CommunityPost",
@@ -457,51 +450,34 @@ const HomeScreen = () => {
                     }
                   )
                 }
+                accessibilityRole="button"
+                accessibilityLabel={`Post by ${post.user}: ${post.title}`}
+                accessibilityHint="Double tap to read post comments"
               >
-                <Text
-                  style={
-                    styles.communityUser
-                  }
-                >
+                <AccessibleText variant="caption">
                   {post.user}
-                </Text>
+                </AccessibleText>
 
-                <Text
-                  style={
-                    styles.communityTitle
-                  }
-                >
+                <AccessibleText variant="title" style={{ fontSize: 18, marginTop: 2 }}>
                   {post.title}
-                </Text>
+                </AccessibleText>
 
-                <Text
-                  style={
-                    styles.communityDescription
-                  }
-                >
+                <AccessibleText variant="body" style={{ color: colors.subtext, marginTop: 4 }}>
                   {post.description}
-                </Text>
+                </AccessibleText>
 
                 <View
                   style={
                     styles.communityFooter
                   }
                 >
-                  <Text
-                    style={
-                      styles.footerItem
-                    }
-                  >
+                  <AccessibleText variant="body" style={{ color: colors.subtext, marginRight: spacing.md }}>
                     ❤️ {post.likes}
-                  </Text>
+                  </AccessibleText>
 
-                  <Text
-                    style={
-                      styles.footerItem
-                    }
-                  >
+                  <AccessibleText variant="body" style={{ color: colors.subtext }}>
                     💬 {post.comments}
-                  </Text>
+                  </AccessibleText>
                 </View>
               </TouchableOpacity>
             ))
@@ -511,59 +487,8 @@ const HomeScreen = () => {
         <View style={{ height: 120 }} />
       </ScrollView>
 
-      {/* BOTTOM NAV */}
-      <View style={styles.navbar}>
-        <TouchableOpacity>
-          <Text style={styles.activeNavText}>
-            Home
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          onPress={() =>
-            navigation.navigate(
-              "Community"
-            )
-          }
-        >
-          <Text style={styles.navText}>
-            Community
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          onPress={() =>
-            navigation.navigate(
-              "Services"
-            )
-          }
-        >
-          <Text style={styles.navText}>
-            Services
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          onPress={() =>
-            navigation.navigate("Chats")
-          }
-        >
-          <Text style={styles.navText}>
-            Learn
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          onPress={() =>
-            navigation.navigate("HomeProfile")
-          }
-        >
-          <Text style={styles.navText}>
-            Profile
-          </Text>
-        </TouchableOpacity>
-      </View>
-    </SafeAreaView>
+      <AppFooter activeTab="Home" />
+    </ScreenWrapper>
   );
 };
 
@@ -593,65 +518,9 @@ const styles = StyleSheet.create({
   },
 
   scrollContent: {
-    paddingTop: 90,
+    paddingTop: 16,
     paddingHorizontal: 24,
-  },
-
-  // HEADER
-  header: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    zIndex: 100,
-    height: 64,
-    backgroundColor: "#500088",
-  },
-
-  headerContainer: {
-    flex: 1,
-    paddingHorizontal: 24,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-
-  logoSection: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-
-  logo: {
-    fontSize: 22,
-    marginRight: 12,
-    color: "#FFFFFF",
-  },
-
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: "700",
-    color: "#FFFFFF",
-  },
-
-  notificationBtn: {
-    width: 36,
-    height: 36,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-
-  notificationIcon: {
-    fontSize: 18,
-  },
-
-  badge: {
-    position: "absolute",
-    top: 8,
-    right: 8,
-    width: 8,
-    height: 8,
-    borderRadius: 999,
-    backgroundColor: "#F59E0B",
+    paddingBottom: 120,
   },
 
   // GREETING
@@ -862,31 +731,5 @@ const styles = StyleSheet.create({
     color: "#666",
   },
 
-  // NAVBAR
-  navbar: {
-    position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
-
-    height: 75,
-    backgroundColor: "#FFFFFF",
-
-    flexDirection: "row",
-    justifyContent: "space-around",
-    alignItems: "center",
-
-    borderTopWidth: 1,
-    borderTopColor: "#EEE",
-  },
-
-  activeNavText: {
-    color: "#500088",
-    fontWeight: "700",
-  },
-
-  navText: {
-    color: "#64748B",
-    fontWeight: "500",
-  },
+  // Legacy navbar styles removed
 });

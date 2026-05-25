@@ -3,13 +3,11 @@ import {
   View,
   Text,
   StyleSheet,
-  SafeAreaView,
   FlatList,
   TouchableOpacity,
   TextInput,
   KeyboardAvoidingView,
   Platform,
-  StatusBar,
   ActivityIndicator,
 } from "react-native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -19,6 +17,8 @@ import { useAuthStore } from "@store/authStore";
 import { useChatStore, ChatMessage } from "@store/chatStore";
 import { chatService } from "@services/chatService";
 import { sendSocketMessage } from "@services/socketService";
+import ScreenWrapper from "../../components/layout/ScreenWrapper";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 // ─────────────────────────────────────────────────────────
 // 1:1 Chat Screen — Direct Message Thread
@@ -121,6 +121,7 @@ const DEMO_MESSAGES: Message[] = [
 
 const ChatScreen = ({ navigation, route }: Props) => {
   const { conversationId, recipientName, recipientAvatar, isOnline } = route.params;
+  const insets = useSafeAreaInsets();
   const user = useAuthStore((s) => s.user);
   const storeMessages = useChatStore((s) => s.messages[conversationId] || []);
   const setMessages = useChatStore((s) => s.setMessages);
@@ -243,11 +244,9 @@ const ChatScreen = ({ navigation, route }: Props) => {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" />
-
-      {/* ── Header ───────────────────────────────────────── */}
-      <View style={styles.header}>
+    <ScreenWrapper>
+      {/* ── Header — paddingTop uses insets so it clears the translucent status bar */}
+      <View style={[styles.header, { paddingTop: insets.top + 10 }]}>
         <TouchableOpacity
           style={styles.backBtn}
           onPress={() => navigation.goBack()}
@@ -351,7 +350,7 @@ const ChatScreen = ({ navigation, route }: Props) => {
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
-    </SafeAreaView>
+    </ScreenWrapper>
   );
 };
 
@@ -369,7 +368,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: "#8A38F5",
     paddingHorizontal: 12,
-    paddingVertical: 12,
+    // paddingTop is now dynamic via insets (set inline)
+    paddingBottom: 12,
     borderBottomLeftRadius: 20,
     borderBottomRightRadius: 20,
   },
