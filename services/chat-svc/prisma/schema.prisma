@@ -117,25 +117,33 @@ model ConversationMember {
 }
 
 // ─────────────────────────────────────────────
-// MESSAGE (Postgres Stub)
-// Full message content is stored in Cassandra.
-// This lightweight stub exists ONLY to maintain FK integrity
-// for MessageRecipient and MessageReceipt tables.
+// MESSAGE
+// Full message row — content, type, status, metadata all stored here.
+// clientMessageId is used for idempotent upserts from the worker.
 // ─────────────────────────────────────────────
 model Message {
   id              String        @id @default(uuid())
   conversationId  String
   senderId        String
-  sequenceNo      BigInt        @default(0)
-
+  clientMessageId String        @unique
+  sequenceNo      BigInt
+  content         String
+  type            MessageType   @default(TEXT)
+  status          MessageStatus @default(CREATED)
+  metadata        String?
+  editedAt        DateTime?
+  deletedAt       DateTime?
   createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
 
-  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  conversation Conversation      @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   recipients   MessageRecipient[]
   receipts     MessageReceipt[]
 
-  @@index([conversationId])
+  @@index([conversationId, sequenceNo(sort: Desc)])
+  @@index([conversationId, createdAt(sort: Desc)])
   @@index([senderId])
+  @@index([clientMessageId])
   @@map("messages")
 }
 

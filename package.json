@@ -28,8 +28,12 @@
     "docker:logs": "docker-compose logs -f"
   },
   "devDependencies": {
+    "@types/react": "~19.1.0",
     "prisma": "^5.10.0",
     "turbo": "^2.0.0"
+  },
+  "overrides": {
+    "@types/react": "~19.1.0"
   },
   "engines": {
     "node": ">=18.0.0",
