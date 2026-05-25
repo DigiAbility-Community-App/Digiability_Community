@@ -4,11 +4,9 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  SafeAreaView,
   ActivityIndicator,
   Alert,
   BackHandler,
-  StatusBar,
   ScrollView,
 } from "react-native";
 
@@ -19,6 +17,8 @@ import {
 } from "@react-navigation/native";
 
 import { useAuthStore } from "@store/authStore";
+import SafeScreen from "../../components/layout/SafeScreen";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 // -------------------------
 // ROLE TYPES
@@ -81,6 +81,7 @@ const roles = [
 ];
 
 const RoleSelectionScreen = () => {
+  const insets = useSafeAreaInsets();
   // -------------------------
   // STATES
   // -------------------------
@@ -195,13 +196,10 @@ const RoleSelectionScreen = () => {
   };
 
   return (
-    <SafeAreaView
-      style={styles.container}
+    <SafeScreen
+      bottom={false}
+      statusBarStyle="dark"
     >
-      <StatusBar
-        backgroundColor="#F5F5F5"
-        barStyle="dark-content"
-      />
 
       {/* HEADER */}
       <View style={styles.header}>
@@ -367,7 +365,7 @@ const RoleSelectionScreen = () => {
       </ScrollView>
 
       {/* FOOTER */}
-      <View style={styles.footer}>
+      <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 20) }]}>
         <TouchableOpacity
           activeOpacity={0.9}
           onPress={handleContinue}
@@ -394,7 +392,7 @@ const RoleSelectionScreen = () => {
           </LinearGradient>
         </TouchableOpacity>
       </View>
-    </SafeAreaView>
+    </SafeScreen>
   );
 };
 

@@ -3,11 +3,9 @@ import {
   View,
   Text,
   StyleSheet,
-  SafeAreaView,
   FlatList,
   TouchableOpacity,
   TextInput,
-  StatusBar,
   Image,
   ActivityIndicator,
 } from "react-native";
@@ -16,6 +14,9 @@ import { ChatsStackParamList } from "@navigation/ChatsStack";
 import { useAuthStore } from "@store/authStore";
 import { useChatStore } from "@store/chatStore";
 import { chatService } from "@services/chatService";
+import ScreenWrapper from "../../components/layout/ScreenWrapper";
+import AppHeader from "../../components/layout/AppHeader";
+import AppFooter from "../../components/layout/AppFooter";
 
 // ─────────────────────────────────────────────────────────
 // Conversation List Screen
@@ -188,32 +189,36 @@ const ConversationListScreen = ({ navigation }: Props) => {
   );
 
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" />
-
-      {/* ── Header ───────────────────────────────────────── */}
-      <View style={styles.header}>
-        <View style={styles.headerTop}>
-          <View>
-            <Text style={styles.headerTitle}>Messages</Text>
-            {totalUnread > 0 && (
-              <Text style={styles.headerSubtitle}>
-                {totalUnread} unread message{totalUnread !== 1 ? "s" : ""}
-              </Text>
-            )}
-          </View>
-          <TouchableOpacity style={styles.newChatBtn} onPress={() => navigation.navigate('CreateGroup')}>
+    <ScreenWrapper>
+      <AppHeader
+        title="Messages"
+        rightActions={
+          <TouchableOpacity
+            style={styles.newChatTouch}
+            onPress={() => navigation.navigate("CreateGroup")}
+            accessibilityRole="button"
+            accessibilityLabel="New Care Circle Group"
+            accessibilityHint="Navigates to group creation page"
+            activeOpacity={0.7}
+          >
             <Text style={styles.newChatIcon}>✏️</Text>
           </TouchableOpacity>
-        </View>
+        }
+      />
 
-        {/* ── Search Bar ─────────────────────────────────── */}
+      {/* ── Content Container (Search Bar moved into body flow for safe spacing) ── */}
+      <View style={[styles.headerBodyFlow, { backgroundColor: "#8A38F5" }]}>
+        {totalUnread > 0 && (
+          <Text style={styles.headerSubtitleBody}>
+            {totalUnread} unread message{totalUnread !== 1 ? "s" : ""}
+          </Text>
+        )}
         <View style={styles.searchContainer}>
           <Text style={styles.searchIcon}>🔍</Text>
           <TextInput
             style={styles.searchInput}
             placeholder="Search conversations..."
-            placeholderTextColor="rgba(255,255,255,0.5)"
+            placeholderTextColor="rgba(255,255,255,0.6)"
             value={searchQuery}
             onChangeText={setSearchQuery}
             autoCapitalize="none"
@@ -270,14 +275,16 @@ const ConversationListScreen = ({ navigation }: Props) => {
 
       {/* ── FAB — Create Care Circle ─────────────────── */}
       <TouchableOpacity
-        style={styles.fab}
+        style={[styles.fab, { bottom: 90 }]}
         onPress={() => navigation.navigate('CreateGroup')}
         activeOpacity={0.85}
       >
         <Text style={styles.fabIcon}>👥</Text>
         <Text style={styles.fabLabel}>New Circle</Text>
       </TouchableOpacity>
-    </SafeAreaView>
+
+      <AppFooter activeTab="Learn" />
+    </ScreenWrapper>
   );
 };
 
@@ -289,42 +296,30 @@ const styles = StyleSheet.create({
     backgroundColor: "#F6F6F6",
   },
 
-  // ── Header ──────────────────────────────────────────────
-  header: {
-    backgroundColor: "#8A38F5",
-    paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 20,
-    borderBottomLeftRadius: 28,
-    borderBottomRightRadius: 28,
-  },
-  headerTop: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    marginBottom: 16,
-  },
-  headerTitle: {
-    fontSize: 28,
-    fontWeight: "800",
-    color: "#fff",
-    letterSpacing: -0.3,
-  },
-  headerSubtitle: {
+  headerSubtitleBody: {
     fontSize: 13,
-    color: "rgba(255,255,255,0.7)",
-    marginTop: 2,
+    color: "rgba(255,255,255,0.85)",
+    marginBottom: 10,
+    fontWeight: "600",
   },
-  newChatBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
-    backgroundColor: "rgba(255,255,255,0.2)",
+  newChatTouch: {
+    minWidth: 48,
+    minHeight: 48,
     justifyContent: "center",
     alignItems: "center",
   },
   newChatIcon: {
     fontSize: 20,
+  },
+  headerBodyFlow: {
+    paddingHorizontal: 20,
+    paddingBottom: 20,
+    borderBottomLeftRadius: 24,
+    borderBottomRightRadius: 24,
+    shadowColor: "#000",
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 3,
   },
 
   // ── Search ──────────────────────────────────────────────
@@ -382,7 +377,7 @@ const styles = StyleSheet.create({
   // ── List ────────────────────────────────────────────────
   listContent: {
     paddingHorizontal: 16,
-    paddingBottom: 20,
+    paddingBottom: 160,
   },
 
   // ── Conversation Item ───────────────────────────────────

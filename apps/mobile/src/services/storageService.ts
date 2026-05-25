@@ -27,7 +27,7 @@ export const defaultAccessibilityPreferences: AccessibilityPreferences = {
 };
 
 function getAccessibilityKey(userId: string) {
-  return `${ACCESSIBILITY_KEY_PREFIX}:${userId}`;
+  return `${ACCESSIBILITY_KEY_PREFIX}_${userId}`;
 }
 
 export async function getAccessibilityPreferences(

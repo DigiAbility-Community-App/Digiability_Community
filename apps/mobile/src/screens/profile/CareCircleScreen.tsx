@@ -4,13 +4,13 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  SafeAreaView,
   ScrollView,
-  StatusBar,
   Dimensions,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { useNavigation } from "@react-navigation/native";
+import ScreenWrapper from "../../components/layout/ScreenWrapper";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
@@ -54,18 +54,13 @@ const CareCircleScreen = () => {
   };
 
   return (
-    <SafeAreaView style={styles.root}>
-      <StatusBar
-        barStyle="light-content"
-        backgroundColor="#500088"
-      />
-
-      {/* HERO SECTION */}
+    <ScreenWrapper>
+      {/* HERO SECTION — extends under translucent status bar naturally */}
       <LinearGradient
         colors={["#500088", "#6B21A8"]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
-        style={styles.hero}
+        style={[styles.hero, { paddingTop: useSafeAreaInsets().top }]}
       >
         {/* Decorative blobs */}
         <View style={styles.blobTopRight} />
@@ -199,7 +194,7 @@ const CareCircleScreen = () => {
           </View>
         </View>
       </ScrollView>
-    </SafeAreaView>
+    </ScreenWrapper>
   );
 };
 
@@ -209,12 +204,7 @@ const HERO_HEIGHT = 340;
 const CARD_OVERLAP = 40;
 
 const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-    backgroundColor: "#FAF8FF",
-  },
-
-  // HERO
+  // Outer container managed by ScreenWrapper (no explicit root style needed)
   hero: {
     width: SCREEN_WIDTH,
     height: HERO_HEIGHT,

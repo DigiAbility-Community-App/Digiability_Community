@@ -9,6 +9,7 @@ import ProfileDetailsScreen from '@screens/profile/ProfileDetailsScreen';
 import CareCircleScreen from '@screens/profile/CareCircleScreen';
 import NotificationsScreen from '@screens/home/NotificationScreen';
 import HomeProfileScreen from '@screens/profile/HomeProfileScreen';
+import EditProfileScreen from '@screens/profile/EditProfileScreen';
 import ChatsStack from './ChatsStack';
 import { useAuthStore } from '@store/authStore';
 import { hasCompletedAccessibility } from '@services/storageService';
@@ -23,6 +24,7 @@ export type MainStackParamList = {
   Chats: undefined;
   Notifications: undefined;
   HomeProfile: undefined;
+  EditProfile: undefined;
 };
 
 const Stack = createNativeStackNavigator<MainStackParamList>();
@@ -50,6 +52,7 @@ function getFallbackRoute(
 
 const MainNavigator = () => {
   const user = useAuthStore((s) => s.user);
+  const [isLoading, setIsLoading] = useState(true);
   const [initialRoute, setInitialRoute] = useState<keyof MainStackParamList>(
     () => getFallbackRoute(useAuthStore.getState().user)
   );
@@ -59,21 +62,30 @@ const MainNavigator = () => {
 
     const resolveInitialRoute = async () => {
       if (!user?.id) {
-        if (isMounted) setInitialRoute('Home');
+        if (isMounted) {
+          setInitialRoute('Home');
+          setIsLoading(false);
+        }
         return;
       }
 
       // New user — no role yet: always start at Accessibility.
       // AccessibilityScreen.continueToNext() will push to RoleSelection.
       if (!user.role) {
-        if (isMounted) setInitialRoute('Accessibility');
+        if (isMounted) {
+          setInitialRoute('Accessibility');
+          setIsLoading(false);
+        }
         return;
       }
 
       // Has role but profile not complete: go straight to Profile.
       // They have already completed Accessibility in a previous session.
       if (!user.profileComplete) {
-        if (isMounted) setInitialRoute('Profile');
+        if (isMounted) {
+          setInitialRoute('Profile');
+          setIsLoading(false);
+        }
         return;
       }
 
@@ -82,9 +94,13 @@ const MainNavigator = () => {
         const accessibilityDone = await hasCompletedAccessibility(user.id);
         if (isMounted) {
           setInitialRoute(accessibilityDone ? 'Home' : 'Accessibility');
+          setIsLoading(false);
         }
       } catch {
-        if (isMounted) setInitialRoute('Accessibility');
+        if (isMounted) {
+          setInitialRoute('Accessibility');
+          setIsLoading(false);
+        }
       }
     };
 
@@ -94,6 +110,14 @@ const MainNavigator = () => {
       isMounted = false;
     };
   }, [user?.id, user?.role, user?.profileComplete]);
+
+  if (isLoading) {
+    return (
+      <View style={styles.loader}>
+        <ActivityIndicator size="large" color="#500088" />
+      </View>
+    );
+  }
 
   return (
     <Stack.Navigator
@@ -110,6 +134,7 @@ const MainNavigator = () => {
       <Stack.Screen name="Chats" component={ChatsStack} />
       <Stack.Screen name="Notifications" component={NotificationsScreen} />
       <Stack.Screen name="HomeProfile" component={HomeProfileScreen} />
+      <Stack.Screen name="EditProfile" component={EditProfileScreen} />
     </Stack.Navigator>
   );
 };

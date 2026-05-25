@@ -11,12 +11,11 @@ import {
   TouchableOpacity,
   TextInput,
   ScrollView,
-  SafeAreaView,
-  StatusBar,
   ActivityIndicator,
   Alert,
   BackHandler,
 } from "react-native";
+import SafeScreen from "../../components/layout/SafeScreen";
 
 import { LinearGradient } from "expo-linear-gradient";
 
@@ -435,13 +434,7 @@ const ProfileScreen = () => {
   // --------------------------------------------------
 
   return (
-    <SafeAreaView
-      style={styles.container}
-    >
-      <StatusBar
-        barStyle="dark-content"
-        backgroundColor="#FAF8FF"
-      />
+    <SafeScreen style={styles.container}>
 
       {/* HEADER */}
       <View style={styles.header}>
@@ -954,7 +947,7 @@ const ProfileScreen = () => {
           </LinearGradient>
         </TouchableOpacity>
       </ScrollView>
-    </SafeAreaView>
+    </SafeScreen>
   );
 };
 

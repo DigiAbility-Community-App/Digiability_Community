@@ -16,15 +16,15 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  SafeAreaView,
   ScrollView,
   TextInput,
-  StatusBar,
   ActivityIndicator,
   Alert,
   BackHandler,
 } from "react-native";
 
+import SafeScreen from "../../components/layout/SafeScreen";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 
 import {
@@ -92,6 +92,8 @@ const ProfileDetailsScreen = () => {
     useAuthStore(
       (s) => s.pendingProfile
     );
+
+  const insets = useSafeAreaInsets();
 
   const role =
     pendingRole ??
@@ -440,13 +442,11 @@ const ProfileDetailsScreen = () => {
   // ───────────────── UI ─────────────────
 
   return (
-    <SafeAreaView
+    <SafeScreen
+      bottom={false}
+      statusBarStyle="dark"
       style={styles.container}
     >
-      <StatusBar
-        barStyle="dark-content"
-        backgroundColor="#FAF8FF"
-      />
 
       {/* BACKGROUND */}
       <View
@@ -1105,9 +1105,7 @@ const ProfileDetailsScreen = () => {
       </ScrollView>
 
       {/* FOOTER */}
-      <View
-        style={styles.footer}
-      >
+      <View style={[styles.footer, { bottom: Math.max(insets.bottom, 24) }]}>
         <TouchableOpacity
           activeOpacity={0.9}
           onPress={
@@ -1151,7 +1149,7 @@ const ProfileDetailsScreen = () => {
           </LinearGradient>
         </TouchableOpacity>
       </View>
-    </SafeAreaView>
+    </SafeScreen>
   );
 };
 

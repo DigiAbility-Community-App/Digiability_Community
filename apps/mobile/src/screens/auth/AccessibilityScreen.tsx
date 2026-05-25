@@ -4,7 +4,6 @@ import {
     Text,
     StyleSheet,
     TouchableOpacity,
-    SafeAreaView,
     ScrollView,
     Switch,
     ActivityIndicator,
@@ -12,10 +11,16 @@ import {
 } from "react-native";
 
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import SafeScreen from "../../components/layout/SafeScreen";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 
 import { MainStackParamList } from "@navigation/MainNavigator";
 import { useAuthStore } from "@store/authStore";
+import { useAccessibilityStore } from "@store/accessibilityStore";
+import { useTheme } from "../../theme/ThemeContext";
+import { AccessibleText } from "../../components/shared/AccessibleText";
+import { AccessibleButton } from "../../components/shared/AccessibleButton";
 
 import {
     defaultAccessibilityPreferences,
@@ -33,6 +38,8 @@ type Props = {
 
 const AccessibilityScreen = ({ navigation }: Props) => {
     const user = useAuthStore((state) => state.user);
+    const updatePreferences = useAccessibilityStore((state) => state.updatePreferences);
+    const insets = useSafeAreaInsets();
 
     const [textSize, setTextSize] = useState<TextSize>(
         defaultAccessibilityPreferences.textSize
@@ -117,7 +124,7 @@ const AccessibilityScreen = ({ navigation }: Props) => {
         setLoading(true);
 
         try {
-            await saveAccessibilityPreferences(user.id, {
+            await updatePreferences(user.id, {
                 textSize,
                 highContrast,
                 screenReader,
@@ -138,26 +145,57 @@ const AccessibilityScreen = ({ navigation }: Props) => {
         }
     };
 
+    const fs = (size: number) => {
+        switch (textSize) {
+            case "Small":
+                return Math.round(size * 0.85);
+            case "Large":
+                return Math.round(size * 1.25);
+            case "Medium":
+            default:
+                return size;
+        }
+    };
+
+    const screenColors = {
+        primary: highContrast ? "#000000" : "#500088",
+        secondary: highContrast ? "#000000" : "#6B21A8",
+        background: highContrast ? "#FFFFFF" : "#F9F8FF",
+        card: highContrast ? "#FFFFFF" : "#FFFFFF",
+        text: highContrast ? "#000000" : "#1A1B20",
+        subtext: highContrast ? "#000000" : "#4C4452",
+        border: highContrast ? "#000000" : "rgba(0,0,0,0.05)",
+        surface: highContrast ? "#FFFFFF" : "#F4F3FA",
+    };
+
+    const cardBorder = {
+        borderWidth: highContrast ? 2 : 1,
+        borderColor: highContrast ? "#000000" : "rgba(0,0,0,0.05)",
+    };
+
     return (
-        <SafeAreaView style={styles.container}>
+        <SafeScreen bottom={false} statusBarStyle="dark" style={[styles.container, { backgroundColor: screenColors.background }]}>
             {/* HEADER */}
-            <View style={styles.header}>
+            <View style={[styles.header, { backgroundColor: highContrast ? "#000000" : "rgba(249,248,255,0.9)" }]}>
                 <View style={styles.headerLeft}>
                     <TouchableOpacity
                         style={styles.backButton}
                         onPress={() => navigation.goBack()}
+                        accessibilityRole="button"
+                        accessibilityLabel="Go Back"
+                        accessibilityHint="Returns to the previous screen"
                     >
-                        <Text style={styles.backArrow}>←</Text>
+                        <AccessibleText variant="title" style={{ color: highContrast ? "#FFFFFF" : "#581C87" }}>←</AccessibleText>
                     </TouchableOpacity>
 
-                    <Text style={styles.headerTitle}>
+                    <AccessibleText variant="title" style={{ color: highContrast ? "#FFFFFF" : "#581C87" }}>
                         Preferences
-                    </Text>
+                    </AccessibleText>
                 </View>
 
                 {/* Progress */}
                 <View style={styles.progressWrapper}>
-                    <View style={styles.activeProgress} />
+                    <View style={[styles.activeProgress, { backgroundColor: screenColors.primary }]} />
                     <View style={styles.progressDot} />
                     <View style={styles.progressDot} />
                     <View style={styles.progressDot} />
@@ -170,34 +208,34 @@ const AccessibilityScreen = ({ navigation }: Props) => {
             >
                 {/* HERO */}
                 <View style={styles.heroSection}>
-                    <Text style={styles.heroTitle}>
+                    <AccessibleText variant="heroTitle" style={{ color: screenColors.text }}>
                         Accessibility Preferences
-                    </Text>
+                    </AccessibleText>
 
-                    <Text style={styles.heroSubtitle}>
+                    <AccessibleText variant="subtitle" style={{ color: screenColors.subtext, marginTop: 8 }}>
                         Customize the app for your needs
-                    </Text>
+                    </AccessibleText>
                 </View>
 
                 {/* VISUAL */}
                 <View style={styles.section}>
-                    <Text style={styles.sectionHeading}>
+                    <AccessibleText variant="overline" style={{ color: highContrast ? "#000000" : "#6B21A8", marginBottom: 16 }}>
                         VISUAL
-                    </Text>
+                    </AccessibleText>
 
                     {/* TEXT SIZE */}
-                    <View style={styles.card}>
+                    <View style={[styles.card, { backgroundColor: screenColors.card }, cardBorder]}>
                         <View style={styles.cardText}>
-                            <Text style={styles.cardTitle}>
+                            <AccessibleText variant="title" style={{ color: screenColors.text, fontSize: fs(16) }}>
                                 Text Size
-                            </Text>
+                            </AccessibleText>
 
-                            <Text style={styles.cardSubtitle}>
+                            <AccessibleText variant="body" style={{ color: screenColors.subtext, fontSize: fs(14), marginTop: 4 }}>
                                 Adjust font size for better readability
-                            </Text>
+                            </AccessibleText>
                         </View>
 
-                        <View style={styles.segment}>
+                        <View style={[styles.segment, { backgroundColor: screenColors.surface }]}>
                             {(["Small", "Medium", "Large"] as TextSize[]).map(
                                 (size) => (
                                     <TouchableOpacity
@@ -205,19 +243,23 @@ const AccessibilityScreen = ({ navigation }: Props) => {
                                         style={[
                                             styles.segmentBtn,
                                             textSize === size &&
-                                            styles.activeSegment,
+                                            (highContrast ? { backgroundColor: "#000000", borderWidth: 2, borderColor: "#FFFFFF" } : styles.activeSegment),
                                         ]}
                                         onPress={() => setTextSize(size)}
+                                        accessibilityRole="radio"
+                                        accessibilityState={{ checked: textSize === size }}
+                                        accessibilityLabel={`${size} font size`}
+                                        accessibilityHint={`Double tap to set font scale to ${size}`}
                                     >
-                                        <Text
-                                            style={
-                                                textSize === size
-                                                    ? styles.activeSegmentText
-                                                    : styles.segmentText
-                                            }
+                                        <AccessibleText
+                                            style={{
+                                                color: textSize === size ? "#FFFFFF" : screenColors.text,
+                                                fontSize: fs(14),
+                                                fontWeight: '700'
+                                            }}
                                         >
                                             {size}
-                                        </Text>
+                                        </AccessibleText>
                                     </TouchableOpacity>
                                 )
                             )}
@@ -225,203 +267,205 @@ const AccessibilityScreen = ({ navigation }: Props) => {
                     </View>
 
                     {/* HIGH CONTRAST */}
-                    <View style={styles.switchCard}>
+                    <View style={[styles.switchCard, { backgroundColor: screenColors.card }, cardBorder]}>
                         <View style={styles.switchText}>
-                            <Text style={styles.cardTitle}>
+                            <AccessibleText variant="title" style={{ color: screenColors.text, fontSize: fs(16) }}>
                                 High Contrast
-                            </Text>
+                            </AccessibleText>
 
-                            <Text style={styles.cardSubtitle}>
+                            <AccessibleText variant="body" style={{ color: screenColors.subtext, fontSize: fs(14), marginTop: 4 }}>
                                 Improve visibility with stronger colors
-                            </Text>
+                            </AccessibleText>
                         </View>
 
                         <Switch
                             value={highContrast}
                             onValueChange={setHighContrast}
                             trackColor={{
-                                false: "#CFC2D4",
-                                true: "#6B21A8",
+                                false: highContrast ? "#7E7383" : "#CFC2D4",
+                                true: highContrast ? "#000000" : "#6B21A8",
                             }}
                             thumbColor="#FFFFFF"
+                            accessibilityLabel="High Contrast"
+                            accessibilityHint="Toggles high contrast black and white color themes"
                         />
                     </View>
 
                     {/* SCREEN READER */}
-                    <View style={styles.switchCard}>
+                    <View style={[styles.switchCard, { backgroundColor: screenColors.card }, cardBorder]}>
                         <View style={styles.switchText}>
-                            <Text style={styles.cardTitle}>
+                            <AccessibleText variant="title" style={{ color: screenColors.text, fontSize: fs(16) }}>
                                 Screen Reader
-                            </Text>
+                            </AccessibleText>
 
-                            <Text style={styles.cardSubtitle}>
+                            <AccessibleText variant="body" style={{ color: screenColors.subtext, fontSize: fs(14), marginTop: 4 }}>
                                 Enable spoken feedback support
-                            </Text>
+                            </AccessibleText>
                         </View>
 
                         <Switch
                             value={screenReader}
                             onValueChange={setScreenReader}
                             trackColor={{
-                                false: "#CFC2D4",
-                                true: "#6B21A8",
+                                false: highContrast ? "#7E7383" : "#CFC2D4",
+                                true: highContrast ? "#000000" : "#6B21A8",
                             }}
                             thumbColor="#FFFFFF"
+                            accessibilityLabel="Screen Reader Spoken Feedback"
+                            accessibilityHint="Toggles accessibility voice navigation compatibility"
                         />
                     </View>
 
                     {/* REDUCE MOTION */}
-                    <View style={styles.switchCard}>
+                    <View style={[styles.switchCard, { backgroundColor: screenColors.card }, cardBorder]}>
                         <View style={styles.switchText}>
-                            <Text style={styles.cardTitle}>
+                            <AccessibleText variant="title" style={{ color: screenColors.text, fontSize: fs(16) }}>
                                 Reduce Motion
-                            </Text>
+                            </AccessibleText>
 
-                            <Text style={styles.cardSubtitle}>
+                            <AccessibleText variant="body" style={{ color: screenColors.subtext, fontSize: fs(14), marginTop: 4 }}>
                                 Minimize animations and transitions
-                            </Text>
+                            </AccessibleText>
                         </View>
 
                         <Switch
                             value={reduceMotion}
                             onValueChange={setReduceMotion}
                             trackColor={{
-                                false: "#CFC2D4",
-                                true: "#6B21A8",
+                                false: highContrast ? "#7E7383" : "#CFC2D4",
+                                true: highContrast ? "#000000" : "#6B21A8",
                             }}
                             thumbColor="#FFFFFF"
+                            accessibilityLabel="Reduce Motion"
+                            accessibilityHint="Disables dynamic screen transition animations"
                         />
                     </View>
                 </View>
 
                 {/* AUDIO */}
                 <View style={styles.section}>
-                    <Text style={styles.sectionHeading}>
+                    <AccessibleText variant="overline" style={{ color: highContrast ? "#000000" : "#6B21A8", marginBottom: 16 }}>
                         AUDIO
-                    </Text>
+                    </AccessibleText>
 
-                    <View style={styles.switchCard}>
+                    <View style={[styles.switchCard, { backgroundColor: screenColors.card }, cardBorder]}>
                         <View style={styles.switchText}>
-                            <Text style={styles.cardTitle}>
+                            <AccessibleText variant="title" style={{ color: screenColors.text, fontSize: fs(16) }}>
                                 Push Notifications
-                            </Text>
+                            </AccessibleText>
 
-                            <Text style={styles.cardSubtitle}>
+                            <AccessibleText variant="body" style={{ color: screenColors.subtext, fontSize: fs(14), marginTop: 4 }}>
                                 Receive important updates instantly
-                            </Text>
+                            </AccessibleText>
                         </View>
 
                         <Switch
                             value={pushNotif}
                             onValueChange={setPushNotif}
                             trackColor={{
-                                false: "#CFC2D4",
-                                true: "#6B21A8",
+                                false: highContrast ? "#7E7383" : "#CFC2D4",
+                                true: highContrast ? "#000000" : "#6B21A8",
                             }}
                             thumbColor="#FFFFFF"
+                            accessibilityLabel="Push Notifications"
+                            accessibilityHint="Toggles receiving instant push notifications"
                         />
                     </View>
 
-                    <View style={styles.switchCard}>
+                    <View style={[styles.switchCard, { backgroundColor: screenColors.card }, cardBorder]}>
                         <View style={styles.switchText}>
-                            <Text style={styles.cardTitle}>
+                            <AccessibleText variant="title" style={{ color: screenColors.text, fontSize: fs(16) }}>
                                 Email Notifications
-                            </Text>
+                            </AccessibleText>
 
-                            <Text style={styles.cardSubtitle}>
+                            <AccessibleText variant="body" style={{ color: screenColors.subtext, fontSize: fs(14), marginTop: 4 }}>
                                 Receive updates through email
-                            </Text>
+                            </AccessibleText>
                         </View>
 
                         <Switch
                             value={emailNotif}
                             onValueChange={setEmailNotif}
                             trackColor={{
-                                false: "#CFC2D4",
-                                true: "#6B21A8",
+                                false: highContrast ? "#7E7383" : "#CFC2D4",
+                                true: highContrast ? "#000000" : "#6B21A8",
                             }}
                             thumbColor="#FFFFFF"
+                            accessibilityLabel="Email Notifications"
+                            accessibilityHint="Toggles receiving notification updates by email"
                         />
                     </View>
                 </View>
 
                 {/* MOTOR */}
                 <View style={styles.section}>
-                    <Text style={styles.sectionHeading}>
+                    <AccessibleText variant="overline" style={{ color: highContrast ? "#000000" : "#6B21A8", marginBottom: 16 }}>
                         MOTOR
-                    </Text>
+                    </AccessibleText>
 
-                    <View style={styles.switchCard}>
+                    <View style={[styles.switchCard, { backgroundColor: screenColors.card }, cardBorder]}>
                         <View style={styles.switchText}>
-                            <Text style={styles.cardTitle}>
+                            <AccessibleText variant="title" style={{ color: screenColors.text, fontSize: fs(16) }}>
                                 SMS Notifications
-                            </Text>
+                            </AccessibleText>
 
-                            <Text style={styles.cardSubtitle}>
+                            <AccessibleText variant="body" style={{ color: screenColors.subtext, fontSize: fs(14), marginTop: 4 }}>
                                 Get alerts through SMS messages
-                            </Text>
+                            </AccessibleText>
                         </View>
 
                         <Switch
                             value={smsNotif}
                             onValueChange={setSmsNotif}
                             trackColor={{
-                                false: "#CFC2D4",
-                                true: "#6B21A8",
+                                false: highContrast ? "#7E7383" : "#CFC2D4",
+                                true: highContrast ? "#000000" : "#6B21A8",
                             }}
                             thumbColor="#FFFFFF"
+                            accessibilityLabel="SMS Notifications"
+                            accessibilityHint="Toggles receiving alerts via SMS text messages"
                         />
                     </View>
 
-                    <View style={styles.switchCard}>
+                    <View style={[styles.switchCard, { backgroundColor: screenColors.card }, cardBorder]}>
                         <View style={styles.switchText}>
-                            <Text style={styles.cardTitle}>
+                            <AccessibleText variant="title" style={{ color: screenColors.text, fontSize: fs(16) }}>
                                 Reduce Gestures
-                            </Text>
+                            </AccessibleText>
 
-                            <Text style={styles.cardSubtitle}>
+                            <AccessibleText variant="body" style={{ color: screenColors.subtext, fontSize: fs(14), marginTop: 4 }}>
                                 Easier interactions with simpler taps
-                            </Text>
+                            </AccessibleText>
                         </View>
 
                         <Switch
                             value={reduceMotion}
                             onValueChange={setReduceMotion}
                             trackColor={{
-                                false: "#CFC2D4",
-                                true: "#6B21A8",
+                                false: highContrast ? "#7E7383" : "#CFC2D4",
+                                true: highContrast ? "#000000" : "#6B21A8",
                             }}
                             thumbColor="#FFFFFF"
+                            accessibilityLabel="Reduce Gestures"
+                            accessibilityHint="Enables single-tap interactions rather than complex gestures"
                         />
                     </View>
                 </View>
             </ScrollView>
 
             {/* FOOTER */}
-            <View style={styles.footer}>
-                <TouchableOpacity
-                    activeOpacity={0.9}
+            <View style={[styles.footer, { backgroundColor: screenColors.background, paddingBottom: Math.max(insets.bottom, 24) }]}>
+                <AccessibleButton
+                    accessibilityLabel="Continue"
+                    accessibilityHint="Saves preferences and proceeds to the next screen"
                     onPress={handleContinue}
                     disabled={loading}
-                    style={styles.buttonContainer}
+                    style={highContrast ? { backgroundColor: '#000000' } : undefined}
                 >
-                    <LinearGradient
-                        colors={["#500088", "#6B21A8"]}
-                        start={{ x: 0, y: 0 }}
-                        end={{ x: 1, y: 1 }}
-                        style={styles.button}
-                    >
-                        {loading ? (
-                            <ActivityIndicator color="#fff" />
-                        ) : (
-                            <Text style={styles.buttonText}>
-                                Continue
-                            </Text>
-                        )}
-                    </LinearGradient>
-                </TouchableOpacity>
+                    {loading ? <ActivityIndicator color="#fff" /> : "Continue"}
+                </AccessibleButton>
             </View>
-        </SafeAreaView>
+        </SafeScreen>
     );
 };
 

@@ -1,0 +1,98 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum QuestionStatus {
+  SOLVED
+  UNSOLVED
+}
+
+enum VoteType {
+  UP
+  DOWN
+}
+
+model ForumQuestion {
+  id           String          @id @default(uuid())
+  title        String
+  description  String?
+  category     String
+  tags         ForumTag[]      @relation("QuestionTags")
+  imageUrl     String?
+  views        Int             @default(0)
+  answerCount  Int             @default(0)
+  status       QuestionStatus  @default(UNSOLVED)
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  authorId     String
+  author       User            @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  answers      ForumAnswer[]
+  reports      ForumReport[]
+  @@index([title])
+  @@index([category])
+
+  @@map("forum_questions")
+}
+
+model ForumAnswer {
+  id          String        @id @default(uuid())
+  questionId  String
+  content     String?
+  imageUrl    String?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  authorId    String
+  isAccepted  Boolean       @default(false)
+  upvotes     Int           @default(0)
+  downvotes   Int           @default(0)
+  author      User          @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  question    ForumQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  votes       ForumVote[]
+  reports     ForumReport[]
+  @@map("forum_answers")
+}
+
+model ForumVote {
+  id        String   @id @default(uuid())
+  answerId  String
+  userId    String
+  type      VoteType
+  createdAt DateTime @default(now())
+  answer    ForumAnswer @relation(fields: [answerId], references: [id], onDelete: Cascade)
+  @@unique([answerId, userId])
+  @@map("forum_votes")
+}
+
+model ForumTag {
+  id    String @id @default(uuid())
+  name  String @unique
+  questions ForumQuestion[] @relation("QuestionTags")
+  @@map("forum_tags")
+}
+
+model ForumReport {
+  id         String   @id @default(uuid())
+  reporterId String
+  questionId String?
+  answerId   String?
+  reason     String
+  createdAt  DateTime @default(now())
+  reporter   User @relation(fields: [reporterId], references: [id], onDelete: Cascade)
+  question   ForumQuestion? @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  answer     ForumAnswer?   @relation(fields: [answerId],   references: [id], onDelete: Cascade)
+  @@map("forum_reports")
+}
+
+// Reference to User model from user-svc – using plain String ID to avoid cross‑service schema dependencies.
+model User {
+  id String @id
+  forumQuestions ForumQuestion[]
+  forumAnswers   ForumAnswer[]
+  forumReports   ForumReport[]
+}

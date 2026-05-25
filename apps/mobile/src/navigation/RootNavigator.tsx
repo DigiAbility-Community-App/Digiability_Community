@@ -5,6 +5,7 @@ import * as SecureStore from 'expo-secure-store';
 import AuthNavigator from './AuthNavigator';
 import MainNavigator from './MainNavigator';
 import { useAuthStore } from '@store/authStore';
+import { useAccessibilityStore } from '@store/accessibilityStore';
 import { getMe } from '@services/authService';
 import { REFRESH_TOKEN_KEY } from '@services/apiClient';
 import { initSocket, closeSocket } from '@services/socketService';
@@ -31,6 +32,14 @@ const RootNavigator = () => {
   const user = useAuthStore((s) => s.user);
   const setUser = useAuthStore((s) => s.setUser);
   const [isRestoringSession, setIsRestoringSession] = useState(true);
+
+  const loadAccessibilityPreferences = useAccessibilityStore((s) => s.loadPreferences);
+
+  useEffect(() => {
+    if (user?.id) {
+      loadAccessibilityPreferences(user.id);
+    }
+  }, [user?.id, loadAccessibilityPreferences]);
 
   useEffect(() => {
     let isMounted = true;
