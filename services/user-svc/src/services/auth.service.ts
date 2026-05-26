@@ -103,6 +103,7 @@ export interface LoginResult {
     name: string;
     email: string;
     role: string | null;
+    roles: string[];
     profileComplete: boolean;
     isEmailVerified: boolean;
   };
@@ -112,7 +113,7 @@ function toAuthUser(user: {
   id: string;
   name: string;
   email: string;
-  role: Role | null;
+  roles: Role[];
   profileComplete: boolean;
   isEmailVerified: boolean;
 }) {
@@ -120,14 +121,15 @@ function toAuthUser(user: {
     id: user.id,
     name: user.name,
     email: user.email,
-    role: user.role,
+    role: user.roles[0] || null,
+    roles: user.roles,
     profileComplete: user.profileComplete,
     isEmailVerified: user.isEmailVerified,
   };
 }
 
 export async function registerUser(input: RegisterInput): Promise<LoginResult> {
-  const { name, email, password, role } = input;
+  const { name, email, password, role, roles } = input as any;
 
   const existing = await prisma.user.findUnique({ where: { email } });
   if (existing) {
@@ -136,10 +138,15 @@ export async function registerUser(input: RegisterInput): Promise<LoginResult> {
 
   const hashedPassword = await hashPassword(password);
 
-  const dbRole = role && role !== "other" ? (role as Role) : null;
+  let dbRoles: Role[] = [];
+  if (roles && Array.isArray(roles)) {
+    dbRoles = roles.filter(r => r && r !== "other").map(r => r as Role);
+  } else if (role && role !== "other") {
+    dbRoles = [role as Role];
+  }
 
   const user = await prisma.user.create({
-    data: { name, email, password: hashedPassword, role: dbRole },
+    data: { name, email, password: hashedPassword, roles: dbRoles },
   });
 
   const rawOtp = await createEmailVerificationOtp(user.id);
@@ -263,7 +270,7 @@ export async function getCurrentUser(userId: string) {
       name: true,
       email: true,
       phoneNo: true,
-      role: true,
+      roles: true,
       profileComplete: true,
       lastSeen: true,
       isEmailVerified: true,
@@ -273,23 +280,41 @@ export async function getCurrentUser(userId: string) {
   });
 
   if (!user) throw new Error("User not found");
-  return user;
+  return {
+    ...user,
+    role: user.roles[0] || null,
+  };
 }
 
 export async function updateUserRole(userId: string, input: UpdateRoleInput) {
+  const { role, roles } = input as any;
+  let dbRoles: Role[] = [];
+  if (roles && Array.isArray(roles)) {
+    dbRoles = roles.map(r => r as Role);
+  } else if (role) {
+    dbRoles = [role as Role];
+  }
+
   const user = await prisma.user.update({
     where: { id: userId },
-    data: { role: input.role as Role },
+    data: { roles: dbRoles },
     select: {
       id: true,
       name: true,
       email: true,
-      role: true,
+      roles: true,
       profileComplete: true,
       isEmailVerified: true,
     },
   });
-  return { message: "Role updated successfully", user };
+
+  return { 
+    message: "Role updated successfully", 
+    user: {
+      ...user,
+      role: user.roles[0] || null,
+    } 
+  };
 }
 
 // ─── Batch User Lookup ─────────────────────────────────

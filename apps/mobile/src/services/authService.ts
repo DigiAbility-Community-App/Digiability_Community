@@ -13,6 +13,8 @@ export interface RegisterInput {
   name: string;
   email: string;
   password: string;
+  role?: string;
+  roles?: string[];
 }
 
 export interface LoginInput {
@@ -93,9 +95,11 @@ const ROLE_MAP_TO_FRONTEND: Record<string, string> = {
 
 function mapUserToFrontend(user: any): any {
   if (!user) return user;
+  const roles = user.roles ? user.roles.map((r: string) => ROLE_MAP_TO_FRONTEND[r] ?? r) : [];
   return {
     ...user,
-    role: user.role ? (ROLE_MAP_TO_FRONTEND[user.role] ?? user.role) : user.role,
+    role: roles[0] || (user.role ? (ROLE_MAP_TO_FRONTEND[user.role] ?? user.role) : null),
+    roles: roles,
   };
 }
 
@@ -105,6 +109,7 @@ export async function register(input: RegisterInput): Promise<AuthUser> {
   const mappedInput = {
     ...input,
     role: input.role ? (ROLE_MAP_TO_BACKEND[input.role] ?? input.role) : undefined,
+    roles: input.roles ? input.roles.map(r => ROLE_MAP_TO_BACKEND[r] ?? r) : undefined,
   };
 
   const response = await apiClient.post<ApiResponse<LoginResponseData>>(
@@ -209,21 +214,20 @@ export async function resendVerificationOtp(email: string): Promise<string> {
   return response.data.message;
 }
 
-// ── Update current user role ───────────────────────────────
+// ── Update current user roles ───────────────────────────────
 
-export async function updateRole(
-  role: string,
+export async function updateRoles(
+  roles: string[],
   options: { updateStore?: boolean } = {}
 ): Promise<AuthUser> {
-  const backendRole = ROLE_MAP_TO_BACKEND[role] ?? role;
+  const backendRoles = roles.map(role => ROLE_MAP_TO_BACKEND[role] ?? role);
   const response = await apiClient.patch<ApiResponse<AuthUser>>('/api/auth/role', {
-    role: backendRole,
+    roles: backendRoles,
   });
 
   const mappedUser = mapUserToFrontend(response.data.data);
   
   if (options.updateStore ?? true) {
-    // Update auth store with the new user object
     useAuthStore.getState().setAuth(
       useAuthStore.getState().accessToken!,
       mappedUser
@@ -231,4 +235,11 @@ export async function updateRole(
   }
   
   return mappedUser;
+}
+
+export async function updateRole(
+  role: string,
+  options: { updateStore?: boolean } = {}
+): Promise<AuthUser> {
+  return updateRoles([role], options);
 }

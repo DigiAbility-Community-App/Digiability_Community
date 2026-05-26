@@ -25,6 +25,37 @@ const getImageUrl = (req: Request, filename?: string) => {
   return `${protocol}://${host}/uploads/${filename}`;
 };
 
+const mapAuthorRole = (author: any) => {
+  if (!author) return author;
+  return {
+    ...author,
+    role: author.roles?.[0] || null,
+  };
+};
+
+const mapQuestionRoles = (q: any) => {
+  if (!q) return q;
+  const mapped = {
+    ...q,
+    author: mapAuthorRole(q.author),
+  };
+  if (q.answers && Array.isArray(q.answers)) {
+    mapped.answers = q.answers.map((a: any) => ({
+      ...a,
+      author: mapAuthorRole(a.author),
+    }));
+  }
+  return mapped;
+};
+
+const mapAnswerRoles = (a: any) => {
+  if (!a) return a;
+  return {
+    ...a,
+    author: mapAuthorRole(a.author),
+  };
+};
+
 /**
  * Adjust user reputation in active transaction.
  */
@@ -120,7 +151,7 @@ export const createQuestion = async (req: Request, res: Response): Promise<void>
             select: {
               id: true,
               name: true,
-              role: true,
+              roles: true,
               forumStats: true
             }
           }
@@ -133,8 +164,8 @@ export const createQuestion = async (req: Request, res: Response): Promise<void>
       return q;
     });
 
-    broadcastForumEvent('question_created', question);
-    res.status(201).json({ success: true, data: question });
+    broadcastForumEvent('question_created', mapQuestionRoles(question));
+    res.status(201).json({ success: true, data: mapQuestionRoles(question) });
   } catch (error: any) {
     console.error('Create Question Error:', error);
     res.status(500).json({ success: false, message: error.message || 'Failed to create question' });
@@ -156,7 +187,7 @@ export const checkDuplicates = async (req: Request, res: Response): Promise<void
       include: {
         tags: true,
         author: {
-          select: { id: true, name: true, role: true }
+          select: { id: true, name: true, roles: true }
         }
       }
     });
@@ -172,7 +203,7 @@ export const checkDuplicates = async (req: Request, res: Response): Promise<void
       .slice(0, 5)
       .map(m => m.question);
 
-    res.status(200).json({ success: true, data: matches });
+    res.status(200).json({ success: true, data: matches.map(mapQuestionRoles) });
   } catch (error: any) {
     console.error('Check Duplicates Error:', error);
     res.status(500).json({ success: false, message: 'Error performing similarity check' });
@@ -228,7 +259,7 @@ export const listQuestions = async (req: Request, res: Response): Promise<void> 
           select: {
             id: true,
             name: true,
-            role: true,
+            roles: true,
             forumStats: true
           }
         }
@@ -250,7 +281,7 @@ export const listQuestions = async (req: Request, res: Response): Promise<void> 
 
     res.status(200).json({
       success: true,
-      data: questions,
+      data: questions.map(mapQuestionRoles),
       nextCursor
     });
   } catch (error: any) {
@@ -274,7 +305,7 @@ export const getQuestionDetails = async (req: Request, res: Response): Promise<v
           select: {
             id: true,
             name: true,
-            role: true,
+            roles: true,
             forumStats: true
           }
         },
@@ -290,7 +321,7 @@ export const getQuestionDetails = async (req: Request, res: Response): Promise<v
               select: {
                 id: true,
                 name: true,
-                role: true,
+                roles: true,
                 forumStats: true
               }
             }
@@ -299,7 +330,7 @@ export const getQuestionDetails = async (req: Request, res: Response): Promise<v
       }
     });
 
-    res.status(200).json({ success: true, data: question });
+    res.status(200).json({ success: true, data: mapQuestionRoles(question) });
   } catch (error: any) {
     console.error('Get Question Details Error:', error);
     res.status(404).json({ success: false, message: 'Question not found' });
@@ -390,7 +421,7 @@ export const createAnswer = async (req: Request, res: Response): Promise<void> =
             select: {
               id: true,
               name: true,
-              role: true,
+              roles: true,
               forumStats: true
             }
           }
@@ -421,8 +452,8 @@ export const createAnswer = async (req: Request, res: Response): Promise<void> =
       return ans;
     });
 
-    broadcastForumEvent('answer_created', answer);
-    res.status(201).json({ success: true, data: answer });
+    broadcastForumEvent('answer_created', mapAnswerRoles(answer));
+    res.status(201).json({ success: true, data: mapAnswerRoles(answer) });
   } catch (error: any) {
     console.error('Create Answer Error:', error);
     res.status(500).json({ success: false, message: 'Failed to post answer' });
@@ -459,15 +490,15 @@ export const editAnswer = async (req: Request, res: Response): Promise<void> => 
           select: {
             id: true,
             name: true,
-            role: true,
+            roles: true,
             forumStats: true
           }
         }
       }
     });
 
-    broadcastForumEvent('answer_updated', updated);
-    res.status(200).json({ success: true, data: updated });
+    broadcastForumEvent('answer_updated', mapAnswerRoles(updated));
+    res.status(200).json({ success: true, data: mapAnswerRoles(updated) });
   } catch (error: any) {
     console.error('Edit Answer Error:', error);
     res.status(500).json({ success: false, message: 'Failed to update answer' });
@@ -588,7 +619,7 @@ export const voteAnswer = async (req: Request, res: Response): Promise<void> => 
             select: {
               id: true,
               name: true,
-              role: true,
+              roles: true,
               forumStats: true
             }
           }
@@ -598,8 +629,8 @@ export const voteAnswer = async (req: Request, res: Response): Promise<void> => 
       return updated;
     });
 
-    broadcastForumEvent('answer_voted', result);
-    res.status(200).json({ success: true, data: result });
+    broadcastForumEvent('answer_voted', mapAnswerRoles(result));
+    res.status(200).json({ success: true, data: mapAnswerRoles(result) });
   } catch (error: any) {
     console.error('Vote Answer Error:', error);
     res.status(500).json({ success: false, message: 'Failed to cast vote' });
@@ -856,7 +887,7 @@ export const listBookmarks = async (req: Request, res: Response): Promise<void> 
               select: {
                 id: true,
                 name: true,
-                role: true,
+                roles: true,
                 forumStats: true
               }
             }
@@ -868,7 +899,7 @@ export const listBookmarks = async (req: Request, res: Response): Promise<void> 
 
     const questions = bookmarks.map(b => b.question).filter(q => q.deletedAt === null);
 
-    res.status(200).json({ success: true, data: questions });
+    res.status(200).json({ success: true, data: questions.map(mapQuestionRoles) });
   } catch (error: any) {
     console.error('List Bookmarks Error:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch bookmarks' });

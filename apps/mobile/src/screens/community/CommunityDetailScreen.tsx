@@ -17,6 +17,7 @@ import GroupsTab from "../../components/community/GroupsTab";
 import ForumsTab from "../../components/community/ForumsTab";
 import EventsTab from "../../components/community/EventsTab";
 import ChatsTab from "../../components/community/ChatsTab";
+import AppFooter from "@components/layout/AppFooter";
 
 const initialLayout = {
     width: Dimensions.get("window").width,
@@ -167,7 +168,9 @@ const CommunityScreen = ({
                 swipeEnabled
                 lazy
             />
+            <AppFooter activeTab="Community" />
         </ScreenWrapper>
+
     );
 };
 

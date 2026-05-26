@@ -34,7 +34,7 @@ model User {
   phoneNo         String?
   lastSeen        DateTime?
   isEmailVerified Boolean   @default(false)
-  role            Role?
+  roles           Role[]    @default([])
   profileComplete Boolean   @default(false)
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
@@ -46,7 +46,6 @@ model User {
   userProfile             UserProfile?
 
   @@index([email])
-  @@index([role])
   @@map("users")
 }
 

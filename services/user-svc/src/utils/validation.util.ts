@@ -21,7 +21,8 @@ export const RegisterSchema = z.object({
       /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/,
       "Password must include uppercase, lowercase, and a number"
     ),
-  role: z.enum(["pwd", "caregiver", "therapist", "ngo", "other"]).optional(),
+  role: z.enum(["pwd", "caregiver", "therapist", "ngo", "volunteer", "student", "other"]).optional(),
+  roles: z.array(z.enum(["pwd", "caregiver", "therapist", "ngo", "volunteer", "student", "other"])).optional(),
 });
 
 export const LoginSchema = z.object({
@@ -52,7 +53,8 @@ export const ResetPasswordSchema = z.object({
 });
 
 export const UpdateRoleSchema = z.object({
-  role: z.enum(["pwd", "caregiver", "therapist", "ngo", "volunteer", "student"]),
+  role: z.enum(["pwd", "caregiver", "therapist", "ngo", "volunteer", "student"]).optional(),
+  roles: z.array(z.enum(["pwd", "caregiver", "therapist", "ngo", "volunteer", "student"])).optional(),
 });
 
 export const VerifyOtpSchema = z.object({

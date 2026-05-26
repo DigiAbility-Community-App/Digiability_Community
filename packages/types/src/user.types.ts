@@ -28,6 +28,7 @@ export interface BaseUser {
   lastSeen?: Date | null;
   isEmailVerified: boolean;
   role?: UserRole | null;
+  roles?: UserRole[];
   profileComplete: boolean;
   createdAt: Date;
   updatedAt: Date;

@@ -25,6 +25,7 @@ import {
 } from "@react-navigation/native";
 
 import { useAuthStore } from "@store/authStore";
+import { logout } from "@services/authService";
 
 import {
   checkUsernameAvailability,
@@ -32,6 +33,8 @@ import {
   parseDateInput,
   optionalString,
 } from "@services/profileService";
+import DateTimePickerModal from "react-native-modal-datetime-picker";
+import * as Location from "expo-location";
 
 // --------------------------------------------------
 // CONSTANTS
@@ -89,9 +92,9 @@ const ProfileScreen = () => {
     (s) => s.user
   );
 
-  const pendingRole =
+  const pendingRoles =
     useAuthStore(
-      (s) => s.pendingRole
+      (s) => s.pendingRoles
     );
 
   const setPendingProfile =
@@ -103,8 +106,9 @@ const ProfileScreen = () => {
   // STATES
   // --------------------------------------------------
 
-  const [fullName, setFullName] =
-    useState("");
+  const [fullName, setFullName] = useState(
+    user?.name || ""
+  );
 
   const [username, setUsername] =
     useState("");
@@ -112,8 +116,14 @@ const ProfileScreen = () => {
   const [dob, setDob] =
     useState("");
 
+  const [showDatePicker, setShowDatePicker] =
+    useState(false);
+
   const [gender, setGender] =
     useState("");
+
+  const [showGenderDropdown, setShowGenderDropdown] =
+    useState(false);
 
   const [houseNo, setHouseNo] =
     useState("");
@@ -161,39 +171,50 @@ const ProfileScreen = () => {
   // ROLE BADGE
   // --------------------------------------------------
 
-  const roleLabel = pendingRole
-    ? ROLE_LABELS[pendingRole] ??
-    pendingRole
-    : user?.role
-      ? ROLE_LABELS[user.role] ??
-      user.role
-      : "";
+  const rolesList = pendingRoles && pendingRoles.length > 0
+    ? pendingRoles
+    : (user?.roles && user.roles.length > 0 ? user.roles : (user?.role ? [user.role] : []));
+
+  const roleLabel = rolesList
+    .map(r => ROLE_LABELS[r] ?? r)
+    .join(", ");
 
   // --------------------------------------------------
   // BACK HANDLER
   // --------------------------------------------------
 
+  const handleBack = useCallback(() => {
+    if (navigation.canGoBack()) {
+      navigation.goBack();
+    } else {
+      Alert.alert(
+        "Exit Onboarding?",
+        "Are you sure you want to go back to the signup/login screen? This will sign you out.",
+        [
+          {
+            text: "Cancel",
+            style: "cancel",
+          },
+          {
+            text: "Exit",
+            style: "destructive",
+            onPress: async () => {
+              try {
+                await logout();
+              } catch (err) {
+                Alert.alert("Error", "Failed to log out");
+              }
+            },
+          },
+        ]
+      );
+    }
+  }, [navigation]);
+
   useFocusEffect(
     useCallback(() => {
       const onBackPress = () => {
-        Alert.alert(
-          "Go Back?",
-          "Your role selection will be kept.",
-          [
-            {
-              text: "Stay",
-              style: "cancel",
-            },
-
-            {
-              text: "Go Back",
-              style: "destructive",
-              onPress: () =>
-                navigation.goBack(),
-            },
-          ]
-        );
-
+        handleBack();
         return true;
       };
 
@@ -205,7 +226,7 @@ const ProfileScreen = () => {
 
       return () =>
         subscription.remove();
-    }, [navigation])
+    }, [handleBack])
   );
 
   // --------------------------------------------------
@@ -428,7 +449,93 @@ const ProfileScreen = () => {
         </Text>
       );
     };
+  // --------------------------------------------------
+  // Generate username suggestions
+  // --------------------------------------------------
 
+  const generateUsernameSuggestions = () => {
+    const name =
+      fullName
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, "");
+
+    if (!name) return [];
+
+    return [
+      `${name}${Math.floor(
+        Math.random() * 100
+      )}`,
+
+      `${name}_${Math.floor(
+        Math.random() * 999
+      )}`,
+
+      `${name}.${Math.floor(
+        Math.random() * 9999
+      )}`,
+    ];
+  };
+
+  const usernameSuggestions =
+    generateUsernameSuggestions();
+
+  // --------------------------------------------------
+  // 
+  // --------------------------------------------------
+  const fetchCurrentLocation =
+    async () => {
+      try {
+        const { status } =
+          await Location.requestForegroundPermissionsAsync();
+
+        if (status !== "granted") {
+          Alert.alert(
+            "Permission denied"
+          );
+          return;
+        }
+
+        const location =
+          await Location.getCurrentPositionAsync(
+            {}
+          );
+
+        const address =
+          await Location.reverseGeocodeAsync({
+            latitude:
+              location.coords.latitude,
+            longitude:
+              location.coords.longitude,
+          });
+
+        if (address.length > 0) {
+          const place = address[0];
+
+          setStreetArea(
+            place.street || ""
+          );
+
+          setCity(
+            place.city || ""
+          );
+
+          setDistrict(
+            place.subregion || ""
+          );
+
+          setState(
+            place.region || ""
+          );
+
+          setPincode(
+            place.postalCode || ""
+          );
+        }
+      } catch (error) {
+        console.log(error);
+      }
+    };
   // --------------------------------------------------
   // UI
   // --------------------------------------------------
@@ -442,9 +549,7 @@ const ProfileScreen = () => {
           style={
             styles.backButton
           }
-          onPress={() =>
-            navigation.goBack()
-          }
+          onPress={handleBack}
         >
           <Text
             style={
@@ -585,103 +690,90 @@ const ProfileScreen = () => {
           )}
 
           {/* DOB */}
-          <View
-            style={
-              styles.inputContainer
-            }
+          <TouchableOpacity
+            activeOpacity={0.9}
+            onPress={() => setShowDatePicker(true)}
+            style={styles.inputContainer}
           >
-            <Text
-              style={
-                styles.inputIcon
-              }
-            >
+            <Text style={styles.inputIcon}>
               📅
             </Text>
 
             <TextInput
-              placeholder="Date of Birth (DD/MM/YYYY)"
+              placeholder="DD/MM/YYYY"
               placeholderTextColor="#7E7383"
               style={styles.input}
               value={dob}
-              onChangeText={
-                setDob
-              }
+              onChangeText={setDob}
             />
-          </View>
+          </TouchableOpacity>
+
+          <DateTimePickerModal
+            isVisible={showDatePicker}
+            mode="date"
+            maximumDate={new Date()}
+            onConfirm={(date) => {
+              setShowDatePicker(false);
+
+              const formatted =
+                `${date.getDate()
+                  .toString()
+                  .padStart(2, "0")}/${(
+                    date.getMonth() + 1
+                  )
+                    .toString()
+                    .padStart(2, "0")}/${date.getFullYear()}`;
+
+              setDob(formatted);
+            }}
+            onCancel={() =>
+              setShowDatePicker(false)
+            }
+          />
 
           {/* GENDER */}
           <TouchableOpacity
-            style={
-              styles.inputContainer
+            style={styles.inputContainer}
+            activeOpacity={0.9}
+            onPress={() =>
+              setShowGenderDropdown(
+                !showGenderDropdown
+              )
             }
           >
-            <Text
-              style={
-                styles.inputIcon
-              }
-            >
+            <Text style={styles.inputIcon}>
               ⚧
             </Text>
 
-            <Text
-              style={
-                styles.dropdownText
-              }
-            >
-              {gender ||
-                "Select Gender"}
+            <Text style={styles.dropdownText}>
+              {gender || "Select Gender"}
             </Text>
 
-            <Text
-              style={
-                styles.dropdownArrow
-              }
-            >
-              ▼
+            <Text style={styles.dropdownArrow}>
+              {showGenderDropdown ? "▲" : "▼"}
             </Text>
           </TouchableOpacity>
 
-          {/* GENDER OPTIONS */}
-          <View
-            style={
-              styles.genderGrid
-            }
-          >
-            {GENDERS.map(
-              (g) => {
-                const selected =
-                  gender === g;
+          {showGenderDropdown && (
+            <View style={styles.dropdownBox}>
+              {GENDERS.map((item) => (
+                <TouchableOpacity
+                  key={item}
+                  style={styles.dropdownItem}
+                  onPress={() => {
+                    setGender(item);
+                    setShowGenderDropdown(false);
+                  }}
+                >
+                  <Text style={styles.dropdownItemText}>
+                    {item}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
 
-                return (
-                  <TouchableOpacity
-                    key={g}
-                    onPress={() =>
-                      setGender(
-                        g
-                      )
-                    }
-                    style={[
-                      styles.genderChip,
 
-                      selected &&
-                      styles.genderChipSelected,
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.genderChipText,
-
-                        selected &&
-                        styles.genderChipTextSelected,
-                      ]}
-                    >
-                      {g}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              }
-            )}
-          </View>
         </View>
 
         {/* USERNAME */}
@@ -738,11 +830,7 @@ const ProfileScreen = () => {
               styles.suggestionRow
             }
           >
-            {[
-              "priya.dev",
-              "priya_01",
-              "priya123",
-            ].map((item) => (
+            {usernameSuggestions?.map((item) => (
               <TouchableOpacity
                 key={item}
                 style={
@@ -776,145 +864,99 @@ const ProfileScreen = () => {
         </View>
 
         {/* LOCATION */}
+        {/* LOCATION */}
         <View style={styles.card}>
-          <Text
-            style={
-              styles.sectionLabel
-            }
-          >
+          <Text style={styles.sectionLabel}>
             YOUR LOCATION
           </Text>
 
-          {/* ROW 1 */}
-          <View style={styles.row}>
-            <View
-              style={
-                styles.halfInput
-              }
-            >
+          {/* LOCATION BUTTON */}
+          <TouchableOpacity
+            style={styles.locationBtn}
+            onPress={fetchCurrentLocation}
+            activeOpacity={0.9}
+          >
+            <Text style={styles.locationBtnText}>
+              📍 Use Current Location
+            </Text>
+          </TouchableOpacity>
+
+          {/* ADDRESS LINE 1 */}
+          <View style={styles.fullWidthInput}>
+            <TextInput
+              placeholder="Address Line 1"
+              placeholderTextColor="#9A94A3"
+              style={styles.input}
+              value={houseNo}
+              onChangeText={setHouseNo}
+            />
+          </View>
+
+          {/* STREET */}
+          <View style={styles.fullWidthInput}>
+            <TextInput
+              placeholder="Street / Area"
+              placeholderTextColor="#9A94A3"
+              style={styles.input}
+              value={streetArea}
+              onChangeText={setStreetArea}
+            />
+          </View>
+
+          {/* CITY + DISTRICT */}
+          <View style={styles.doubleRow}>
+            <View style={styles.doubleInput}>
               <TextInput
-                placeholder="House/Flat No."
-                placeholderTextColor="#7E7383"
-                style={
-                  styles.input
-                }
-                value={houseNo}
-                onChangeText={
-                  setHouseNo
-                }
+                placeholder="City"
+                placeholderTextColor="#9A94A3"
+                style={styles.input}
+                value={city}
+                onChangeText={setCity}
               />
             </View>
 
-            <View
-              style={
-                styles.halfInput
-              }
-            >
+            <View style={styles.doubleInput}>
+              <TextInput
+                placeholder="District"
+                placeholderTextColor="#9A94A3"
+                style={styles.input}
+                value={district}
+                onChangeText={setDistrict}
+              />
+            </View>
+          </View>
+
+          {/* STATE + PINCODE */}
+          <View style={styles.doubleRow}>
+            <View style={styles.doubleInput}>
+              <TextInput
+                placeholder="State"
+                placeholderTextColor="#9A94A3"
+                style={styles.input}
+                value={state}
+                onChangeText={setState}
+              />
+            </View>
+
+            <View style={styles.doubleInput}>
               <TextInput
                 placeholder="Pincode"
-                placeholderTextColor="#7E7383"
-                style={
-                  styles.input
-                }
+                placeholderTextColor="#9A94A3"
+                style={styles.input}
                 value={pincode}
-                onChangeText={
-                  setPincode
-                }
+                onChangeText={setPincode}
                 keyboardType="number-pad"
               />
             </View>
           </View>
 
-          {/* STREET */}
-          <View
-            style={
-              styles.fullInput
-            }
-          >
-            <TextInput
-              placeholder="Street / Area"
-              placeholderTextColor="#7E7383"
-              style={styles.input}
-              value={streetArea}
-              onChangeText={
-                setStreetArea
-              }
-            />
-          </View>
-
-          {/* ROW 2 */}
-          <View style={styles.row}>
-            <View
-              style={
-                styles.halfInput
-              }
-            >
-              <TextInput
-                placeholder="City"
-                placeholderTextColor="#7E7383"
-                style={
-                  styles.input
-                }
-                value={city}
-                onChangeText={
-                  setCity
-                }
-              />
-            </View>
-
-            <View
-              style={
-                styles.halfInput
-              }
-            >
-              <TextInput
-                placeholder="District"
-                placeholderTextColor="#7E7383"
-                style={
-                  styles.input
-                }
-                value={district}
-                onChangeText={
-                  setDistrict
-                }
-              />
-            </View>
-          </View>
-
-          {/* STATE */}
-          <View
-            style={
-              styles.fullInput
-            }
-          >
-            <TextInput
-              placeholder="State"
-              placeholderTextColor="#7E7383"
-              style={styles.input}
-              value={state}
-              onChangeText={
-                setState
-              }
-            />
-          </View>
-
           {/* NOTICE */}
-          <View
-            style={
-              styles.locationNotice
-            }
-          >
-            <Text
-              style={
-                styles.locationNoticeText
-              }
-            >
-              📍 Helps us show
-              nearby services
+          <View style={styles.locationNotice}>
+            <Text style={styles.locationNoticeText}>
+              📍 Helps us show nearby services
             </Text>
           </View>
         </View>
-
         {/* BUTTON */}
         <TouchableOpacity
           activeOpacity={0.9}
@@ -947,7 +989,7 @@ const ProfileScreen = () => {
           </LinearGradient>
         </TouchableOpacity>
       </ScrollView>
-    </SafeScreen>
+    </SafeScreen >
   );
 };
 
@@ -1109,9 +1151,9 @@ const styles =
 
     input: {
       flex: 1,
-
       fontSize: 16,
       color: "#1A1B20",
+      fontWeight: "500",
     },
 
     dropdownText: {
@@ -1125,36 +1167,27 @@ const styles =
       fontSize: 12,
     },
 
-    genderGrid: {
-      flexDirection: "row",
-      flexWrap: "wrap",
-      gap: 10,
+    dropdownBox: {
+      backgroundColor: "#f4f7f7e4",
+      borderRadius: 18,
+      marginTop: -8,
+      marginBottom: 16,
+      overflow: "hidden",
+      borderWidth: 1,
+      borderColor: "#ECEAF3",
     },
 
-    genderChip: {
-      backgroundColor:
-        "#EEEDF4",
-
-      borderRadius: 999,
-
-      paddingHorizontal: 14,
-      paddingVertical: 8,
+    dropdownItem: {
+      paddingVertical: 16,
+      paddingHorizontal: 18,
+      borderBottomWidth: 1,
+      borderBottomColor: "#f1eef7bc",
     },
 
-    genderChipSelected: {
-      backgroundColor:
-        "#F3EAFF",
-    },
-
-    genderChipText: {
-      color: "#4C4452",
-      fontSize: 12,
-      fontWeight: "700",
-    },
-
-    genderChipTextSelected:
-    {
-      color: "#6B21A8",
+    dropdownItemText: {
+      fontSize: 15,
+      color: "#1A1B20",
+      fontWeight: "500",
     },
 
     usernameContainer: {
@@ -1270,7 +1303,7 @@ const styles =
       paddingHorizontal: 16,
 
       justifyContent:
-        "center",
+        "flex-start",
 
       marginBottom: 16,
     },
@@ -1284,7 +1317,19 @@ const styles =
       paddingVertical: 12,
       paddingHorizontal: 14,
     },
+    locationBtn: {
+      backgroundColor: "#F3EAFF",
+      height: 58,
+      borderRadius: 18,
+      alignItems: "center",
+      justifyContent: "center",
+      marginBottom: 20,
+    },
 
+    locationBtnText: {
+      color: "#500088",
+      fontWeight: "700",
+    },
     locationNoticeText: {
       color: "#855300",
 
@@ -1334,5 +1379,29 @@ const styles =
 
       marginBottom: 10,
       marginLeft: 4,
+    },
+
+    fullWidthInput: {
+      height: 58,
+      backgroundColor: "#F4F3FA",
+      borderRadius: 18,
+      paddingHorizontal: 18,
+      justifyContent: "center",
+      marginBottom: 16,
+    },
+
+    doubleRow: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      marginBottom: 16,
+    },
+
+    doubleInput: {
+      width: "48%",
+      height: 58,
+      backgroundColor: "#F4F3FA",
+      borderRadius: 18,
+      paddingHorizontal: 18,
+      justifyContent: "center",
     },
   });

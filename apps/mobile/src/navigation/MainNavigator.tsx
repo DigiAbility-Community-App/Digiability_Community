@@ -53,7 +53,7 @@ function getFallbackRoute(
 ): keyof MainStackParamList {
   if (!user) return 'Home';
   // New user — no role chosen yet: start the full onboarding from Accessibility
-  if (!user.role) return 'Accessibility';
+  if (!user.roles || user.roles.length === 0) return 'Accessibility';
   // Has role but profile not complete: skip back to Profile
   if (!user.profileComplete) return 'Profile';
   // Returning user: will be resolved to 'Home' after async accessibility check
@@ -81,7 +81,7 @@ const MainNavigator = () => {
 
       // New user — no role yet: always start at Accessibility.
       // AccessibilityScreen.continueToNext() will push to RoleSelection.
-      if (!user.role) {
+      if (!user.roles || user.roles.length === 0) {
         if (isMounted) {
           setInitialRoute('Accessibility');
           setIsLoading(false);
@@ -119,7 +119,7 @@ const MainNavigator = () => {
     return () => {
       isMounted = false;
     };
-  }, [user?.id, user?.role, user?.profileComplete]);
+  }, [user?.id, user?.roles, user?.profileComplete]);
 
   if (isLoading) {
     return (

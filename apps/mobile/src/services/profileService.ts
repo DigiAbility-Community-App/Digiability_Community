@@ -1,6 +1,6 @@
 import axios from 'axios';
 import apiClient from './apiClient';
-import { updateRole } from './authService';
+import { updateRole, updateRoles } from './authService';
 
 interface ApiResponse<T> {
   success: boolean;
@@ -207,17 +207,19 @@ export async function submitProfileDetails(
 
 export async function submitFullOnboarding(params: {
   userId: string;
-  role: string;
+  role?: string;
+  roles?: string[];
   basicProfile: UserProfilePayload;
   roleDetails: ProfileDetailsPayload;
 }): Promise<void> {
-  const { userId, role, basicProfile, roleDetails } = params;
+  const { userId, role, roles, basicProfile, roleDetails } = params;
+  const rolesToSave = roles || (role ? [role] : []);
 
-  // 1. Save role
+  // 1. Save roles
   try {
-    await updateRole(role, { updateStore: false });
+    await updateRoles(rolesToSave, { updateStore: false });
   } catch (error) {
-    logApiError('Update role', error);
+    logApiError('Update roles', error);
     throw error;
   }
 

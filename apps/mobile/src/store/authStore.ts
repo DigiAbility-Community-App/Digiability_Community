@@ -11,6 +11,7 @@ export interface AuthUser {
   name: string;
   email: string;
   role?: string | null;
+  roles?: string[];
   profileComplete: boolean;
   isEmailVerified: boolean;
   fullName?: string;
@@ -35,7 +36,8 @@ interface AuthState {
   // ── Onboarding pending state ──────────────────────────────
   // Data collected across screens but NOT yet written to DB.
   // Written atomically on the final ProfileDetails submit.
-  pendingRole: string | null;
+  pendingRole: string | null; // Keep for backward compatibility/single values
+  pendingRoles: string[];
   pendingProfile: PendingBasicProfile | null;
 
   // Actions
@@ -46,6 +48,7 @@ interface AuthState {
 
   // Onboarding pending actions
   setPendingRole: (role: string) => void;
+  setPendingRoles: (roles: string[]) => void;
   setPendingProfile: (profile: PendingBasicProfile) => void;
   clearPending: () => void;
 }
@@ -55,6 +58,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   user: null,
   isAuthenticated: false,
   pendingRole: null,
+  pendingRoles: [],
   pendingProfile: null,
 
   setAuth: (accessToken, user) =>
@@ -76,12 +80,15 @@ export const useAuthStore = create<AuthState>((set) => ({
       user: null,
       isAuthenticated: false,
       pendingRole: null,
+      pendingRoles: [],
       pendingProfile: null,
     }),
 
-  setPendingRole: (role) => set({ pendingRole: role }),
+  setPendingRole: (role) => set({ pendingRole: role, pendingRoles: [role] }),
+
+  setPendingRoles: (roles) => set({ pendingRoles: roles, pendingRole: roles[0] || null }),
 
   setPendingProfile: (profile) => set({ pendingProfile: profile }),
 
-  clearPending: () => set({ pendingRole: null, pendingProfile: null }),
+  clearPending: () => set({ pendingRole: null, pendingRoles: [], pendingProfile: null }),
 }));
