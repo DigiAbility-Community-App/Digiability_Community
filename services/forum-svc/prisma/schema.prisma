@@ -25,17 +25,25 @@ model ForumQuestion {
   category     String
   tags         ForumTag[]      @relation("QuestionTags")
   imageUrl     String?
+  altText      String?
+  audioUrl     String?
   views        Int             @default(0)
   answerCount  Int             @default(0)
   status       QuestionStatus  @default(UNSOLVED)
   createdAt    DateTime        @default(now())
   updatedAt    DateTime        @updatedAt
+  deletedAt    DateTime?
   authorId     String
   author       User            @relation(fields: [authorId], references: [id], onDelete: Cascade)
   answers      ForumAnswer[]
   reports      ForumReport[]
+  bookmarks    Bookmark[]
+
   @@index([title])
   @@index([category])
+  @@index([createdAt])
+  @@index([authorId])
+  @@index([deletedAt])
 
   @@map("forum_questions")
 }
@@ -45,8 +53,11 @@ model ForumAnswer {
   questionId  String
   content     String?
   imageUrl    String?
+  altText     String?
+  audioUrl    String?
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
+  deletedAt   DateTime?
   authorId    String
   isAccepted  Boolean       @default(false)
   upvotes     Int           @default(0)
@@ -55,6 +66,11 @@ model ForumAnswer {
   question    ForumQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
   votes       ForumVote[]
   reports     ForumReport[]
+
+  @@index([questionId])
+  @@index([authorId])
+  @@index([deletedAt])
+
   @@map("forum_answers")
 }
 
@@ -65,6 +81,9 @@ model ForumVote {
   type      VoteType
   createdAt DateTime @default(now())
   answer    ForumAnswer @relation(fields: [answerId], references: [id], onDelete: Cascade)
+
+  @@index([answerId])
+  @@index([userId])
   @@unique([answerId, userId])
   @@map("forum_votes")
 }
@@ -89,10 +108,170 @@ model ForumReport {
   @@map("forum_reports")
 }
 
-// Reference to User model from user-svc – using plain String ID to avoid cross‑service schema dependencies.
+enum Role {
+  pwd
+  caregiver
+  therapist
+  ngo
+  volunteer
+  student
+}
+
 model User {
-  id String @id
+  id              String    @id @default(uuid())
+  name            String
+  email           String    @unique
+  password        String
+  phoneNo         String?
+  lastSeen        DateTime?
+  isEmailVerified Boolean   @default(false)
+  role            Role?
+  profileComplete Boolean   @default(false)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  // Auth Relations
+  refreshTokens           RefreshToken[]
+  emailVerificationTokens EmailVerificationToken[]
+  passwordResetTokens     PasswordResetToken[]
+  userProfile             UserProfile?
+
+  // Forum Relations
   forumQuestions ForumQuestion[]
   forumAnswers   ForumAnswer[]
   forumReports   ForumReport[]
+  forumStats     ForumUserStats?
+  bookmarks      Bookmark[]
+  notifications  Notification[]
+
+  @@index([email])
+  @@index([role])
+  @@map("users")
+}
+
+model ForumUserStats {
+  id             String    @id @default(uuid())
+  userId         String    @unique
+  reputation     Int       @default(0)
+  isSuspended    Boolean   @default(false)
+  suspendedUntil DateTime?
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("forum_user_stats")
+}
+
+model Bookmark {
+  id         String        @id @default(uuid())
+  userId     String
+  questionId String
+  createdAt  DateTime      @default(now())
+  user       User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  question   ForumQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, questionId])
+  @@map("forum_bookmarks")
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  type      String   // ANSWER, ACCEPTED, MENTION, LIKE, MODERATION
+  title     String
+  message   String
+  read      Boolean  @default(false)
+  relatedId String?  // ID of related question
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([createdAt])
+  @@map("forum_notifications")
+}
+
+model UserProfile {
+  id        String    @id @default(uuid())
+  userId    String    @unique
+  username  String?   @unique
+  fullName  String?
+  dob       DateTime?
+  gender    String?
+  city      String?
+  state     String?
+
+  // PwD Fields
+  disabilityType  String?
+  disabilitySince Int?
+  supportNeeded   String?
+
+  // Caregiver Fields
+  carePersonName     String?
+  careRelation       String?
+  careDob            DateTime?
+  careDisabilityType String?
+
+  // Therapist Fields
+  speciality        String?
+  organization      String?
+  yearsOfExperience Int?
+
+  // NGO Fields
+  ngoName           String?
+  ngoRole           String?
+  district          String?
+
+  // Verification (for Therapist / NGO roles)
+  verificationStatus String?  @default("pending") // pending, verified, rejected
+  verificationDoc    String?  // URL to uploaded document
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([username])
+  @@map("user_profiles")
+}
+
+model EmailVerificationToken {
+  id        String   @id @default(uuid())
+  userId    String
+  token     String   // stored as SHA-256 hash
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([token])
+  @@map("email_verification_tokens")
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  userId    String
+  tokenHash String   // stored as SHA-256 hash
+  expiresAt DateTime
+  revoked   Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([tokenHash])
+  @@map("refresh_tokens")
+}
+
+model PasswordResetToken {
+  id        String   @id @default(uuid())
+  userId    String
+  token     String   // stored as SHA-256 hash
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([token])
+  @@map("password_reset_tokens")
 }

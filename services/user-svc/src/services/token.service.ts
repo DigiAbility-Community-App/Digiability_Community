@@ -129,14 +129,12 @@ export async function createEmailVerificationOtp(
   expiresAt.setMinutes(expiresAt.getMinutes() + EMAIL_OTP_EXPIRES_MINUTES);
 
   // Delete any existing OTPs for this user first
-  await prisma.emailVerificationOtp.deleteMany({ where: { userId } });
+  await prisma.emailVerificationToken.deleteMany({ where: { userId } });
 
-  await prisma.emailVerificationOtp.create({
+  await prisma.emailVerificationToken.create({
     data: {
       userId,
-      otpHash,
-      attempts: 0,
-      maxAttempts: EMAIL_OTP_MAX_ATTEMPTS,
+      token: otpHash,
       expiresAt,
     },
   });
@@ -146,38 +144,24 @@ export async function createEmailVerificationOtp(
 
 /**
  * Validate an email verification OTP.
- * Increments attempt counter on failure.
  * Returns the associated userId if valid.
  */
 export async function validateEmailVerificationOtp(
   userId: string,
   rawOtp: string
 ): Promise<string> {
-  const stored = await prisma.emailVerificationOtp.findFirst({
+  const stored = await prisma.emailVerificationToken.findFirst({
     where: { userId },
     orderBy: { createdAt: "desc" },
   });
 
   if (!stored) throw new Error("No verification OTP found. Please request a new one.");
   if (stored.expiresAt < new Date()) throw new Error("OTP has expired. Please request a new one.");
-  if (stored.attempts >= stored.maxAttempts) {
-    throw new Error("Too many failed attempts. Please request a new OTP.");
-  }
 
   const otpHash = hashToken(rawOtp);
 
-  if (otpHash !== stored.otpHash) {
-    // Increment attempt counter
-    await prisma.emailVerificationOtp.update({
-      where: { id: stored.id },
-      data: { attempts: { increment: 1 } },
-    });
-    const remaining = stored.maxAttempts - stored.attempts - 1;
-    throw new Error(
-      remaining > 0
-        ? `Invalid OTP. ${remaining} attempt${remaining === 1 ? "" : "s"} remaining.`
-        : "Too many failed attempts. Please request a new OTP."
-    );
+  if (otpHash !== stored.token) {
+    throw new Error("Invalid OTP.");
   }
 
   return stored.userId;
@@ -189,7 +173,7 @@ export async function validateEmailVerificationOtp(
 export async function deleteEmailVerificationOtp(
   userId: string
 ): Promise<void> {
-  await prisma.emailVerificationOtp.deleteMany({
+  await prisma.emailVerificationToken.deleteMany({
     where: { userId },
   });
 }

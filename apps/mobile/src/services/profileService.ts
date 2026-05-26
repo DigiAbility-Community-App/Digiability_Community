@@ -161,6 +161,18 @@ export async function submitUserProfile(
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type ProfileDetailsPayload = Record<string, any>;
 
+function logApiError(step: string, error: unknown) {
+  if (axios.isAxiosError(error)) {
+    console.log(`${step} failed`, {
+      status: error.response?.status,
+      data: error.response?.data,
+    });
+    return;
+  }
+
+  console.log(`${step} failed`, error);
+}
+
 export async function submitProfileDetails(
   _userId: string,
   payload: ProfileDetailsPayload
@@ -202,13 +214,28 @@ export async function submitFullOnboarding(params: {
   const { userId, role, basicProfile, roleDetails } = params;
 
   // 1. Save role
-  await updateRole(role);
+  try {
+    await updateRole(role, { updateStore: false });
+  } catch (error) {
+    logApiError('Update role', error);
+    throw error;
+  }
 
   // 2. Save basic profile
-  await submitUserProfile(userId, basicProfile);
+  try {
+    await submitUserProfile(userId, basicProfile);
+  } catch (error) {
+    logApiError('Submit basic profile', error);
+    throw error;
+  }
 
   // 3. Save role-specific details (server marks profileComplete=true)
-  await submitProfileDetails(userId, roleDetails);
+  try {
+    await submitProfileDetails(userId, roleDetails);
+  } catch (error) {
+    logApiError('Submit profile details', error);
+    throw error;
+  }
 }
 
 // ─────────────────────────────────────────────
@@ -265,4 +292,3 @@ export async function updateUserProfile(params: {
     roleDetails: detailsRes.data.data,
   };
 }
-

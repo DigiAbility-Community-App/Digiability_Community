@@ -16,21 +16,34 @@
     ],
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.digiability.community"
+      "bundleIdentifier": "com.digiability.community",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Allow Digiability Community to access your location to automatically fetch your city, state, and district during profile setup."
+      }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/logo.png",
         "backgroundColor": "#7A40E5"
       },
-      "package": "com.digiability.community"
+      "package": "com.digiability.community",
+      "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION"
+      ]
     },
     "web": {
       "favicon": "./assets/logo.png"
     },
     "plugins": [
       "expo-secure-store",
-      "expo-font"
+      "expo-font",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Allow Digiability Community to access your location to automatically fetch your city, state, and district during profile setup."
+        }
+      ]
     ]
   }
 }

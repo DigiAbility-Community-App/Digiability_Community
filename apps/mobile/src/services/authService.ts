@@ -176,16 +176,21 @@ export async function resendVerificationOtp(email: string): Promise<string> {
 
 // ── Update current user role ───────────────────────────────
 
-export async function updateRole(role: string): Promise<AuthUser> {
+export async function updateRole(
+  role: string,
+  options: { updateStore?: boolean } = {}
+): Promise<AuthUser> {
   const response = await apiClient.patch<ApiResponse<AuthUser>>('/api/auth/role', {
     role,
   });
   
-  // Update auth store with the new user object
-  useAuthStore.getState().setAuth(
-    useAuthStore.getState().accessToken!,
-    response.data.data
-  );
+  if (options.updateStore ?? true) {
+    // Update auth store with the new user object
+    useAuthStore.getState().setAuth(
+      useAuthStore.getState().accessToken!,
+      response.data.data
+    );
+  }
   
   return response.data.data;
 }

@@ -43,3 +43,9 @@ export type {
   UpdateProfileResponse,
   GetUserWithProfileResponse,
 } from './user.types';
+
+// ─────────────────────────────────────────────
+// FORUM Q&A TYPES
+// ─────────────────────────────────────────────
+export * from './forum.types';
+

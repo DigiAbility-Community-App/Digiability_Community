@@ -32,7 +32,7 @@ export const AppFooter: React.FC<AppFooterProps> = ({ activeTab }) => {
     {
       id: "Community" as const,
       label: "Community",
-      route: "Community",
+      route: "CommunityDetail",
       accessibilityLabel: "Community tab",
       accessibilityHint: "Navigates to community forums and updates",
     },
@@ -105,6 +105,8 @@ export const AppFooter: React.FC<AppFooterProps> = ({ activeTab }) => {
           >
             <AccessibleText
               variant="caption"
+              numberOfLines={1}
+              adjustsFontSizeToFit={true}
               style={[
                 styles.navText,
                 {
@@ -112,11 +114,11 @@ export const AppFooter: React.FC<AppFooterProps> = ({ activeTab }) => {
                   fontWeight: isSelected ? "800" : "500",
                 },
                 isSelected &&
-                  highContrast && {
-                    borderBottomWidth: 2,
-                    borderBottomColor: "#000000",
-                    paddingBottom: 2,
-                  },
+                highContrast && {
+                  borderBottomWidth: 2,
+                  borderBottomColor: "#000000",
+                  paddingBottom: 2,
+                },
               ]}
             >
               {tab.label}
@@ -160,6 +162,6 @@ const styles = StyleSheet.create({
   navText: {
     fontSize: 11,
     textTransform: "uppercase",
-    letterSpacing: 0.5,
+    letterSpacing: 0.2,
   },
 });

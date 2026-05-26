@@ -70,7 +70,7 @@ export async function resendVerificationOtp(
   }
 
   // Rate limit: check if an OTP was created in the last 60 seconds
-  const recentOtp = await prisma.emailVerificationOtp.findFirst({
+  const recentOtp = await prisma.emailVerificationToken.findFirst({
     where: { userId: user.id },
     orderBy: { createdAt: "desc" },
   });
@@ -136,7 +136,7 @@ export async function registerUser(input: RegisterInput): Promise<LoginResult> {
 
   const hashedPassword = await hashPassword(password);
 
-  const dbRole = role ? (role as Role) : null;
+  const dbRole = role && role !== "other" ? (role as Role) : null;
 
   const user = await prisma.user.create({
     data: { name, email, password: hashedPassword, role: dbRole },
