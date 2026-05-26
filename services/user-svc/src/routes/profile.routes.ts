@@ -205,18 +205,22 @@ router.put('/', validate(basicProfileSchema), async (req: Request, res: Response
 });
 
 // Helper — check whether role-specific required fields are provided for markAsComplete
-function hasRequiredRoleFields(role: string | undefined | null, body: Record<string, any>): boolean {
-  if (!role) return false;
-  switch (role) {
-    case 'pwd':       return !!body.disabilityType;
-    case 'caregiver': return !!body.carePersonName;
-    case 'therapist': return !!body.speciality;
-    case 'ngo':       return !!body.ngoName;
-    // volunteer and student have no required role-specific fields
-    case 'volunteer':
-    case 'student':   return true;
-    default:          return false;
-  }
+function hasRequiredRoleFields(roles: string[] | string | undefined | null, body: Record<string, any>): boolean {
+  if (!roles) return false;
+  const rolesArr = Array.isArray(roles) ? roles : [roles];
+  if (rolesArr.length === 0) return false;
+  return rolesArr.every(role => {
+    switch (role) {
+      case 'pwd':       return !!body.disabilityType;
+      case 'caregiver': return !!body.carePersonName;
+      case 'therapist': return !!body.speciality;
+      case 'ngo':       return !!body.ngoName;
+      // volunteer and student have no required role-specific fields
+      case 'volunteer':
+      case 'student':   return true;
+      default:          return false;
+    }
+  });
 }
 
 // POST /api/users/profile/details - Create/update role-specific profile details
@@ -227,7 +231,7 @@ router.post('/details', validate(profileDetailsSchema), async (req: Request, res
 
     // Only mark complete when the user's role fields are actually present
     const userRecord = await profileService.getUserWithProfile(userId);
-    if (hasRequiredRoleFields(userRecord?.role, req.body)) {
+    if (hasRequiredRoleFields(userRecord?.roles, req.body)) {
       await profileService.markAsComplete(userId);
     }
 
@@ -251,7 +255,7 @@ router.put('/details', validate(profileDetailsSchema), async (req: Request, res:
     const profile = await profileService.upsertProfileDetails(userId, req.body);
 
     const userRecord = await profileService.getUserWithProfile(userId);
-    if (hasRequiredRoleFields(userRecord?.role, req.body)) {
+    if (hasRequiredRoleFields(userRecord?.roles, req.body)) {
       await profileService.markAsComplete(userId);
     }
 

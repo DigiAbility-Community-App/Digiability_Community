@@ -98,8 +98,11 @@ const EditProfileScreen = () => {
 
     // ───────────────── ROLE ─────────────────
 
-    const role =
-        user?.role || "";
+    const roles = user?.roles && user.roles.length > 0
+        ? user.roles
+        : (user?.role ? [user.role] : []);
+
+    const role = roles[0] || "";
 
     // ───────────────── PwD ─────────────────
 
@@ -208,7 +211,7 @@ const EditProfileScreen = () => {
             const details =
                 response?.roleDetails;
 
-            if (role === "pwd") {
+            if (roles.includes("pwd")) {
                 setSelectedDisability(
                     details?.disabilityType ||
                     ""
@@ -228,7 +231,7 @@ const EditProfileScreen = () => {
             }
 
             if (
-                role === "caregiver"
+                roles.includes("caregiver")
             ) {
                 setPersonName(
                     details?.carePersonName ||
@@ -247,7 +250,7 @@ const EditProfileScreen = () => {
             }
 
             if (
-                role === "educator"
+                roles.includes("educator")
             ) {
                 setSpeciality(
                     details?.speciality ||
@@ -268,7 +271,7 @@ const EditProfileScreen = () => {
             }
 
             if (
-                role === "ngo_worker"
+                roles.includes("ngo_worker")
             ) {
                 setNgoName(
                     details?.ngoName ||
@@ -300,49 +303,33 @@ const EditProfileScreen = () => {
 
     const buildRolePayload =
         () => {
-            switch (role) {
-                case "pwd":
-                    return {
-                        disabilityType:
-                            selectedDisability,
+            const payload: any = {};
 
-                        disabilitySince:
-                            disabilitySince,
-
-                        supportNeeded:
-                            selectedSupport,
-                    };
-
-                case "caregiver":
-                    return {
-                        carePersonName:
-                            personName,
-
-                        careRelation:
-                            relation,
-
-                        careDisabilityType:
-                            careDisability,
-                    };
-
-                case "educator":
-                    return {
-                        speciality,
-                        organization,
-                        yearsOfExperience:
-                            experience,
-                    };
-
-                case "ngo_worker":
-                    return {
-                        ngoName,
-                        ngoRole,
-                        district,
-                    };
-
-                default:
-                    return {};
+            if (roles.includes("pwd")) {
+                payload.disabilityType = selectedDisability;
+                payload.disabilitySince = disabilitySince;
+                payload.supportNeeded = selectedSupport;
             }
+
+            if (roles.includes("caregiver")) {
+                payload.carePersonName = personName;
+                payload.careRelation = relation;
+                payload.careDisabilityType = careDisability;
+            }
+
+            if (roles.includes("educator")) {
+                payload.speciality = speciality;
+                payload.organization = organization;
+                payload.yearsOfExperience = experience;
+            }
+
+            if (roles.includes("ngo_worker")) {
+                payload.ngoName = ngoName;
+                payload.ngoRole = ngoRole;
+                payload.district = district;
+            }
+
+            return payload;
         };
 
     // ───────────────── SAVE ─────────────────
@@ -540,7 +527,7 @@ const EditProfileScreen = () => {
                 </View>
 
                 {/* PwD */}
-                {role === "pwd" && (
+                {roles.includes("pwd") && (
                     <View
                         style={styles.card}
                     >
@@ -658,8 +645,7 @@ const EditProfileScreen = () => {
                 )}
 
                 {/* CAREGIVER */}
-                {role ===
-                    "caregiver" && (
+                {roles.includes("caregiver") && (
                         <View
                             style={styles.card}
                         >
@@ -703,8 +689,7 @@ const EditProfileScreen = () => {
                     )}
 
                 {/* EDUCATOR */}
-                {role ===
-                    "educator" && (
+                {roles.includes("educator") && (
                         <View
                             style={styles.card}
                         >
@@ -752,8 +737,7 @@ const EditProfileScreen = () => {
                     )}
 
                 {/* NGO */}
-                {role ===
-                    "ngo_worker" && (
+                {roles.includes("ngo_worker") && (
                         <View
                             style={styles.card}
                         >

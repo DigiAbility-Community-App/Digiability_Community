@@ -8,9 +8,12 @@ import {
     Switch,
     ActivityIndicator,
     Alert,
+    BackHandler,
 } from "react-native";
 
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import { useFocusEffect } from "@react-navigation/native";
+import { logout } from "@services/authService";
 import SafeScreen from "../../components/layout/SafeScreen";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
@@ -102,11 +105,55 @@ const AccessibilityScreen = ({ navigation }: Props) => {
         };
     }, [user?.id]);
 
+    const handleBack = () => {
+        if (navigation.canGoBack()) {
+            navigation.goBack();
+        } else {
+            Alert.alert(
+                "Exit Signup?",
+                "Are you sure you want to go back to the signup/login screen? This will sign you out.",
+                [
+                    {
+                        text: "Cancel",
+                        style: "cancel",
+                    },
+                    {
+                        text: "Exit",
+                        style: "destructive",
+                        onPress: async () => {
+                            try {
+                                await logout();
+                            } catch (err) {
+                                Alert.alert("Error", "Failed to log out");
+                            }
+                        },
+                    },
+                ]
+            );
+        }
+    };
+
+    useFocusEffect(
+        React.useCallback(() => {
+            const onBackPress = () => {
+                handleBack();
+                return true;
+            };
+
+            const subscription = BackHandler.addEventListener(
+                "hardwareBackPress",
+                onBackPress
+            );
+
+            return () => subscription.remove();
+        }, [navigation])
+    );
+
     const continueToNext = () => {
-        if (!user?.role) {
-            navigation.replace("RoleSelection");
+        if (!user?.roles || user.roles.length === 0) {
+            navigation.navigate("RoleSelection");
         } else if (!user?.profileComplete) {
-            navigation.replace("Profile");
+            navigation.navigate("Profile");
         } else {
             navigation.reset({
                 index: 0,
@@ -180,7 +227,7 @@ const AccessibilityScreen = ({ navigation }: Props) => {
                 <View style={styles.headerLeft}>
                     <TouchableOpacity
                         style={styles.backButton}
-                        onPress={() => navigation.goBack()}
+                        onPress={handleBack}
                         accessibilityRole="button"
                         accessibilityLabel="Go Back"
                         accessibilityHint="Returns to the previous screen"
@@ -398,7 +445,7 @@ const AccessibilityScreen = ({ navigation }: Props) => {
                 </View>
 
                 {/* MOTOR */}
-                <View style={styles.section}>
+                {/* <View style={styles.section}>
                     <AccessibleText variant="overline" style={{ color: highContrast ? "#000000" : "#6B21A8", marginBottom: 16 }}>
                         MOTOR
                     </AccessibleText>
@@ -450,7 +497,7 @@ const AccessibilityScreen = ({ navigation }: Props) => {
                             accessibilityHint="Enables single-tap interactions rather than complex gestures"
                         />
                     </View>
-                </View>
+                </View>*/}
             </ScrollView>
 
             {/* FOOTER */}

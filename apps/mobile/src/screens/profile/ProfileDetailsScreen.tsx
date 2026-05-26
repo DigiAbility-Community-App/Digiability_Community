@@ -19,6 +19,8 @@ import {
   ScrollView,
   TextInput,
   ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
   Alert,
   BackHandler,
 } from "react-native";
@@ -33,6 +35,7 @@ import {
 } from "@react-navigation/native";
 
 import { useAuthStore } from "@store/authStore";
+import { logout } from "@services/authService";
 
 import {
   submitFullOnboarding,
@@ -83,9 +86,9 @@ const ProfileDetailsScreen = () => {
       (s) => s.clearPending
     );
 
-  const pendingRole =
+  const pendingRoles =
     useAuthStore(
-      (s) => s.pendingRole
+      (s) => s.pendingRoles
     );
 
   const pendingProfile =
@@ -95,10 +98,11 @@ const ProfileDetailsScreen = () => {
 
   const insets = useSafeAreaInsets();
 
-  const role =
-    pendingRole ??
-    user?.role ??
-    "";
+  const roles = pendingRoles && pendingRoles.length > 0
+    ? pendingRoles
+    : (user?.roles && user.roles.length > 0 ? user.roles : (user?.role ? [user.role] : []));
+
+  const role = roles[0] || "";
 
   // ───────────────── PwD ─────────────────
 
@@ -169,27 +173,38 @@ const ProfileDetailsScreen = () => {
 
   // ───────────────── BACK HANDLER ─────────────────
 
+  const handleBack = useCallback(() => {
+    if (navigation.canGoBack()) {
+      navigation.goBack();
+    } else {
+      Alert.alert(
+        "Exit Onboarding?",
+        "Are you sure you want to go back to the signup/login screen? This will sign you out.",
+        [
+          {
+            text: "Cancel",
+            style: "cancel",
+          },
+          {
+            text: "Exit",
+            style: "destructive",
+            onPress: async () => {
+              try {
+                await logout();
+              } catch (err) {
+                Alert.alert("Error", "Failed to log out");
+              }
+            },
+          },
+        ]
+      );
+    }
+  }, [navigation]);
+
   useFocusEffect(
     useCallback(() => {
       const onBackPress = () => {
-        Alert.alert(
-          "Go Back?",
-          "Your onboarding progress will be saved.",
-          [
-            {
-              text: "Stay",
-              style: "cancel",
-            },
-
-            {
-              text: "Go Back",
-              style: "destructive",
-              onPress: () =>
-                navigation.goBack(),
-            },
-          ]
-        );
-
+        handleBack();
         return true;
       };
 
@@ -201,7 +216,7 @@ const ProfileDetailsScreen = () => {
 
       return () =>
         subscription.remove();
-    }, [navigation])
+    }, [handleBack])
   );
 
   // ───────────────── VALIDATION ─────────────────
@@ -213,7 +228,7 @@ const ProfileDetailsScreen = () => {
     > = {};
 
     // PwD
-    if (role === "pwd") {
+    if (roles.includes("pwd")) {
       if (
         disabilitySince.trim()
       ) {
@@ -235,7 +250,7 @@ const ProfileDetailsScreen = () => {
 
     // Caregiver
     if (
-      role === "caregiver"
+      roles.includes("caregiver")
     ) {
       if (
         !personName.trim()
@@ -262,7 +277,7 @@ const ProfileDetailsScreen = () => {
 
     // Educator
     if (
-      role === "educator"
+      roles.includes("educator")
     ) {
       if (
         !speciality.trim()
@@ -274,7 +289,7 @@ const ProfileDetailsScreen = () => {
 
     // NGO
     if (
-      role === "ngo_worker"
+      roles.includes("ngo_worker")
     ) {
       if (!ngoName.trim()) {
         newErrors.ngoName =
@@ -296,88 +311,40 @@ const ProfileDetailsScreen = () => {
 
   const buildRolePayload =
     () => {
-      switch (role) {
-        case "pwd":
-          return {
-            disabilityType:
-              selectedDisability,
+      const payload: any = {};
 
-            disabilitySince:
-              disabilitySince.trim()
-                ? parseInt(
-                  disabilitySince.trim(),
-                  10
-                )
-                : undefined,
-
-            supportNeeded:
-              selectedSupport,
-          };
-
-        case "caregiver":
-          return {
-            carePersonName:
-              personName.trim(),
-
-            careRelation:
-              relation.trim(),
-
-            careDob:
-              careeDob.trim()
-                ? parseDateInput(
-                  careeDob.trim(),
-                  "DMY"
-                )
-                : undefined,
-
-            careDisabilityType:
-              careDisability.trim(),
-          };
-
-        case "educator":
-          return {
-            speciality:
-              speciality.trim(),
-
-            organization:
-              organization.trim(),
-
-            yearsOfExperience:
-              experience.trim()
-                ? parseInt(
-                  experience.trim(),
-                  10
-                )
-                : undefined,
-          };
-
-        case "ngo_worker":
-          return {
-            ngoName:
-              ngoName.trim(),
-
-            ngoRole:
-              ngoRole.trim(),
-
-            district:
-              district.trim(),
-          };
-
-        case "skill_trainer":
-          return {
-            roleType:
-              "skill_trainer",
-          };
-
-        case "community_member":
-          return {
-            roleType:
-              "community_member",
-          };
-
-        default:
-          return {};
+      if (roles.includes("pwd")) {
+        payload.disabilityType = selectedDisability;
+        payload.disabilitySince = disabilitySince.trim()
+          ? parseInt(disabilitySince.trim(), 10)
+          : undefined;
+        payload.supportNeeded = selectedSupport;
       }
+
+      if (roles.includes("caregiver")) {
+        payload.carePersonName = personName.trim();
+        payload.careRelation = relation.trim();
+        payload.careDob = careeDob.trim()
+          ? parseDateInput(careeDob.trim(), "DMY")
+          : undefined;
+        payload.careDisabilityType = careDisability.trim();
+      }
+
+      if (roles.includes("educator")) {
+        payload.speciality = speciality.trim();
+        payload.organization = organization.trim();
+        payload.yearsOfExperience = experience.trim()
+          ? parseInt(experience.trim(), 10)
+          : undefined;
+      }
+
+      if (roles.includes("ngo_worker")) {
+        payload.ngoName = ngoName.trim();
+        payload.ngoRole = ngoRole.trim();
+        payload.district = district.trim();
+      }
+
+      return payload;
     };
 
   // ───────────────── SUBMIT ─────────────────
@@ -396,7 +363,7 @@ const ProfileDetailsScreen = () => {
           {
             userId: user.id,
 
-            role,
+            roles,
 
             basicProfile:
               pendingProfile ??
@@ -409,16 +376,18 @@ const ProfileDetailsScreen = () => {
 
         setUser({
           ...user,
-          role,
+          role: roles[0] || null,
+          roles,
           profileComplete:
             true,
         });
 
         clearPending();
 
-        navigation.navigate(
-          "CareCircle"
-        );
+        navigation.reset({
+          index: 0,
+          routes: [{ name: "CareCircle" }],
+        });
       } catch (error) {
         Alert.alert(
           "Error",
@@ -431,13 +400,14 @@ const ProfileDetailsScreen = () => {
 
   // ───────────────── ROLE CHECK ─────────────────
 
-  const hasRoleSection =
+  const hasRoleSection = roles.some(r =>
     [
       "pwd",
       "caregiver",
       "educator",
       "ngo_worker",
-    ].includes(role);
+    ].includes(r)
+  );
 
   // ───────────────── UI ─────────────────
 
@@ -465,9 +435,7 @@ const ProfileDetailsScreen = () => {
           style={
             styles.backButton
           }
-          onPress={() =>
-            navigation.goBack()
-          }
+          onPress={handleBack}
         >
           <Text
             style={
@@ -509,209 +477,219 @@ const ProfileDetailsScreen = () => {
         </View>
       </View>
 
-      {/* BODY */}
-      <ScrollView
-        showsVerticalScrollIndicator={
-          false
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={
+          Platform.OS === "ios"
+            ? "padding"
+            : "height"
         }
-        contentContainerStyle={
-          styles.scrollContent
+        keyboardVerticalOffset={
+          Platform.OS === "ios" ? 20 : 0
         }
       >
-        {/* HERO */}
-        <View
-          style={
-            styles.heroSection
+        {/* BODY */}
+        <ScrollView
+          showsVerticalScrollIndicator={
+            false
+          }
+          contentContainerStyle={
+            styles.scrollContent
           }
         >
-          <Text
-            style={
-              styles.heroTitle
-            }
-          >
-            A little more
-            about you
-          </Text>
-
-          <Text
-            style={
-              styles.heroSubtitle
-            }
-          >
-            Help us personalize
-            your experience
-          </Text>
-        </View>
-
-        {/* ───────── PwD ───────── */}
-        {role === "pwd" && (
+          {/* HERO */}
           <View
             style={
-              styles.sectionCard
+              styles.heroSection
             }
           >
-            <View
+            <Text
               style={
-                styles.sectionHeader
+                styles.heroTitle
               }
             >
-              <Text
-                style={
-                  styles.sectionTitle
-                }
-              >
-                My Disability
-              </Text>
+              A little more
+              about you
+            </Text>
 
+            <Text
+              style={
+                styles.heroSubtitle
+              }
+            >
+              Help us personalize
+              your experience
+            </Text>
+          </View>
+
+          {/* ───────── PwD ───────── */}
+          {roles.includes("pwd") && (
+            <View
+              style={
+                styles.sectionCard
+              }
+            >
               <View
                 style={
-                  styles.badge
+                  styles.sectionHeader
                 }
               >
                 <Text
                   style={
-                    styles.badgeText
+                    styles.sectionTitle
                   }
                 >
-                  OPTIONAL
+                  My Disability
                 </Text>
+
+                <View
+                  style={
+                    styles.badge
+                  }
+                >
+                  <Text
+                    style={
+                      styles.badgeText
+                    }
+                  >
+                    OPTIONAL
+                  </Text>
+                </View>
+              </View>
+
+              <Text
+                style={
+                  styles.label
+                }
+              >
+                Disability Type
+              </Text>
+
+              <View
+                style={
+                  styles.chipsContainer
+                }
+              >
+                {disabilityOptions.map(
+                  (item) => {
+                    const selected =
+                      selectedDisability ===
+                      item;
+
+                    return (
+                      <TouchableOpacity
+                        key={item}
+                        style={[
+                          styles.chip,
+
+                          selected &&
+                          styles.selectedChip,
+                        ]}
+                        onPress={() =>
+                          setSelectedDisability(
+                            item
+                          )
+                        }
+                      >
+                        <Text
+                          style={[
+                            styles.chipText,
+
+                            selected &&
+                            styles.selectedChipText,
+                          ]}
+                        >
+                          {item}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  }
+                )}
+              </View>
+
+              <Text
+                style={[
+                  styles.label,
+                  {
+                    marginTop: 20,
+                  },
+                ]}
+              >
+                Disability Since
+              </Text>
+
+              <TextInput
+                placeholder="Year"
+                placeholderTextColor="rgba(126,115,131,0.6)"
+                style={
+                  styles.input
+                }
+                value={
+                  disabilitySince
+                }
+                onChangeText={
+                  setDisabilitySince
+                }
+                keyboardType="number-pad"
+              />
+
+              <Text
+                style={[
+                  styles.label,
+                  {
+                    marginTop: 20,
+                  },
+                ]}
+              >
+                Support Needed
+              </Text>
+
+              <View
+                style={
+                  styles.chipsContainer
+                }
+              >
+                {supportOptions.map(
+                  (item) => {
+                    const selected =
+                      selectedSupport ===
+                      item;
+
+                    return (
+                      <TouchableOpacity
+                        key={item}
+                        style={[
+                          styles.chip,
+
+                          selected &&
+                          styles.selectedChip,
+                        ]}
+                        onPress={() =>
+                          setSelectedSupport(
+                            item
+                          )
+                        }
+                      >
+                        <Text
+                          style={[
+                            styles.chipText,
+
+                            selected &&
+                            styles.selectedChipText,
+                          ]}
+                        >
+                          {item}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  }
+                )}
               </View>
             </View>
+          )}
 
-            <Text
-              style={
-                styles.label
-              }
-            >
-              Disability Type
-            </Text>
-
-            <View
-              style={
-                styles.chipsContainer
-              }
-            >
-              {disabilityOptions.map(
-                (item) => {
-                  const selected =
-                    selectedDisability ===
-                    item;
-
-                  return (
-                    <TouchableOpacity
-                      key={item}
-                      style={[
-                        styles.chip,
-
-                        selected &&
-                        styles.selectedChip,
-                      ]}
-                      onPress={() =>
-                        setSelectedDisability(
-                          item
-                        )
-                      }
-                    >
-                      <Text
-                        style={[
-                          styles.chipText,
-
-                          selected &&
-                          styles.selectedChipText,
-                        ]}
-                      >
-                        {item}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                }
-              )}
-            </View>
-
-            <Text
-              style={[
-                styles.label,
-                {
-                  marginTop: 20,
-                },
-              ]}
-            >
-              Disability Since
-            </Text>
-
-            <TextInput
-              placeholder="Year"
-              placeholderTextColor="rgba(126,115,131,0.6)"
-              style={
-                styles.input
-              }
-              value={
-                disabilitySince
-              }
-              onChangeText={
-                setDisabilitySince
-              }
-              keyboardType="number-pad"
-            />
-
-            <Text
-              style={[
-                styles.label,
-                {
-                  marginTop: 20,
-                },
-              ]}
-            >
-              Support Needed
-            </Text>
-
-            <View
-              style={
-                styles.chipsContainer
-              }
-            >
-              {supportOptions.map(
-                (item) => {
-                  const selected =
-                    selectedSupport ===
-                    item;
-
-                  return (
-                    <TouchableOpacity
-                      key={item}
-                      style={[
-                        styles.chip,
-
-                        selected &&
-                        styles.selectedChip,
-                      ]}
-                      onPress={() =>
-                        setSelectedSupport(
-                          item
-                        )
-                      }
-                    >
-                      <Text
-                        style={[
-                          styles.chipText,
-
-                          selected &&
-                          styles.selectedChipText,
-                        ]}
-                      >
-                        {item}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                }
-              )}
-            </View>
-          </View>
-        )}
-
-        {/* ───────── CAREGIVER ───────── */}
-        {role ===
-          "caregiver" && (
+          {/* ───────── CAREGIVER ───────── */}
+          {roles.includes("caregiver") && (
             <View
               style={
                 styles.sectionCard
@@ -838,9 +816,8 @@ const ProfileDetailsScreen = () => {
             </View>
           )}
 
-        {/* ───────── EDUCATOR ───────── */}
-        {role ===
-          "educator" && (
+          {/* ───────── EDUCATOR ───────── */}
+          {roles.includes("educator") && (
             <View
               style={
                 styles.sectionCard
@@ -935,9 +912,8 @@ const ProfileDetailsScreen = () => {
             </View>
           )}
 
-        {/* ───────── NGO ───────── */}
-        {role ===
-          "ngo_worker" && (
+          {/* ───────── NGO ───────── */}
+          {roles.includes("ngo_worker") && (
             <View
               style={
                 styles.sectionCard
@@ -1027,11 +1003,8 @@ const ProfileDetailsScreen = () => {
             </View>
           )}
 
-        {/* ───────── BASIC ROLES ───────── */}
-        {(role ===
-          "skill_trainer" ||
-          role ===
-          "community_member") && (
+          {/* ───────── BASIC ROLES ───────── */}
+          {!hasRoleSection && (
             <View
               style={
                 styles.sectionCard
@@ -1094,61 +1067,59 @@ const ProfileDetailsScreen = () => {
                     styles.infoValue
                   }
                 >
-                  {role ===
-                    "skill_trainer"
-                    ? "Skill Trainer"
-                    : "Community Member"}
+                  {roles.map(r => r === "skill_trainer" ? "Skill Trainer" : "Community Member").join(", ")}
                 </Text>
               </View>
             </View>
           )}
-      </ScrollView>
+        </ScrollView>
 
-      {/* FOOTER */}
-      <View style={[styles.footer, { bottom: Math.max(insets.bottom, 24) }]}>
-        <TouchableOpacity
-          activeOpacity={0.9}
-          onPress={
-            handleComplete
-          }
-          disabled={loading}
-          style={
-            styles.buttonWrapper
-          }
-        >
-          <LinearGradient
-            colors={[
-              "#FEC800",
-              "#FEA619",
-            ]}
+        {/* FOOTER */}
+        <View style={[styles.footer, { bottom: Math.max(insets.bottom, 24) }]}>
+          <TouchableOpacity
+            activeOpacity={0.9}
+            onPress={
+              handleComplete
+            }
+            disabled={loading}
             style={
-              styles.button
+              styles.buttonWrapper
             }
           >
-            {loading ? (
-              <ActivityIndicator color="#000" />
-            ) : (
-              <>
-                <Text
-                  style={
-                    styles.buttonText
-                  }
-                >
-                  Complete Profile
-                </Text>
+            <LinearGradient
+              colors={[
+                "#500088",
+                "#6B21A8",
+              ]}
+              style={
+                styles.button
+              }
+            >
+              {loading ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <>
+                  <Text
+                    style={
+                      styles.buttonText
+                    }
+                  >
+                    Complete Profile
+                  </Text>
 
-                <Text
-                  style={
-                    styles.buttonArrow
-                  }
-                >
-                  →
-                </Text>
-              </>
-            )}
-          </LinearGradient>
-        </TouchableOpacity>
-      </View>
+                  <Text
+                    style={
+                      styles.buttonArrow
+                    }
+                  >
+                    →
+                  </Text>
+                </>
+              )}
+            </LinearGradient>
+          </TouchableOpacity>
+        </View>
+      </KeyboardAvoidingView>
     </SafeScreen>
   );
 };
@@ -1378,13 +1349,13 @@ const styles =
     },
 
     buttonText: {
-      color: "#1A1A1A",
+      color: "#FFFFFF",
       fontSize: 16,
       fontWeight: "700",
     },
 
     buttonArrow: {
-      color: "#1A1A1A",
+      color: "#FFFFFF",
       fontSize: 18,
       fontWeight: "700",
     },

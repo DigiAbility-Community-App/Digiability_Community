@@ -17,6 +17,7 @@ import {
 } from "@react-navigation/native";
 
 import { useAuthStore } from "@store/authStore";
+import { logout } from "@services/authService";
 import SafeScreen from "../../components/layout/SafeScreen";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -87,43 +88,54 @@ const RoleSelectionScreen = () => {
   // -------------------------
 
   const [selected, setSelected] =
-    useState<RoleType | null>(null);
+    useState<RoleType[]>([]);
 
   const [loading, setLoading] =
     useState(false);
 
   const navigation = useNavigation<any>();
 
-  const setPendingRole =
+  const setPendingRoles =
     useAuthStore(
-      (s) => s.setPendingRole
+      (s) => s.setPendingRoles
     );
 
   // -------------------------
   // BACK HANDLER
   // -------------------------
 
+  const handleBack = useCallback(() => {
+    if (navigation.canGoBack()) {
+      navigation.goBack();
+    } else {
+      Alert.alert(
+        "Exit Onboarding?",
+        "Are you sure you want to go back to the signup/login screen? This will sign you out.",
+        [
+          {
+            text: "Cancel",
+            style: "cancel",
+          },
+          {
+            text: "Exit",
+            style: "destructive",
+            onPress: async () => {
+              try {
+                await logout();
+              } catch (err) {
+                Alert.alert("Error", "Failed to log out");
+              }
+            },
+          },
+        ]
+      );
+    }
+  }, [navigation]);
+
   useFocusEffect(
     useCallback(() => {
       const onBackPress = () => {
-        Alert.alert(
-          "Leave Onboarding?",
-          "Are you sure you want to go back?",
-          [
-            {
-              text: "Stay",
-              style: "cancel",
-            },
-
-            {
-              text: "Go Back",
-              style: "destructive",
-              onPress: () =>
-                navigation.goBack(),
-            },
-          ]
-        );
-
+        handleBack();
         return true;
       };
 
@@ -135,7 +147,7 @@ const RoleSelectionScreen = () => {
 
       return () =>
         subscription.remove();
-    }, [navigation])
+    }, [handleBack])
   );
 
   // -------------------------
@@ -145,7 +157,11 @@ const RoleSelectionScreen = () => {
   const handleRoleSelect = (
     roleId: RoleType
   ) => {
-    setSelected(roleId);
+    setSelected((prev) =>
+      prev.includes(roleId)
+        ? prev.filter((r) => r !== roleId)
+        : [...prev, roleId]
+    );
   };
 
   // -------------------------
@@ -153,10 +169,10 @@ const RoleSelectionScreen = () => {
   // -------------------------
 
   const handleContinue = () => {
-    if (!selected) {
+    if (selected.length === 0) {
       Alert.alert(
         "Select Role",
-        "Please select a role."
+        "Please select at least one role."
       );
 
       return;
@@ -165,7 +181,7 @@ const RoleSelectionScreen = () => {
     setLoading(true);
 
     // SAVE ROLES
-    setPendingRole(selected);
+    setPendingRoles(selected);
 
     setTimeout(() => {
       setLoading(false);
@@ -187,9 +203,7 @@ const RoleSelectionScreen = () => {
         {/* BACK */}
         <TouchableOpacity
           style={styles.backButton}
-          onPress={() =>
-            navigation.goBack()
-          }
+          onPress={handleBack}
         >
           <Text style={styles.backIcon}>
             ←
@@ -258,7 +272,7 @@ const RoleSelectionScreen = () => {
         <View style={styles.grid}>
           {roles.map((role) => {
             const isSelected =
-              selected === role.id;
+              selected.includes(role.id as RoleType);
 
             return (
               <TouchableOpacity
@@ -502,12 +516,19 @@ const styles =
     },
 
     selectedCard: {
-      backgroundColor:
-        "#F3EAFF",
+      backgroundColor: "#F3EAFF",
 
-      borderWidth: 2,
-      borderColor:
-        "#8A38F5",
+      transform: [{ scale: 1.03 }],
+
+      shadowColor: "#8A38F5",
+      shadowOpacity: 0.15,
+      shadowRadius: 12,
+      shadowOffset: {
+        width: 0,
+        height: 4,
+      },
+
+      elevation: 6,
     },
 
     checkCircle: {

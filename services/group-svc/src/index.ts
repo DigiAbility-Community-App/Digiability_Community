@@ -20,7 +20,7 @@ import express from "express";
 import cors from "cors";
 
 const app = express();
-const PORT = parseInt(process.env.PORT ?? "4003", 10);
+const PORT = parseInt(process.env.PORT ?? "4004", 10);
 
 // Middleware
 app.use(cors({ origin: process.env.CLIENT_BASE_URL ?? "http://localhost:3000", credentials: true }));

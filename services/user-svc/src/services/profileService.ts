@@ -56,18 +56,22 @@ export const profileService = {
 
   // Find profile by username
   findByUsername: async (username: string) => {
-    return prisma.userProfile.findUnique({
+    const profile = await prisma.userProfile.findUnique({
       where: { username },
       include: {
         user: {
           select: {
             id: true,
             email: true,
-            role: true,
+            roles: true,
           },
         },
       },
     });
+    if (profile && profile.user) {
+      (profile.user as any).role = profile.user.roles[0] || null;
+    }
+    return profile;
   },
 
   // Create or Update basic profile details
@@ -230,7 +234,9 @@ export const profileService = {
       where: {
         verificationStatus: 'verified',
         user: {
-          role: 'therapist',
+          roles: {
+            has: 'therapist',
+          },
         },
         ...(filters?.city && { city: filters.city }),
         ...(filters?.specialty && { speciality: filters.specialty }),
@@ -241,6 +247,7 @@ export const profileService = {
             id: true,
             name: true,
             email: true,
+            roles: true,
           },
         },
       },
@@ -253,7 +260,9 @@ export const profileService = {
       where: {
         verificationStatus: 'verified',
         user: {
-          role: 'ngo',
+          roles: {
+            has: 'ngo',
+          },
         },
         ...(filters?.city && { city: filters.city }),
       },
@@ -262,6 +271,7 @@ export const profileService = {
           select: {
             id: true,
             email: true,
+            roles: true,
           },
         },
       },

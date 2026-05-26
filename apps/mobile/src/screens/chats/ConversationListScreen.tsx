@@ -10,6 +10,7 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import { useNavigation } from "@react-navigation/native";
 import { ChatsStackParamList } from "@navigation/ChatsStack";
 import { useAuthStore } from "@store/authStore";
 import { useChatStore } from "@store/chatStore";
@@ -30,7 +31,8 @@ import AppFooter from "../../components/layout/AppFooter";
 // ─────────────────────────────────────────────────────────
 
 type Props = {
-  navigation: NativeStackNavigationProp<ChatsStackParamList, "ConversationList">;
+  navigation?: any;
+  isTab?: boolean;
 };
 
 // ── Demo Data ──────────────────────────────────────────────
@@ -53,7 +55,9 @@ interface Conversation {
   memberCount?: number;
 }
 
-const ConversationListScreen = ({ navigation }: Props) => {
+const ConversationListScreen = ({ navigation: propNavigation, isTab = false }: Props) => {
+  const localNavigation = useNavigation<any>();
+  const navigation = propNavigation || localNavigation;
   const user = useAuthStore((s) => s.user);
   const storeConversations = useChatStore((s) => Object.values(s.conversations));
   const setConversations = useChatStore((s) => s.setConversations);
@@ -113,22 +117,45 @@ const ConversationListScreen = ({ navigation }: Props) => {
 
   const handleConversationPress = useCallback(
     (conv: Conversation) => {
-      if (conv.type === "DIRECT") {
-        navigation.navigate("Chat", {
-          conversationId: conv.id,
-          recipientName: conv.name,
-          recipientAvatar: conv.avatar,
-          isOnline: conv.isOnline,
-        });
+      if (isTab) {
+        if (conv.type === "DIRECT") {
+          navigation.navigate("Chats", {
+            screen: "Chat",
+            params: {
+              conversationId: conv.id,
+              recipientName: conv.name,
+              recipientAvatar: conv.avatar,
+              isOnline: conv.isOnline,
+            },
+          });
+        } else {
+          navigation.navigate("Chats", {
+            screen: "GroupChat",
+            params: {
+              conversationId: conv.id,
+              groupName: conv.name,
+              memberCount: conv.memberCount ?? 0,
+            },
+          });
+        }
       } else {
-        navigation.navigate("GroupChat", {
-          conversationId: conv.id,
-          groupName: conv.name,
-          memberCount: conv.memberCount ?? 0,
-        });
+        if (conv.type === "DIRECT") {
+          navigation.navigate("Chat", {
+            conversationId: conv.id,
+            recipientName: conv.name,
+            recipientAvatar: conv.avatar,
+            isOnline: conv.isOnline,
+          });
+        } else {
+          navigation.navigate("GroupChat", {
+            conversationId: conv.id,
+            groupName: conv.name,
+            memberCount: conv.memberCount ?? 0,
+          });
+        }
       }
     },
-    [navigation]
+    [navigation, isTab]
   );
 
   const renderConversation = ({ item }: { item: Conversation }) => (
@@ -188,37 +215,35 @@ const ConversationListScreen = ({ navigation }: Props) => {
     </TouchableOpacity>
   );
 
-  return (
-    <ScreenWrapper>
-      <AppHeader
-        title="Messages"
-        rightActions={
-          <TouchableOpacity
-            style={styles.newChatTouch}
-            onPress={() => navigation.navigate("CreateGroup")}
-            accessibilityRole="button"
-            accessibilityLabel="New Care Circle Group"
-            accessibilityHint="Navigates to group creation page"
-            activeOpacity={0.7}
-          >
-            <Text style={styles.newChatIcon}>✏️</Text>
-          </TouchableOpacity>
-        }
-      />
-
+  const renderBody = () => (
+    <View style={[styles.container, isTab && { backgroundColor: "#FAF8FF" }]}>
       {/* ── Content Container (Search Bar moved into body flow for safe spacing) ── */}
-      <View style={[styles.headerBodyFlow, { backgroundColor: "#8A38F5" }]}>
+      <View style={[
+        styles.headerBodyFlow,
+        isTab 
+          ? { backgroundColor: "#FFFFFF", borderBottomWidth: 1, borderBottomColor: "#EEEDF4", paddingTop: 14 } 
+          : { backgroundColor: "#8A38F5" }
+      ]}>
         {totalUnread > 0 && (
-          <Text style={styles.headerSubtitleBody}>
+          <Text style={[
+            styles.headerSubtitleBody,
+            isTab ? { color: "#500088", marginBottom: 8 } : { color: "rgba(255,255,255,0.85)" }
+          ]}>
             {totalUnread} unread message{totalUnread !== 1 ? "s" : ""}
           </Text>
         )}
-        <View style={styles.searchContainer}>
+        <View style={[
+          styles.searchContainer,
+          isTab ? { backgroundColor: "#F4F3FA" } : { backgroundColor: "rgba(255,255,255,0.15)" }
+        ]}>
           <Text style={styles.searchIcon}>🔍</Text>
           <TextInput
-            style={styles.searchInput}
+            style={[
+              styles.searchInput,
+              isTab ? { color: "#1A1B20" } : { color: "#fff" }
+            ]}
             placeholder="Search conversations..."
-            placeholderTextColor="rgba(255,255,255,0.6)"
+            placeholderTextColor={isTab ? "#9CA3AF" : "rgba(255,255,255,0.6)"}
             value={searchQuery}
             onChangeText={setSearchQuery}
             autoCapitalize="none"
@@ -226,20 +251,21 @@ const ConversationListScreen = ({ navigation }: Props) => {
           />
           {searchQuery.length > 0 && (
             <TouchableOpacity onPress={() => setSearchQuery("")}>
-              <Text style={styles.clearSearch}>✕</Text>
+              <Text style={isTab ? { color: "#6B7280", fontSize: 16 } : styles.clearSearch}>✕</Text>
             </TouchableOpacity>
           )}
         </View>
       </View>
 
       {/* ── Filter Tabs ──────────────────────────────────── */}
-      <View style={styles.filterContainer}>
+      <View style={[styles.filterContainer, isTab && { backgroundColor: "#FAF8FF" }]}>
         {(["All", "Direct", "Groups"] as const).map((filter) => (
           <TouchableOpacity
             key={filter}
             style={[
               styles.filterTab,
               activeFilter === filter && styles.filterTabActive,
+              isTab && activeFilter !== filter && { backgroundColor: "#FFFFFF", borderColor: "#EEEDF4" }
             ]}
             onPress={() => setActiveFilter(filter)}
           >
@@ -247,6 +273,7 @@ const ConversationListScreen = ({ navigation }: Props) => {
               style={[
                 styles.filterText,
                 activeFilter === filter && styles.filterTextActive,
+                isTab && activeFilter !== filter && { color: "#4C4452" }
               ]}
             >
               {filter}
@@ -260,7 +287,7 @@ const ConversationListScreen = ({ navigation }: Props) => {
         data={filteredConversations}
         keyExtractor={(item) => item.id}
         renderItem={renderConversation}
-        contentContainerStyle={styles.listContent}
+        contentContainerStyle={[styles.listContent, isTab && { paddingBottom: 120 }]}
         showsVerticalScrollIndicator={false}
         ListEmptyComponent={
           <View style={styles.emptyState}>
@@ -275,14 +302,50 @@ const ConversationListScreen = ({ navigation }: Props) => {
 
       {/* ── FAB — Create Care Circle ─────────────────── */}
       <TouchableOpacity
-        style={[styles.fab, { bottom: 90 }]}
-        onPress={() => navigation.navigate('CreateGroup')}
+        style={[styles.fab, isTab ? { bottom: 85 } : { bottom: 90 }]}
+        onPress={() => {
+          if (isTab) {
+            navigation.navigate("Chats", { screen: "CreateGroup" });
+          } else {
+            navigation.navigate("CreateGroup");
+          }
+        }}
         activeOpacity={0.85}
       >
         <Text style={styles.fabIcon}>👥</Text>
         <Text style={styles.fabLabel}>New Circle</Text>
       </TouchableOpacity>
+    </View>
+  );
 
+  if (isTab) {
+    return renderBody();
+  }
+
+  return (
+    <ScreenWrapper>
+      <AppHeader
+        title="Messages"
+        rightActions={
+          <TouchableOpacity
+            style={styles.newChatTouch}
+            onPress={() => {
+              if (isTab) {
+                navigation.navigate("Chats", { screen: "CreateGroup" });
+              } else {
+                navigation.navigate("CreateGroup");
+              }
+            }}
+            accessibilityRole="button"
+            accessibilityLabel="New Care Circle Group"
+            accessibilityHint="Navigates to group creation page"
+            activeOpacity={0.7}
+          >
+            <Text style={styles.newChatIcon}>✏️</Text>
+          </TouchableOpacity>
+        }
+      />
+      {renderBody()}
       <AppFooter activeTab="Learn" />
     </ScreenWrapper>
   );

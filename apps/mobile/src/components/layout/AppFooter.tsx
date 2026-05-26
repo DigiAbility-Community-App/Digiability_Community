@@ -3,6 +3,13 @@ import { View, StyleSheet, TouchableOpacity, Platform } from "react-native";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import { useTheme } from "../../theme/ThemeContext";
 import { AccessibleText } from "../shared/AccessibleText";
+import {
+  House,
+  Users,
+  LayoutGrid,
+  BookOpen,
+  User,
+} from "lucide-react-native";
 
 export interface AppFooterProps {
   /**
@@ -24,6 +31,7 @@ export const AppFooter: React.FC<AppFooterProps> = ({ activeTab }) => {
   const tabs = [
     {
       id: "Home" as const,
+      icon: House,
       label: "Home",
       route: "Home",
       accessibilityLabel: "Home tab",
@@ -31,6 +39,7 @@ export const AppFooter: React.FC<AppFooterProps> = ({ activeTab }) => {
     },
     {
       id: "Community" as const,
+      icon: Users,
       label: "Community",
       route: "CommunityDetail",
       accessibilityLabel: "Community tab",
@@ -38,20 +47,23 @@ export const AppFooter: React.FC<AppFooterProps> = ({ activeTab }) => {
     },
     {
       id: "Services" as const,
+      icon: LayoutGrid,
       label: "Services",
-      route: "Services",
+      route: "Home",
       accessibilityLabel: "Services tab",
       accessibilityHint: "Navigates to professional services listings",
     },
     {
       id: "Learn" as const,
+      icon: BookOpen,
       label: "Learn",
-      route: "Chats", // Labeled 'Learn', but maps to the ChatsStack per current codebase standard
+      route: "Home", // Labeled 'Learn', but maps to the ChatsStack per current codebase standard
       accessibilityLabel: "Learn tab",
       accessibilityHint: "Navigates to chat learning rooms and conversations",
     },
     {
       id: "Profile" as const,
+      icon: User,
       label: "Profile",
       route: "HomeProfile", // Maps to the profile tab details screen
       accessibilityLabel: "Profile tab",
@@ -95,14 +107,34 @@ export const AppFooter: React.FC<AppFooterProps> = ({ activeTab }) => {
           <TouchableOpacity
             key={tab.id}
             onPress={() => handlePress(tab)}
-            style={[styles.navItem, styles.touchTarget]}
+            style={[
+              styles.navItem,
+              isSelected &&
+              styles.activeNavItem,
+            ]}
             accessible={true}
             accessibilityRole="tab"
-            accessibilityState={{ selected: isSelected }}
-            accessibilityLabel={tab.accessibilityLabel}
-            accessibilityHint={tab.accessibilityHint}
-            activeOpacity={0.7}
+            accessibilityState={{
+              selected: isSelected,
+            }}
+            accessibilityLabel={
+              tab.accessibilityLabel
+            }
+            accessibilityHint={
+              tab.accessibilityHint
+            }
+            activeOpacity={0.85}
           >
+            <tab.icon
+              size={20}
+              strokeWidth={2.4}
+              color={
+                isSelected
+                  ? "#FFFFFF"
+                  : inactiveColor
+              }
+            />
+
             <AccessibleText
               variant="caption"
               numberOfLines={1}
@@ -110,14 +142,9 @@ export const AppFooter: React.FC<AppFooterProps> = ({ activeTab }) => {
               style={[
                 styles.navText,
                 {
-                  color: isSelected ? activeColor : inactiveColor,
-                  fontWeight: isSelected ? "800" : "500",
-                },
-                isSelected &&
-                highContrast && {
-                  borderBottomWidth: 2,
-                  borderBottomColor: "#000000",
-                  paddingBottom: 2,
+                  color: isSelected
+                    ? "#FFFFFF"
+                    : inactiveColor,
                 },
               ]}
             >
@@ -135,33 +162,48 @@ export default AppFooter;
 const styles = StyleSheet.create({
   navbar: {
     position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
+    bottom: 16,
+    left: 16,
+    right: 16,
+
     flexDirection: "row",
-    justifyContent: "space-around",
+    justifyContent: "space-between",
     alignItems: "center",
+
+    backgroundColor: "#FFFFFF",
+
+    borderRadius: 28,
+
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+
+    shadowColor: "#500088",
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.08,
+    shadowRadius: 14,
+
+    elevation: 6,
+
     zIndex: 999,
-    // Add subtle iOS shadow
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: -2 },
-    shadowOpacity: 0.03,
-    shadowRadius: 10,
-    elevation: 10,
   },
   navItem: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
+
+    paddingVertical: 10,
+    borderRadius: 20,
   },
-  touchTarget: {
-    minHeight: 48,
-    justifyContent: "center",
-    alignItems: "center",
+  activeNavItem: {
+    backgroundColor: "#6B21A8",
   },
+
   navText: {
     fontSize: 11,
-    textTransform: "uppercase",
-    letterSpacing: 0.2,
+    marginTop: 4,
+    fontWeight: "700",
   },
 });

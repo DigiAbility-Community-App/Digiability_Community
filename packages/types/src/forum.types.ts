@@ -14,6 +14,7 @@ export interface ForumUserRef {
   id: string;
   name: string;
   role?: string | null;
+  roles?: string[];
 }
 
 export interface ForumQuestion {
