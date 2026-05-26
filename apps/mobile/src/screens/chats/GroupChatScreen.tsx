@@ -82,8 +82,19 @@ const GroupChatScreen = ({ navigation, route }: Props) => {
   useEffect(() => {
     const loadMessages = async () => {
       try {
-        const data = await chatService.getMessages(conversationId);
-        setMessages(conversationId, data);
+        const data = (await chatService.getMessages(conversationId)) as ChatMessage[];
+        const existing = useChatStore.getState().messages[conversationId] || [];
+        const existingIds = new Set(existing.map(m => m.id));
+        const existingClientIds = new Set(existing.map(m => m.clientMessageId));
+        
+        const merged: ChatMessage[] = [...existing];
+        for (const msg of data) {
+          if (!existingIds.has(msg.id) && !existingClientIds.has(msg.clientMessageId)) {
+            merged.push(msg);
+          }
+        }
+        merged.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+        setMessages(conversationId, merged);
       } catch (err) {
         console.error("Failed to load group messages", err);
       } finally {
@@ -97,7 +108,7 @@ const GroupChatScreen = ({ navigation, route }: Props) => {
     if (!messageText.trim() || !user) return;
 
     const content = messageText.trim();
-    const clientMessageId = `gm_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+    const clientMessageId = generateUUID();
 
     // Optimistic update
     const newMsg: ChatMessage = {

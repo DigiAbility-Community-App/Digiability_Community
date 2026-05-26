@@ -84,6 +84,7 @@ export interface MessageAckPayload {
 
 export interface MessageNewPayload {
   messageId: string;
+  clientMessageId?: string;
   conversationId: string;
   senderId: string;
   senderName?: string;

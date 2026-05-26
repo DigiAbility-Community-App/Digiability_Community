@@ -135,8 +135,24 @@ const ChatScreen = ({ navigation, route }: Props) => {
   useEffect(() => {
     const loadMessages = async () => {
       try {
-        const data = await chatService.getMessages(conversationId);
-        setMessages(conversationId, data);
+        const data = (await chatService.getMessages(conversationId)) as ChatMessage[];
+        // Merge REST history with any messages already in the store
+        // (from WebSocket / optimistic sends) to avoid losing them.
+        const existing = useChatStore.getState().messages[conversationId] || [];
+        const existingIds = new Set(existing.map(m => m.id));
+        const existingClientIds = new Set(existing.map(m => m.clientMessageId));
+        
+        // Add only truly new messages from REST that we don't already have
+        const merged: ChatMessage[] = [...existing];
+        for (const msg of data) {
+          if (!existingIds.has(msg.id) && !existingClientIds.has(msg.clientMessageId)) {
+            merged.push(msg);
+          }
+        }
+        
+        // Sort by createdAt
+        merged.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+        setMessages(conversationId, merged);
       } catch (err) {
         console.error("Failed to load messages", err);
       } finally {
@@ -150,7 +166,7 @@ const ChatScreen = ({ navigation, route }: Props) => {
     if (!messageText.trim() || !user) return;
 
     const content = messageText.trim();
-    const clientMessageId = `m_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+    const clientMessageId = generateUUID();
     
     // 1. Optimistic update
     const newMsg: ChatMessage = {

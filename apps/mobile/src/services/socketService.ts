@@ -105,6 +105,8 @@ const handleSocketEvent = (message: any) => {
   const type = message.event || message.type;
   const payload = message.data || message.payload;
 
+  console.log('[WS-EVENT]', type, JSON.stringify(payload)?.substring(0, 200));
+
   switch (type) {
     case 'message.new': {
       // Server sends { messageId, conversationId, senderId, content, type, sequenceNo, createdAt }
@@ -119,6 +121,7 @@ const handleSocketEvent = (message: any) => {
         status: 'delivered' as const,
         createdAt: payload.createdAt,
       };
+      console.log('[WS-EVENT] message.new → addMessage', mapped.id, 'conv:', mapped.conversationId);
       store.addMessage(mapped);
       // Send delivery receipt to server
       sendSocketMessage('message.delivered', {
@@ -130,13 +133,14 @@ const handleSocketEvent = (message: any) => {
     case 'message.ack':
       // Server confirmed our message was accepted into the system
       if (payload.status === 'accepted') {
-        console.log('✅ Message accepted by server:', payload.messageId);
+        console.log('✅ Message accepted by server:', payload.messageId, 'clientMsgId:', payload.clientMessageId);
       } else {
         console.warn('❌ Message rejected by server:', payload.reason);
       }
       break;
 
     case 'message.delivered':
+      console.log('[WS-EVENT] message.delivered:', payload.messageIds || payload.messageId);
       store.updateMessageStatus(payload.messageIds || [payload.messageId], 'delivered');
       break;
 
@@ -156,6 +160,7 @@ const handleSocketEvent = (message: any) => {
     case 'sync.response':
       // Sync contains missed messages for a conversation
       if (payload.messages?.length > 0) {
+        console.log('[WS-EVENT] sync: received', payload.messages.length, 'missed messages');
         payload.messages.forEach((msg: any) => {
           const mapped = {
             id: msg.messageId || msg.id,
@@ -188,7 +193,7 @@ const handleSocketEvent = (message: any) => {
 
     default:
       if (type !== 'pong' && type !== 'heartbeat.pong' && type !== 'session.pong') {
-        console.log('Unhandled socket event:', type);
+        console.log('Unhandled socket event:', type, payload);
       }
   }
 };

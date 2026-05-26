@@ -1,15 +1,14 @@
 // ─────────────────────────────────────────────────────────────
 // ID Generation Utilities
-// Uses ULID for message IDs: globally unique, lexicographically
-// sortable by creation time, and URL-safe.
+// Uses UUID v4 for message IDs: required by Cassandra's UUID
+// column type. ULIDs are incompatible with Cassandra's Uuid.fromString().
 // ─────────────────────────────────────────────────────────────
 
-import { ulid } from "ulid";
 import { randomUUID } from "crypto";
 
-/** Generate a ULID — sortable, unique, URL-safe. Used for messageId. */
+/** Generate a UUID v4 — used for messageId (Cassandra-compatible). */
 export function generateMessageId(): string {
-  return ulid();
+  return randomUUID();
 }
 
 /** Generate a UUID v4 — used for connection IDs, general-purpose. */

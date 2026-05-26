@@ -174,19 +174,20 @@ services:
         condition: service_healthy
 
   # ── notif-svc — Push/Email Notification Worker ──────────────
-  notif-svc:
-    build:
-      context: ./services/notif-svc
-      dockerfile: Dockerfile
-    container_name: digiability_notif_svc
-    restart: unless-stopped
-    environment:
-      REDIS_URL: redis://:${REDIS_PASSWORD:-redis_secret}@redis:6379
-    networks:
-      - digiability_network
-    depends_on:
-      redis:
-        condition: service_healthy
+  # (Currently disabled as it lacks a Dockerfile)
+  # notif-svc:
+  #   build:
+  #     context: ./services/notif-svc
+  #     dockerfile: Dockerfile
+  #   container_name: digiability_notif_svc
+  #   restart: unless-stopped
+  #   environment:
+  #     REDIS_URL: redis://:${REDIS_PASSWORD:-redis_secret}@redis:6379
+  #   networks:
+  #     - digiability_network
+  #   depends_on:
+  #     redis:
+  #       condition: service_healthy
 
   # ── Cassandra — Message Storage (Write-optimized) ────────────
   cassandra:

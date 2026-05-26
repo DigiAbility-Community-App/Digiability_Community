@@ -108,6 +108,7 @@ class DeliveryService {
       event: WS_EVENTS.MESSAGE_NEW,
       data: {
         messageId: message.messageId,
+        clientMessageId: message.clientMessageId,
         conversationId: message.conversationId,
         senderId: message.senderId,
         content: message.content,
