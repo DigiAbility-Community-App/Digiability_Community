@@ -87,10 +87,7 @@ const RoleSelectionScreen = () => {
   // -------------------------
 
   const [selected, setSelected] =
-    useState<RoleType[]>([
-      "pwd",
-      "caregiver",
-    ]);
+    useState<RoleType | null>(null);
 
   const [loading, setLoading] =
     useState(false);
@@ -148,21 +145,7 @@ const RoleSelectionScreen = () => {
   const handleRoleSelect = (
     roleId: RoleType
   ) => {
-    if (
-      selected.includes(roleId)
-    ) {
-      setSelected(
-        selected.filter(
-          (item) =>
-            item !== roleId
-        )
-      );
-    } else {
-      setSelected([
-        ...selected,
-        roleId,
-      ]);
-    }
+    setSelected(roleId);
   };
 
   // -------------------------
@@ -170,10 +153,10 @@ const RoleSelectionScreen = () => {
   // -------------------------
 
   const handleContinue = () => {
-    if (selected.length === 0) {
+    if (!selected) {
       Alert.alert(
         "Select Role",
-        "Please select at least one role."
+        "Please select a role."
       );
 
       return;
@@ -182,9 +165,7 @@ const RoleSelectionScreen = () => {
     setLoading(true);
 
     // SAVE ROLES
-    setPendingRole(
-      selected.join(",")
-    );
+    setPendingRole(selected);
 
     setTimeout(() => {
       setLoading(false);
@@ -269,9 +250,7 @@ const RoleSelectionScreen = () => {
           <Text
             style={styles.subtitle}
           >
-            Select all that apply.
-            You can be more than
-            one.
+            Select the role that best describes you.
           </Text>
         </View>
 
@@ -279,9 +258,7 @@ const RoleSelectionScreen = () => {
         <View style={styles.grid}>
           {roles.map((role) => {
             const isSelected =
-              selected.includes(
-                role.id as RoleType
-              );
+              selected === role.id;
 
             return (
               <TouchableOpacity

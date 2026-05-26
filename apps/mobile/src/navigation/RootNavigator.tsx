@@ -9,6 +9,7 @@ import { useAccessibilityStore } from '@store/accessibilityStore';
 import { getMe } from '@services/authService';
 import { REFRESH_TOKEN_KEY } from '@services/apiClient';
 import { initSocket, closeSocket } from '@services/socketService';
+import { forumSocketService } from '@services/forumSocketService';
 
 // ─────────────────────────────────────────────────────────
 // RootNavigator
@@ -78,8 +79,10 @@ const RootNavigator = () => {
   useEffect(() => {
     if (isAuthenticated && !isRestoringSession) {
       initSocket();
+      forumSocketService.connect();
     } else if (!isAuthenticated && !isRestoringSession) {
       closeSocket();
+      forumSocketService.disconnect();
     }
     
     return () => {

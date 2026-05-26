@@ -23,6 +23,9 @@
     "chat-svc:worker:delivery": "npm run worker:delivery --workspace=@digiability/chat-svc",
     "group-svc:dev": "npm run dev --workspace=@digiability/group-svc",
     "notif-svc:dev": "npm run dev --workspace=@digiability/notif-svc",
+    "forum-svc:dev": "npm run dev --workspace=@digiability/forum-svc",
+    "forum-svc:generate": "npm run db:generate --workspace=@digiability/forum-svc",
+    "forum-svc:push": "npm run db:push --workspace=@digiability/forum-svc",
     "docker:up": "docker-compose up -d",
     "docker:down": "docker-compose down",
     "docker:logs": "docker-compose logs -f"
@@ -41,6 +44,9 @@
   },
   "dependencies": {
     "@prisma/client": "^5.10.0",
-    "lucide-react-native": "^1.16.0"
+    "lucide-react-native": "^1.16.0",
+    "react-native-element-dropdown": "^2.12.4",
+    "react-native-pager-view": "^8.0.2",
+    "react-native-tab-view": "^4.3.0"
   }
 }

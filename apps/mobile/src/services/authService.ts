@@ -71,19 +71,53 @@ async function persistRefreshToken(headers: Record<string, string | string[]>) {
   }
 }
 
+// ── Role Mapping ───────────────────────────────────────────
+
+const ROLE_MAP_TO_BACKEND: Record<string, string> = {
+  pwd: 'pwd',
+  caregiver: 'caregiver',
+  educator: 'therapist',
+  ngo_worker: 'ngo',
+  skill_trainer: 'volunteer',
+  community_member: 'student',
+};
+
+const ROLE_MAP_TO_FRONTEND: Record<string, string> = {
+  pwd: 'pwd',
+  caregiver: 'caregiver',
+  therapist: 'educator',
+  ngo: 'ngo_worker',
+  volunteer: 'skill_trainer',
+  student: 'community_member',
+};
+
+function mapUserToFrontend(user: any): any {
+  if (!user) return user;
+  return {
+    ...user,
+    role: user.role ? (ROLE_MAP_TO_FRONTEND[user.role] ?? user.role) : user.role,
+  };
+}
+
 // ── Register ───────────────────────────────────────────────
 
 export async function register(input: RegisterInput): Promise<AuthUser> {
+  const mappedInput = {
+    ...input,
+    role: input.role ? (ROLE_MAP_TO_BACKEND[input.role] ?? input.role) : undefined,
+  };
+
   const response = await apiClient.post<ApiResponse<LoginResponseData>>(
     '/api/auth/register',
-    input,
+    mappedInput,
   );
 
   const { accessToken, user } = response.data.data;
+  const mappedUser = mapUserToFrontend(user);
   await persistRefreshToken(response.headers as Record<string, string | string[]>);
-  useAuthStore.getState().setAuth(accessToken, user);
+  useAuthStore.getState().setAuth(accessToken, mappedUser);
 
-  return user;
+  return mappedUser;
 }
 
 // ── Login ──────────────────────────────────────────────────
@@ -95,14 +129,15 @@ export async function login(input: LoginInput): Promise<AuthUser> {
   );
 
   const { accessToken, user } = response.data.data;
+  const mappedUser = mapUserToFrontend(user);
 
   // Persist refresh token from cookie header (native)
   await persistRefreshToken(response.headers as Record<string, string | string[]>);
 
   // Store access token + user in memory
-  useAuthStore.getState().setAuth(accessToken, user);
+  useAuthStore.getState().setAuth(accessToken, mappedUser);
 
-  return user;
+  return mappedUser;
 }
 
 // ── Logout ─────────────────────────────────────────────────
@@ -121,7 +156,7 @@ export async function logout(): Promise<void> {
 
 export async function getMe(): Promise<AuthUser> {
   const response = await apiClient.get<ApiResponse<{ user: AuthUser }>>('/api/auth/me');
-  return response.data.data.user;
+  return mapUserToFrontend(response.data.data.user);
 }
 
 // ── Forgot password ────────────────────────────────────────
@@ -176,16 +211,24 @@ export async function resendVerificationOtp(email: string): Promise<string> {
 
 // ── Update current user role ───────────────────────────────
 
-export async function updateRole(role: string): Promise<AuthUser> {
+export async function updateRole(
+  role: string,
+  options: { updateStore?: boolean } = {}
+): Promise<AuthUser> {
+  const backendRole = ROLE_MAP_TO_BACKEND[role] ?? role;
   const response = await apiClient.patch<ApiResponse<AuthUser>>('/api/auth/role', {
-    role,
+    role: backendRole,
   });
+
+  const mappedUser = mapUserToFrontend(response.data.data);
   
-  // Update auth store with the new user object
-  useAuthStore.getState().setAuth(
-    useAuthStore.getState().accessToken!,
-    response.data.data
-  );
+  if (options.updateStore ?? true) {
+    // Update auth store with the new user object
+    useAuthStore.getState().setAuth(
+      useAuthStore.getState().accessToken!,
+      mappedUser
+    );
+  }
   
-  return response.data.data;
+  return mappedUser;
 }

@@ -11,6 +11,11 @@ import NotificationsScreen from '@screens/home/NotificationScreen';
 import HomeProfileScreen from '@screens/profile/HomeProfileScreen';
 import EditProfileScreen from '@screens/profile/EditProfileScreen';
 import ChatsStack from './ChatsStack';
+import CommunityDetailScreen from '@screens/community/CommunityDetailScreen';
+import AskQuestionScreen from '@screens/community/AskQuestionScreen';
+import QuestionDetailsScreen from '@screens/community/QuestionDetailsScreen';
+import SolvedQuestionsScreen from '@screens/community/SolvedQuestionsScreen';
+import SearchScreen from '@screens/community/SearchScreen';
 import { useAuthStore } from '@store/authStore';
 import { hasCompletedAccessibility } from '@services/storageService';
 
@@ -25,6 +30,11 @@ export type MainStackParamList = {
   Notifications: undefined;
   HomeProfile: undefined;
   EditProfile: undefined;
+  CommunityDetail: undefined;
+  AskQuestion: undefined;
+  QuestionDetails: { questionId: string };
+  SolvedQuestions: undefined;
+  SearchQuestions: undefined;
 };
 
 const Stack = createNativeStackNavigator<MainStackParamList>();
@@ -135,6 +145,11 @@ const MainNavigator = () => {
       <Stack.Screen name="Notifications" component={NotificationsScreen} />
       <Stack.Screen name="HomeProfile" component={HomeProfileScreen} />
       <Stack.Screen name="EditProfile" component={EditProfileScreen} />
+      <Stack.Screen name="CommunityDetail" component={CommunityDetailScreen} />
+      <Stack.Screen name="AskQuestion" component={AskQuestionScreen} />
+      <Stack.Screen name="QuestionDetails" component={QuestionDetailsScreen} />
+      <Stack.Screen name="SolvedQuestions" component={SolvedQuestionsScreen} />
+      <Stack.Screen name="SearchQuestions" component={SearchScreen} />
     </Stack.Navigator>
   );
 };

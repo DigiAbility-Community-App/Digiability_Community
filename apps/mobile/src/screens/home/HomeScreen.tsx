@@ -283,7 +283,7 @@ const HomeScreen = () => {
             style={[styles.quickCard, { backgroundColor: colors.card }, cardBorder]}
             onPress={() =>
               navigation.navigate(
-                "Community"
+                "CommunityDetail"
               )
             }
             accessibilityRole="button"
@@ -406,7 +406,7 @@ const HomeScreen = () => {
             <TouchableOpacity
               onPress={() =>
                 navigation.navigate(
-                  "Community"
+                  "CommunityDetail"
                 )
               }
               accessibilityRole="button"
