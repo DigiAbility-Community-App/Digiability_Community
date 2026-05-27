@@ -2,12 +2,13 @@ import React from "react";
 import {
   StyleSheet,
   View,
-  KeyboardAvoidingView,
   Platform,
   ViewStyle,
   StyleProp,
 } from "react-native";
 import { StatusBar } from "expo-status-bar";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { KeyboardAwareScrollView } from "react-native-keyboard-aware-scroll-view";
 import { useTheme } from "../../theme/ThemeContext";
 
 export interface ScreenWrapperProps {
@@ -21,9 +22,13 @@ export interface ScreenWrapperProps {
    */
   statusBarStyle?: "light" | "dark" | "auto";
   /**
-   * If true, wraps the children in KeyboardAvoidingView. Defaults to false.
+   * If true, wraps the children in KeyboardAwareScrollView. Defaults to false.
    */
   keyboardAvoiding?: boolean;
+  /**
+   * If true, applies bottom safe area padding. Defaults to true.
+   */
+  withBottomSafeArea?: boolean;
 }
 
 /**
@@ -35,12 +40,17 @@ export const ScreenWrapper: React.FC<ScreenWrapperProps> = ({
   style,
   statusBarStyle = "light",
   keyboardAvoiding = false,
+  withBottomSafeArea = true,
 }) => {
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
 
   const containerStyle = [
     styles.container,
-    { backgroundColor: colors.background },
+    { 
+      backgroundColor: colors.background,
+      paddingBottom: withBottomSafeArea ? insets.bottom : 0 
+    },
     style,
   ];
 
@@ -50,12 +60,15 @@ export const ScreenWrapper: React.FC<ScreenWrapperProps> = ({
     <View style={styles.flex}>
       <StatusBar style={statusBarStyle} translucent backgroundColor="transparent" />
       {keyboardAvoiding ? (
-        <KeyboardAvoidingView
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
+        <KeyboardAwareScrollView
           style={styles.flex}
+          contentContainerStyle={{ flexGrow: 1 }}
+          enableOnAndroid={true}
+          keyboardOpeningTime={0}
+          extraScrollHeight={Platform.OS === 'ios' ? 20 : 0}
         >
           {content}
-        </KeyboardAvoidingView>
+        </KeyboardAwareScrollView>
       ) : (
         content
       )}

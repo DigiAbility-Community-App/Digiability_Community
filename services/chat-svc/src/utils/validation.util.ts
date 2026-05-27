@@ -48,8 +48,40 @@ export const syncRequestSchema = z.object({
 
 export const createConversationSchema = z.object({
   type: z.enum(["DIRECT", "GROUP"]),
+  subType: z.enum(["GENERAL", "CARE_CIRCLE"]).optional(),
   name: z.string().min(1).max(200).optional(),
+  description: z.string().max(500).optional(),
   memberIds: z.array(z.string().uuid()).min(1).max(500),
+  memberRoles: z.array(z.object({
+    userId: z.string().uuid(),
+    role: z.enum(["MEMBER", "ADMIN", "CAREGIVER", "MENTOR", "PROFESSIONAL"]),
+  })).optional(),
+});
+
+export const sendInviteSchema = z.object({
+  conversationId: z.string().uuid(),
+  userId: z.string().uuid(),
+  role: z.enum(["MEMBER", "ADMIN", "CAREGIVER", "MENTOR", "PROFESSIONAL"]).default("MEMBER"),
+  message: z.string().max(500).optional(),
+});
+
+export const respondInviteSchema = z.object({
+  action: z.enum(["accept", "decline"]),
+});
+
+export const updateGroupSettingsSchema = z.object({
+  editGroupInfo: z.enum(["ADMINS_ONLY", "ALL_MEMBERS"]).optional(),
+  addMembers: z.enum(["ADMINS_ONLY", "ALL_MEMBERS"]).optional(),
+  sendMessages: z.enum(["ADMINS_ONLY", "ALL_MEMBERS"]).optional(),
+});
+
+export const updateGroupInfoSchema = z.object({
+  name: z.string().min(1).max(200).optional(),
+  description: z.string().max(500).optional(),
+});
+
+export const updateMemberRoleSchema = z.object({
+  role: z.enum(["MEMBER", "ADMIN", "CAREGIVER", "MENTOR", "PROFESSIONAL"]),
 });
 
 export const messageHistoryQuerySchema = z.object({

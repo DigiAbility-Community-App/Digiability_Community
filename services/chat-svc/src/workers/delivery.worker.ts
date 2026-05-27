@@ -154,6 +154,7 @@ async function processEntry(
     const deliveryPayload: Omit<DeliveryPayload, "targetUserId"> = {
       message: {
         messageId: event.messageId,
+        clientMessageId: event.clientMessageId,
         conversationId: event.conversationId,
         senderId: event.senderId,
         content: event.content,
@@ -241,28 +242,11 @@ async function processEntry(
       }
     }
 
-    // ── 6. Also deliver to sender's OTHER sessions ──
-    // The sender's originating device already has the message via ACK,
-    // but their other devices need it too (multi-device sync).
-    const senderSessions = await getRecipientSessions(redis, event.senderId);
-    if (senderSessions.length > 0) {
-      const senderServerIds = new Set(senderSessions.map((s) => s.serverId));
-      const senderPayload: DeliveryPayload = {
-        targetUserId: event.senderId,
-        ...deliveryPayload,
-      };
-
-      for (const serverId of senderServerIds) {
-        try {
-          await redis.publish(
-            PUBSUB_CHANNELS.SERVER_DELIVER(serverId),
-            JSON.stringify(senderPayload)
-          );
-        } catch {
-          // Non-fatal for sender multi-device sync
-        }
-      }
-    }
+    // NOTE: Sender echo removed. The sender's originating device has the
+    // message via optimistic add + message.ack. Sender's OTHER devices on
+    // the same server receive the echo from message.handler.ts via
+    // sendToUserExcept. This block was causing duplicate messages on the
+    // sender's device by re-delivering via Pub/Sub to ALL sender sessions.
 
     // ── 7. XACK ──
     await redis.xack(STREAMS.MESSAGE_PERSISTED, CONSUMER_GROUPS.DELIVERY_WORKER, entryId);

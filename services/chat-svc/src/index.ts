@@ -42,6 +42,7 @@ import { errorHandler, notFoundHandler } from "./middleware/error.middleware";
 import conversationRoutes from "./routes/conversation.routes";
 import messageRoutes from "./routes/message.routes";
 import presenceRoutes from "./routes/presence.routes";
+import inviteRoutes from "./routes/invite.routes";
 
 // ─── Express Application ──────────────────────────────────────
 
@@ -76,6 +77,7 @@ app.get("/health", (_req, res) => {
 app.use("/api/conversations", conversationRoutes);
 app.use("/api/messages", messageRoutes);
 app.use("/api/presence", presenceRoutes);
+app.use("/api/invites", inviteRoutes);
 
 // 404 + Error Handlers
 app.use(notFoundHandler);

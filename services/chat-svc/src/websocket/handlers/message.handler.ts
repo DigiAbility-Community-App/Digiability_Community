@@ -110,6 +110,7 @@ export async function handleMessageSend(
     // processes the MESSAGE_PERSISTED event.
     const echoPayload: MessageNewPayload = {
       messageId,
+      clientMessageId,
       conversationId,
       senderId: userId,
       content,

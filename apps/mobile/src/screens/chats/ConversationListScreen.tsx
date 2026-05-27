@@ -8,6 +8,9 @@ import {
   TextInput,
   Image,
   ActivityIndicator,
+  ActionSheetIOS,
+  Platform,
+  Alert,
 } from "react-native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useNavigation } from "@react-navigation/native";
@@ -46,6 +49,7 @@ interface User {
 interface Conversation {
   id: string;
   type: "DIRECT" | "GROUP";
+  subType?: "GENERAL" | "CARE_CIRCLE" | null;
   name: string;
   avatar: string;
   lastMessage: string;
@@ -61,9 +65,11 @@ const ConversationListScreen = ({ navigation: propNavigation, isTab = false }: P
   const user = useAuthStore((s) => s.user);
   const storeConversations = useChatStore((s) => Object.values(s.conversations));
   const setConversations = useChatStore((s) => s.setConversations);
+  const pendingInvites = useChatStore((s) => s.pendingInvites);
+  const setPendingInvites = useChatStore((s) => s.setPendingInvites);
   
   const [searchQuery, setSearchQuery] = useState("");
-  const [activeFilter, setActiveFilter] = useState<"All" | "Direct" | "Groups">("All");
+  const [activeFilter, setActiveFilter] = useState<"All" | "Direct" | "Groups" | "Care Circles">("All");
   const [isLoading, setIsLoading] = useState(true);
 
   // Map real data to UI props
@@ -78,8 +84,11 @@ const ConversationListScreen = ({ navigation: propNavigation, isTab = false }: P
     return {
       id: c.id,
       type: c.type,
+      subType: c.subType,
       name: displayName,
-      avatar: c.type === "GROUP" ? "🦽" : "👤",
+      avatar: c.type === "GROUP" 
+        ? (c.subType === "CARE_CIRCLE" ? "🦽" : "👥") 
+        : (displayName === "DigiBot" ? "🤖" : "👤"),
       lastMessage: c.lastMessage?.content || "No messages yet",
       time: c.updatedAt ? new Date(c.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "",
       unread: c.unreadCount || 0,
@@ -91,10 +100,14 @@ const ConversationListScreen = ({ navigation: propNavigation, isTab = false }: P
   useEffect(() => {
     const loadData = async () => {
       try {
-        const data = await chatService.getConversations();
-        setConversations(data);
+        const [convData, invitesData] = await Promise.all([
+          chatService.getConversations(),
+          chatService.getPendingInvites()
+        ]);
+        setConversations(convData);
+        setPendingInvites(invitesData);
       } catch (err) {
-        console.error("Failed to fetch conversations", err);
+        console.error("Failed to fetch conversations/invites", err);
       } finally {
         setIsLoading(false);
       }
@@ -109,7 +122,8 @@ const ConversationListScreen = ({ navigation: propNavigation, isTab = false }: P
     const matchesFilter =
       activeFilter === "All" ||
       (activeFilter === "Direct" && conv.type === "DIRECT") ||
-      (activeFilter === "Groups" && conv.type === "GROUP");
+      (activeFilter === "Groups" && conv.type === "GROUP" && conv.subType !== "CARE_CIRCLE") ||
+      (activeFilter === "Care Circles" && conv.subType === "CARE_CIRCLE");
     return matchesSearch && matchesFilter;
   });
 
@@ -150,13 +164,40 @@ const ConversationListScreen = ({ navigation: propNavigation, isTab = false }: P
           navigation.navigate("GroupChat", {
             conversationId: conv.id,
             groupName: conv.name,
-            memberCount: conv.memberCount ?? 0,
+            subType: conv.subType,
           });
         }
       }
     },
     [navigation, isTab]
   );
+
+  const handleNewAction = () => {
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        {
+          options: ['Cancel', 'New 1:1 Chat', 'Create Care Circle', 'Create General Group'],
+          cancelButtonIndex: 0,
+        },
+        (buttonIndex) => {
+          if (buttonIndex === 1) {
+            navigation.navigate('NewChat');
+          } else if (buttonIndex === 2) {
+            navigation.navigate('CreateGroup', { subType: 'CARE_CIRCLE' });
+          } else if (buttonIndex === 3) {
+            navigation.navigate('CreateGroup', { subType: 'GENERAL' });
+          }
+        }
+      );
+    } else {
+      Alert.alert('New Chat', 'Choose an option:', [
+        { text: 'New 1:1 Chat', onPress: () => navigation.navigate('NewChat') },
+        { text: 'Create Care Circle', onPress: () => navigation.navigate('CreateGroup', { subType: 'CARE_CIRCLE' }) },
+        { text: 'Create General Group', onPress: () => navigation.navigate('CreateGroup', { subType: 'GENERAL' }) },
+        { text: 'Cancel', style: 'cancel' },
+      ]);
+    }
+  };
 
   const renderConversation = ({ item }: { item: Conversation }) => (
     <TouchableOpacity
@@ -217,6 +258,39 @@ const ConversationListScreen = ({ navigation: propNavigation, isTab = false }: P
 
   const renderBody = () => (
     <View style={[styles.container, isTab && { backgroundColor: "#FAF8FF" }]}>
+      {!isTab && (
+        <AppHeader
+          title="Messages"
+          rightActions={
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <TouchableOpacity
+                style={styles.newChatTouch}
+                onPress={() => navigation.navigate("Invites")}
+                accessibilityRole="button"
+                accessibilityLabel="Pending Invites"
+                activeOpacity={0.7}
+              >
+                <Text style={styles.newChatIcon}>✉️</Text>
+                {pendingInvites.length > 0 && (
+                  <View style={styles.inviteBadge}>
+                    <Text style={styles.inviteBadgeText}>{pendingInvites.length}</Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={styles.newChatTouch}
+                onPress={handleNewAction}
+                accessibilityRole="button"
+                accessibilityLabel="New Chat"
+                activeOpacity={0.7}
+              >
+                <Text style={styles.newChatIcon}>✏️</Text>
+              </TouchableOpacity>
+            </View>
+          }
+        />
+      )}
       {/* ── Content Container (Search Bar moved into body flow for safe spacing) ── */}
       <View style={[
         styles.headerBodyFlow,
@@ -259,7 +333,7 @@ const ConversationListScreen = ({ navigation: propNavigation, isTab = false }: P
 
       {/* ── Filter Tabs ──────────────────────────────────── */}
       <View style={[styles.filterContainer, isTab && { backgroundColor: "#FAF8FF" }]}>
-        {(["All", "Direct", "Groups"] as const).map((filter) => (
+        {(["All", "Direct", "Care Circles", "Groups"] as const).map((filter) => (
           <TouchableOpacity
             key={filter}
             style={[
@@ -300,20 +374,14 @@ const ConversationListScreen = ({ navigation: propNavigation, isTab = false }: P
         }
       />
 
-      {/* ── FAB — Create Care Circle ─────────────────── */}
+      {/* ── FAB — New Chat ─────────────────── */}
       <TouchableOpacity
         style={[styles.fab, isTab ? { bottom: 85 } : { bottom: 90 }]}
-        onPress={() => {
-          if (isTab) {
-            navigation.navigate("Chats", { screen: "CreateGroup" });
-          } else {
-            navigation.navigate("CreateGroup");
-          }
-        }}
+        onPress={handleNewAction}
         activeOpacity={0.85}
       >
-        <Text style={styles.fabIcon}>👥</Text>
-        <Text style={styles.fabLabel}>New Circle</Text>
+        <Text style={styles.fabIcon}>✏️</Text>
+        <Text style={styles.fabLabel}>New Chat</Text>
       </TouchableOpacity>
     </View>
   );
@@ -327,22 +395,32 @@ const ConversationListScreen = ({ navigation: propNavigation, isTab = false }: P
       <AppHeader
         title="Messages"
         rightActions={
-          <TouchableOpacity
-            style={styles.newChatTouch}
-            onPress={() => {
-              if (isTab) {
-                navigation.navigate("Chats", { screen: "CreateGroup" });
-              } else {
-                navigation.navigate("CreateGroup");
-              }
-            }}
-            accessibilityRole="button"
-            accessibilityLabel="New Care Circle Group"
-            accessibilityHint="Navigates to group creation page"
-            activeOpacity={0.7}
-          >
-            <Text style={styles.newChatIcon}>✏️</Text>
-          </TouchableOpacity>
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <TouchableOpacity
+              style={styles.newChatTouch}
+              onPress={() => navigation.navigate("Invites")}
+              accessibilityRole="button"
+              accessibilityLabel="Pending Invites"
+              activeOpacity={0.7}
+            >
+              <Text style={styles.newChatIcon}>✉️</Text>
+              {pendingInvites.length > 0 && (
+                <View style={styles.inviteBadge}>
+                  <Text style={styles.inviteBadgeText}>{pendingInvites.length}</Text>
+                </View>
+              )}
+            </TouchableOpacity>
+            
+            <TouchableOpacity
+              style={styles.newChatTouch}
+              onPress={handleNewAction}
+              accessibilityRole="button"
+              accessibilityLabel="New Chat"
+              activeOpacity={0.7}
+            >
+              <Text style={styles.newChatIcon}>✏️</Text>
+            </TouchableOpacity>
+          </View>
         }
       />
       {renderBody()}
@@ -366,13 +444,32 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   newChatTouch: {
-    minWidth: 48,
-    minHeight: 48,
+    minWidth: 44,
+    minHeight: 44,
     justifyContent: "center",
     alignItems: "center",
+    position: 'relative',
   },
   newChatIcon: {
     fontSize: 20,
+  },
+  inviteBadge: {
+    position: 'absolute',
+    top: 6,
+    right: 4,
+    backgroundColor: '#FF3B30',
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: '#500088',
+  },
+  inviteBadgeText: {
+    color: '#fff',
+    fontSize: 9,
+    fontWeight: '800',
   },
   headerBodyFlow: {
     paddingHorizontal: 20,

@@ -20,7 +20,7 @@
 import cassandra from "../config/cassandra";
 import prisma from "../models/prisma.client";
 import { types as cassandraTypes } from "cassandra-driver";
-import { DeliveryStatus, ReceiptType } from "@prisma/client";
+import { DeliveryStatus, ReceiptType } from "../generated/client";
 import { logger } from "../config/logger";
 
 const Uuid = cassandraTypes.Uuid;
@@ -166,6 +166,9 @@ class MessageRepository {
         senderId,
         sequenceNo: nextSequenceNo,
         createdAt: msgCreatedAt,
+        clientMessageId,
+        content,
+        type: type as any,
       },
     });
 
@@ -291,6 +294,7 @@ class MessageRepository {
       id: string;
       conversationId: string;
       senderId: string;
+      clientMessageId: string;
       content: string;
       type: string;
       metadata: string | null;
@@ -340,6 +344,7 @@ class MessageRepository {
 
         return {
           id: msgId,
+          clientMessageId: row.client_message_id,
           conversationId: row.conversation_id.toString(),
           senderId: row.sender_id.toString(),
           content: row.content,
@@ -371,6 +376,7 @@ class MessageRepository {
       id: string;
       conversationId: string;
       senderId: string;
+      clientMessageId: string;
       content: string;
       type: string;
       metadata: string | null;
@@ -395,6 +401,7 @@ class MessageRepository {
       .reverse() // Return in ascending order
       .map((row) => ({
         id: row.message_id.toString(),
+        clientMessageId: row.client_message_id,
         conversationId: row.conversation_id.toString(),
         senderId: row.sender_id.toString(),
         content: row.content,
@@ -545,6 +552,7 @@ class MessageRepository {
         id: string;
         conversationId: string;
         senderId: string;
+        clientMessageId: string;
         content: string;
         type: string;
         metadata: string | null;
@@ -566,6 +574,7 @@ class MessageRepository {
             id: true,
             conversationId: true,
             senderId: true,
+            clientMessageId: true,
             sequenceNo: true,
             createdAt: true,
           },
@@ -600,6 +609,7 @@ class MessageRepository {
           messageId: pr.messageId,
           message: {
             id: pr.message.id,
+            clientMessageId: pr.message.clientMessageId,
             conversationId: pr.message.conversationId,
             senderId: pr.message.senderId,
             content,

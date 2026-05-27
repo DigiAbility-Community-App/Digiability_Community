@@ -28,6 +28,18 @@ export const WS_EVENTS = {
   SESSION_PONG: "session.pong",
   SYNC_RESPONSE: "sync.response",
   ERROR: "error",
+
+  // Group / Invite events (Server → Client)
+  INVITE_NEW: "invite.new",
+  INVITE_ACCEPTED: "invite.accepted",
+  INVITE_DECLINED: "invite.declined",
+  INVITE_CANCELLED: "invite.cancelled",
+  MEMBER_JOINED: "member.joined",
+  MEMBER_LEFT: "member.left",
+  MEMBER_REMOVED: "member.removed",
+  MEMBER_ROLE_UPDATED: "member.role.updated",
+  GROUP_SETTINGS_UPDATED: "group.settings.updated",
+  GROUP_INFO_UPDATED: "group.info.updated",
 } as const;
 
 export type WsEventName = (typeof WS_EVENTS)[keyof typeof WS_EVENTS];

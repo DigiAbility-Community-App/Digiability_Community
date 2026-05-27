@@ -1,5 +1,6 @@
 import { useAuthStore } from '@store/authStore';
 import { useChatStore } from '@store/chatStore';
+import { chatService } from './chatService';
 
 // ─────────────────────────────────────────────────────────
 // WebSocket Client Service
@@ -110,7 +111,16 @@ const handleSocketEvent = (message: any) => {
   switch (type) {
     case 'message.new': {
       // Server sends { messageId, conversationId, senderId, content, type, sequenceNo, createdAt }
-      // Store expects { id, clientMessageId, conversationId, senderId, content, type, status, createdAt }
+      const currentUserId = useAuthStore.getState().user?.id;
+      
+      // Skip messages sent by the current user — they already have the
+      // optimistic version. This prevents duplicates from cross-device sync
+      // or delivery worker echo.
+      if (payload.senderId === currentUserId) {
+        console.log('[WS-EVENT] message.new → skipping own message', payload.messageId);
+        break;
+      }
+      
       const mapped = {
         id: payload.messageId,
         clientMessageId: payload.clientMessageId || payload.messageId,
@@ -134,6 +144,8 @@ const handleSocketEvent = (message: any) => {
       // Server confirmed our message was accepted into the system
       if (payload.status === 'accepted') {
         console.log('✅ Message accepted by server:', payload.messageId, 'clientMsgId:', payload.clientMessageId);
+        // Update the optimistic message with the real server messageId
+        store.confirmMessage(payload.clientMessageId, payload.messageId, 'sent');
       } else {
         console.warn('❌ Message rejected by server:', payload.reason);
       }
@@ -185,6 +197,57 @@ const handleSocketEvent = (message: any) => {
 
     case 'connection.established':
       console.log('🔗 Session ID:', payload.connId);
+      break;
+
+    // ── Group & Invite Events ──────────────────────────────────────
+    case 'invite.new':
+      console.log('📬 New invite received:', payload);
+      // Payload has: inviteId, conversationId, groupName, subType, inviterId, role, message, expiresAt
+      store.addPendingInvite({
+        id: payload.inviteId,
+        conversationId: payload.conversationId,
+        inviterId: payload.inviterId,
+        inviteeId: useAuthStore.getState().user?.id || '',
+        role: payload.role,
+        message: payload.message,
+        status: 'PENDING',
+        expiresAt: payload.expiresAt,
+        createdAt: new Date().toISOString(),
+        conversation: {
+          id: payload.conversationId,
+          name: payload.groupName,
+          subType: payload.subType,
+          type: 'GROUP',
+        }
+      });
+      break;
+
+    case 'invite.accepted':
+    case 'invite.declined':
+    case 'invite.cancelled':
+      console.log(`📪 Invite ${type.split('.')[1]}:`, payload.inviteId);
+      store.removePendingInvite(payload.inviteId);
+      break;
+
+    case 'member.joined':
+      console.log('👤 Member joined:', payload);
+      // Refresh conversations to get updated members
+      chatService.getConversations().then(convos => store.setConversations(convos));
+      break;
+
+    case 'member.left':
+    case 'member.removed':
+      console.log('👤 Member left/removed:', payload);
+      // Refresh conversations to get updated members
+      chatService.getConversations().then(convos => store.setConversations(convos));
+      break;
+
+    case 'group.settings.updated':
+    case 'group.info.updated':
+    case 'member.role.updated':
+      console.log('⚙️ Group updated:', type, payload);
+      // Refresh conversations to get updated info/roles
+      chatService.getConversations().then(convos => store.setConversations(convos));
       break;
 
     case 'error':

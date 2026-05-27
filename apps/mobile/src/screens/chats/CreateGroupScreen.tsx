@@ -10,10 +10,11 @@ import {
   ActivityIndicator,
   Animated,
   Alert,
-  KeyboardAvoidingView,
   Platform,
+  ActionSheetIOS,
 } from "react-native";
-import { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import { KeyboardAwareScrollView } from "react-native-keyboard-aware-scroll-view";
+import { NativeStackNavigationProp, NativeStackScreenProps } from "@react-navigation/native-stack";
 import { ChatsStackParamList } from "@navigation/ChatsStack";
 import { chatService } from "@services/chatService";
 import { useAuthStore } from "@store/authStore";
@@ -32,9 +33,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 // Uses the same purple/accessibility design system.
 // ─────────────────────────────────────────────────────────
 
-type Props = {
-  navigation: NativeStackNavigationProp<ChatsStackParamList, "CreateGroup">;
-};
+type Props = NativeStackScreenProps<ChatsStackParamList, "CreateGroup">;
 
 interface UserResult {
   id: string;
@@ -42,15 +41,20 @@ interface UserResult {
   email: string;
 }
 
-const CreateGroupScreen = ({ navigation }: Props) => {
+const CreateGroupScreen = ({ navigation, route }: Props) => {
   const user = useAuthStore((s) => s.user);
   const addConversation = useChatStore((s) => s.addConversation);
   const insets = useSafeAreaInsets();
+  
+  const subType = route.params?.subType;
+  const isCareCircle = subType === 'CARE_CIRCLE';
 
   const [groupName, setGroupName] = useState("");
+  const [description, setDescription] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<UserResult[]>([]);
-  const [selectedMembers, setSelectedMembers] = useState<UserResult[]>([]);
+  // Use a map to store member roles { [userId]: role }
+  const [selectedMembers, setSelectedMembers] = useState<{user: UserResult, role: string}[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
@@ -87,7 +91,7 @@ const CreateGroupScreen = ({ navigation }: Props) => {
         try {
           const results = await chatService.searchUsers(text.trim());
           // Filter out already selected members
-          const selectedIds = new Set(selectedMembers.map((m) => m.id));
+          const selectedIds = new Set(selectedMembers.map((m) => m.user.id));
           setSearchResults(results.filter((r) => !selectedIds.has(r.id)));
         } catch (err) {
           console.error("Search failed:", err);
@@ -102,8 +106,8 @@ const CreateGroupScreen = ({ navigation }: Props) => {
 
   const addMember = useCallback((member: UserResult) => {
     setSelectedMembers((prev) => {
-      if (prev.find((m) => m.id === member.id)) return prev;
-      return [...prev, member];
+      if (prev.find((m) => m.user.id === member.id)) return prev;
+      return [...prev, { user: member, role: 'MEMBER' }];
     });
     setSearchResults((prev) => prev.filter((r) => r.id !== member.id));
     setSearchQuery("");
@@ -111,67 +115,54 @@ const CreateGroupScreen = ({ navigation }: Props) => {
   }, []);
 
   const removeMember = useCallback((memberId: string) => {
-    setSelectedMembers((prev) => prev.filter((m) => m.id !== memberId));
+    setSelectedMembers((prev) => prev.filter((m) => m.user.id !== memberId));
+  }, []);
+
+  const updateMemberRole = useCallback((memberId: string, role: string) => {
+    setSelectedMembers((prev) => 
+      prev.map(m => m.user.id === memberId ? { ...m, role } : m)
+    );
   }, []);
 
   const handleCreate = useCallback(async () => {
     if (!groupName.trim()) {
-      Alert.alert("Name Required", "Please enter a name for your Care Circle.");
-      return;
-    }
-    if (selectedMembers.length === 0) {
-      Alert.alert(
-        "Members Required",
-        "Please add at least one member to your Care Circle."
-      );
+      Alert.alert("Name Required", "Please enter a name.");
       return;
     }
 
     setIsCreating(true);
     try {
-      const memberIds = selectedMembers.map((m) => m.id);
-      const conversation = await chatService.createGroup(
-        groupName.trim(),
-        memberIds
-      );
+      let conversation;
+      if (subType === 'CARE_CIRCLE') {
+        const roles = selectedMembers.map(m => ({ userId: m.user.id, role: m.role }));
+        conversation = await chatService.createCareCircle(groupName.trim(), description.trim(), roles);
+      } else {
+        const memberIds = selectedMembers.map(m => m.user.id);
+        conversation = await chatService.createGroup(groupName.trim(), description.trim(), memberIds);
+      }
 
-      // Add to store so it appears in the list immediately
-      addConversation({
-        id: conversation.id,
-        type: "GROUP",
-        name: groupName.trim(),
-        participants: [
-          ...(conversation.members || []).map((m: any) => ({
-            userId: m.userId,
-            role: m.role,
-            user: {
-              id: m.userId,
-              name:
-                selectedMembers.find((s) => s.id === m.userId)?.name ||
-                (m.userId === user?.id ? user?.name || "You" : "Unknown"),
-            },
-          })),
-        ],
-        unreadCount: 0,
-        updatedAt: new Date().toISOString(),
-      });
+      // Send invites to all selected members in parallel
+      const invitePromises = selectedMembers.map(m => 
+        chatService.sendInvite(conversation.id, m.user.id, m.role, `Join my ${subType === 'CARE_CIRCLE' ? 'Care Circle' : 'Group'}!`)
+      );
+      await Promise.allSettled(invitePromises);
 
       // Navigate to the new group chat
       navigation.replace("GroupChat", {
         conversationId: conversation.id,
         groupName: groupName.trim(),
-        memberCount: memberIds.length + 1, // +1 for creator
+        subType: subType,
       });
     } catch (err: any) {
       console.error("Failed to create group:", err);
       Alert.alert(
         "Error",
-        err?.response?.data?.message || "Failed to create Care Circle. Please try again."
+        err?.response?.data?.message || "Failed to create group. Please try again."
       );
     } finally {
       setIsCreating(false);
     }
-  }, [groupName, selectedMembers, navigation, user]);
+  }, [groupName, description, selectedMembers, navigation, subType]);
 
   const getInitials = (name: string) => {
     return name
@@ -209,7 +200,11 @@ const CreateGroupScreen = ({ navigation }: Props) => {
     </TouchableOpacity>
   );
 
-  const canCreate = groupName.trim().length > 0 && selectedMembers.length > 0;
+  const canCreate = groupName.trim().length > 0;
+  const headerTitle = isCareCircle ? "New Care Circle" : "New Group";
+  const headerSubtitle = isCareCircle 
+    ? "Create a support group for your community" 
+    : "Create a general chat group";
 
   return (
     <ScreenWrapper statusBarStyle="light">
@@ -239,37 +234,51 @@ const CreateGroupScreen = ({ navigation }: Props) => {
         </TouchableOpacity>
 
         <View style={styles.headerCenter}>
-          <Text style={styles.headerTitle}>New Care Circle</Text>
+          <Text style={styles.headerTitle}>{headerTitle}</Text>
           <Text style={styles.headerSubtitle}>
-            Create a support group for your community
+            {headerSubtitle}
           </Text>
         </View>
       </Animated.View>
 
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
+      <KeyboardAwareScrollView
+        style={styles.content}
+        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={{ paddingBottom: 100, flexGrow: 1 }}
+        enableOnAndroid={true}
+        extraScrollHeight={20}
       >
-        <ScrollView
-          style={styles.content}
-          keyboardShouldPersistTaps="handled"
-          contentContainerStyle={{ paddingBottom: 100 }}
-        >
           {/* ── Group Name ─────────────────────────────────── */}
           <View style={styles.section}>
-            <Text style={styles.sectionLabel}>Circle Name</Text>
+            <Text style={styles.sectionLabel}>{isCareCircle ? 'Circle Name' : 'Group Name'}</Text>
             <View style={styles.nameInputContainer}>
               <View style={styles.nameIconBox}>
-                <Text style={styles.nameIcon}>💜</Text>
+                <Text style={styles.nameIcon}>{isCareCircle ? '💜' : '👥'}</Text>
               </View>
               <TextInput
                 style={styles.nameInput}
-                placeholder="e.g. Mobility Support Group"
+                placeholder={isCareCircle ? "e.g. Mobility Support Group" : "e.g. Weekend Plan"}
                 placeholderTextColor="#999"
                 value={groupName}
                 onChangeText={setGroupName}
                 maxLength={100}
                 autoCapitalize="words"
+              />
+            </View>
+          </View>
+
+          {/* ── Description ─────────────────────────────────── */}
+          <View style={styles.section}>
+            <Text style={styles.sectionLabel}>Description (Optional)</Text>
+            <View style={[styles.nameInputContainer, { paddingVertical: 10 }]}>
+              <TextInput
+                style={[styles.nameInput, { height: 60, textAlignVertical: 'top' }]}
+                placeholder="What is this group for?"
+                placeholderTextColor="#999"
+                value={description}
+                onChangeText={setDescription}
+                maxLength={500}
+                multiline
               />
             </View>
           </View>
@@ -286,40 +295,64 @@ const CreateGroupScreen = ({ navigation }: Props) => {
                 style={styles.chipsContainer}
                 contentContainerStyle={styles.chipsContent}
               >
-                {selectedMembers.map((member, index) => (
-                  <View
-                    key={member.id}
-                    style={[
-                      styles.chip,
-                      { backgroundColor: getMemberColor(index) + "20" },
-                    ]}
-                  >
+                {selectedMembers.map((m, index) => (
+                  <View key={m.user.id} style={{ flexDirection: 'column', alignItems: 'center', marginRight: 12 }}>
                     <View
                       style={[
-                        styles.chipAvatar,
-                        { backgroundColor: getMemberColor(index) },
+                        styles.chip,
+                        { backgroundColor: getMemberColor(index) + "20" },
                       ]}
                     >
-                      <Text style={styles.chipAvatarText}>
-                        {getInitials(member.name)}
+                      <View
+                        style={[
+                          styles.chipAvatar,
+                          { backgroundColor: getMemberColor(index) },
+                        ]}
+                      >
+                        <Text style={styles.chipAvatarText}>
+                          {getInitials(m.user.name)}
+                        </Text>
+                      </View>
+                      <Text
+                        style={[
+                          styles.chipName,
+                          { color: getMemberColor(index) },
+                        ]}
+                        numberOfLines={1}
+                      >
+                        {m.user.name.split(" ")[0]}
                       </Text>
+                      <TouchableOpacity
+                        style={styles.chipRemove}
+                        onPress={() => removeMember(m.user.id)}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      >
+                        <Text style={styles.chipRemoveText}>✕</Text>
+                      </TouchableOpacity>
                     </View>
-                    <Text
-                      style={[
-                        styles.chipName,
-                        { color: getMemberColor(index) },
-                      ]}
-                      numberOfLines={1}
-                    >
-                      {member.name.split(" ")[0]}
-                    </Text>
-                    <TouchableOpacity
-                      style={styles.chipRemove}
-                      onPress={() => removeMember(member.id)}
-                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                    >
-                      <Text style={styles.chipRemoveText}>✕</Text>
-                    </TouchableOpacity>
+                    
+                    {/* Role Selector for Care Circles */}
+                    {isCareCircle && (
+                      <TouchableOpacity 
+                        style={styles.roleSelector}
+                        onPress={() => {
+                          if (Platform.OS === 'ios') {
+                            ActionSheetIOS.showActionSheetWithOptions(
+                              {
+                                options: ['Cancel', 'Member', 'Caregiver', 'Mentor', 'Professional'],
+                                cancelButtonIndex: 0,
+                              },
+                              (idx) => {
+                                const roles = ['MEMBER', 'MEMBER', 'CAREGIVER', 'MENTOR', 'PROFESSIONAL'];
+                                if (idx > 0) updateMemberRole(m.user.id, roles[idx]);
+                              }
+                            );
+                          }
+                        }}
+                      >
+                        <Text style={styles.roleText}>{m.role}</Text>
+                      </TouchableOpacity>
+                    )}
                   </View>
                 ))}
               </ScrollView>
@@ -374,15 +407,17 @@ const CreateGroupScreen = ({ navigation }: Props) => {
           </View>
 
           {/* ── Info Banner ────────────────────────────────── */}
-          <View style={styles.infoBanner}>
-            <Text style={styles.infoIcon}>💡</Text>
-            <Text style={styles.infoText}>
-              Care Circles help you stay connected with your support network.
-              Add caregivers, therapists, family members, or friends to create
-              a shared space for coordination and support.
-            </Text>
-          </View>
-        </ScrollView>
+          {isCareCircle && (
+            <View style={styles.infoBanner}>
+              <Text style={styles.infoIcon}>💡</Text>
+              <Text style={styles.infoText}>
+                Care Circles help you stay connected with your support network.
+                Add caregivers, therapists, family members, or friends to create
+                a shared space for coordination and support. Members will receive an invite to join.
+              </Text>
+            </View>
+          )}
+
 
         {/* ── Create Button (Fixed Bottom) ──────────────── */}
         <View style={styles.bottomBar}>
@@ -398,15 +433,13 @@ const CreateGroupScreen = ({ navigation }: Props) => {
               <>
                 <Text style={styles.createBtnIcon}>🤝</Text>
                 <Text style={styles.createBtnText}>
-                  Create Care Circle
-                  {selectedMembers.length > 0 &&
-                    ` (${selectedMembers.length + 1} members)`}
+                  {isCareCircle ? "Create Care Circle" : "Create Group"}
                 </Text>
               </>
             )}
           </TouchableOpacity>
         </View>
-      </KeyboardAvoidingView>
+      </KeyboardAwareScrollView>
     </ScreenWrapper>
   );
 };
@@ -560,6 +593,18 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: "#666",
     fontWeight: "700",
+  },
+  roleSelector: {
+    marginTop: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    backgroundColor: '#EDE9FE',
+    borderRadius: 12,
+  },
+  roleText: {
+    fontSize: 10,
+    color: '#6B21A8',
+    fontWeight: '700',
   },
 
   // ── Search ──────────────────────────────────────────────

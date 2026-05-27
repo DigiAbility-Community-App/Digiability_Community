@@ -5,7 +5,12 @@
 
 import { Request, Response } from "express";
 import { conversationService } from "../services/conversation.service";
-import { createConversationSchema } from "../utils/validation.util";
+import {
+  createConversationSchema,
+  updateGroupInfoSchema,
+  updateGroupSettingsSchema,
+  updateMemberRoleSchema,
+} from "../utils/validation.util";
 import { asyncHandler } from "../middleware/error.middleware";
 import { AuthenticatedRequest } from "../types/common.types";
 
@@ -22,13 +27,16 @@ export const createConversation = asyncHandler(async (req: Request, res: Respons
     return;
   }
 
-  const { type, name, memberIds } = parsed.data;
+  const { type, subType, name, description, memberIds, memberRoles } = parsed.data;
 
   const conversation = await conversationService.createConversation(
     user.sub,
     type,
     memberIds,
-    name
+    name,
+    subType,
+    description,
+    memberRoles
   );
 
   res.status(201).json({
@@ -103,6 +111,60 @@ export const removeMember = asyncHandler(async (req: Request, res: Response) => 
   res.status(200).json({
     success: true,
     message: "Member removed successfully",
+  });
+});
+
+export const updateGroupInfo = asyncHandler(async (req: Request, res: Response) => {
+  const user = (req as AuthenticatedRequest).user;
+  const { conversationId } = req.params;
+
+  const parsed = updateGroupInfoSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ success: false, message: "Validation failed", errors: parsed.error.issues });
+    return;
+  }
+
+  const result = await conversationService.updateGroupInfo(conversationId, user.sub, parsed.data);
+
+  res.status(200).json({
+    success: true,
+    data: result,
+  });
+});
+
+export const updateGroupSettings = asyncHandler(async (req: Request, res: Response) => {
+  const user = (req as AuthenticatedRequest).user;
+  const { conversationId } = req.params;
+
+  const parsed = updateGroupSettingsSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ success: false, message: "Validation failed", errors: parsed.error.issues });
+    return;
+  }
+
+  const result = await conversationService.updateGroupSettings(conversationId, user.sub, parsed.data);
+
+  res.status(200).json({
+    success: true,
+    data: result,
+  });
+});
+
+export const updateMemberRole = asyncHandler(async (req: Request, res: Response) => {
+  const user = (req as AuthenticatedRequest).user;
+  const { conversationId, userId: targetId } = req.params;
+
+  const parsed = updateMemberRoleSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ success: false, message: "Validation failed", errors: parsed.error.issues });
+    return;
+  }
+
+  await conversationService.updateMemberRole(conversationId, user.sub, targetId, parsed.data.role as any);
+
+  res.status(200).json({
+    success: true,
+    message: "Member role updated successfully",
   });
 });
 

@@ -4,6 +4,7 @@ import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import MainTabNavigator from './MainTabNavigator';
 import RoleSelectionScreen from '@screens/auth/RoleSelection';
 import AccessibilityScreen from '@screens/auth/AccessibilityScreen';
+import VerifyEmailScreen from '@screens/auth/VerifyEmailScreen';
 import ProfileScreen from '@screens/profile/ProfileScreen';
 import ProfileDetailsScreen from '@screens/profile/ProfileDetailsScreen';
 import CareCircleScreen from '@screens/profile/CareCircleScreen';
@@ -22,6 +23,7 @@ import { hasCompletedAccessibility } from '@services/storageService';
 
 export type MainStackParamList = {
   MainTabs: undefined;
+  VerifyEmail: undefined;
   Accessibility: undefined;
   RoleSelection: undefined;
   Profile: undefined;
@@ -54,6 +56,8 @@ function getFallbackRoute(
   user: ReturnType<typeof useAuthStore.getState>['user']
 ): keyof MainStackParamList {
   if (!user) return 'MainTabs';
+  // New user — email not verified yet: start at VerifyEmail
+  if (!user.isEmailVerified) return 'VerifyEmail';
   // New user — no role chosen yet: start the full onboarding from Accessibility
   if (!user.roles || user.roles.length === 0) return 'Accessibility';
   // Has role but profile not complete: skip back to Profile
@@ -76,6 +80,15 @@ const MainNavigator = () => {
       if (!user?.id) {
         if (isMounted) {
           setInitialRoute('MainTabs');
+          setIsLoading(false);
+        }
+        return;
+      }
+
+      // New user — email not verified yet
+      if (!user.isEmailVerified) {
+        if (isMounted) {
+          setInitialRoute('VerifyEmail');
           setIsLoading(false);
         }
         return;
@@ -137,6 +150,7 @@ const MainNavigator = () => {
       initialRouteName={initialRoute}
       screenOptions={{ headerShown: false }}
     >
+      <Stack.Screen name="VerifyEmail" component={VerifyEmailScreen} />
       <Stack.Screen name="Accessibility" component={AccessibilityScreen} />
       <Stack.Screen name="RoleSelection" component={RoleSelectionScreen} />
       <Stack.Screen name="Profile" component={ProfileScreen} />

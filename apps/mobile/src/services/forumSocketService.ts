@@ -20,6 +20,7 @@ export const forumSocketService = {
     socket = io(baseUrl, {
       auth: { token },
       transports: ['websocket'],
+      reconnectionAttempts: 3,
     });
 
     socket.on('connect', () => {
@@ -27,7 +28,8 @@ export const forumSocketService = {
     });
 
     socket.on('connect_error', (error) => {
-      console.warn('[ForumSocket] Connection error:', error.message);
+      // Silenced because forum-svc is not running by default
+      // console.warn('[ForumSocket] Connection error:', error.message);
     });
 
     // Register forum-svc events

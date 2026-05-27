@@ -274,6 +274,17 @@ Then:
 2. Send a message from Device A
 3. Verify it appears on Device B in real-time
 
+### 6. Test Care Circles & Groups
+1. Open the app on the first device.
+2. Tap the pencil icon in the header to create a new group.
+3. Choose "Care Circle" or "General Group".
+4. Search for another user (like the Bot) and select them. Give them a role (for Care Circles).
+5. Create the group. This sends an invite.
+6. Log in as the invited user on a second device.
+7. Go to Invites (envelope icon in the header), and accept the pending invite.
+8. Verify you can now see the group on both devices and chat in it.
+9. Verify the Group Info screen permissions by tapping the header in the group chat.
+
 ---
 
 ## Shutdown Procedure

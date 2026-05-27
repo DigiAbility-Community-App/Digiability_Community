@@ -40,7 +40,7 @@ export const SafeScreen: React.FC<SafeScreenProps> = ({
   const { colors } = useTheme();
 
   return (
-    <ScreenWrapper statusBarStyle={statusBarStyle}>
+    <ScreenWrapper statusBarStyle={statusBarStyle} withBottomSafeArea={false}>
       <View
         style={[
           styles.container,

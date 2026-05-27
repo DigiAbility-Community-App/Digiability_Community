@@ -4,6 +4,7 @@ import ConversationListScreen from '@screens/chats/ConversationListScreen';
 import ChatScreen from '@screens/chats/ChatScreen';
 import GroupChatScreen from '@screens/chats/GroupChatScreen';
 import CreateGroupScreen from '@screens/chats/CreateGroupScreen';
+import NewChatScreen from '@screens/chats/NewChatScreen';
 import UserProfileScreen from '@screens/chats/UserProfileScreen';
 
 // ─────────────────────────────────────────────────────────
@@ -28,9 +29,16 @@ export type ChatsStackParamList = {
   GroupChat: {
     conversationId: string;
     groupName: string;
-    memberCount: number;
+    subType?: 'GENERAL' | 'CARE_CIRCLE' | null;
   };
-  CreateGroup: undefined;
+  CreateGroup: {
+    subType: 'GENERAL' | 'CARE_CIRCLE';
+  };
+  NewChat: undefined;
+  GroupInfo: {
+    conversationId: string;
+  };
+  Invites: undefined;
   UserProfile: {
     userId: string;
     userName: string;
@@ -46,6 +54,9 @@ const ChatsStack = () => {
       <Stack.Screen name="Chat" component={ChatScreen} />
       <Stack.Screen name="GroupChat" component={GroupChatScreen} />
       <Stack.Screen name="CreateGroup" component={CreateGroupScreen} />
+      <Stack.Screen name="NewChat" component={NewChatScreen} />
+      <Stack.Screen name="GroupInfo" component={require('@screens/chats/GroupInfoScreen').default} />
+      <Stack.Screen name="Invites" component={require('@screens/chats/InvitesScreen').default} />
       <Stack.Screen name="UserProfile" component={UserProfileScreen} />
     </Stack.Navigator>
   );

@@ -24,10 +24,18 @@ enum ConversationType {
   GROUP
 }
 
+enum GroupSubType {
+  GENERAL
+  CARE_CIRCLE
+}
+
 enum MemberRole {
   OWNER
   ADMIN
   MEMBER
+  CAREGIVER      // Care Circle: full management access like co-owner
+  MENTOR         // Care Circle: doctors, therapists
+  PROFESSIONAL   // Care Circle: other professionals
 }
 
 enum MessageType {
@@ -57,6 +65,14 @@ enum ReceiptType {
   READ
 }
 
+enum InviteStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+  EXPIRED
+  CANCELLED
+}
+
 // ─────────────────────────────────────────────
 // CONVERSATION
 // Represents a 1:1 DM or a group/care-circle
@@ -64,12 +80,21 @@ enum ReceiptType {
 model Conversation {
   id          String           @id @default(uuid())
   type        ConversationType
+  subType     GroupSubType?     // null for DMs, GENERAL or CARE_CIRCLE for groups
   name        String?          // null for DMs, set for groups
+  description String?          // optional group description
   avatarUrl   String?
   createdBy   String           // userId who created it
+  maxMembers  Int              @default(256)  // 15 for care circles, 256 for groups
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt
   deletedAt   DateTime?        // soft delete
+
+  // WhatsApp-style group permission settings
+  // Values: "ADMINS_ONLY" | "ALL_MEMBERS"
+  editGroupInfo  String        @default("ADMINS_ONLY")
+  addMembers     String        @default("ADMINS_ONLY")
+  sendMessages   String        @default("ALL_MEMBERS")
 
   // Denormalized for fast query: last message preview
   lastMessageId   String?
@@ -78,8 +103,10 @@ model Conversation {
 
   members  ConversationMember[]
   messages Message[]
+  invites  GroupInvite[]
 
   @@index([type])
+  @@index([subType])
   @@index([lastMessageAt(sort: Desc)])
   @@index([createdBy])
   @@map("conversations")
@@ -114,6 +141,33 @@ model ConversationMember {
   @@index([conversationId])
   @@index([userId, leftAt])  // For listing active conversations
   @@map("conversation_members")
+}
+
+// ─────────────────────────────────────────────
+// GROUP INVITE
+// Invitation to join a group/care-circle.
+// Requires accept/decline before member is added.
+// ─────────────────────────────────────────────
+model GroupInvite {
+  id              String       @id @default(uuid())
+  conversationId  String
+  inviterId       String       // userId who sent the invite
+  inviteeId       String       // userId being invited
+  role            MemberRole   @default(MEMBER)  // role assigned on accept
+  message         String?      // optional invite message
+  status          InviteStatus @default(PENDING)
+
+  respondedAt     DateTime?
+  expiresAt       DateTime     // auto-expire after 7 days
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  conversation    Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([inviteeId, status])
+  @@index([conversationId, status])
+  @@index([conversationId, inviteeId])
+  @@map("group_invites")
 }
 
 // ─────────────────────────────────────────────
@@ -215,3 +269,4 @@ model OutboxEvent {
   @@index([streamName, published])
   @@map("outbox_events")
 }
+

@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback, useEffect } from "react";
+import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import {
   View,
   Text,
@@ -133,6 +133,39 @@ const ChatScreen = ({ navigation, route }: Props) => {
   const [isLoading, setIsLoading] = useState(true);
   const flatListRef = useRef<FlatList>(null);
 
+  // Deduplicate messages — prefer server-confirmed messages over optimistic ones
+  const dedupedMessages = useMemo(() => {
+    const seen = new Map<string, ChatMessage>();
+    const seenClientIds = new Map<string, string>(); // clientMessageId → best id
+
+    for (const msg of storeMessages) {
+      // Track by clientMessageId to collapse optimistic + confirmed copies
+      if (msg.clientMessageId) {
+        const existingKey = seenClientIds.get(msg.clientMessageId);
+        if (existingKey) {
+          // Keep the one with the server id (id !== clientMessageId)
+          const existing = seen.get(existingKey);
+          if (existing && existing.id === existing.clientMessageId && msg.id !== msg.clientMessageId) {
+            // Current msg is server-confirmed, replace the optimistic one
+            seen.delete(existingKey);
+            seen.set(msg.id, msg);
+            seenClientIds.set(msg.clientMessageId, msg.id);
+          }
+          continue; // Skip duplicate
+        }
+        seenClientIds.set(msg.clientMessageId, msg.id);
+      }
+
+      if (!seen.has(msg.id)) {
+        seen.set(msg.id, msg);
+      }
+    }
+
+    return Array.from(seen.values()).sort(
+      (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+    );
+  }, [storeMessages]);
+
   useEffect(() => {
     const loadMessages = async () => {
       try {
@@ -261,7 +294,7 @@ const ChatScreen = ({ navigation, route }: Props) => {
   };
 
   return (
-    <ScreenWrapper>
+    <ScreenWrapper withBottomSafeArea={false}>
       {/* ── Header — paddingTop uses insets so it clears the translucent status bar */}
       <View style={[styles.header, { paddingTop: insets.top + 10 }]}>
         <TouchableOpacity
@@ -309,8 +342,8 @@ const ChatScreen = ({ navigation, route }: Props) => {
       >
         <FlatList
           ref={flatListRef}
-          data={[...DEMO_MESSAGES.slice(0,1), ...storeMessages]} // Keep the "Today" separator for visual polish
-          keyExtractor={(item) => item.id}
+          data={dedupedMessages}
+          keyExtractor={(item, index) => item.id ? `${item.id}-${index}` : `msg-${index}`}
           renderItem={renderMessage}
           contentContainerStyle={styles.messageList}
           showsVerticalScrollIndicator={false}
@@ -333,7 +366,7 @@ const ChatScreen = ({ navigation, route }: Props) => {
         />
 
         {/* ── Composer ───────────────────────────────────── */}
-        <View style={styles.composer}>
+        <View style={[styles.composer, { paddingBottom: Math.max(insets.bottom, 10) }]}>
           <TouchableOpacity style={styles.attachBtn}>
             <Text style={styles.attachIcon}>+</Text>
           </TouchableOpacity>
@@ -594,7 +627,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "flex-end",
     paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingTop: 10,
     backgroundColor: "#fff",
     borderTopWidth: 1,
     borderTopColor: "#f0ecf5",

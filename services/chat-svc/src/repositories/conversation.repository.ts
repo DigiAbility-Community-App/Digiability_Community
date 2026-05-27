@@ -6,22 +6,31 @@
 // ─────────────────────────────────────────────────────────────
 
 import prisma from "../models/prisma.client";
-import { ConversationType, MemberRole } from "@prisma/client";
+import { Prisma, ConversationType, GroupSubType, MemberRole } from "../generated/client";
 import { logger } from "../config/logger";
 
 export interface CreateConversationInput {
   type: ConversationType;
+  subType?: GroupSubType;
   name?: string;
+  description?: string;
   createdBy: string;
   memberIds: string[];  // Does NOT include the creator (added automatically)
+  memberRoles?: Array<{ userId: string; role: MemberRole }>;
 }
 
 export interface ConversationWithMembers {
   id: string;
   type: ConversationType;
+  subType: GroupSubType | null;
   name: string | null;
+  description: string | null;
   avatarUrl: string | null;
   createdBy: string;
+  maxMembers: number;
+  editGroupInfo: string;
+  addMembers: string;
+  sendMessages: string;
   lastMessageText: string | null;
   lastMessageAt: Date | null;
   createdAt: Date;
@@ -41,39 +50,69 @@ class ConversationRepository {
    * Supports self-conversations (memberIds is empty).
    */
   async create(input: CreateConversationInput): Promise<ConversationWithMembers> {
-    const { type, name, createdBy, memberIds } = input;
+    const { type, subType, name, description, createdBy, memberIds, memberRoles } = input;
 
-    // Self-conversation: check for existing self-DM
-    const isSelfConversation = type === "DIRECT" && memberIds.length === 0;
+    // Self-conversation: user messaging themselves
+    const isSelfConversation =
+      type === "DIRECT" &&
+      memberIds.length === 1 &&
+      memberIds[0] === createdBy;
+
+    if (type === "DIRECT" && !isSelfConversation && memberIds.length !== 1) {
+      throw new Error("Direct conversations must have exactly one other member");
+    }
+
+    if (type === "GROUP" && !name) {
+      throw new Error("Group conversations must have a name");
+    }
+
+    // For self-conversations, pass empty uniqueMembers — repository handles it
+    const uniqueMembers = isSelfConversation
+      ? [] // creator-only conversation
+      : [...new Set(memberIds.filter((id) => id !== createdBy))];
+
+    if (!isSelfConversation && uniqueMembers.length === 0) {
+      throw new Error("At least one other member is required");
+    }
 
     if (type === "DIRECT") {
       if (isSelfConversation) {
-        // Check for existing self-conversation
         const existing = await this.findDirectConversation(createdBy, createdBy);
         if (existing) return existing;
       } else {
-        if (memberIds.length !== 1) {
-          throw new Error("DIRECT conversations must have exactly one other member");
-        }
-        const existing = await this.findDirectConversation(createdBy, memberIds[0]);
+        const existing = await this.findDirectConversation(createdBy, uniqueMembers[0]);
         if (existing) return existing;
       }
     }
 
-    // Build member entries: creator is OWNER, others are MEMBER
+    // Determine max members based on subType
+    const maxMembers = subType === "CARE_CIRCLE" ? 15 : 256;
+
+    // Build member entries
     const allMemberIds = isSelfConversation
       ? [createdBy]
-      : [createdBy, ...memberIds.filter((id) => id !== createdBy)];
+      : [createdBy, ...uniqueMembers];
+
+    // Build role map from memberRoles if provided
+    const roleMap = new Map<string, MemberRole>();
+    if (memberRoles) {
+      memberRoles.forEach((mr) => roleMap.set(mr.userId, mr.role as MemberRole));
+    }
 
     const conversation = await prisma.conversation.create({
       data: {
         type,
+        subType: type === "GROUP" ? (subType || "GENERAL") : null,
         name: type === "GROUP" ? name : null,
+        description: type === "GROUP" ? description : null,
         createdBy,
+        maxMembers,
         members: {
           create: allMemberIds.map((userId, index) => ({
             userId,
-            role: index === 0 ? "OWNER" as MemberRole : "MEMBER" as MemberRole,
+            role: index === 0
+              ? "OWNER" as MemberRole
+              : (roleMap.get(userId) || "MEMBER" as MemberRole),
           })),
         },
       },
@@ -92,6 +131,7 @@ class ConversationRepository {
     logger.info("Conversation created", {
       conversationId: conversation.id,
       userId: createdBy,
+      subType: conversation.subType,
       isSelfConversation,
     });
 
@@ -105,7 +145,6 @@ class ConversationRepository {
     userId1: string,
     userId2: string
   ): Promise<ConversationWithMembers | null> {
-    // Find conversations where both users are members and type is DIRECT
     const conversations = await prisma.conversation.findMany({
       where: {
         type: "DIRECT",
@@ -220,6 +259,15 @@ class ConversationRepository {
   }
 
   /**
+   * Get active member count for a conversation.
+   */
+  async getMemberCount(conversationId: string): Promise<number> {
+    return prisma.conversationMember.count({
+      where: { conversationId, leftAt: null },
+    });
+  }
+
+  /**
    * Get member role (for permission checks on group actions).
    */
   async getMemberRole(
@@ -283,6 +331,74 @@ class ConversationRepository {
         conversationId_userId: { conversationId, userId },
       },
       data: { leftAt: new Date() },
+    });
+  }
+
+  /**
+   * Update a member's role in a conversation.
+   */
+  async updateMemberRole(
+    conversationId: string,
+    userId: string,
+    role: MemberRole
+  ): Promise<void> {
+    await prisma.conversationMember.update({
+      where: {
+        conversationId_userId: { conversationId, userId },
+      },
+      data: { role },
+    });
+  }
+
+  /**
+   * Update group info (name, description).
+   */
+  async updateGroupInfo(
+    conversationId: string,
+    data: { name?: string; description?: string }
+  ): Promise<ConversationWithMembers | null> {
+    return prisma.conversation.update({
+      where: { id: conversationId },
+      data,
+      include: {
+        members: {
+          where: { leftAt: null },
+          select: {
+            userId: true,
+            role: true,
+            lastReadSequenceNo: true,
+            isMuted: true,
+          },
+        },
+      },
+    });
+  }
+
+  /**
+   * Update group permission settings.
+   */
+  async updateSettings(
+    conversationId: string,
+    settings: {
+      editGroupInfo?: string;
+      addMembers?: string;
+      sendMessages?: string;
+    }
+  ): Promise<ConversationWithMembers | null> {
+    return prisma.conversation.update({
+      where: { id: conversationId },
+      data: settings,
+      include: {
+        members: {
+          where: { leftAt: null },
+          select: {
+            userId: true,
+            role: true,
+            lastReadSequenceNo: true,
+            isMuted: true,
+          },
+        },
+      },
     });
   }
 }

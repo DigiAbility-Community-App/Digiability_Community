@@ -46,6 +46,7 @@ export interface DeliveryPayload {
   targetUserId: string;
   message: {
     messageId: string;
+    clientMessageId: string;
     conversationId: string;
     senderId: string;
     content: string;

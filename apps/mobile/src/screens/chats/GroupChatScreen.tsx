@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback, useEffect } from "react";
+import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import {
   View,
   Text,
@@ -42,7 +42,7 @@ const MEMBER_COLORS = [
 ];
 
 const GroupChatScreen = ({ navigation, route }: Props) => {
-  const { conversationId, groupName, memberCount } = route.params;
+  const { conversationId, groupName, subType } = route.params;
   const insets = useSafeAreaInsets();
   const user = useAuthStore((s) => s.user);
   const storeMessages = useChatStore((s) => s.messages[conversationId] || []);
@@ -64,6 +64,36 @@ const GroupChatScreen = ({ navigation, route }: Props) => {
     }
     return map;
   }, [conversation]);
+
+  // Deduplicate messages
+  const dedupedMessages = useMemo(() => {
+    const seen = new Map<string, ChatMessage>();
+    const seenClientIds = new Map<string, string>(); // clientMessageId → best id
+
+    for (const msg of storeMessages) {
+      if (msg.clientMessageId) {
+        const existingKey = seenClientIds.get(msg.clientMessageId);
+        if (existingKey) {
+          const existing = seen.get(existingKey);
+          if (existing && existing.id === existing.clientMessageId && msg.id !== msg.clientMessageId) {
+            seen.delete(existingKey);
+            seen.set(msg.id, msg);
+            seenClientIds.set(msg.clientMessageId, msg.id);
+          }
+          continue;
+        }
+        seenClientIds.set(msg.clientMessageId, msg.id);
+      }
+
+      if (!seen.has(msg.id)) {
+        seen.set(msg.id, msg);
+      }
+    }
+
+    return Array.from(seen.values()).sort(
+      (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+    );
+  }, [storeMessages]);
 
   // Assign stable colors based on member index
   const memberColorMap = useCallback(() => {
@@ -232,7 +262,7 @@ const GroupChatScreen = ({ navigation, route }: Props) => {
           <View style={styles.headerCenter}>
             <View style={styles.groupIconContainer}>
               <View style={styles.groupIcon}>
-                <Text style={styles.groupIconEmoji}>🤝</Text>
+                <Text style={styles.groupIconEmoji}>{subType === 'CARE_CIRCLE' ? '🦽' : '👥'}</Text>
               </View>
             </View>
             <View style={styles.headerInfo}>
@@ -249,7 +279,7 @@ const GroupChatScreen = ({ navigation, route }: Props) => {
   }
 
   return (
-    <ScreenWrapper>
+    <ScreenWrapper withBottomSafeArea={false}>
       {/* ── Header — paddingTop clears the translucent status bar via safe-area insets */}
       <View style={[styles.header, { paddingTop: insets.top + 10 }]}>
         <TouchableOpacity
@@ -259,10 +289,14 @@ const GroupChatScreen = ({ navigation, route }: Props) => {
           <Text style={styles.backText}>←</Text>
         </TouchableOpacity>
 
-        <View style={styles.headerCenter}>
+        <TouchableOpacity 
+          style={styles.headerCenter}
+          onPress={() => navigation.navigate("GroupInfo", { conversationId })}
+          activeOpacity={0.7}
+        >
           <View style={styles.groupIconContainer}>
             <View style={styles.groupIcon}>
-              <Text style={styles.groupIconEmoji}>🤝</Text>
+              <Text style={styles.groupIconEmoji}>{subType === 'CARE_CIRCLE' ? '🦽' : '👥'}</Text>
             </View>
           </View>
 
@@ -271,17 +305,17 @@ const GroupChatScreen = ({ navigation, route }: Props) => {
               {groupName}
             </Text>
             <Text style={styles.headerMembers}>
-              {conversation?.participants?.length || memberCount} members
+              {conversation?.participants?.length || 0} members
             </Text>
           </View>
-        </View>
+        </TouchableOpacity>
 
         <View style={styles.headerActions}>
-          <TouchableOpacity style={styles.headerActionBtn}>
-            <Text style={styles.headerActionIcon}>👥</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.headerActionBtn}>
-            <Text style={styles.headerActionIcon}>⋮</Text>
+          <TouchableOpacity 
+            style={styles.headerActionBtn}
+            onPress={() => navigation.navigate("GroupInfo", { conversationId })}
+          >
+            <Text style={styles.headerActionIcon}>⚙️</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -293,8 +327,8 @@ const GroupChatScreen = ({ navigation, route }: Props) => {
       >
         <FlatList
           ref={flatListRef}
-          data={storeMessages}
-          keyExtractor={(item) => item.id}
+          data={dedupedMessages}
+          keyExtractor={(item, index) => item.id ? `${item.id}-${index}` : `msg-${index}`}
           renderItem={renderMessage}
           contentContainerStyle={styles.messageList}
           showsVerticalScrollIndicator={false}
@@ -303,7 +337,7 @@ const GroupChatScreen = ({ navigation, route }: Props) => {
           }
           ListEmptyComponent={
             <View style={styles.emptyState}>
-              <Text style={styles.emptyIcon}>🤝</Text>
+              <Text style={styles.emptyIcon}>{subType === 'CARE_CIRCLE' ? '💜' : '🤝'}</Text>
               <Text style={styles.emptyTitle}>Welcome to {groupName}!</Text>
               <Text style={styles.emptySubtitle}>
                 Send the first message to start the conversation
@@ -313,7 +347,7 @@ const GroupChatScreen = ({ navigation, route }: Props) => {
         />
 
         {/* ── Composer ───────────────────────────────────── */}
-        <View style={styles.composer}>
+        <View style={[styles.composer, { paddingBottom: Math.max(insets.bottom, 10) }]}>
           <TouchableOpacity style={styles.attachBtn}>
             <Text style={styles.attachIcon}>+</Text>
           </TouchableOpacity>
@@ -552,7 +586,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "flex-end",
     paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingTop: 10,
     backgroundColor: "#fff",
     borderTopWidth: 1,
     borderTopColor: "#f0ecf5",
