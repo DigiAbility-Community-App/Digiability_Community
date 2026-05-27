@@ -1,0 +1,58 @@
+import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
+import { verifyJWT } from "./lib/jwt";
+
+export async function middleware(request: NextRequest) {
+  const { pathname } = request.nextUrl;
+  const sessionCookie = request.cookies.get("admin-session");
+  
+  const secret = process.env.JWT_SECRET || "super-secret-admin-key-2026";
+  let isValid = false;
+
+  if (sessionCookie?.value) {
+    const payload = await verifyJWT(sessionCookie.value, secret);
+    if (payload && payload.role === "admin") {
+      isValid = true;
+    }
+  }
+
+  // If trying to access dashboard/sub-routes or root "/" without a valid session, redirect to login
+  const isProtected = 
+    pathname === "/" || 
+    pathname.startsWith("/dashboard") || 
+    pathname.startsWith("/users") ||
+    pathname.startsWith("/moderation") ||
+    pathname.startsWith("/forums") ||
+    pathname.startsWith("/events") ||
+    pathname.startsWith("/analytics") ||
+    pathname.startsWith("/notifications") ||
+    pathname.startsWith("/settings");
+
+  if (isProtected) {
+    if (!isValid) {
+      const loginUrl = new URL("/login", request.url);
+      const response = NextResponse.redirect(loginUrl);
+      if (sessionCookie) {
+        response.cookies.delete("admin-session");
+      }
+      return response;
+    }
+  }
+
+  // If already logged in and visiting login, redirect to dashboard
+  if (pathname === "/login") {
+    if (isValid) {
+      const dashboardUrl = new URL("/dashboard", request.url);
+      return NextResponse.redirect(dashboardUrl);
+    }
+  }
+
+  return NextResponse.next();
+}
+
+// Matching all routes except static files, api routes, etc.
+export const config = {
+  matcher: [
+    "/((?!api|_next/static|_next/image|favicon.ico).*)",
+  ],
+};

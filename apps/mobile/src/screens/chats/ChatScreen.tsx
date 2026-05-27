@@ -17,6 +17,7 @@ import { useAuthStore } from "@store/authStore";
 import { useChatStore, ChatMessage } from "@store/chatStore";
 import { chatService } from "@services/chatService";
 import { sendSocketMessage } from "@services/socketService";
+import { generateUUID } from "../../utils/uuid";
 import ScreenWrapper from "../../components/layout/ScreenWrapper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 

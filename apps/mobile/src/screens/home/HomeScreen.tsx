@@ -16,7 +16,8 @@ import { AccessibleText } from "../../components/shared/AccessibleText";
 import { AccessibleButton } from "../../components/shared/AccessibleButton";
 import ScreenWrapper from "../../components/layout/ScreenWrapper";
 import AppHeader from "../../components/layout/AppHeader";
-import AppFooter from "../../components/layout/AppFooter";
+import { fetchAllEvents } from "../../services/eventService";
+import { forumService } from "../../services/forumService";
 
 // ----------------------
 // TYPES
@@ -51,9 +52,7 @@ const HomeScreen = () => {
 
   const [events, setEvents] = useState<EventType[]>([]);
 
-  const [communityPosts, setCommunityPosts] = useState<
-    CommunityPostType[]
-  >([]);
+  const [communityPosts, setCommunityPosts] = useState<any[]>([]);
 
   // ----------------------
   // FETCH DATA
@@ -67,72 +66,65 @@ const HomeScreen = () => {
     try {
       setLoading(true);
 
-      // ----------------------
-      // DUMMY DATA
-      // Replace with API later
-      // ----------------------
-
-      setTimeout(() => {
-        setEvents([
+      // Fetch real events from user-svc
+      let fetchedEvents = [];
+      try {
+        fetchedEvents = await fetchAllEvents();
+      } catch (err) {
+        console.log("Failed to fetch events, using dummy fallback:", err);
+        fetchedEvents = [
           {
             id: "1",
-            title:
-              "Adaptive Sports Workshop",
+            title: "Adaptive Sports Workshop",
             location: "Pune, Maharashtra",
             date: "24 AUG",
           },
-
           {
             id: "2",
-            title:
-              "Accessibility Awareness Camp",
+            title: "Accessibility Awareness Camp",
             location: "Mumbai",
             date: "30 AUG",
           },
-        ]);
+        ];
+      }
 
+      setEvents(fetchedEvents.slice(0, 3));
+
+      // Fetch popular forum posts
+      try {
+        const forumRes = await forumService.listQuestions({
+          sort: "popular",
+          limit: 3,
+        });
+        if (forumRes && forumRes.data) {
+          setCommunityPosts(forumRes.data);
+        } else {
+          setCommunityPosts([]);
+        }
+      } catch (err) {
+        console.log("Failed to fetch popular forum questions:", err);
+        // Fallback dummy data if service offline
         setCommunityPosts([
           {
             id: "1",
-            user: "Priya Sharma",
-            title:
-              "Best physiotherapy clinics?",
-            description:
-              "Looking for accessible clinics in Pune.",
-            likes: 12,
-            comments: 8,
+            author: { name: "Priya Sharma" },
+            title: "Best physiotherapy clinics?",
+            description: "Looking for accessible clinics in Pune.",
+            views: 124,
+            answerCount: 8,
           },
-
           {
             id: "2",
-            user: "Rahul",
-            title:
-              "Scholarship schemes for students",
-            description:
-              "Anyone aware of 2026 disability scholarships?",
-            likes: 20,
-            comments: 14,
+            author: { name: "Rahul" },
+            title: "Scholarship schemes for students",
+            description: "Anyone aware of 2026 disability scholarships?",
+            views: 95,
+            answerCount: 14,
           },
         ]);
+      }
 
-        setLoading(false);
-      }, 1500);
-
-      // ----------------------
-      // REAL API EXAMPLE
-      // ----------------------
-
-      /*
-      const response = await fetch(
-        "https://your-api.com/home"
-      );
-
-      const data = await response.json();
-
-      setEvents(data.events);
-      setCommunityPosts(data.communityPosts);
-      */
-
+      setLoading(false);
     } catch (error) {
       console.log(error);
       setLoading(false);
@@ -164,7 +156,7 @@ const HomeScreen = () => {
 
   return (
     <ScreenWrapper>
-      <AppHeader showLogo title="DigiAbility" showNotification hasUnreadNotifications={true} />
+      <AppHeader showLogo title="DigiAbility" showNotification hasUnreadNotifications={true} hideBackButton={true} />
 
       {/* BODY */}
       <ScrollView
@@ -445,25 +437,25 @@ const HomeScreen = () => {
                 ]}
                 onPress={() =>
                   navigation.navigate(
-                    "CommunityPost",
+                    "QuestionDetails",
                     {
-                      postId: post.id,
+                      questionId: post.id,
                     }
                   )
                 }
                 accessibilityRole="button"
-                accessibilityLabel={`Post by ${post.user}: ${post.title}`}
-                accessibilityHint="Double tap to read post comments"
+                accessibilityLabel={`Post by ${post.author?.name || "Anonymous"}: ${post.title}`}
+                accessibilityHint="Double tap to read post answers"
               >
-                <AccessibleText variant="caption">
-                  {post.user}
+                <AccessibleText variant="caption" style={{ color: colors.primary, fontWeight: '700' }}>
+                  {post.author?.name || "Anonymous"}
                 </AccessibleText>
 
-                <AccessibleText variant="title" style={{ fontSize: 18, marginTop: 2 }}>
+                <AccessibleText variant="title" style={{ fontSize: 18, marginTop: 4 }}>
                   {post.title}
                 </AccessibleText>
 
-                <AccessibleText variant="body" style={{ color: colors.subtext, marginTop: 4 }}>
+                <AccessibleText variant="body" style={{ color: colors.subtext, marginTop: 4 }} numberOfLines={2}>
                   {post.description}
                 </AccessibleText>
 
@@ -473,11 +465,11 @@ const HomeScreen = () => {
                   }
                 >
                   <AccessibleText variant="body" style={{ color: colors.subtext, marginRight: spacing.md }}>
-                    ❤️ {post.likes}
+                    👁️ {post.views || 0} views
                   </AccessibleText>
 
                   <AccessibleText variant="body" style={{ color: colors.subtext }}>
-                    💬 {post.comments}
+                    💬 {post.answerCount || 0} answers
                   </AccessibleText>
                 </View>
               </TouchableOpacity>
@@ -488,7 +480,6 @@ const HomeScreen = () => {
         <View style={{ height: 120 }} />
       </ScrollView>
 
-      <AppFooter activeTab="Home" />
     </ScreenWrapper>
   );
 };

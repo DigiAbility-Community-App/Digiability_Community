@@ -2,7 +2,7 @@ import React from "react";
 import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
 import { Calendar, Plus } from "lucide-react-native";
 
-const EventsTab = () => {
+const MentorsTab = () => {
   return (
     <View style={styles.container}>
       <View style={styles.emptyCard}>
@@ -25,7 +25,7 @@ const EventsTab = () => {
   );
 };
 
-export default EventsTab;
+export default MentorsTab;
 
 const styles = StyleSheet.create({
   container: {

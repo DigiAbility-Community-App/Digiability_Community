@@ -1,6 +1,6 @@
-import React from "react";
-import { View, StyleSheet, TouchableOpacity, Platform } from "react-native";
-import { useNavigation, useRoute } from "@react-navigation/native";
+import React, { useState, useRef, useEffect } from "react";
+import { View, StyleSheet, TouchableOpacity, Platform, Animated } from "react-native";
+import { useNavigation } from "@react-navigation/native";
 import { useTheme } from "../../theme/ThemeContext";
 import { AccessibleText } from "../shared/AccessibleText";
 import {
@@ -16,15 +16,25 @@ export interface AppFooterProps {
    * The currently active tab name.
    * Values: "Home" | "Community" | "Services" | "Learn" | "Profile"
    */
-  activeTab: "Home" | "Community" | "Services" | "Learn" | "Profile";
+  activeTab?: "Home" | "Community" | "Services" | "Learn" | "Profile";
+  // React Navigation Custom Tab Bar Props
+  state?: any;
+  descriptors?: any;
+  navigation?: any;
 }
 
 /**
  * AppFooter - A unified simulated bottom tab navigation bar.
  * Replaces duplicate tab code on all core screens with standard, premium accessibility features.
+ * Supports smooth spring-animated active tab indicators.
  */
-export const AppFooter: React.FC<AppFooterProps> = ({ activeTab }) => {
-  const navigation = useNavigation<any>();
+export const AppFooter: React.FC<AppFooterProps> = ({
+  activeTab,
+  state,
+  descriptors,
+  navigation,
+}) => {
+  const standaloneNavigation = useNavigation<any>();
   const { colors, highContrast, spacing } = useTheme();
 
   // Tab definitions
@@ -49,7 +59,7 @@ export const AppFooter: React.FC<AppFooterProps> = ({ activeTab }) => {
       id: "Services" as const,
       icon: LayoutGrid,
       label: "Services",
-      route: "Home",
+      route: "Services",
       accessibilityLabel: "Services tab",
       accessibilityHint: "Navigates to professional services listings",
     },
@@ -57,34 +67,84 @@ export const AppFooter: React.FC<AppFooterProps> = ({ activeTab }) => {
       id: "Learn" as const,
       icon: BookOpen,
       label: "Learn",
-      route: "Home", // Labeled 'Learn', but maps to the ChatsStack per current codebase standard
+      route: "Learn",
       accessibilityLabel: "Learn tab",
-      accessibilityHint: "Navigates to chat learning rooms and conversations",
+      accessibilityHint: "Navigates to the learning academy resources",
     },
     {
       id: "Profile" as const,
       icon: User,
       label: "Profile",
-      route: "HomeProfile", // Maps to the profile tab details screen
+      route: "HomeProfile",
       accessibilityLabel: "Profile tab",
       accessibilityHint: "Navigates to your profile and care settings",
     },
   ];
 
-  const handlePress = (tab: (typeof tabs)[number]) => {
-    if (tab.id === activeTab) return;
+  // Resolve current active tab
+  const getActiveTabName = () => {
+    if (state && state.routes && state.routes[state.index]) {
+      const routeName = state.routes[state.index].name;
+      if (routeName === "Home") return "Home";
+      if (routeName === "CommunityDetail") return "Community";
+      if (routeName === "Services") return "Services";
+      if (routeName === "Learn") return "Learn";
+      if (routeName === "HomeProfile") return "Profile";
+    }
+    return activeTab || "Home";
+  };
 
-    try {
-      navigation.navigate(tab.route);
-    } catch (e) {
-      console.warn(`Failed to navigate to route: ${tab.route}. Details:`, e);
-      // Fallback navigation or alerts if routes are undefined in navigator
+  const activeTabName = getActiveTabName();
+  const activeIndex = tabs.findIndex((t) => t.id === activeTabName);
+
+  // Dynamic layout measurement for sliding pill width
+  const [containerWidth, setContainerWidth] = useState(0);
+  const padding = 20; // 10 padding on left and right of navbar container
+  const tabWidth = containerWidth ? (containerWidth - padding) / 5 : 0;
+
+  const animX = useRef(new Animated.Value(activeIndex >= 0 ? activeIndex : 0)).current;
+
+  useEffect(() => {
+    if (activeIndex >= 0) {
+      Animated.spring(animX, {
+        toValue: activeIndex,
+        useNativeDriver: true,
+        tension: 40,
+        friction: 8,
+      }).start();
+    }
+  }, [activeIndex]);
+
+  const handlePress = (tab: (typeof tabs)[number]) => {
+    if (tab.id === activeTabName) return;
+
+    if (state && navigation) {
+      const event = navigation.emit({
+        type: "tabPress",
+        target: tab.route,
+        canPreventDefault: true,
+      });
+
+      if (!event.defaultPrevented) {
+        navigation.navigate({ name: tab.route, merge: true });
+      }
+    } else {
+      try {
+        standaloneNavigation.navigate(tab.route);
+      } catch (e) {
+        console.warn(`Failed to navigate to route: ${tab.route}. Details:`, e);
+      }
     }
   };
 
   const footerBg = highContrast ? "#FFFFFF" : "rgba(249, 248, 255, 0.95)";
   const activeColor = highContrast ? "#000000" : colors.primary;
   const inactiveColor = highContrast ? "#555555" : "#64748B";
+
+  const translateX = animX.interpolate({
+    inputRange: [0, 1, 2, 3, 4],
+    outputRange: [0, tabWidth, tabWidth * 2, tabWidth * 3, tabWidth * 4],
+  });
 
   return (
     <View
@@ -99,9 +159,23 @@ export const AppFooter: React.FC<AppFooterProps> = ({ activeTab }) => {
         },
       ]}
       accessibilityRole="tablist"
+      onLayout={(e) => setContainerWidth(e.nativeEvent.layout.width)}
     >
+      {/* Sliding Active Pill Background (Standard mode only) */}
+      {tabWidth > 0 && !highContrast && (
+        <Animated.View
+          style={[
+            styles.activePill,
+            {
+              width: tabWidth + 4,
+              transform: [{ translateX }],
+            },
+          ]}
+        />
+      )}
+
       {tabs.map((tab) => {
-        const isSelected = tab.id === activeTab;
+        const isSelected = tab.id === activeTabName;
 
         return (
           <TouchableOpacity
@@ -109,29 +183,26 @@ export const AppFooter: React.FC<AppFooterProps> = ({ activeTab }) => {
             onPress={() => handlePress(tab)}
             style={[
               styles.navItem,
-              isSelected &&
-              styles.activeNavItem,
+              isSelected && highContrast && styles.highContrastActiveNavItem,
             ]}
             accessible={true}
             accessibilityRole="tab"
             accessibilityState={{
               selected: isSelected,
             }}
-            accessibilityLabel={
-              tab.accessibilityLabel
-            }
-            accessibilityHint={
-              tab.accessibilityHint
-            }
+            accessibilityLabel={tab.accessibilityLabel}
+            accessibilityHint={tab.accessibilityHint}
             activeOpacity={0.85}
           >
             <tab.icon
               size={20}
               strokeWidth={2.4}
               color={
-                isSelected
+                isSelected && !highContrast
                   ? "#FFFFFF"
-                  : inactiveColor
+                  : isSelected && highContrast
+                    ? "#FFFFFF"
+                    : inactiveColor
               }
             />
 
@@ -142,9 +213,11 @@ export const AppFooter: React.FC<AppFooterProps> = ({ activeTab }) => {
               style={[
                 styles.navText,
                 {
-                  color: isSelected
+                  color: isSelected && !highContrast
                     ? "#FFFFFF"
-                    : inactiveColor,
+                    : isSelected && highContrast
+                      ? "#FFFFFF"
+                      : inactiveColor,
                 },
               ]}
             >
@@ -193,14 +266,22 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-
     paddingVertical: 10,
     borderRadius: 20,
   },
-  activeNavItem: {
-    backgroundColor: "#6B21A8",
+  highContrastActiveNavItem: {
+    backgroundColor: "#000000",
+    borderWidth: 2,
+    borderColor: "#FFFFFF",
   },
-
+  activePill: {
+    position: "absolute",
+    left: 8,
+    top: 10,
+    bottom: Platform.OS === "ios" ? 25 : 10,
+    backgroundColor: "#6B21A8",
+    borderRadius: 20,
+  },
   navText: {
     fontSize: 11,
     marginTop: 4,
