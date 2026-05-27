@@ -15,9 +15,8 @@ import AppHeader from "../../components/layout/AppHeader";
 
 import GroupsTab from "../../components/community/GroupsTab";
 import ForumsTab from "../../components/community/ForumsTab";
-import EventsTab from "../../components/community/EventsTab";
+import MentorsTab from "../../components/community/MentorsTab";
 import ChatsTab from "../../components/community/ChatsTab";
-import AppFooter from "@components/layout/AppFooter";
 
 const initialLayout = {
     width: Dimensions.get("window").width,
@@ -31,7 +30,7 @@ const CommunityScreen = ({
         useState(() => {
             const initial = route?.params?.initialTab;
             if (initial === "forums") return 1;
-            if (initial === "events") return 2;
+            if (initial === "mentors") return 2;
             if (initial === "chats") return 3;
             return 0;
         });
@@ -48,8 +47,8 @@ const CommunityScreen = ({
         },
 
         {
-            key: "events",
-            title: "Events",
+            key: "mentors",
+            title: "Mentors",
         },
 
         {
@@ -68,8 +67,8 @@ const CommunityScreen = ({
             case "forums":
                 return <ForumsTab />;
 
-            case "events":
-                return <EventsTab />;
+            case "mentors":
+                return <MentorsTab />;
 
             case "chats":
                 return <ChatsTab />;
@@ -140,6 +139,7 @@ const CommunityScreen = ({
             <AppHeader
                 title="Community"
                 showNotification
+                hideBackButton={true}
                 onNotificationPress={() =>
                     navigation.navigate(
                         "Notifications"
@@ -168,7 +168,6 @@ const CommunityScreen = ({
                 swipeEnabled
                 lazy
             />
-            <AppFooter activeTab="Community" />
         </ScreenWrapper>
 
     );

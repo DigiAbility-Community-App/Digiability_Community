@@ -151,3 +151,25 @@ model PasswordResetToken {
   @@index([token])
   @@map("password_reset_tokens")
 }
+
+// ─────────────────────────────────────────────
+// EVENT
+// ─────────────────────────────────────────────
+model Event {
+  id          String   @id @default(uuid())
+  title       String
+  category    String
+  location    String
+  date        String
+  time        String?
+  image       String
+  description String
+  spots       Int      @default(50)
+  buttonType  String   @default("filled")
+  externalUrl String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("events")
+}
+

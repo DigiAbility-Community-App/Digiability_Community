@@ -346,7 +346,7 @@ const ConversationListScreen = ({ navigation: propNavigation, isTab = false }: P
         }
       />
       {renderBody()}
-      <AppFooter activeTab="Learn" />
+      <AppFooter activeTab="Community" />
     </ScreenWrapper>
   );
 };

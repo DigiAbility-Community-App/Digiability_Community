@@ -13,7 +13,6 @@ import { AccessibleText } from "../../components/shared/AccessibleText";
 import { AccessibleButton } from "../../components/shared/AccessibleButton";
 import ScreenWrapper from "../../components/layout/ScreenWrapper";
 import AppHeader from "../../components/layout/AppHeader";
-import AppFooter from "../../components/layout/AppFooter";
 
 const ProfileScreen = () => {
     const navigation = useNavigation<any>();
@@ -85,6 +84,7 @@ const ProfileScreen = () => {
             {/* HEADER */}
             <AppHeader
                 title="Profile"
+                hideBackButton={true}
                 rightActions={
                     <TouchableOpacity
                         style={styles.headerRightTouch}
@@ -343,10 +343,7 @@ const ProfileScreen = () => {
                     LOGOUT
                 </AccessibleButton>
 
-                <View style={{ height: 120 }} />
             </ScrollView>
-
-            <AppFooter activeTab="Profile" />
         </ScreenWrapper>
     );
 };
@@ -483,6 +480,7 @@ const styles = StyleSheet.create({
         justifyContent: "center",
         alignItems: "center",
         flexDirection: "row",
+        paddingVertical: 0,
     },
 
     // Legacy navbar style removed

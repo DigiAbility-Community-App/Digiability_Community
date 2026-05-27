@@ -1,26 +1,27 @@
 import React, { useEffect, useState } from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
-import HomeScreen from '@screens/home/HomeScreen';
+import MainTabNavigator from './MainTabNavigator';
 import RoleSelectionScreen from '@screens/auth/RoleSelection';
 import AccessibilityScreen from '@screens/auth/AccessibilityScreen';
 import ProfileScreen from '@screens/profile/ProfileScreen';
 import ProfileDetailsScreen from '@screens/profile/ProfileDetailsScreen';
 import CareCircleScreen from '@screens/profile/CareCircleScreen';
 import NotificationsScreen from '@screens/home/NotificationScreen';
-import HomeProfileScreen from '@screens/profile/HomeProfileScreen';
 import EditProfileScreen from '@screens/profile/EditProfileScreen';
 import ChatsStack from './ChatsStack';
-import CommunityDetailScreen from '@screens/community/CommunityDetailScreen';
 import AskQuestionScreen from '@screens/community/AskQuestionScreen';
 import QuestionDetailsScreen from '@screens/community/QuestionDetailsScreen';
 import SolvedQuestionsScreen from '@screens/community/SolvedQuestionsScreen';
 import SearchScreen from '@screens/community/SearchScreen';
+import EventsScreen from '@screens/events/EventsScreen';
+import EventDetailsScreen from '@screens/events/EventDetailScreen';
+import LeavePortalScreen from '@screens/events/LeavePortalScreen';
 import { useAuthStore } from '@store/authStore';
 import { hasCompletedAccessibility } from '@services/storageService';
 
 export type MainStackParamList = {
-  Home: undefined;
+  MainTabs: undefined;
   Accessibility: undefined;
   RoleSelection: undefined;
   Profile: undefined;
@@ -28,13 +29,14 @@ export type MainStackParamList = {
   CareCircle: undefined;
   Chats: undefined;
   Notifications: undefined;
-  HomeProfile: undefined;
   EditProfile: undefined;
-  CommunityDetail: undefined;
   AskQuestion: undefined;
   QuestionDetails: { questionId: string };
   SolvedQuestions: undefined;
   SearchQuestions: undefined;
+  Events: undefined;
+  EventDetails: { eventId: string };
+  LeavePortal: { eventId: string; externalUrl: string; eventTitle: string };
 };
 
 const Stack = createNativeStackNavigator<MainStackParamList>();
@@ -46,17 +48,17 @@ const Stack = createNativeStackNavigator<MainStackParamList>();
  * Priority order for new/incomplete users:
  *   1. No role        → Accessibility  (first step of onboarding)
  *   2. Has role, no profile → Profile  (accessibility was already done)
- *   3. Complete user  → Accessibility  (will be upgraded to Home async)
+ *   3. Complete user  → Accessibility  (will be upgraded to MainTabs async)
  */
 function getFallbackRoute(
   user: ReturnType<typeof useAuthStore.getState>['user']
 ): keyof MainStackParamList {
-  if (!user) return 'Home';
+  if (!user) return 'MainTabs';
   // New user — no role chosen yet: start the full onboarding from Accessibility
   if (!user.roles || user.roles.length === 0) return 'Accessibility';
   // Has role but profile not complete: skip back to Profile
   if (!user.profileComplete) return 'Profile';
-  // Returning user: will be resolved to 'Home' after async accessibility check
+  // Returning user: will be resolved to 'MainTabs' after async accessibility check
   return 'Accessibility';
 }
 
@@ -73,7 +75,7 @@ const MainNavigator = () => {
     const resolveInitialRoute = async () => {
       if (!user?.id) {
         if (isMounted) {
-          setInitialRoute('Home');
+          setInitialRoute('MainTabs');
           setIsLoading(false);
         }
         return;
@@ -103,7 +105,7 @@ const MainNavigator = () => {
       try {
         const accessibilityDone = await hasCompletedAccessibility(user.id);
         if (isMounted) {
-          setInitialRoute(accessibilityDone ? 'Home' : 'Accessibility');
+          setInitialRoute(accessibilityDone ? 'MainTabs' : 'Accessibility');
           setIsLoading(false);
         }
       } catch {
@@ -140,16 +142,17 @@ const MainNavigator = () => {
       <Stack.Screen name="Profile" component={ProfileScreen} />
       <Stack.Screen name="ProfileDetails" component={ProfileDetailsScreen} />
       <Stack.Screen name="CareCircle" component={CareCircleScreen} />
-      <Stack.Screen name="Home" component={HomeScreen} />
+      <Stack.Screen name="MainTabs" component={MainTabNavigator} />
       <Stack.Screen name="Chats" component={ChatsStack} />
       <Stack.Screen name="Notifications" component={NotificationsScreen} />
-      <Stack.Screen name="HomeProfile" component={HomeProfileScreen} />
       <Stack.Screen name="EditProfile" component={EditProfileScreen} />
-      <Stack.Screen name="CommunityDetail" component={CommunityDetailScreen} />
       <Stack.Screen name="AskQuestion" component={AskQuestionScreen} />
       <Stack.Screen name="QuestionDetails" component={QuestionDetailsScreen} />
       <Stack.Screen name="SolvedQuestions" component={SolvedQuestionsScreen} />
       <Stack.Screen name="SearchQuestions" component={SearchScreen} />
+      <Stack.Screen name="Events" component={EventsScreen} />
+      <Stack.Screen name="EventDetails" component={EventDetailsScreen} />
+      <Stack.Screen name="LeavePortal" component={LeavePortalScreen} />
     </Stack.Navigator>
   );
 };

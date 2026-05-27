@@ -51,6 +51,10 @@ export interface AppHeaderProps {
    * If true, shows the orange notification badge over the notification bell.
    */
   hasUnreadNotifications?: boolean;
+  /**
+   * If true, hides the back button even if navigation history is present.
+   */
+  hideBackButton?: boolean;
 }
 
 /**
@@ -68,6 +72,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
   onNotificationPress,
   onProfilePress,
   hasUnreadNotifications = false,
+  hideBackButton = false,
 }) => {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<any>();
@@ -122,7 +127,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
       <View style={[styles.headerInner, { height: headerContentHeight }]}>
         {/* LEFT SECTION */}
         <View style={styles.leftSection}>
-          {onBackPress !== undefined || navigation.canGoBack() ? (
+          {!hideBackButton && (onBackPress !== undefined || navigation.canGoBack()) ? (
             <TouchableOpacity
               style={[styles.actionButton, styles.touchTarget]}
               onPress={handleBack}
