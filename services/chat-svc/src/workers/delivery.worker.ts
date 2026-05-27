@@ -329,11 +329,13 @@ function sleep(ms: number): Promise<void> {
 process.on("SIGTERM", () => {
   logger.info("SIGTERM received — shutting down delivery worker");
   isShuttingDown = true;
+  setTimeout(() => process.exit(0), 500);
 });
 
 process.on("SIGINT", () => {
   logger.info("SIGINT received — shutting down delivery worker");
   isShuttingDown = true;
+  setTimeout(() => process.exit(0), 500);
 });
 
 main().catch((err) => {

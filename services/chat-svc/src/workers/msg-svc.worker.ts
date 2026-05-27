@@ -262,11 +262,13 @@ function sleep(ms: number): Promise<void> {
 process.on("SIGTERM", () => {
   logger.info("SIGTERM received — shutting down msg-svc worker");
   isShuttingDown = true;
+  setTimeout(() => process.exit(0), 500); // Force exit if blocked
 });
 
 process.on("SIGINT", () => {
   logger.info("SIGINT received — shutting down msg-svc worker");
   isShuttingDown = true;
+  setTimeout(() => process.exit(0), 500); // Force exit if blocked
 });
 
 // Start the worker
