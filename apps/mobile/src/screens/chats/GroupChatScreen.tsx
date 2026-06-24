@@ -9,6 +9,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
+  Keyboard,
 } from "react-native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { RouteProp } from "@react-navigation/native";
@@ -20,6 +21,7 @@ import { sendSocketMessage } from "@services/socketService";
 import { generateUUID } from "../../utils/uuid";
 import ScreenWrapper from "../../components/layout/ScreenWrapper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { Check, CheckCheck } from "lucide-react-native";
 
 // ─────────────────────────────────────────────────────────
 // Group Chat Screen — Care Circle / Group Thread
@@ -52,6 +54,22 @@ const GroupChatScreen = ({ navigation, route }: Props) => {
 
   const [messageText, setMessageText] = useState("");
   const [isLoading, setIsLoading] = useState(true);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+
+  useEffect(() => {
+    if (Platform.OS !== "android") return;
+    const showSub = Keyboard.addListener("keyboardDidShow", (e) => {
+      setKeyboardHeight(e.endCoordinates.height);
+    });
+    const hideSub = Keyboard.addListener("keyboardDidHide", () => {
+      setKeyboardHeight(0);
+    });
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
+
   const flatListRef = useRef<FlatList>(null);
 
   // Build a userId → name map from conversation participants
@@ -241,9 +259,17 @@ const GroupChatScreen = ({ navigation, route }: Props) => {
                 {timeString}
               </Text>
               {isMine && (
-                <Text style={styles.statusIcon}>
-                  {item.status === "read" ? "✓✓" : item.status === "delivered" ? "✓✓" : "✓"}
-                </Text>
+                <View style={{ marginLeft: 4 }}>
+                  {item.status === "sending" ? (
+                    <Text style={{ color: "rgba(255,255,255,0.7)", fontSize: 10 }}>...</Text>
+                  ) : item.status === "read" ? (
+                    <CheckCheck size={14} color="#38bdf8" />
+                  ) : item.status === "delivered" ? (
+                    <CheckCheck size={14} color="rgba(255,255,255,0.8)" />
+                  ) : (
+                    <Check size={14} color="rgba(255,255,255,0.8)" />
+                  )}
+                </View>
               )}
             </View>
           </View>
@@ -321,63 +347,117 @@ const GroupChatScreen = ({ navigation, route }: Props) => {
       </View>
 
       {/* ── Messages ─────────────────────────────────────── */}
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-      >
-        <FlatList
-          ref={flatListRef}
-          data={dedupedMessages}
-          keyExtractor={(item, index) => item.id ? `${item.id}-${index}` : `msg-${index}`}
-          renderItem={renderMessage}
-          contentContainerStyle={styles.messageList}
-          showsVerticalScrollIndicator={false}
-          onContentSizeChange={() =>
-            flatListRef.current?.scrollToEnd({ animated: false })
-          }
-          ListEmptyComponent={
-            <View style={styles.emptyState}>
-              <Text style={styles.emptyIcon}>{subType === 'CARE_CIRCLE' ? '💜' : '🤝'}</Text>
-              <Text style={styles.emptyTitle}>Welcome to {groupName}!</Text>
-              <Text style={styles.emptySubtitle}>
-                Send the first message to start the conversation
-              </Text>
-            </View>
-          }
-        />
-
-        {/* ── Composer ───────────────────────────────────── */}
-        <View style={[styles.composer, { paddingBottom: Math.max(insets.bottom, 10) }]}>
-          <TouchableOpacity style={styles.attachBtn}>
-            <Text style={styles.attachIcon}>+</Text>
-          </TouchableOpacity>
-
-          <View style={styles.inputContainer}>
-            <TextInput
-              style={styles.textInput}
-              placeholder="Message the group..."
-              placeholderTextColor="#999"
-              value={messageText}
-              onChangeText={setMessageText}
-              multiline
-              maxLength={5000}
+      <View style={{ flex: 1, paddingBottom: Platform.OS === 'android' ? (keyboardHeight > 0 ? keyboardHeight + 10 : 0) : 0 }}>
+        {Platform.OS === 'ios' ? (
+          <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding" keyboardVerticalOffset={0}>
+            {/* iOS wrapper */}
+            <FlatList
+              ref={flatListRef}
+              data={[...dedupedMessages].reverse()}
+              inverted
+              keyExtractor={(item, index) => item.id ? `${item.id}-${index}` : `msg-${index}`}
+              renderItem={renderMessage}
+              contentContainerStyle={[styles.messageList, { paddingBottom: 10 }]}
+              showsVerticalScrollIndicator={false}
+              ListEmptyComponent={
+                <View style={styles.emptyState}>
+                  <Text style={styles.emptyIcon}>{subType === 'CARE_CIRCLE' ? '💜' : '🤝'}</Text>
+                  <Text style={styles.emptyTitle}>Welcome to {groupName}!</Text>
+                  <Text style={styles.emptySubtitle}>
+                    Send the first message to start the conversation
+                  </Text>
+                </View>
+              }
             />
-          </View>
 
-          <TouchableOpacity
-            style={[
-              styles.sendBtn,
-              messageText.trim() ? styles.sendBtnActive : {},
-            ]}
-            onPress={handleSend}
-            disabled={!messageText.trim()}
-          >
-            <Text style={styles.sendIcon}>
-              {messageText.trim() ? "➤" : "🎤"}
-            </Text>
-          </TouchableOpacity>
-        </View>
-      </KeyboardAvoidingView>
+            {/* ── Composer ───────────────────────────────────── */}
+            <View style={[styles.composer, { paddingBottom: Math.max(insets.bottom, 10) }]}>
+              <TouchableOpacity style={styles.attachBtn}>
+                <Text style={styles.attachIcon}>+</Text>
+              </TouchableOpacity>
+
+              <View style={styles.inputContainer}>
+                <TextInput
+                  style={styles.textInput}
+                  placeholder="Message the group..."
+                  placeholderTextColor="#999"
+                  value={messageText}
+                  onChangeText={setMessageText}
+                  multiline
+                  maxLength={5000}
+                />
+              </View>
+
+              <TouchableOpacity
+                style={[
+                  styles.sendBtn,
+                  messageText.trim() ? styles.sendBtnActive : {},
+                ]}
+                onPress={handleSend}
+                disabled={!messageText.trim()}
+              >
+                <Text style={styles.sendIcon}>
+                  {messageText.trim() ? "➤" : "🎤"}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </KeyboardAvoidingView>
+        ) : (
+          /* Android wrapper */
+          <>
+            <FlatList
+              ref={flatListRef}
+              data={[...dedupedMessages].reverse()}
+              inverted
+              keyExtractor={(item, index) => item.id ? `${item.id}-${index}` : `msg-${index}`}
+              renderItem={renderMessage}
+              contentContainerStyle={[styles.messageList, { paddingBottom: 10 }]}
+              showsVerticalScrollIndicator={false}
+              ListEmptyComponent={
+                <View style={styles.emptyState}>
+                  <Text style={styles.emptyIcon}>{subType === 'CARE_CIRCLE' ? '💜' : '🤝'}</Text>
+                  <Text style={styles.emptyTitle}>Welcome to {groupName}!</Text>
+                  <Text style={styles.emptySubtitle}>
+                    Send the first message to start the conversation
+                  </Text>
+                </View>
+              }
+            />
+
+            {/* ── Composer ───────────────────────────────────── */}
+            <View style={[styles.composer, { paddingBottom: Math.max(insets.bottom, 10) }]}>
+              <TouchableOpacity style={styles.attachBtn}>
+                <Text style={styles.attachIcon}>+</Text>
+              </TouchableOpacity>
+
+              <View style={styles.inputContainer}>
+                <TextInput
+                  style={styles.textInput}
+                  placeholder="Message the group..."
+                  placeholderTextColor="#999"
+                  value={messageText}
+                  onChangeText={setMessageText}
+                  multiline
+                  maxLength={5000}
+                />
+              </View>
+
+              <TouchableOpacity
+                style={[
+                  styles.sendBtn,
+                  messageText.trim() ? styles.sendBtnActive : {},
+                ]}
+                onPress={handleSend}
+                disabled={!messageText.trim()}
+              >
+                <Text style={styles.sendIcon}>
+                  {messageText.trim() ? "➤" : "🎤"}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </>
+        )}
+      </View>
     </ScreenWrapper>
   );
 };

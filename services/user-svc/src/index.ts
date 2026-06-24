@@ -7,6 +7,7 @@ import prisma from "./models/prisma.client";
 import authRoutes from "./routes/auth.routes";
 import profileRoutes from "./routes/profile.routes";
 import eventRoutes from "./routes/event.routes";
+import mentorRoutes from "./routes/mentor.routes";
 import { errorHandler, notFoundHandler } from "./middleware/error.middleware";
 
 // ─────────────────────────────────────────────────────
@@ -96,6 +97,7 @@ app.get("/health", (_req, res) => {
 app.use("/api/auth", authRoutes);
 app.use("/api/users/profiles", profileRoutes);
 app.use("/api/users/profile", profileRoutes);
+app.use("/api/users/mentors", mentorRoutes);
 app.use("/api/events", eventRoutes);
 
 // ─── 404 Handler ───────────────────────────────────────

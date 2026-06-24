@@ -11,6 +11,7 @@ export const WS_EVENTS = {
   MESSAGE_SEND: "message.send",
   MESSAGE_DELIVERED: "message.delivered",
   MESSAGE_READ: "message.read",
+  MESSAGE_DELETE: "message.delete",
   TYPING_START: "typing.start",
   TYPING_STOP: "typing.stop",
   SESSION_PING: "session.ping",
@@ -81,6 +82,12 @@ export interface SyncRequestPayload {
     conversationId: string;
     lastSequenceNo: number;
   }>;
+}
+
+export interface MessageDeletePayload {
+  messageId: string;
+  conversationId: string;
+  deleteFor: "everyone" | "me";
 }
 
 // ─── Server → Client Payloads ─────────────────────────────────

@@ -15,6 +15,7 @@
     "lint": "turbo run lint",
     "test": "turbo run test",
     "user-svc:dev": "npm run dev --workspace=@digiability/user-svc",
+    "web:dev": "npm run dev --workspace=@digiability/web",
     "user-svc:migrate": "npm run db:migrate --workspace=@digiability/user-svc",
     "user-svc:generate": "npm run db:generate --workspace=@digiability/user-svc",
     "chat-svc:dev": "npm run dev --workspace=@digiability/chat-svc",

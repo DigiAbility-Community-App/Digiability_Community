@@ -7,7 +7,7 @@ export interface ChatMessage {
   senderId: string;
   content: string;
   type: string;
-  status: 'sent' | 'delivered' | 'read' | 'failed';
+  status: 'sending' | 'sent' | 'delivered' | 'read' | 'failed';
   createdAt: string;
 }
 
@@ -32,6 +32,8 @@ export interface Conversation {
   sendMessages?: 'ADMINS_ONLY' | 'ALL_MEMBERS';
   participants: ConversationParticipant[];
   lastMessage?: ChatMessage;
+  lastMessageText?: string;
+  lastMessageAt?: string;
   unreadCount: number;
   updatedAt: string;
 }
@@ -82,6 +84,9 @@ interface ChatState {
   updatePresence: (userId: string, status: string, lastSeen: string) => void;
   updateTyping: (conversationId: string, userId: string, isTyping: boolean) => void;
   
+  clearUnreadCount: (conversationId: string) => void;
+  incrementUnreadCount: (conversationId: string) => void;
+
   clearStore: () => void;
 }
 
@@ -169,6 +174,8 @@ export const useChatStore = create<ChatState>((set) => ({
         updatedConversations[message.conversationId] = {
           ...conv,
           lastMessage: message,
+          lastMessageText: message.type === 'IMAGE' ? '[Image]' : message.content,
+          lastMessageAt: message.createdAt,
           updatedAt: message.createdAt
         };
       }
@@ -221,6 +228,30 @@ export const useChatStore = create<ChatState>((set) => ({
         : currentTyping.filter((id) => id !== userId);
       return {
         typing: { ...state.typing, [conversationId]: newTyping },
+      };
+    }),
+
+  clearUnreadCount: (conversationId) =>
+    set((state) => {
+      const conv = state.conversations[conversationId];
+      if (!conv || conv.unreadCount === 0) return state;
+      return {
+        conversations: {
+          ...state.conversations,
+          [conversationId]: { ...conv, unreadCount: 0 }
+        }
+      };
+    }),
+
+  incrementUnreadCount: (conversationId) =>
+    set((state) => {
+      const conv = state.conversations[conversationId];
+      if (!conv) return state;
+      return {
+        conversations: {
+          ...state.conversations,
+          [conversationId]: { ...conv, unreadCount: (conv.unreadCount || 0) + 1 }
+        }
       };
     }),
 

@@ -20,10 +20,16 @@ export const initSocket = () => {
   const token = useAuthStore.getState().accessToken;
   if (!token) return;
 
-  const baseUrl = (process.env.EXPO_PUBLIC_API_BASE_URL ?? 'http://10.0.2.2:4001').replace('http', 'ws');
+  const baseUrl = (process.env.EXPO_PUBLIC_API_BASE_URL ?? 'http://10.0.2.2:4001');
   // Hack: our chat-svc runs on port 4002 locally. If BASE_URL is 4001, switch it.
-  const wsUrl = baseUrl.replace('4001', '4002') + `/ws?token=${token}`;
+  const wsUrl = baseUrl.replace('4001', '4002').replace('http', 'ws') + `/ws?token=${token}`;
+  
+  if (socket?.readyState === WebSocket.OPEN || socket?.readyState === WebSocket.CONNECTING) {
+    console.log('[ForumSocket] Socket already open/connecting, skipping init');
+    return;
+  }
 
+  console.log(`[ForumSocket] Connecting to ${wsUrl}...`);
   socket = new WebSocket(wsUrl);
 
   socket.onopen = () => {
@@ -133,6 +139,8 @@ const handleSocketEvent = (message: any) => {
       };
       console.log('[WS-EVENT] message.new → addMessage', mapped.id, 'conv:', mapped.conversationId);
       store.addMessage(mapped);
+      // Increment unread count
+      store.incrementUnreadCount(payload.conversationId);
       // Send delivery receipt to server
       sendSocketMessage('message.delivered', {
         messageId: payload.messageId,
@@ -151,13 +159,9 @@ const handleSocketEvent = (message: any) => {
       }
       break;
 
-    case 'message.delivered':
-      console.log('[WS-EVENT] message.delivered:', payload.messageIds || payload.messageId);
+    case 'message.delivered.receipt':
+      console.log('[WS-EVENT] message.delivered.receipt:', payload.messageIds || payload.messageId);
       store.updateMessageStatus(payload.messageIds || [payload.messageId], 'delivered');
-      break;
-
-    case 'message.read':
-      store.updateMessageStatus(payload.messageIds || [payload.messageId], 'read');
       break;
 
     case 'presence.update':

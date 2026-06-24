@@ -98,14 +98,15 @@ export async function handleMessageRead(
       await messageRepository.updateReadCursor(conversationId, userId, result.sequenceNo);
 
       // Broadcast receipt to sender
-      await broadcastReceipt({
-        targetUserId: result.senderId,
-        messageId,
-        conversationId,
-        userId,
-        type: "read",
-        timestamp: Date.now(),
-      });
+      // Deliberately disabled to prevent read receipts from leaking to senders, ensuring privacy.
+      // await broadcastReceipt({
+      //   targetUserId: result.senderId,
+      //   messageId,
+      //   conversationId,
+      //   userId,
+      //   type: "read",
+      //   timestamp: Date.now(),
+      // });
     }
 
     logger.debug("Read receipt processed", { messageId, conversationId, userId, connId });

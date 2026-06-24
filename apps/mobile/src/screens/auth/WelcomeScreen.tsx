@@ -322,172 +322,56 @@ const WelcomeScreen = ({ navigation }: Props) => {
                 accessibilityHint="Enter your account password"
               />
 
->>>>>>> 3cad8fb (Fixed chatting and Group creation bugs)
               <TouchableOpacity
-                style={[
-                  styles.tabBtn,
-                  activeTab === "SignUp" && { borderBottomColor: colors.primary },
-                ]}
-                onPress={() => handleTabChange("SignUp")}
-                accessibilityRole="tab"
-                accessibilityState={{ selected: activeTab === "SignUp" }}
-                accessibilityLabel="Sign Up Tab"
-                accessibilityHint="Double tap to switch to registration form"
+                style={styles.forgotBtn}
+                accessibilityRole="button"
+                accessibilityLabel="Forgot Password"
+                accessibilityHint="Launches recovery steps for lost passwords"
               >
-                <AccessibleText
-                  variant="title"
-                  style={{
-                    color: activeTab === "SignUp" ? colors.primary : colors.subtext,
-                  }}
-                >
-                  Sign Up
+                <AccessibleText variant="body" color={colors.primary} style={{ fontWeight: '600' }}>
+                  Forgot password?
                 </AccessibleText>
               </TouchableOpacity>
 
-              <TouchableOpacity
-                style={[
-                  styles.tabBtn,
-                  activeTab === "Login" && { borderBottomColor: colors.primary },
-                ]}
-                onPress={() => handleTabChange("Login")}
-                accessibilityRole="tab"
-                accessibilityState={{ selected: activeTab === "Login" }}
-                accessibilityLabel="Login Tab"
-                accessibilityHint="Double tap to switch to login form"
-              >
-                <AccessibleText
-                  variant="title"
-                  style={{
-                    color: activeTab === "Login" ? colors.primary : colors.subtext,
-                  }}
-                >
-                  Login
-                </AccessibleText>
-              </TouchableOpacity>
-            </View>
-
-            {/* ERROR */}
-            {error && (
-              <View style={styles.errorBanner}>
-                <AccessibleText variant="body" color="#C62828" accessibilityRole="alert">
-                  ⚠️ {error}
-                </AccessibleText>
-              </View>
-            )}
-
-            {/* SIGNUP */}
-            {activeTab === "SignUp" && (
-              <View style={styles.form}>
-                <Input
-                  label="Full Name"
-                  placeholder="Enter your full name"
-                  value={name}
-                  onChangeText={setName}
-                  accessibilityHint="Enter your first and last name"
-                />
-
-                <Input
-                  label="Email"
-                  placeholder="you@example.com"
-                  value={signUpEmail}
-                  onChangeText={setSignUpEmail}
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                  accessibilityHint="Enter your email address"
-                />
-
-                <Input
-                  label="Password"
-                  placeholder="Min. 8 characters"
-                  value={signUpPassword}
-                  onChangeText={setSignUpPassword}
-                  secureTextEntry={true}
-                  accessibilityHint="Enter a password containing uppercase, lowercase, and a number"
-                />
-
-                <AccessibleButton
-                  accessibilityLabel="Create Account"
-                  accessibilityHint="Submit registration details and continue"
-                  onPress={handleSignUp}
-                  disabled={loading}
-                >
-                  {loading ? <ActivityIndicator color="#fff" /> : "Create Account"}
-                </AccessibleButton>
-              </View>
-            )}
-
-            {/* LOGIN */}
-            {activeTab === "Login" && (
-              <View style={styles.form}>
-                <Input
-                  label="Email"
-                  placeholder="you@example.com"
-                  value={loginEmail}
-                  onChangeText={setLoginEmail}
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                  accessibilityHint="Enter your registered email address"
-                />
-
-                <Input
-                  label="Password"
-                  placeholder="Your password"
-                  value={loginPassword}
-                  onChangeText={setLoginPassword}
-                  secureTextEntry={true}
-                  accessibilityHint="Enter your account password"
-                />
-
-                <TouchableOpacity
-                  style={styles.forgotBtn}
-                  accessibilityRole="button"
-                  accessibilityLabel="Forgot Password"
-                  accessibilityHint="Launches recovery steps for lost passwords"
-                >
-                  <AccessibleText variant="body" color={colors.primary} style={{ fontWeight: '600' }}>
-                    Forgot password?
-                  </AccessibleText>
-                </TouchableOpacity>
-
-                <AccessibleButton
-                  accessibilityLabel="Login"
-                  accessibilityHint="Submit credentials to log in"
-                  onPress={handleLogin}
-                  disabled={loading}
-                >
-                  {loading ? <ActivityIndicator color="#fff" /> : "Login"}
-                </AccessibleButton>
-              </View>
-            )}
-
-            {/* DIVIDER */}
-            <View style={styles.divider}>
-              <View style={styles.line} />
-              <AccessibleText variant="caption" style={{ marginHorizontal: spacing.md, fontSize: 18, fontWeight: '800', color: colors.primary }}>
-                or
-              </AccessibleText>
-              <View style={styles.line} />
-            </View>
-
-            {/* SOCIAL */}
-
-            <View style={styles.socialRow}>
               <AccessibleButton
-                variant="outline"
-                accessibilityLabel="Sign in with Google"
-                style={{ flex: 1 }}
-                onPress={() => { }}
+                accessibilityLabel="Login"
+                accessibilityHint="Submit credentials to log in"
+                onPress={handleLogin}
+                disabled={loading}
               >
-                🌐 Google
+                {loading ? <ActivityIndicator color="#fff" /> : "Login"}
               </AccessibleButton>
             </View>
+          )}
 
-            {/* FOOTER */}
-            <AccessibleText variant="caption" style={{ marginTop: spacing.xl, textAlign: 'center', lineHeight: 22 }}>
-              By continuing, you agree to our{" "}
-              <AccessibleText variant="caption" color={colors.primary} style={{ fontWeight: '700' }}>Terms</AccessibleText> &{" "}
-              <AccessibleText variant="caption" color={colors.primary} style={{ fontWeight: '700' }}>Privacy Policy</AccessibleText>
-          </KeyboardAwareScrollView>
+          {/* DIVIDER */}
+          <View style={styles.divider}>
+            <View style={styles.line} />
+            <AccessibleText variant="caption" style={{ marginHorizontal: spacing.md, fontSize: 18, fontWeight: '800', color: colors.primary }}>
+              or
+            </AccessibleText>
+            <View style={styles.line} />
+          </View>
+
+          {/* SOCIAL */}
+          <View style={styles.socialRow}>
+            <AccessibleButton
+              variant="outline"
+              accessibilityLabel="Sign in with Google"
+              style={{ flex: 1 }}
+              onPress={() => { }}
+            >
+              🌐 Google
+            </AccessibleButton>
+          </View>
+
+          {/* FOOTER */}
+          <AccessibleText variant="caption" style={{ marginTop: spacing.xl, textAlign: 'center', lineHeight: 22 }}>
+            By continuing, you agree to our{" "}
+            <AccessibleText variant="caption" color={colors.primary} style={{ fontWeight: '700' }}>Terms</AccessibleText> &{" "}
+            <AccessibleText variant="caption" color={colors.primary} style={{ fontWeight: '700' }}>Privacy Policy</AccessibleText>
+          </AccessibleText>
+      </KeyboardAwareScrollView>
     </ScreenWrapper>
   );
 };

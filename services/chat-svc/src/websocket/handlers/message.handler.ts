@@ -71,6 +71,29 @@ export async function handleMessageSend(
       return;
     }
 
+    // ── 2b. Verify send permission (WhatsApp-style admin gate) ──
+    // Blocks ALL message types (text, image, file, audio, video)
+    // since they all flow through this single handler.
+    const conversation = await conversationRepository.getById(conversationId);
+    if (conversation && conversation.sendMessages === "ADMINS_ONLY") {
+      const senderRole = await conversationRepository.getMemberRole(conversationId, userId);
+      const isSenderAdmin = conversation.subType === "CARE_CIRCLE"
+        ? (senderRole === "OWNER" || senderRole === "CAREGIVER")
+        : (senderRole === "OWNER" || senderRole === "ADMIN");
+
+      if (!isSenderAdmin) {
+        sendAck(ws, {
+          clientMessageId,
+          messageId: "",
+          sequenceNo: 0,
+          status: "rejected",
+          reason: "Only admins can send messages in this group",
+          timestamp: Date.now(),
+        }, requestId);
+        return;
+      }
+    }
+
     // ── 3. Generate message ID ─────────────────────────────────
     const messageId = generateMessageId();
     const createdAt = new Date().toISOString();

@@ -21,6 +21,7 @@ enum Role {
   ngo
   volunteer
   student
+  mentor
 }
 
 // ─────────────────────────────────────────────
@@ -44,6 +45,8 @@ model User {
   emailVerificationTokens EmailVerificationToken[]
   passwordResetTokens     PasswordResetToken[]
   userProfile             UserProfile?
+  mentorProfile           MentorProfile?
+  givenReviews            MentorReview[]  @relation("ReviewerRelation")
 
   @@index([email])
   @@map("users")
@@ -171,5 +174,46 @@ model Event {
   updatedAt   DateTime @updatedAt
 
   @@map("events")
+}
+
+// ─────────────────────────────────────────────
+// MENTOR PROFILE
+// ─────────────────────────────────────────────
+model MentorProfile {
+  id                    String         @id @default(uuid())
+  userId                String         @unique
+  bio                   String?
+  skills                String[]
+  disabilitySpecialties String[]
+  isAvailable           Boolean        @default(true)
+  createdAt             DateTime       @default(now())
+  updatedAt             DateTime       @updatedAt
+
+  user                  User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reviews               MentorReview[]
+
+  @@index([isAvailable])
+  @@map("mentor_profiles")
+}
+
+// ─────────────────────────────────────────────
+// MENTOR REVIEW
+// One review per reviewer per mentor
+// ─────────────────────────────────────────────
+model MentorReview {
+  id         String        @id @default(uuid())
+  mentorId   String
+  reviewerId String
+  rating     Int           // 1-5
+  comment    String?
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+
+  mentor     MentorProfile @relation(fields: [mentorId], references: [id], onDelete: Cascade)
+  reviewer   User          @relation("ReviewerRelation", fields: [reviewerId], references: [id], onDelete: Cascade)
+
+  @@unique([mentorId, reviewerId])
+  @@index([mentorId])
+  @@map("mentor_reviews")
 }
 

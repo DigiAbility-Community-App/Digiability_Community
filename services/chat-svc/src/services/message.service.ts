@@ -123,10 +123,17 @@ class MessageService {
           lastRead,
           1000
         );
-        counts.push({
-          conversationId: conv.id,
-          unreadCount: allUnread.length,
-        });
+        const actualUnread = allUnread.filter(m => m.senderId !== userId);
+        
+        // Deduplicate by messageId in case of multiple sequence numbers for same message
+        const uniqueUnread = new Set(actualUnread.map(m => m.id));
+        
+        if (uniqueUnread.size > 0) {
+          counts.push({
+            conversationId: conv.id,
+            unreadCount: uniqueUnread.size,
+          });
+        }
       }
     }
 

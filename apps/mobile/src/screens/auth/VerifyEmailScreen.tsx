@@ -55,12 +55,12 @@ const VerifyEmailScreen = ({ navigation }: Props) => {
       // The RootNavigator / MainNavigator will automatically react to the updated user state
       // but we can also manually navigate to the next step if we want.
       // Since MainNavigator is keyed by initialRoute in some ways, we can just replace:
-      if (!user.role) {
+      if (!user.roles || user.roles.length === 0) {
         navigation.replace("Accessibility");
       } else if (!user.profileComplete) {
         navigation.replace("Profile");
       } else {
-        navigation.replace("Home");
+        navigation.replace("MainTabs");
       }
     } catch (err: any) {
       console.error("[VerifyEmailError]", err);

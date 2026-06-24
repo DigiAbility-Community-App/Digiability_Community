@@ -142,6 +142,37 @@ class InviteService {
         throw new Error("Group has reached its maximum capacity");
       }
 
+      // 3b. WhatsApp-style: if approveNewMembers is enabled, queue for admin approval
+      if (conversation && conversation.approveNewMembers) {
+        // Check if the invitee would be an admin (admins bypass approval)
+        const inviteeIsAdmin = conversation.subType === "CARE_CIRCLE"
+          ? (invite.role === "OWNER" || invite.role === "CAREGIVER")
+          : (invite.role === "OWNER" || invite.role === "ADMIN");
+
+        if (!inviteeIsAdmin) {
+          // Mark invite as awaiting approval instead of directly adding
+          await inviteRepository.updateStatus(inviteId, "AWAITING_APPROVAL");
+
+          // Notify all admins about the join request
+          const members = await this.getAdminMembers(invite.conversationId, conversation.subType);
+          for (const adminId of members) {
+            this.notifyUser(adminId, "member.join_request" as any, {
+              inviteId,
+              conversationId: invite.conversationId,
+              groupName: conversation.name,
+              userId: inviteeId,
+              requestedRole: invite.role,
+            });
+          }
+
+          logger.info("Invite accepted but awaiting admin approval", {
+            inviteId, inviteeId, conversationId: invite.conversationId,
+          });
+
+          return inviteRepository.findById(inviteId);
+        }
+      }
+
       // 4a. Add member with the assigned role
       await conversationRepository.addMember(invite.conversationId, inviteeId, invite.role);
       await inviteRepository.updateStatus(inviteId, "ACCEPTED");
@@ -176,6 +207,76 @@ class InviteService {
       });
 
       logger.info("Invite declined", { inviteId, inviteeId });
+    }
+
+    return inviteRepository.findById(inviteId);
+  }
+
+  /**
+   * Approve or reject a join request (admin action).
+   * Only available when approveNewMembers is enabled.
+   */
+  async approveJoinRequest(
+    inviteId: string,
+    adminId: string,
+    approve: boolean
+  ) {
+    // 1. Fetch invite
+    const invite = await inviteRepository.findById(inviteId);
+    if (!invite) throw new Error("Invite not found");
+    if (invite.status !== "AWAITING_APPROVAL") {
+      throw new Error("This invite is not awaiting approval");
+    }
+
+    // 2. Verify admin permission
+    const conversation = await conversationRepository.getById(invite.conversationId);
+    if (!conversation) throw new Error("Conversation not found");
+
+    const adminRole = await conversationRepository.getMemberRole(invite.conversationId, adminId);
+    if (!adminRole || !hasAdminAccess(adminRole, conversation.subType)) {
+      throw new Error("Only admins can approve join requests");
+    }
+
+    if (approve) {
+      // Check member limit
+      const memberCount = await conversationRepository.getMemberCount(invite.conversationId);
+      if (memberCount >= conversation.maxMembers) {
+        throw new Error("Group has reached its maximum capacity");
+      }
+
+      // Add member
+      await conversationRepository.addMember(invite.conversationId, invite.inviteeId, invite.role);
+      await inviteRepository.updateStatus(inviteId, "ACCEPTED");
+
+      // Notify group members
+      const memberIds = await conversationRepository.getMemberIds(invite.conversationId);
+      for (const memberId of memberIds) {
+        this.notifyUser(memberId, WS_EVENTS.MEMBER_JOINED, {
+          conversationId: invite.conversationId,
+          userId: invite.inviteeId,
+          role: invite.role,
+        });
+      }
+
+      // Notify the approved user
+      this.notifyUser(invite.inviteeId, WS_EVENTS.INVITE_ACCEPTED, {
+        inviteId,
+        conversationId: invite.conversationId,
+        message: "Your join request has been approved",
+      });
+
+      logger.info("Join request approved", { inviteId, adminId, inviteeId: invite.inviteeId });
+    } else {
+      await inviteRepository.updateStatus(inviteId, "DECLINED");
+
+      // Notify the rejected user
+      this.notifyUser(invite.inviteeId, WS_EVENTS.INVITE_DECLINED, {
+        inviteId,
+        conversationId: invite.conversationId,
+        message: "Your join request has been declined",
+      });
+
+      logger.info("Join request rejected", { inviteId, adminId, inviteeId: invite.inviteeId });
     }
 
     return inviteRepository.findById(inviteId);
@@ -237,6 +338,26 @@ class InviteService {
     if (!isAdmin) throw new Error("Only admins can view group invites");
 
     return inviteRepository.findByConversation(conversationId);
+  }
+
+  /**
+   * Get all admin member IDs for a conversation.
+   */
+  private async getAdminMembers(
+    conversationId: string,
+    subType?: string | null
+  ): Promise<string[]> {
+    const members = await conversationRepository.getMemberIds(conversationId);
+    const adminIds: string[] = [];
+
+    for (const memberId of members) {
+      const role = await conversationRepository.getMemberRole(conversationId, memberId);
+      if (role && hasAdminAccess(role, subType as any)) {
+        adminIds.push(memberId);
+      }
+    }
+
+    return adminIds;
   }
 
   /**

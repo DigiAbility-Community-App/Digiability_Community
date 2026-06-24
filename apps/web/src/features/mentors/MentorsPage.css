@@ -1,0 +1,234 @@
+.mentors-container {
+  flex: 1;
+  background-color: var(--color-bg);
+  padding: 32px 40px;
+  overflow-y: auto;
+}
+
+.mentors-header {
+  margin-bottom: 24px;
+}
+
+.mentors-header h2 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--color-text);
+  margin: 0;
+}
+
+.mentors-header p {
+  color: var(--color-subtext);
+  margin: 4px 0 0;
+  font-size: 0.95rem;
+}
+
+.mentors-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 20px;
+}
+
+.mentor-card {
+  background: #ffffff;
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  box-shadow: 0 4px 12px rgba(80, 0, 136, 0.04);
+  display: flex;
+  flex-direction: column;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.mentor-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(80, 0, 136, 0.08);
+}
+
+.card-header {
+  display: flex;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.avatar-circle {
+  width: 56px;
+  height: 56px;
+  border-radius: var(--radius-md);
+  background-color: var(--color-primary-subtle);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin-right: 16px;
+}
+
+.avatar-text {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: var(--color-primary-dark);
+}
+
+.header-info {
+  flex: 1;
+}
+
+.name-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.mentor-name {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--color-text);
+  margin: 0 0 4px 0;
+}
+
+.match-badge {
+  padding: 4px 8px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.location-row {
+  display: flex;
+  align-items: center;
+  color: var(--color-subtext);
+  font-size: 0.85rem;
+}
+
+.location-row svg {
+  margin-right: 4px;
+}
+
+.bio {
+  font-size: 0.9rem;
+  color: var(--color-subtext);
+  line-height: 1.5;
+  margin-bottom: 16px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.badge-row, .skills-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.specialty-badge {
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.skill-chip {
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  background-color: #F8FAFC;
+  border: 1px solid #E2E8F0;
+  font-size: 0.75rem;
+  color: #64748B;
+  font-weight: 500;
+}
+
+.card-footer {
+  margin-top: auto;
+  padding-top: 16px;
+  border-top: 1px solid #F1F5F9;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.rating-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.rating-text {
+  font-weight: 700;
+  font-size: 0.9rem;
+  color: var(--color-text);
+  margin-left: 4px;
+}
+
+.review-count {
+  font-size: 0.8rem;
+  color: var(--color-subtext);
+}
+
+.connect-btn {
+  background-color: var(--color-primary);
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: var(--radius-sm);
+  font-weight: 600;
+  font-size: 0.9rem;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.connect-btn:hover:not(:disabled) {
+  background-color: var(--color-primary-dark);
+}
+
+.connect-btn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.center-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  padding: 40px;
+  text-align: center;
+}
+
+.empty-icon-box {
+  width: 80px;
+  height: 80px;
+  border-radius: 20px;
+  background-color: var(--color-primary-subtle);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin-bottom: 24px;
+}
+
+.center-container h3 {
+  font-size: 1.5rem;
+  margin: 0 0 8px 0;
+  color: var(--color-text);
+}
+
+.center-container p {
+  color: var(--color-subtext);
+  margin: 0 0 4px 0;
+}
+
+.refresh-btn {
+  margin-top: 24px;
+  background-color: var(--color-primary);
+  color: white;
+  border: none;
+  padding: 12px 24px;
+  border-radius: var(--radius-sm);
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}

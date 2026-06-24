@@ -52,9 +52,20 @@ export const listConversations = asyncHandler(async (req: Request, res: Response
 
   const result = await conversationService.listConversations(user.sub, limit, cursor);
 
+  // Fetch unread counts for the user
+  const { messageService } = await import("../services/message.service");
+  const unreadCounts = await messageService.getUnreadCounts(user.sub);
+  const countMap = new Map(unreadCounts.map(c => [c.conversationId, c.unreadCount]));
+
+  // Enrich conversations with unread counts
+  const enrichedConversations = result.conversations.map(c => ({
+    ...c,
+    unreadCount: countMap.get(c.id) || 0,
+  }));
+
   res.status(200).json({
     success: true,
-    data: result.conversations,
+    data: enrichedConversations,
     pagination: {
       hasMore: result.hasMore,
       nextCursor: result.hasMore && result.conversations.length > 0
@@ -191,5 +202,43 @@ export const initBot = asyncHandler(async (req: Request, res: Response) => {
   res.status(200).json({
     success: true,
     data: conversation,
+  });
+});
+
+export const transferOwnership = asyncHandler(async (req: Request, res: Response) => {
+  const user = (req as AuthenticatedRequest).user;
+  const { conversationId } = req.params;
+  const { userId: newOwnerId } = req.body;
+
+  if (!newOwnerId) {
+    res.status(400).json({ success: false, message: "userId is required" });
+    return;
+  }
+
+  await conversationService.transferOwnership(conversationId, user.sub, newOwnerId);
+
+  res.status(200).json({
+    success: true,
+    message: "Ownership transferred successfully",
+  });
+});
+
+export const approveJoinRequest = asyncHandler(async (req: Request, res: Response) => {
+  const user = (req as AuthenticatedRequest).user;
+  const { inviteId } = req.params;
+  const { approve } = req.body;
+
+  if (typeof approve !== "boolean") {
+    res.status(400).json({ success: false, message: "approve (boolean) is required" });
+    return;
+  }
+
+  const { inviteService } = await import("../services/invite.service");
+  const result = await inviteService.approveJoinRequest(inviteId, user.sub, approve);
+
+  res.status(200).json({
+    success: true,
+    data: result,
+    message: approve ? "Join request approved" : "Join request rejected",
   });
 });
