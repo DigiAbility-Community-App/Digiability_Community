@@ -8,6 +8,7 @@ import VerifyEmailScreen from '@screens/auth/VerifyEmailScreen';
 import ProfileScreen from '@screens/profile/ProfileScreen';
 import ProfileDetailsScreen from '@screens/profile/ProfileDetailsScreen';
 import CareCircleScreen from '@screens/profile/CareCircleScreen';
+import CreateCareCircleScreen from '@screens/profile/CreateCareCircleScreen';
 import NotificationsScreen from '@screens/home/NotificationScreen';
 import EditProfileScreen from '@screens/profile/EditProfileScreen';
 import ChatsStack from './ChatsStack';
@@ -29,6 +30,7 @@ export type MainStackParamList = {
   Profile: undefined;
   ProfileDetails: undefined;
   CareCircle: undefined;
+  CreateCareCircle: undefined;
   Chats: undefined;
   Notifications: undefined;
   EditProfile: undefined;
@@ -38,7 +40,7 @@ export type MainStackParamList = {
   SearchQuestions: undefined;
   Events: undefined;
   EventDetails: { eventId: string };
-  LeavePortal: { eventId: string; externalUrl: string; eventTitle: string };
+  LeavePortal: { eventId: string; externalUrl: string; eventTitle: string; eventDate?: string; eventLocation?: string; organizer?: string };
 };
 
 const Stack = createNativeStackNavigator<MainStackParamList>();
@@ -47,23 +49,22 @@ const Stack = createNativeStackNavigator<MainStackParamList>();
  * Determine the initial route synchronously based on known user state.
  * Async accessibility check is done in the useEffect below.
  *
- * Priority order for new/incomplete users:
+ * Priority order:
  *   1. No role        → Accessibility  (first step of onboarding)
  *   2. Has role, no profile → Profile  (accessibility was already done)
- *   3. Complete user  → Accessibility  (will be upgraded to MainTabs async)
+ *   3. Complete user  → MainTabs       (avoids flash; async check pushes Accessibility if needed)
  */
 function getFallbackRoute(
   user: ReturnType<typeof useAuthStore.getState>['user']
 ): keyof MainStackParamList {
   if (!user) return 'MainTabs';
-  // New user — email not verified yet: start at VerifyEmail
-  if (!user.isEmailVerified) return 'VerifyEmail';
   // New user — no role chosen yet: start the full onboarding from Accessibility
   if (!user.roles || user.roles.length === 0) return 'Accessibility';
   // Has role but profile not complete: skip back to Profile
   if (!user.profileComplete) return 'Profile';
-  // Returning user: will be resolved to 'MainTabs' after async accessibility check
-  return 'Accessibility';
+  // Fully onboarded: show MainTabs immediately; async effect will redirect to Accessibility
+  // only if preferences haven't been set, keeping the common path flash-free.
+  return 'MainTabs';
 }
 
 const MainNavigator = () => {
@@ -85,7 +86,8 @@ const MainNavigator = () => {
         return;
       }
 
-      // New user — email not verified yet
+      // New user — email not verified yet (Disabled for now)
+      /*
       if (!user.isEmailVerified) {
         if (isMounted) {
           setInitialRoute('VerifyEmail');
@@ -93,6 +95,7 @@ const MainNavigator = () => {
         }
         return;
       }
+      */
 
       // New user — no role yet: always start at Accessibility.
       // AccessibilityScreen.continueToNext() will push to RoleSelection.
@@ -146,7 +149,7 @@ const MainNavigator = () => {
 
   return (
     <Stack.Navigator
-      key={`${user?.id ?? 'guest'}:${initialRoute}`}
+      key={user?.id ?? 'guest'}
       initialRouteName={initialRoute}
       screenOptions={{ headerShown: false }}
     >
@@ -156,6 +159,7 @@ const MainNavigator = () => {
       <Stack.Screen name="Profile" component={ProfileScreen} />
       <Stack.Screen name="ProfileDetails" component={ProfileDetailsScreen} />
       <Stack.Screen name="CareCircle" component={CareCircleScreen} />
+      <Stack.Screen name="CreateCareCircle" component={CreateCareCircleScreen} />
       <Stack.Screen name="MainTabs" component={MainTabNavigator} />
       <Stack.Screen name="Chats" component={ChatsStack} />
       <Stack.Screen name="Notifications" component={NotificationsScreen} />

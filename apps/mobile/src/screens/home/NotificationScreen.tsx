@@ -1,9 +1,11 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
     View,
     StyleSheet,
     ScrollView,
     TouchableOpacity,
+    ActivityIndicator,
+    RefreshControl,
 } from "react-native";
 
 import { useNavigation } from "@react-navigation/native";
@@ -12,100 +14,142 @@ import { AccessibleText } from "../../components/shared/AccessibleText";
 import ScreenWrapper from "../../components/layout/ScreenWrapper";
 import AppHeader from "../../components/layout/AppHeader";
 import AppFooter from "../../components/layout/AppFooter";
+import { forumService } from "../../services/forumService";
 
-type NotificationType = {
+// ─────────────────────────────────────────────
+// Types
+// ─────────────────────────────────────────────
+type FilterCategory = "all" | "community" | "events" | "alerts";
+
+interface ApiNotification {
+    id: string;
+    userId: string;
+    type: string;
+    title: string;
+    message: string;
+    read: boolean;
+    relatedId: string | null;
+    createdAt: string;
+}
+
+interface DisplayNotification {
     id: string;
     title: string;
+    message: string;
     time: string;
-    type: "all" | "community" | "events" | "alerts";
+    filterType: FilterCategory;
     read: boolean;
     icon: string;
     iconBg: string;
     iconColor: string;
-};
+}
 
+// ─────────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────────
+function mapNotifType(type: string): FilterCategory {
+    if (type.startsWith("ADMIN_ANNOUNCEMENT")) return "events";
+    if (type.startsWith("ADMIN_ALERT") || type === "MODERATION") return "alerts";
+    if (type.startsWith("ADMIN_")) return "alerts";
+    return "community"; // ANSWER, ACCEPTED, MENTION, LIKE
+}
+
+function iconForType(type: string): { icon: string; iconBg: string; iconColor: string } {
+    if (type === "ANSWER" || type === "ACCEPTED") return { icon: "💬", iconBg: "#F1DBFF", iconColor: "#500088" };
+    if (type === "MENTION") return { icon: "📣", iconBg: "#FFF3CD", iconColor: "#856404" };
+    if (type === "LIKE") return { icon: "❤️", iconBg: "#D1FAE5", iconColor: "#059669" };
+    if (type === "MODERATION") return { icon: "🚨", iconBg: "#FFDAD6", iconColor: "#BA1A1A" };
+    if (type.includes("ALERT")) return { icon: "⚠️", iconBg: "#FFF3CD", iconColor: "#855300" };
+    if (type.includes("ANNOUNCEMENT")) return { icon: "📢", iconBg: "#DBEAFE", iconColor: "#1D4ED8" };
+    return { icon: "🔔", iconBg: "#F1DBFF", iconColor: "#500088" };
+}
+
+function formatTime(iso: string): string {
+    const diff = Date.now() - new Date(iso).getTime();
+    const mins = Math.floor(diff / 60000);
+    if (mins < 1) return "Just now";
+    if (mins < 60) return `${mins} min ago`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return `${hrs} hour${hrs > 1 ? "s" : ""} ago`;
+    const days = Math.floor(hrs / 24);
+    if (days === 1) return "Yesterday";
+    return `${days} days ago`;
+}
+
+function toDisplay(n: ApiNotification): DisplayNotification {
+    return {
+        id: n.id,
+        title: n.title,
+        message: n.message,
+        time: formatTime(n.createdAt),
+        filterType: mapNotifType(n.type),
+        read: n.read,
+        ...iconForType(n.type),
+    };
+}
+
+// ─────────────────────────────────────────────
+// Screen
+// ─────────────────────────────────────────────
 const NotificationsScreen = () => {
     const navigation = useNavigation<any>();
     const { colors, spacing, highContrast } = useTheme();
 
-    const [activeFilter, setActiveFilter] = useState("all");
+    const [activeFilter, setActiveFilter] = useState<FilterCategory>("all");
+    const [notifications, setNotifications] = useState<DisplayNotification[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [refreshing, setRefreshing] = useState(false);
+    const [error, setError] = useState("");
 
-    // ------------------------
-    // DUMMY DATA
-    // Replace with API later
-    // ------------------------
-    const notifications: NotificationType[] = [
-        {
-            id: "1",
-            title: "Your therapist replied to your query",
-            time: "5 min ago",
-            type: "community",
-            read: false,
-            icon: "💬",
-            iconBg: "#F1DBFF",
-            iconColor: "#500088",
-        },
-        {
-            id: "2",
-            title: "Legal Aid Workshop registrations are now open",
-            time: "1 hour ago",
-            type: "events",
-            read: false,
-            icon: "⚖️",
-            iconBg: "#FFDDB8",
-            iconColor: "#855300",
-        },
-        {
-            id: "3",
-            title: "Your community post received new likes",
-            time: "Yesterday",
-            type: "community",
-            read: true,
-            icon: "❤️",
-            iconBg: "#D1FAE5",
-            iconColor: "#059669",
-        },
-        {
-            id: "4",
-            title: "Safety check-in reminder pending",
-            time: "2 hours ago",
-            type: "alerts",
-            read: false,
-            icon: "🚨",
-            iconBg: "#FFDAD6",
-            iconColor: "#BA1A1A",
-        },
-        {
-            id: "5",
-            title: "Mentor accepted your request",
-            time: "Yesterday",
-            type: "community",
-            read: true,
-            icon: "🎓",
-            iconBg: "#F1DBFF",
-            iconColor: "#500088",
-        },
-    ];
+    const fetchNotifications = useCallback(async (silent = false) => {
+        if (!silent) setLoading(true);
+        setError("");
+        try {
+            const data: ApiNotification[] = await forumService.listNotifications();
+            setNotifications(data.map(toDisplay));
+        } catch {
+            setError("Could not load notifications. Pull down to retry.");
+        } finally {
+            setLoading(false);
+            setRefreshing(false);
+        }
+    }, []);
 
-    // ------------------------
-    // FILTER
-    // ------------------------
-    const filteredNotifications =
-        activeFilter === "all"
-            ? notifications
-            : notifications.filter(
-                (item) => item.type === activeFilter
+    useEffect(() => { fetchNotifications(); }, [fetchNotifications]);
+
+    const handleMarkAllRead = async () => {
+        try {
+            await forumService.markAllNotificationsRead();
+            setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+        } catch {
+            // silently ignore
+        }
+    };
+
+    const handleMarkRead = async (id: string) => {
+        const item = notifications.find(n => n.id === id);
+        if (!item || item.read) return;
+        try {
+            await forumService.markNotificationRead(id);
+            setNotifications(prev =>
+                prev.map(n => n.id === id ? { ...n, read: true } : n)
             );
+        } catch {
+            // silently ignore
+        }
+    };
 
-    const cardBorder = (item: NotificationType) => {
-        if (highContrast) {
-            return { borderWidth: 2, borderColor: "#000000" };
-        }
-        if (!item.read) {
-            return { borderLeftWidth: 4, borderLeftColor: colors.primary };
-        }
+    const filtered = activeFilter === "all"
+        ? notifications
+        : notifications.filter(n => n.filterType === activeFilter);
+
+    const cardBorder = (item: DisplayNotification) => {
+        if (highContrast) return { borderWidth: 2, borderColor: "#000000" };
+        if (!item.read) return { borderLeftWidth: 4, borderLeftColor: colors.primary };
         return { borderWidth: 1, borderColor: "rgba(0,0,0,0.05)" };
     };
+
+    const hasUnread = notifications.some(n => !n.read);
 
     return (
         <ScreenWrapper>
@@ -114,18 +158,18 @@ const NotificationsScreen = () => {
                 title="Notifications"
                 onBackPress={() => navigation.goBack()}
                 rightActions={
-                    <TouchableOpacity
-                        style={styles.markAllTouch}
-                        accessible={true}
-                        accessibilityRole="button"
-                        accessibilityLabel="Mark all as read"
-                        accessibilityHint="Double tap to mark all notifications as read"
-                        activeOpacity={0.7}
-                    >
-                        <AccessibleText style={styles.markAllText}>
-                            Mark all
-                        </AccessibleText>
-                    </TouchableOpacity>
+                    hasUnread ? (
+                        <TouchableOpacity
+                            style={styles.markAllTouch}
+                            onPress={handleMarkAllRead}
+                            accessible={true}
+                            accessibilityRole="button"
+                            accessibilityLabel="Mark all as read"
+                            activeOpacity={0.7}
+                        >
+                            <AccessibleText style={styles.markAllText}>Mark all</AccessibleText>
+                        </TouchableOpacity>
+                    ) : null
                 }
             />
 
@@ -135,17 +179,12 @@ const NotificationsScreen = () => {
                 showsHorizontalScrollIndicator={false}
                 style={[styles.filterContainer, { paddingHorizontal: spacing.lg }]}
             >
-                {[
-                    { label: "All", value: "all" },
-                    { label: "Community", value: "community" },
-                    { label: "Events", value: "events" },
-                    { label: "Alerts", value: "alerts" },
-                ].map((filter) => {
-                    const active = activeFilter === filter.value;
-
+                {(["all", "community", "events", "alerts"] as FilterCategory[]).map((value) => {
+                    const label = value.charAt(0).toUpperCase() + value.slice(1);
+                    const active = activeFilter === value;
                     return (
                         <TouchableOpacity
-                            key={filter.value}
+                            key={value}
                             style={[
                                 styles.filterPill,
                                 { backgroundColor: active ? colors.primary : colors.surface },
@@ -155,12 +194,11 @@ const NotificationsScreen = () => {
                                     borderColor: active ? "#000000" : "#888888",
                                 }
                             ]}
-                            onPress={() => setActiveFilter(filter.value)}
+                            onPress={() => setActiveFilter(value)}
                             accessible={true}
                             accessibilityRole="tab"
                             accessibilityState={{ selected: active }}
-                            accessibilityLabel={`${filter.label} filter`}
-                            accessibilityHint={`Double tap to filter notifications by ${filter.label}`}
+                            accessibilityLabel={`${label} filter`}
                         >
                             <AccessibleText
                                 style={[
@@ -169,7 +207,7 @@ const NotificationsScreen = () => {
                                     active && styles.activeFilterText,
                                 ]}
                             >
-                                {filter.label}
+                                {label}
                             </AccessibleText>
                         </TouchableOpacity>
                     );
@@ -177,93 +215,102 @@ const NotificationsScreen = () => {
             </ScrollView>
 
             {/* LIST */}
-            <ScrollView
-                showsVerticalScrollIndicator={false}
-                contentContainerStyle={[styles.listContainer, { paddingHorizontal: spacing.lg }]}
-            >
-                {filteredNotifications.length === 0 ? (
-                    <View style={styles.emptyState}>
-                        <AccessibleText style={styles.emptyEmoji}>
-                            🔔
-                        </AccessibleText>
-
-                        <AccessibleText variant="title" style={[styles.emptyTitle, { color: colors.text }]}>
-                            No Notifications
-                        </AccessibleText>
-
-                        <AccessibleText variant="body" style={[styles.emptyText, { color: colors.subtext }]}>
-                            You currently don’t have any notifications.
-                        </AccessibleText>
-                    </View>
-                ) : (
-                    filteredNotifications.map((item) => (
-                        <TouchableOpacity
-                            key={item.id}
-                            style={[
-                                styles.notificationCard,
-                                { backgroundColor: colors.card },
-                                cardBorder(item),
-                            ]}
-                            accessible={true}
-                            accessibilityRole="button"
-                            accessibilityLabel={`Notification: ${item.title}. Received ${item.time}. ${item.read ? "Read" : "Unread"}`}
-                            accessibilityHint="Double tap to open this notification details"
-                        >
-                            {/* LEFT */}
-                            <View style={styles.notificationLeft}>
-                                {/* ICON */}
-                                <View
-                                    style={[
-                                        styles.iconWrap,
-                                        {
-                                            backgroundColor: highContrast ? "#FFFFFF" : item.iconBg,
-                                        },
-                                        highContrast && { borderWidth: 2, borderColor: "#000000" }
-                                    ]}
-                                >
-                                    <AccessibleText style={{ fontSize: 18 }}>
-                                        {item.icon}
-                                    </AccessibleText>
-                                </View>
-
-                                {/* CONTENT */}
-                                <View style={styles.contentWrap}>
-                                    <AccessibleText
+            {loading ? (
+                <View style={styles.centered}>
+                    <ActivityIndicator size="large" color={colors.primary} />
+                </View>
+            ) : (
+                <ScrollView
+                    showsVerticalScrollIndicator={false}
+                    contentContainerStyle={[styles.listContainer, { paddingHorizontal: spacing.lg }]}
+                    refreshControl={
+                        <RefreshControl
+                            refreshing={refreshing}
+                            onRefresh={() => { setRefreshing(true); fetchNotifications(true); }}
+                            tintColor={colors.primary}
+                        />
+                    }
+                >
+                    {error ? (
+                        <View style={styles.emptyState}>
+                            <AccessibleText style={styles.emptyEmoji}>⚠️</AccessibleText>
+                            <AccessibleText variant="body" style={[styles.emptyText, { color: colors.subtext }]}>
+                                {error}
+                            </AccessibleText>
+                        </View>
+                    ) : filtered.length === 0 ? (
+                        <View style={styles.emptyState}>
+                            <AccessibleText style={styles.emptyEmoji}>🔔</AccessibleText>
+                            <AccessibleText variant="title" style={[styles.emptyTitle, { color: colors.text }]}>
+                                No Notifications
+                            </AccessibleText>
+                            <AccessibleText variant="body" style={[styles.emptyText, { color: colors.subtext }]}>
+                                {activeFilter === "all"
+                                    ? "You don't have any notifications yet."
+                                    : `No ${activeFilter} notifications.`}
+                            </AccessibleText>
+                        </View>
+                    ) : (
+                        filtered.map((item) => (
+                            <TouchableOpacity
+                                key={item.id}
+                                style={[
+                                    styles.notificationCard,
+                                    { backgroundColor: colors.card },
+                                    cardBorder(item),
+                                ]}
+                                onPress={() => handleMarkRead(item.id)}
+                                accessible={true}
+                                accessibilityRole="button"
+                                accessibilityLabel={`${item.title}. ${item.time}. ${item.read ? "Read" : "Unread"}`}
+                                accessibilityHint="Double tap to mark as read"
+                            >
+                                {/* LEFT */}
+                                <View style={styles.notificationLeft}>
+                                    <View
                                         style={[
-                                            styles.notificationTitle,
-                                            { color: colors.text },
-                                            item.read && styles.readTitle,
+                                            styles.iconWrap,
+                                            { backgroundColor: highContrast ? "#FFFFFF" : item.iconBg },
+                                            highContrast && { borderWidth: 2, borderColor: "#000000" }
                                         ]}
                                     >
-                                        {item.title}
-                                    </AccessibleText>
-
-                                    <AccessibleText
-                                        style={[
-                                            styles.notificationTime,
-                                            { color: colors.subtext }
-                                        ]}
-                                    >
-                                        {item.time}
-                                    </AccessibleText>
+                                        <AccessibleText style={{ fontSize: 18 }}>{item.icon}</AccessibleText>
+                                    </View>
+                                    <View style={styles.contentWrap}>
+                                        <AccessibleText
+                                            style={[
+                                                styles.notificationTitle,
+                                                { color: colors.text },
+                                                item.read && styles.readTitle,
+                                            ]}
+                                            numberOfLines={2}
+                                        >
+                                            {item.title}
+                                        </AccessibleText>
+                                        {item.message ? (
+                                            <AccessibleText
+                                                style={[styles.notificationMessage, { color: colors.subtext }]}
+                                                numberOfLines={1}
+                                            >
+                                                {item.message}
+                                            </AccessibleText>
+                                        ) : null}
+                                        <AccessibleText style={[styles.notificationTime, { color: colors.subtext }]}>
+                                            {item.time}
+                                        </AccessibleText>
+                                    </View>
                                 </View>
-                            </View>
 
-                            {/* UNREAD DOT */}
-                            {!item.read && (
-                                <View
-                                    style={[
-                                        styles.unreadDot,
-                                        { backgroundColor: colors.primary }
-                                    ]}
-                                />
-                            )}
-                        </TouchableOpacity>
-                    ))
-                )}
-
-                <View style={{ height: 120 }} />
-            </ScrollView>
+                                {/* UNREAD DOT */}
+                                {!item.read && (
+                                    <View style={[styles.unreadDot, { backgroundColor: colors.primary }]} />
+                                )}
+                            </TouchableOpacity>
+                        ))
+                    )}
+                    <View style={{ height: 120 }} />
+                </ScrollView>
+            )}
 
             {/* NAVBAR */}
             <AppFooter activeTab="Home" />
@@ -273,13 +320,10 @@ const NotificationsScreen = () => {
 
 export default NotificationsScreen;
 
-// --------------------------
+// ─────────────────────────────────────────────
 // STYLES
-// --------------------------
+// ─────────────────────────────────────────────
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-    },
     markAllTouch: {
         minWidth: 48,
         minHeight: 48,
@@ -291,7 +335,6 @@ const styles = StyleSheet.create({
         fontWeight: "600",
         fontSize: 14,
     },
-    // FILTERS
     filterContainer: {
         maxHeight: 64,
         paddingTop: 16,
@@ -317,7 +360,11 @@ const styles = StyleSheet.create({
     activeFilterText: {
         fontWeight: "700",
     },
-    // LIST
+    centered: {
+        flex: 1,
+        justifyContent: "center",
+        alignItems: "center",
+    },
     listContainer: {
         paddingTop: 12,
     },
@@ -350,10 +397,15 @@ const styles = StyleSheet.create({
         fontSize: 15,
         fontWeight: "700",
         lineHeight: 20,
-        marginBottom: 6,
+        marginBottom: 4,
     },
     readTitle: {
         fontWeight: "600",
+    },
+    notificationMessage: {
+        fontSize: 12,
+        lineHeight: 16,
+        marginBottom: 4,
     },
     notificationTime: {
         fontSize: 12,
@@ -364,7 +416,6 @@ const styles = StyleSheet.create({
         borderRadius: 999,
         marginLeft: 12,
     },
-    // EMPTY
     emptyState: {
         marginTop: 80,
         alignItems: "center",
@@ -383,5 +434,4 @@ const styles = StyleSheet.create({
         lineHeight: 22,
         paddingHorizontal: 24,
     },
-    // Legacy navbar style removed
 });

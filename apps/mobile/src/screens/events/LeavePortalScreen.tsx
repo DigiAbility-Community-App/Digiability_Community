@@ -4,215 +4,282 @@ import {
   StyleSheet,
   TouchableOpacity,
   ScrollView,
+  ActivityIndicator,
 } from "react-native";
-import {
-  ShieldAlert,
-  ArrowUpRight,
-  ChevronLeft,
-  Check,
-} from "lucide-react-native";
+import { Calendar, MapPin, Shield, Info, ArrowUpRight } from "lucide-react-native";
 import { useRoute, useNavigation } from "@react-navigation/native";
 import * as WebBrowser from "expo-web-browser";
 import ScreenWrapper from "../../components/layout/ScreenWrapper";
-import AppHeader from "../../components/layout/AppHeader";
 import { useTheme } from "../../theme/ThemeContext";
 import { AccessibleText } from "../../components/shared/AccessibleText";
-import { AccessibleButton } from "../../components/shared/AccessibleButton";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 export default function LeavePortalScreen() {
   const route = useRoute<any>();
   const navigation = useNavigation<any>();
-  const { colors, spacing, highContrast } = useTheme();
-  
-  const { externalUrl, eventTitle } = route.params || {};
-  const [acknowledged, setAcknowledged] = useState(false);
+  const { colors, highContrast } = useTheme();
+  const insets = useSafeAreaInsets();
+
+  const { externalUrl, eventTitle, eventDate, eventLocation, organizer } = route.params || {};
   const [loading, setLoading] = useState(false);
 
-  const handleProceed = async () => {
-    if (!acknowledged || !externalUrl) return;
-    
+  const handleContinue = async () => {
+    if (!externalUrl) return;
     try {
       setLoading(true);
       await WebBrowser.openBrowserAsync(externalUrl);
-      // After browser closes, pop back to the event details screen
       navigation.goBack();
-    } catch (error) {
-      console.log("Failed to open external browser:", error);
+    } catch {
+      // silently ignore
     } finally {
       setLoading(false);
     }
   };
 
-  const cardBorder = highContrast
-    ? { borderWidth: 2, borderColor: "#000000" }
-    : { borderWidth: 1, borderColor: "rgba(0,0,0,0.05)" };
-
-  const checkboxBorder = highContrast
-    ? { borderWidth: 2, borderColor: "#000000" }
-    : { borderWidth: 1, borderColor: colors.border };
+  const handleSkip = () => navigation.goBack();
 
   return (
-    <ScreenWrapper>
-      {/* HEADER */}
-      <AppHeader title="External Transition" />
+    <ScreenWrapper statusBarStyle="dark">
+      {/* DIMMED BACKGROUND AREA (top) */}
+      <View style={styles.backdrop} />
 
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        {/* WARNING CARD */}
-        <View style={[styles.warningCard, { backgroundColor: colors.card }, cardBorder]}>
-          <View style={[styles.alertIconBg, { backgroundColor: highContrast ? "#000000" : "#FEE2E2" }]}>
-            <ShieldAlert color={highContrast ? "#FFFFFF" : colors.error} size={32} />
-          </View>
-          
-          <AccessibleText variant="title" style={styles.warningTitle}>
-            Leaving Community App
-          </AccessibleText>
-
-          <AccessibleText variant="body" style={[styles.warningDesc, { color: colors.subtext }]}>
-            You are moving to the external portal to register for:
-          </AccessibleText>
-
-          <View style={[styles.eventLabelBox, { backgroundColor: highContrast ? "#000000" : "#F3F4F6" }]}>
-            <AccessibleText variant="title" style={{ fontSize: 16, textAlign: "center", color: colors.text }}>
-              {eventTitle || "Selected Event"}
-            </AccessibleText>
-          </View>
-
-          <AccessibleText variant="body" style={[styles.portalInfoText, { color: colors.subtext }]}>
-            You will be redirected to the secure <AccessibleText style={{ fontWeight: "700", color: colors.primary }}>Digiability Service Portal</AccessibleText> where you must complete your registration form.
-          </AccessibleText>
-        </View>
-
-        {/* ACKNOWLEDGMENT CHECKBOX */}
-        <TouchableOpacity
-          activeOpacity={0.8}
-          onPress={() => setAcknowledged(!acknowledged)}
-          style={styles.checkboxRow}
-          accessibilityRole="checkbox"
-          accessibilityLabel="I acknowledge that I am transferring to an external portal and may need to log in or register there."
-          accessibilityState={{ checked: acknowledged }}
+      {/* BOTTOM SHEET CARD */}
+      <View style={[
+        styles.sheet,
+        { backgroundColor: colors.card, paddingBottom: Math.max(insets.bottom, 24) }
+      ]}>
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.sheetContent}
+          bounces={false}
         >
-          <View style={[
-            styles.checkboxBox, 
-            checkboxBorder,
-            acknowledged && { backgroundColor: colors.primary, borderColor: colors.primary }
-          ]}>
-            {acknowledged && <Check color="#FFFFFF" size={14} strokeWidth={3} />}
+          {/* ORGANIZER ICON */}
+          <View style={[styles.orgIcon, { backgroundColor: highContrast ? "#000" : colors.surface }]}>
+            <AccessibleText style={styles.orgEmoji}>🏛️</AccessibleText>
           </View>
-          <AccessibleText variant="body" style={[styles.checkboxLabel, { color: colors.text }]}>
-            I understand that I will need to sign in or register on the external service portal.
+
+          {/* TITLE */}
+          <AccessibleText
+            variant="heroTitle"
+            style={[styles.sheetTitle, { color: colors.text }]}
+            accessibilityRole="header"
+          >
+            You are leaving{"\n"}DigiAbility
           </AccessibleText>
-        </TouchableOpacity>
 
-        {/* BUTTON ACTIONS */}
-        <View style={styles.actionContainer}>
-          <AccessibleButton
-            variant={acknowledged ? "primary" : "outline"}
-            disabled={!acknowledged || loading}
-            accessibilityLabel="Proceed to registration portal"
-            accessibilityHint="Opens external registration page in web browser overlay"
-            onPress={handleProceed}
-            style={styles.proceedButton}
-          >
-            {loading ? "Launching Portal..." : "Proceed to Register"}
-          </AccessibleButton>
+          <AccessibleText variant="body" style={[styles.sheetSubtitle, { color: colors.subtext }]}>
+            You will be redirected to {organizer || "Digiability Services"} to complete your registration
+          </AccessibleText>
 
+          {/* EVENT SUMMARY CARD */}
+          <View style={[styles.eventCard, { backgroundColor: highContrast ? "#f0f0f0" : "#F5F3FF" }]}>
+            <View style={styles.eventCardRow}>
+              <Calendar color={colors.primary} size={18} style={{ marginRight: 10 }} />
+              <AccessibleText variant="title" style={[styles.eventCardTitle, { color: colors.text }]}>
+                {eventTitle || "Selected Event"}
+              </AccessibleText>
+            </View>
+            {eventDate ? (
+              <View style={styles.eventCardMeta}>
+                <Calendar color={colors.subtext} size={14} style={{ marginRight: 6 }} />
+                <AccessibleText variant="body" style={{ color: colors.subtext, fontSize: 13 }}>
+                  {eventDate}
+                </AccessibleText>
+              </View>
+            ) : null}
+            {eventLocation ? (
+              <View style={styles.eventCardMeta}>
+                <MapPin color={colors.subtext} size={14} style={{ marginRight: 6 }} />
+                <AccessibleText variant="body" style={{ color: colors.subtext, fontSize: 13 }}>
+                  {eventLocation}
+                </AccessibleText>
+              </View>
+            ) : null}
+          </View>
+
+          {/* TRUST INDICATORS */}
+          <View style={styles.trustList}>
+            <View style={styles.trustRow}>
+              <Info color={colors.subtext} size={16} style={{ marginRight: 10 }} />
+              <AccessibleText variant="body" style={[styles.trustText, { color: colors.subtext }]}>
+                Your DigiAbility profile will not be shared automatically
+              </AccessibleText>
+            </View>
+            <View style={styles.trustRow}>
+              <Shield color={colors.subtext} size={16} style={{ marginRight: 10 }} />
+              <AccessibleText variant="body" style={[styles.trustText, { color: colors.subtext }]}>
+                Digiability is a trusted partner platform
+              </AccessibleText>
+            </View>
+          </View>
+
+          {/* CONTINUE BUTTON */}
           <TouchableOpacity
-            onPress={() => navigation.goBack()}
-            style={styles.cancelLink}
+            style={[
+              styles.continueBtn,
+              highContrast && { backgroundColor: "#000" },
+              loading && { opacity: 0.7 },
+            ]}
+            onPress={handleContinue}
+            disabled={loading}
             accessibilityRole="button"
-            accessibilityLabel="Cancel transition and return"
+            accessibilityLabel="Continue to Digiability registration portal"
+            accessibilityHint="Opens the external Digiability Services website in your browser"
+            accessibilityState={{ disabled: loading }}
           >
-            <AccessibleText variant="body" style={{ color: colors.primary, fontWeight: "700" }}>
-              Cancel & Return
+            {loading ? (
+              <ActivityIndicator color={highContrast ? "#fff" : "#500088"} />
+            ) : (
+              <>
+                <AccessibleText style={[styles.continueBtnText, highContrast && { color: "#fff" }]}>
+                  Continue to Digiability
+                </AccessibleText>
+                <ArrowUpRight
+                  color={highContrast ? "#fff" : "#500088"}
+                  size={18}
+                  style={{ marginLeft: 6 }}
+                />
+              </>
+            )}
+          </TouchableOpacity>
+
+          {/* SKIP BUTTON */}
+          <TouchableOpacity
+            style={[styles.skipBtn, { borderColor: colors.border }]}
+            onPress={handleSkip}
+            accessibilityRole="button"
+            accessibilityLabel="Skip and return to event details"
+            accessibilityHint="Cancels the external navigation and returns to the event page"
+          >
+            <AccessibleText style={[styles.skipBtnText, { color: colors.text }]}>
+              Skip
             </AccessibleText>
           </TouchableOpacity>
-        </View>
-      </ScrollView>
+
+          {/* FOOTER NOTE */}
+          <AccessibleText variant="caption" style={[styles.footerNote, { color: colors.subtext }]}>
+            By continuing you agree to Digiability terms
+          </AccessibleText>
+        </ScrollView>
+      </View>
     </ScreenWrapper>
   );
 }
 
 const styles = StyleSheet.create({
-  scrollContent: {
-    padding: 20,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingTop: 40,
+  backdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.45)",
   },
-  warningCard: {
-    borderRadius: 24,
-    padding: 24,
-    width: "100%",
-    alignItems: "center",
+  sheet: {
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
     shadowColor: "#000",
-    shadowOpacity: 0.03,
-    shadowRadius: 8,
-    elevation: 2,
-    marginBottom: 24,
+    shadowOpacity: 0.15,
+    shadowRadius: 24,
+    elevation: 16,
   },
-  alertIconBg: {
-    width: 64,
-    height: 64,
+  sheetContent: {
+    paddingHorizontal: 24,
+    paddingTop: 32,
+    paddingBottom: 8,
+    alignItems: "center",
+  },
+  orgIcon: {
+    width: 72,
+    height: 72,
     borderRadius: 20,
     justifyContent: "center",
     alignItems: "center",
-    marginBottom: 16,
+    marginBottom: 20,
   },
-  warningTitle: {
-    fontSize: 22,
+  orgEmoji: {
+    fontSize: 34,
+  },
+  sheetTitle: {
+    fontSize: 24,
     fontWeight: "900",
+    textAlign: "center",
+    lineHeight: 30,
     marginBottom: 8,
   },
-  warningDesc: {
-    textAlign: "center",
+  sheetSubtitle: {
     fontSize: 14,
-    marginBottom: 16,
-  },
-  eventLabelBox: {
-    width: "100%",
-    padding: 16,
-    borderRadius: 16,
-    marginBottom: 16,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  portalInfoText: {
     textAlign: "center",
-    fontSize: 14,
     lineHeight: 20,
+    marginBottom: 20,
+    paddingHorizontal: 8,
   },
-  checkboxRow: {
+  eventCard: {
+    width: "100%",
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 20,
+    gap: 8,
+  },
+  eventCardRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 6,
+  },
+  eventCardTitle: {
+    fontSize: 15,
+    fontWeight: "800",
+    flex: 1,
+  },
+  eventCardMeta: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  trustList: {
+    width: "100%",
+    gap: 10,
+    marginBottom: 24,
+  },
+  trustRow: {
     flexDirection: "row",
     alignItems: "flex-start",
-    paddingHorizontal: 10,
-    width: "100%",
-    marginBottom: 32,
   },
-  checkboxBox: {
-    width: 22,
-    height: 22,
-    borderRadius: 6,
+  trustText: {
+    flex: 1,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  continueBtn: {
+    width: "100%",
+    height: 56,
+    backgroundColor: "#F5C518",
+    borderRadius: 16,
+    flexDirection: "row",
     justifyContent: "center",
     alignItems: "center",
-    marginRight: 12,
-    marginTop: 2,
+    marginBottom: 12,
+    shadowColor: "#F5C518",
+    shadowOpacity: 0.4,
+    shadowRadius: 12,
+    elevation: 5,
   },
-  checkboxLabel: {
-    flex: 1,
-    fontSize: 14,
-    lineHeight: 20,
+  continueBtnText: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: "#500088",
   },
-  actionContainer: {
+  skipBtn: {
     width: "100%",
-    gap: 16,
-  },
-  proceedButton: {
-    width: "100%",
+    height: 52,
     borderRadius: 16,
-    height: 56,
-  },
-  cancelLink: {
+    borderWidth: 1.5,
+    justifyContent: "center",
     alignItems: "center",
-    paddingVertical: 12,
+    marginBottom: 16,
+  },
+  skipBtnText: {
+    fontSize: 16,
+    fontWeight: "700",
+  },
+  footerNote: {
+    fontSize: 11,
+    textAlign: "center",
+    marginBottom: 8,
   },
 });

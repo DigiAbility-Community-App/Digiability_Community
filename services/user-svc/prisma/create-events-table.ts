@@ -19,9 +19,14 @@ async function main() {
       spots INTEGER DEFAULT 50 NOT NULL,
       "buttonType" TEXT DEFAULT 'filled' NOT NULL,
       "externalUrl" TEXT NOT NULL,
+      organizer TEXT NOT NULL DEFAULT 'DigiAbility Admin',
+      accessibility_tags TEXT NOT NULL DEFAULT '',
       "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
       "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
+    ALTER TABLE events
+      ADD COLUMN IF NOT EXISTS organizer TEXT NOT NULL DEFAULT 'DigiAbility Admin',
+      ADD COLUMN IF NOT EXISTS accessibility_tags TEXT NOT NULL DEFAULT '';
   `;
 
   await prisma.$executeRawUnsafe(sql);

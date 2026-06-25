@@ -199,7 +199,10 @@ export const useForumStore = create<ForumState>((set, get) => ({
     set({ actionLoading: true, error: null });
     try {
       const newQuestion = await forumService.createQuestion(payload);
-      set({ actionLoading: false });
+      set((state) => ({
+        questions: [newQuestion, ...state.questions],
+        actionLoading: false,
+      }));
       return newQuestion;
     } catch (err: any) {
       const errMsg = err.response?.data?.message || "Failed to submit question";

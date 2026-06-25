@@ -17,28 +17,31 @@ function parsePostgresArray(val: any): string[] {
 
 export async function GET() {
   try {
-    // Query users and join with user_profiles to get location (city)
+    // Query users, join with profiles for city, and join forum_user_stats for suspension status
     const result = await dbPool.query(`
-      SELECT 
-        u.id, 
-        u.name, 
-        u.email, 
-        u."createdAt" as joined, 
-        u.roles, 
+      SELECT
+        u.id,
+        u.name,
+        u.email,
+        u."createdAt" as joined,
+        u.roles,
         u."profileComplete",
         u."isEmailVerified",
-        up.city as location
+        up.city as location,
+        up."disabilityType",
+        up.username,
+        COALESCE(fus."isSuspended", false) as "isSuspended"
       FROM users u
       LEFT JOIN user_profiles up ON u.id = up."userId"
+      LEFT JOIN forum_user_stats fus ON u.id = fus."userId"
+      WHERE u."deletedAt" IS NULL
       ORDER BY u."createdAt" DESC
     `);
 
     const formattedUsers = result.rows.map((row) => {
-      // Parse Postgres enum array and map to uppercase
       const rawRoles = parsePostgresArray(row.roles);
       const roles = rawRoles.map((r: string) => r.toUpperCase());
 
-      // Format joined date (e.g., "12 Jun 2026")
       const joinedDate = new Date(row.joined);
       const formattedJoined = joinedDate.toLocaleDateString("en-GB", {
         day: "2-digit",
@@ -46,9 +49,11 @@ export async function GET() {
         year: "numeric",
       });
 
-      // Map status
+      // Determine status — suspended takes priority over active/inactive
       let status = "Inactive";
-      if (row.isEmailVerified && row.profileComplete) {
+      if (row.isSuspended) {
+        status = "Suspended";
+      } else if (row.isEmailVerified && row.profileComplete) {
         status = "Active";
       }
 
@@ -56,9 +61,13 @@ export async function GET() {
         id: row.id,
         name: row.name || "Anonymous",
         email: row.email,
+        username: row.username ? `@${row.username}` : "—",
         roles: roles,
         joined: formattedJoined,
+        // Store raw ISO date for date-range filtering on the client
+        joinedRaw: row.joined,
         location: row.location || "Not Set",
+        disabilityType: row.disabilityType || "N/A",
         status: status,
       };
     });
@@ -76,8 +85,8 @@ export async function GET() {
         total: totalUsers.toLocaleString(),
         active: activeUsers.toLocaleString(),
         inactive: inactiveUsers.toLocaleString(),
-        suspended: suspendedUsers.toLocaleString()
-      }
+        suspended: suspendedUsers.toLocaleString(),
+      },
     });
   } catch (error) {
     console.error("Failed to fetch users:", error);

@@ -13,7 +13,7 @@ import {
   Activity,
   Settings,
   LogOut,
-  Accessibility,
+  UsersRound,
 } from "lucide-react";
 
 const navItems = [
@@ -28,6 +28,11 @@ const navItems = [
     icon: Users,
   },
   {
+    label: "Groups",
+    href: "/groups",
+    icon: UsersRound,
+  },
+  {
     label: "Moderation",
     href: "/moderation",
     icon: ShieldAlert,
@@ -38,7 +43,7 @@ const navItems = [
     icon: MessageSquare,
   },
   {
-    label: "Event Management",
+    label: "Events",
     href: "/events",
     icon: CalendarDays,
   },

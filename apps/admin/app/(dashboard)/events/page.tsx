@@ -1,19 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { 
-  CalendarDays, 
-  MapPin, 
-  Users, 
-  Plus, 
-  Trash2, 
-  X, 
-  Clock, 
-  Globe, 
-  Image as ImageIcon, 
-  ExternalLink,
-  Loader2,
-  Tag
+import {
+  Plus, Search, ChevronDown, Download, ChevronLeft, ChevronRight,
+  MapPin, Clock, X, Loader2, Tag, ExternalLink, Trash2, Calendar,
 } from "lucide-react";
 
 interface EventType {
@@ -28,517 +18,416 @@ interface EventType {
   spots: number;
   buttonType: string;
   externalUrl: string;
+  organizer: string;
+  accessibility_tags: string;
+}
+
+// Static calendar widget helpers
+const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+const DAYS = ["S","M","T","W","T","F","S"];
+
+function getDaysInMonth(year: number, month: number) {
+  return new Date(year, month + 1, 0).getDate();
+}
+function getFirstDayOfMonth(year: number, month: number) {
+  return new Date(year, month, 1).getDay();
 }
 
 export default function EventsPage() {
   const [events, setEvents] = useState<EventType[]>([]);
   const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("All");
+  const [categoryFilter, setCategoryFilter] = useState("All");
+  const [cityFilter, setCityFilter] = useState("");
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 10;
+
+  // Calendar state
+  const now = new Date();
+  const [calYear, setCalYear] = useState(now.getFullYear());
+  const [calMonth, setCalMonth] = useState(now.getMonth());
+
+  // Create modal
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [errorMessage, setErrorMessage] = useState("");
-  const [successMessage, setSuccessMessage] = useState("");
-
-  // Form fields
+  const [successMsg, setSuccessMsg] = useState("");
+  const [errorMsg, setErrorMsg] = useState("");
   const [formData, setFormData] = useState({
-    title: "",
-    category: "Medical Support",
-    location: "",
-    date: "",
-    time: "",
-    image: "",
-    description: "",
-    spots: "50",
-    buttonType: "filled",
-    externalUrl: "",
+    title: "", category: "Medical Support", location: "", date: "", time: "",
+    image: "", description: "", spots: "50", buttonType: "filled", externalUrl: "",
+    organizer: "", accessibilityTags: "",
   });
 
-  useEffect(() => {
-    fetchEvents();
-  }, []);
-
   const fetchEvents = async () => {
+    setLoading(true);
     try {
-      setLoading(true);
       const res = await fetch("/api/events");
       const data = await res.json();
-      if (data.success) {
-        setEvents(data.events || []);
-      }
-    } catch (error) {
-      console.error("Failed to load events", error);
-    } finally {
-      setLoading(false);
-    }
+      if (data.success) setEvents(data.events || []);
+    } catch (e) { console.error(e); }
+    finally { setLoading(false); }
   };
 
-  const handleInputChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
-  ) => {
+  useEffect(() => { fetchEvents(); }, []);
+
+  const handleInput = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: value }));
+    setFormData(prev => ({ ...prev, [name]: value }));
   };
 
-  const handleCreateEvent = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setErrorMessage("");
-    setSuccessMessage("");
-    setSubmitting(true);
+  const autofillImage = (cat: string) => {
+    const map: Record<string, string> = {
+      "Medical Support": "https://images.unsplash.com/photo-1576091160550-2173dba999ef?q=80&w=1200&auto=format&fit=crop",
+      "Legal Aid": "https://images.unsplash.com/photo-1521791136064-7986c2920216?q=80&w=1200&auto=format&fit=crop",
+      "Skill Training": "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?q=80&w=1200&auto=format&fit=crop",
+      "Assistive Technology": "https://images.unsplash.com/photo-1516574187841-cb9cc2ca948b?q=80&w=1200&auto=format&fit=crop",
+    };
+    setFormData(prev => ({ ...prev, image: map[cat] || "https://images.unsplash.com/photo-1517245386807-bb43f82c33c4?q=80&w=1200&auto=format&fit=crop" }));
+  };
 
+  const handleCreate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSubmitting(true); setErrorMsg(""); setSuccessMsg("");
     try {
       const res = await fetch("/api/events", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+        method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify(formData),
       });
-
       const data = await res.json();
-
       if (data.success) {
-        setSuccessMessage("Event created successfully!");
-        setFormData({
-          title: "",
-          category: "Medical Support",
-          location: "",
-          date: "",
-          time: "",
-          image: "",
-          description: "",
-          spots: "50",
-          buttonType: "filled",
-          externalUrl: "",
-        });
+        setSuccessMsg("Event created!");
+        setFormData({ title: "", category: "Medical Support", location: "", date: "", time: "", image: "", description: "", spots: "50", buttonType: "filled", externalUrl: "", organizer: "", accessibilityTags: "" });
         fetchEvents();
-        setTimeout(() => {
-          setIsModalOpen(false);
-          setSuccessMessage("");
-        }, 1200);
-      } else {
-        setErrorMessage(data.message || "Failed to create event.");
-      }
-    } catch (error) {
-      setErrorMessage("An unexpected error occurred.");
-    } finally {
-      setSubmitting(false);
-    }
+        setTimeout(() => { setIsModalOpen(false); setSuccessMsg(""); }, 1200);
+      } else { setErrorMsg(data.message || "Failed."); }
+    } catch { setErrorMsg("Unexpected error."); }
+    finally { setSubmitting(false); }
   };
 
-  const handleDeleteEvent = async (id: string) => {
-    if (!confirm("Are you sure you want to delete this event? This action cannot be undone.")) return;
-
+  const handleDelete = async (id: string) => {
+    if (!confirm("Delete this event?")) return;
     try {
-      const res = await fetch(`/api/events/${id}`, {
-        method: "DELETE",
-      });
-
+      const res = await fetch(`/api/events/${id}`, { method: "DELETE" });
       const data = await res.json();
-      if (data.success) {
-        setEvents((prev) => prev.filter((event) => event.id !== id));
-      }
-    } catch (error) {
-      console.error("Failed to delete event", error);
-      alert("Failed to delete event.");
-    }
+      if (data.success) setEvents(prev => prev.filter(e => e.id !== id));
+    } catch (e) { console.error(e); }
   };
 
-  const autofillImage = (categoryName: string) => {
-    let url = "";
-    switch (categoryName) {
-      case "Medical Support":
-        url = "https://images.unsplash.com/photo-1576091160550-2173dba999ef?q=80&w=1200&auto=format&fit=crop";
-        break;
-      case "Legal Aid":
-        url = "https://images.unsplash.com/photo-1521791136064-7986c2920216?q=80&w=1200&auto=format&fit=crop";
-        break;
-      case "Skill Training":
-        url = "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?q=80&w=1200&auto=format&fit=crop";
-        break;
-      case "Assistive Technology":
-        url = "https://images.unsplash.com/photo-1516574187841-cb9cc2ca948b?q=80&w=1200&auto=format&fit=crop";
-        break;
-      default:
-        url = "https://images.unsplash.com/photo-1517245386807-bb43f82c33c4?q=80&w=1200&auto=format&fit=crop";
-    }
-    setFormData((prev) => ({ ...prev, image: url }));
-  };
+  // Filters
+  const categories = Array.from(new Set(events.map(e => e.category)));
+  const filtered = events.filter(ev => {
+    const s = search.toLowerCase();
+    const matchSearch = ev.title.toLowerCase().includes(s) || ev.location.toLowerCase().includes(s) || ev.category.toLowerCase().includes(s);
+    const matchCat = categoryFilter === "All" || ev.category === categoryFilter;
+    const matchCity = !cityFilter || ev.location.toLowerCase().includes(cityFilter.toLowerCase());
+    return matchSearch && matchCat && matchCity;
+  });
 
-  // Stats calculation
-  const totalEvents = events.length;
-  const onlineEvents = events.filter(e => e.location.toLowerCase() === "online").length;
-  const physicalEvents = totalEvents - onlineEvents;
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+  // Category breakdown
+  const catBreakdown = categories.map(cat => ({
+    name: cat.toUpperCase(),
+    count: events.filter(e => e.category === cat).length,
+    color: { "Medical Support": "#7004DC", "Legal Aid": "#DC2626", "Skill Training": "#D2A500", "Awareness": "#D2A500", "Assistive Technology": "#3b82f6", "General Support": "#94a3b8" }[cat] || "#7004DC",
+  }));
+  const totalCatCount = events.length;
+
+  // Calendar render
+  const daysInMonth = getDaysInMonth(calYear, calMonth);
+  const firstDay = getFirstDayOfMonth(calYear, calMonth);
+  const today = now.getDate();
+  const isCurrentMonth = calYear === now.getFullYear() && calMonth === now.getMonth();
+  const calCells: (number | null)[] = [...Array(firstDay).fill(null), ...Array.from({ length: daysInMonth }, (_, i) => i + 1)];
+
+  // Upcoming this week (next 7 events from DB)
+  const upcomingThisWeek = events.slice(0, 3);
 
   return (
-    <main className="flex-1 p-8 bg-[#F6F6F6] min-h-screen overflow-y-auto">
+    <div className="px-8 py-7 min-h-screen">
+
       {/* HEADER */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
+      <div className="flex items-center justify-between mb-6">
         <div>
-          <h2 className="text-3xl font-extrabold text-[#1A1A2E] tracking-tight">Events Console</h2>
-          <p className="text-slate-500 mt-1">Manage public programs, workshops, and aid camps for the DigiAbility Community.</p>
+          <h1 className="text-2xl font-extrabold text-[#1A1C1C]">Events Management</h1>
+          <p className="text-sm text-[#7D7387] mt-0.5">Manage and schedule organizational activities</p>
         </div>
         <button
           onClick={() => setIsModalOpen(true)}
-          className="flex items-center gap-2 px-5 py-3 bg-[#8A38F5] hover:bg-[#762DD1] text-white rounded-2xl font-bold shadow-lg shadow-violet-500/20 transition-all active:scale-[0.98]"
+          className="h-11 px-5 rounded-xl bg-[#D2A500] hover:bg-[#b89300] transition text-white font-bold flex items-center gap-2 shadow-md"
         >
-          <Plus className="w-5 h-5" />
-          <span>Publish Event</span>
+          <Plus className="w-4 h-4" /> Create Event
         </button>
       </div>
 
-      {/* STATS */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-        <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm flex items-center gap-5">
-          <div className="p-4 bg-violet-50 text-[#8A38F5] rounded-2xl">
-            <CalendarDays className="w-8 h-8" />
-          </div>
-          <div>
-            <p className="text-sm font-semibold text-slate-400">Total Programs</p>
-            <p className="text-2xl font-black text-slate-800 mt-1">{totalEvents}</p>
-          </div>
+      {/* FILTER BAR */}
+      <div className="flex flex-wrap items-center gap-3 mb-6 bg-white rounded-xl border border-gray-100 shadow-sm p-4">
+        <div className="relative flex-1 min-w-[160px]">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#7D7387]" />
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search events..." className="w-full h-9 rounded-lg bg-[#F7F5FA] pl-9 pr-3 text-sm outline-none border border-transparent focus:border-[#8A38F5]" />
         </div>
-
-        <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm flex items-center gap-5">
-          <div className="p-4 bg-emerald-50 text-emerald-600 rounded-2xl">
-            <Globe className="w-8 h-8" />
-          </div>
-          <div>
-            <p className="text-sm font-semibold text-slate-400">Online Workshops</p>
-            <p className="text-2xl font-black text-slate-800 mt-1">{onlineEvents}</p>
-          </div>
+        <div className="relative">
+          <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="h-9 px-3 pr-7 rounded-lg border border-gray-200 bg-white text-sm outline-none appearance-none focus:border-[#8A38F5]">
+            <option>Status</option>
+            <option>All</option>
+            <option>Active</option>
+          </select>
+          <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
         </div>
-
-        <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm flex items-center gap-5">
-          <div className="p-4 bg-orange-50 text-orange-600 rounded-2xl">
-            <MapPin className="w-8 h-8" />
-          </div>
-          <div>
-            <p className="text-sm font-semibold text-slate-400">Physical camps</p>
-            <p className="text-2xl font-black text-slate-800 mt-1">{physicalEvents}</p>
-          </div>
+        <div className="relative">
+          <select value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)} className="h-9 px-3 pr-7 rounded-lg border border-gray-200 bg-white text-sm outline-none appearance-none focus:border-[#8A38F5]">
+            <option value="All">Category</option>
+            {categories.map(c => <option key={c}>{c}</option>)}
+          </select>
+          <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
+        </div>
+        <div className="relative">
+          <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+          <input type="text" placeholder="mm/dd/yyyy" className="h-9 pl-8 pr-3 rounded-lg border border-gray-200 bg-white text-sm outline-none focus:border-[#8A38F5] w-36" />
+        </div>
+        <div className="relative">
+          <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+          <input value={cityFilter} onChange={e => setCityFilter(e.target.value)} placeholder="City" className="h-9 pl-8 pr-3 rounded-lg border border-gray-200 bg-white text-sm outline-none focus:border-[#8A38F5] w-28" />
         </div>
       </div>
 
-      {/* EVENTS TABLE/LIST */}
-      <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
-        <div className="p-6 border-b border-slate-100 flex justify-between items-center">
-          <h3 className="text-lg font-bold text-slate-800">Event Registry</h3>
-          <span className="text-xs font-semibold bg-violet-50 text-[#8A38F5] px-3 py-1 rounded-full uppercase tracking-wider">
-            {events.length} listed
-          </span>
+      <div className="grid grid-cols-1 xl:grid-cols-[1fr_300px] gap-6">
+
+        {/* LEFT: TABLE */}
+        <div>
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+            {/* TABLE HEADER */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+              <h3 className="text-base font-extrabold text-[#1A1C1C]">Events Table</h3>
+              <button className="text-sm font-bold text-[#7004DC] flex items-center gap-1.5 hover:underline">
+                <Download className="w-4 h-4" /> Export CSV
+              </button>
+            </div>
+
+            {loading ? (
+              <div className="flex items-center justify-center py-20">
+                <Loader2 className="w-8 h-8 animate-spin text-[#8A38F5]" />
+              </div>
+            ) : filtered.length === 0 ? (
+              <div className="text-center py-16 text-slate-400">
+                <Calendar className="w-12 h-12 mx-auto mb-3 text-slate-300" />
+                <p className="font-semibold">No events found</p>
+              </div>
+            ) : (
+              <>
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead className="bg-[#F7F5FA]">
+                      <tr>
+                        {["EVENT NAME", "CATEGORY", "ORGANIZER", "DATE", "CITY", "ATTENDEES", ""].map(h => (
+                          <th key={h} className="px-5 py-3 text-left text-[10px] font-bold uppercase tracking-[0.12em] text-[#7D7387]">{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {paginated.map(ev => (
+                        <tr key={ev.id} className="hover:bg-[#FAFAFA] transition">
+                          <td className="px-5 py-4">
+                            <p className="text-sm font-bold text-[#7004DC] hover:underline cursor-pointer line-clamp-1">{ev.title}</p>
+                          </td>
+                          <td className="px-5 py-4 text-sm text-[#4B4355]">{ev.category}</td>
+                          <td className="px-5 py-4 text-sm text-[#4B4355]">{ev.organizer || "—"}</td>
+                          <td className="px-5 py-4 text-sm text-[#4B4355] whitespace-nowrap">{ev.date}</td>
+                          <td className="px-5 py-4 text-sm text-[#4B4355]">{ev.location}</td>
+                          <td className="px-5 py-4 text-sm font-semibold text-[#1A1C1C]">{ev.spots}</td>
+                          <td className="px-5 py-4">
+                            <button onClick={() => handleDelete(ev.id)} className="w-8 h-8 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 flex items-center justify-center transition">
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* PAGINATION */}
+                <div className="flex items-center justify-between px-6 py-4 border-t border-gray-100 bg-[#F7F5FA]">
+                  <p className="text-sm text-[#7D7387]">Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, filtered.length)} of {filtered.length} events</p>
+                  <div className="flex gap-2">
+                    <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} className="h-9 px-4 rounded-xl border border-gray-200 text-sm font-semibold text-[#4B4355] disabled:opacity-40 hover:bg-gray-50 transition">Previous</button>
+                    <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages} className="h-9 px-4 rounded-xl bg-[#7004DC] text-white text-sm font-semibold disabled:opacity-40 transition">Next</button>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
         </div>
 
-        {loading ? (
-          <div className="flex flex-col items-center justify-center py-20 text-slate-400 gap-3">
-            <Loader2 className="w-8 h-8 animate-spin text-[#8A38F5]" />
-            <p className="font-semibold text-sm">Loading events registry...</p>
-          </div>
-        ) : events.length === 0 ? (
-          <div className="text-center py-20 px-6">
-            <div className="inline-flex p-5 bg-slate-50 text-slate-400 rounded-3xl mb-4">
-              <CalendarDays className="w-10 h-10" />
+        {/* RIGHT SIDEBAR */}
+        <div className="space-y-5">
+
+          {/* CALENDAR */}
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+            <div className="flex items-center justify-between mb-4">
+              <h4 className="text-sm font-extrabold text-[#1A1C1C]">{MONTHS[calMonth]} {calYear}</h4>
+              <div className="flex gap-1">
+                <button onClick={() => { if (calMonth === 0) { setCalMonth(11); setCalYear(y => y - 1); } else setCalMonth(m => m - 1); }} className="w-7 h-7 rounded-lg hover:bg-[#F3F3F3] flex items-center justify-center">
+                  <ChevronLeft className="w-3.5 h-3.5 text-[#7D7387]" />
+                </button>
+                <button onClick={() => { if (calMonth === 11) { setCalMonth(0); setCalYear(y => y + 1); } else setCalMonth(m => m + 1); }} className="w-7 h-7 rounded-lg hover:bg-[#F3F3F3] flex items-center justify-center">
+                  <ChevronRight className="w-3.5 h-3.5 text-[#7D7387]" />
+                </button>
+              </div>
             </div>
-            <h4 className="text-lg font-bold text-slate-700">No events found</h4>
-            <p className="text-slate-400 text-sm max-w-sm mx-auto mt-1">Publish your first program to help the community access support and skill camps.</p>
-            <button
-              onClick={() => setIsModalOpen(true)}
-              className="mt-5 inline-flex items-center gap-2 px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold transition-all active:scale-[0.98]"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Publish First Event</span>
+
+            <div className="grid grid-cols-7 gap-0 mb-2">
+              {DAYS.map((d, i) => <div key={i} className="text-center text-[10px] font-bold text-[#7D7387] py-1">{d}</div>)}
+            </div>
+            <div className="grid grid-cols-7 gap-0">
+              {calCells.map((day, i) => (
+                <div key={i} className="flex items-center justify-center py-1">
+                  {day ? (
+                    <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold cursor-pointer ${isCurrentMonth && day === today ? "bg-[#7004DC] text-white" : "text-[#4B4355] hover:bg-[#F3F3F3]"}`}>
+                      {day}
+                    </div>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* UPCOMING THIS WEEK */}
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+            <h4 className="text-sm font-extrabold text-[#1A1C1C] mb-4">Upcoming This Week</h4>
+            {upcomingThisWeek.length === 0 ? (
+              <p className="text-xs text-slate-400">No upcoming events</p>
+            ) : (
+              <div className="space-y-3">
+                {upcomingThisWeek.map((ev, i) => {
+                  const colors = ["bg-[#7004DC]", "bg-[#D2A500]", "bg-green-600"];
+                  const parts = ev.date.split(" ");
+                  return (
+                    <div key={ev.id} className="flex items-center gap-3">
+                      <div className={`w-12 h-12 rounded-xl ${colors[i % colors.length]} flex flex-col items-center justify-center text-white shrink-0`}>
+                        <span className="text-[9px] font-bold uppercase leading-none">{parts[1] || ""}</span>
+                        <span className="text-base font-extrabold leading-none">{parts[0] || ""}</span>
+                      </div>
+                      <div>
+                        <p className="text-sm font-bold text-[#1A1C1C] line-clamp-1">{ev.title}</p>
+                        <p className="text-xs text-[#7D7387] flex items-center gap-1 mt-0.5">
+                          <MapPin className="w-3 h-3" /> {ev.location}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            <button className="w-full mt-4 h-9 rounded-xl border border-[#7004DC] text-[#7004DC] text-xs font-bold hover:bg-violet-50 transition">
+              View All Weekly Schedule
             </button>
           </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="bg-slate-50 border-b border-slate-100 text-xs font-bold text-slate-400 uppercase tracking-wider">
-                  <th className="px-6 py-4">Event Details</th>
-                  <th className="px-6 py-4">Category</th>
-                  <th className="px-6 py-4">Location</th>
-                  <th className="px-6 py-4">Date & Time</th>
-                  <th className="px-6 py-4">Spots</th>
-                  <th className="px-6 py-4">External Portal</th>
-                  <th className="px-6 py-4 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 text-sm">
-                {events.map((event) => (
-                  <tr key={event.id} className="hover:bg-slate-50/50 transition-colors">
-                    <td className="px-6 py-5">
-                      <div className="flex items-center gap-4">
-                        <img
-                          src={event.image}
-                          alt={event.title}
-                          className="w-16 h-12 rounded-xl object-cover border border-slate-100"
-                          onError={(e) => {
-                            (e.target as HTMLImageElement).src = "https://images.unsplash.com/photo-1517245386807-bb43f82c33c4?q=80&w=1200&auto=format&fit=crop";
-                          }}
-                        />
-                        <div>
-                          <p className="font-bold text-slate-800 line-clamp-1">{event.title}</p>
-                          <p className="text-slate-400 text-xs line-clamp-1 mt-0.5">{event.description}</p>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-5">
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-violet-50 text-[#8A38F5]">
-                        <Tag className="w-3.5 h-3.5" />
-                        {event.category}
-                      </span>
-                    </td>
-                    <td className="px-6 py-5 text-slate-600 font-medium">
-                      <span className="inline-flex items-center gap-1">
-                        <MapPin className="w-3.5 h-3.5 text-slate-400" />
-                        {event.location}
-                      </span>
-                    </td>
-                    <td className="px-6 py-5">
-                      <div>
-                        <p className="font-semibold text-slate-700">{event.date}</p>
-                        <p className="text-xs text-slate-400 mt-0.5">{event.time || "All Day"}</p>
-                      </div>
-                    </td>
-                    <td className="px-6 py-5">
-                      <div className="flex items-center gap-1 text-slate-600 font-semibold">
-                        <Users className="w-4 h-4 text-slate-400" />
-                        {event.spots}
-                      </div>
-                    </td>
-                    <td className="px-6 py-5">
-                      <a 
-                        href={event.externalUrl} 
-                        target="_blank" 
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 text-violet-500 hover:text-violet-700 font-medium text-xs hover:underline"
-                      >
-                        <span>View Portal</span>
-                        <ExternalLink className="w-3 h-3" />
-                      </a>
-                    </td>
-                    <td className="px-6 py-5 text-right">
-                      <button
-                        onClick={() => handleDeleteEvent(event.id)}
-                        className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"
-                        title="Delete Program"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+
+          {/* EVENT CATEGORIES */}
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+            <h4 className="text-sm font-extrabold text-[#1A1C1C] mb-4">Event Categories</h4>
+            <div className="space-y-3">
+              {catBreakdown.map(cat => {
+                const pct = totalCatCount > 0 ? Math.round((cat.count / totalCatCount) * 100) : 0;
+                return (
+                  <div key={cat.name}>
+                    <div className="flex justify-between items-center mb-1">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-[#7D7387]">{cat.name}</span>
+                      <span className="text-xs font-bold text-[#1A1C1C]">{pct}%</span>
+                    </div>
+                    <div className="h-1.5 bg-[#F3F3F3] rounded-full overflow-hidden">
+                      <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: cat.color }} />
+                    </div>
+                  </div>
+                );
+              })}
+              {catBreakdown.length === 0 && <p className="text-xs text-slate-400">No categories yet</p>}
+            </div>
           </div>
-        )}
+        </div>
       </div>
 
       {/* CREATE EVENT MODAL */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm transition-all duration-300">
-          <div className="bg-white rounded-3xl w-full max-w-2xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh] animate-in fade-in zoom-in-95 duration-200">
-            {/* MODAL HEADER */}
-            <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+          <div className="bg-white rounded-3xl w-full max-w-2xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden">
+            <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50">
               <div>
-                <h3 className="text-xl font-bold text-slate-800">Publish New Event</h3>
-                <p className="text-slate-400 text-xs mt-0.5">Fill in the event specs to showcase on the user's mobile community dashboard.</p>
+                <h3 className="text-lg font-extrabold text-[#1A1C1C]">Publish New Event</h3>
+                <p className="text-xs text-slate-400 mt-0.5">Fill in the event details</p>
               </div>
-              <button
-                onClick={() => setIsModalOpen(false)}
-                className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition-all"
-              >
-                <X className="w-5 h-5" />
+              <button onClick={() => setIsModalOpen(false)} className="w-8 h-8 rounded-full hover:bg-gray-200 flex items-center justify-center">
+                <X className="w-4 h-4 text-slate-500" />
               </button>
             </div>
 
-            {/* MODAL FORM */}
-            <form onSubmit={handleCreateEvent} className="flex-1 overflow-y-auto p-6 space-y-6">
-              {errorMessage && (
-                <div className="p-4 bg-red-50 text-red-600 rounded-2xl text-sm font-semibold border border-red-100">
-                  ⚠️ {errorMessage}
-                </div>
-              )}
-              {successMessage && (
-                <div className="p-4 bg-emerald-50 text-emerald-600 rounded-2xl text-sm font-semibold border border-emerald-100">
-                  🎉 {successMessage}
-                </div>
-              )}
+            <form onSubmit={handleCreate} className="flex-1 overflow-y-auto p-6 space-y-5">
+              {errorMsg && <div className="p-3 bg-red-50 text-red-600 rounded-xl text-sm font-semibold">{errorMsg}</div>}
+              {successMsg && <div className="p-3 bg-green-50 text-green-600 rounded-xl text-sm font-semibold">{successMsg}</div>}
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                {/* Title */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="md:col-span-2">
-                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Program Title *</label>
-                  <input
-                    type="text"
-                    name="title"
-                    required
-                    value={formData.title}
-                    onChange={handleInputChange}
-                    placeholder="e.g. Adaptive Sports Workshop 2026"
-                    className="w-full px-4 py-3 border border-slate-200 rounded-2xl focus:outline-none focus:border-[#8A38F5] text-slate-800 transition-colors"
-                  />
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">Program Title *</label>
+                  <input name="title" required value={formData.title} onChange={handleInput} placeholder="e.g. Adaptive Sports Workshop 2026" className="w-full h-11 rounded-xl border border-slate-200 px-4 text-sm outline-none focus:border-[#8A38F5]" />
                 </div>
-
-                {/* Category */}
                 <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Category *</label>
-                  <select
-                    name="category"
-                    value={formData.category}
-                    onChange={(e) => {
-                      handleInputChange(e);
-                      autofillImage(e.target.value);
-                    }}
-                    className="w-full px-4 py-3 border border-slate-200 rounded-2xl focus:outline-none focus:border-[#8A38F5] text-slate-800 bg-white transition-colors"
-                  >
-                    <option value="Medical Support">Medical Support</option>
-                    <option value="Legal Aid">Legal Aid</option>
-                    <option value="Skill Training">Skill Training</option>
-                    <option value="Assistive Technology">Assistive Technology</option>
-                    <option value="General Support">General Support</option>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">Category *</label>
+                  <select name="category" value={formData.category} onChange={e => { handleInput(e); autofillImage(e.target.value); }} className="w-full h-11 rounded-xl border border-slate-200 px-4 text-sm outline-none focus:border-[#8A38F5] bg-white appearance-none">
+                    {["Medical Support","Legal Aid","Skill Training","Assistive Technology","General Support"].map(c => <option key={c}>{c}</option>)}
                   </select>
                 </div>
-
-                {/* Location */}
                 <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Location *</label>
-                  <input
-                    type="text"
-                    name="location"
-                    required
-                    value={formData.location}
-                    onChange={handleInputChange}
-                    placeholder="e.g. Pune (or 'Online')"
-                    className="w-full px-4 py-3 border border-slate-200 rounded-2xl focus:outline-none focus:border-[#8A38F5] text-slate-800 transition-colors"
-                  />
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">Location *</label>
+                  <input name="location" required value={formData.location} onChange={handleInput} placeholder="e.g. Pune (or 'Online')" className="w-full h-11 rounded-xl border border-slate-200 px-4 text-sm outline-none focus:border-[#8A38F5]" />
                 </div>
-
-                {/* Date */}
                 <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Date (Text description) *</label>
-                  <input
-                    type="text"
-                    name="date"
-                    required
-                    value={formData.date}
-                    onChange={handleInputChange}
-                    placeholder="e.g. 15 March or 24 AUG"
-                    className="w-full px-4 py-3 border border-slate-200 rounded-2xl focus:outline-none focus:border-[#8A38F5] text-slate-800 transition-colors"
-                  />
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">Date *</label>
+                  <input name="date" required value={formData.date} onChange={handleInput} placeholder="e.g. 15 March" className="w-full h-11 rounded-xl border border-slate-200 px-4 text-sm outline-none focus:border-[#8A38F5]" />
                 </div>
-
-                {/* Time */}
                 <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Time (Optional)</label>
-                  <input
-                    type="text"
-                    name="time"
-                    value={formData.time}
-                    onChange={handleInputChange}
-                    placeholder="e.g. 10:00 AM - 1:00 PM"
-                    className="w-full px-4 py-3 border border-slate-200 rounded-2xl focus:outline-none focus:border-[#8A38F5] text-slate-800 transition-colors"
-                  />
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">Time (Optional)</label>
+                  <input name="time" value={formData.time} onChange={handleInput} placeholder="e.g. 10:00 AM - 1:00 PM" className="w-full h-11 rounded-xl border border-slate-200 px-4 text-sm outline-none focus:border-[#8A38F5]" />
                 </div>
-
-                {/* Image URL */}
                 <div className="md:col-span-2">
-                  <div className="flex justify-between items-center mb-2">
-                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-500">Image URL *</label>
-                    <button
-                      type="button"
-                      onClick={() => autofillImage(formData.category)}
-                      className="text-xs text-violet-500 hover:text-violet-700 font-semibold flex items-center gap-1"
-                    >
-                      <ImageIcon className="w-3 h-3" />
-                      <span>Use Category Autofill</span>
-                    </button>
-                  </div>
-                  <input
-                    type="url"
-                    name="image"
-                    required
-                    value={formData.image}
-                    onChange={handleInputChange}
-                    placeholder="https://images.unsplash.com/..."
-                    className="w-full px-4 py-3 border border-slate-200 rounded-2xl focus:outline-none focus:border-[#8A38F5] text-slate-800 transition-colors"
-                  />
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">Image URL *</label>
+                  <input name="image" required value={formData.image} onChange={handleInput} placeholder="https://images.unsplash.com/..." className="w-full h-11 rounded-xl border border-slate-200 px-4 text-sm outline-none focus:border-[#8A38F5]" />
                 </div>
-
-                {/* Description */}
                 <div className="md:col-span-2">
-                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Program Description *</label>
-                  <textarea
-                    name="description"
-                    required
-                    rows={3}
-                    value={formData.description}
-                    onChange={handleInputChange}
-                    placeholder="Detail the event objectives, who can attend, and prerequisites."
-                    className="w-full px-4 py-3 border border-slate-200 rounded-2xl focus:outline-none focus:border-[#8A38F5] text-slate-800 resize-none transition-colors"
-                  />
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">Description *</label>
+                  <textarea name="description" required rows={3} value={formData.description} onChange={handleInput} className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-[#8A38F5] resize-none" />
                 </div>
-
-                {/* Spots */}
                 <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Total Spots</label>
-                  <input
-                    type="number"
-                    name="spots"
-                    value={formData.spots}
-                    onChange={handleInputChange}
-                    placeholder="50"
-                    className="w-full px-4 py-3 border border-slate-200 rounded-2xl focus:outline-none focus:border-[#8A38F5] text-slate-800 transition-colors"
-                  />
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">Total Spots</label>
+                  <input name="spots" type="number" value={formData.spots} onChange={handleInput} className="w-full h-11 rounded-xl border border-slate-200 px-4 text-sm outline-none focus:border-[#8A38F5]" />
                 </div>
-
-                {/* Button Type */}
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Button Style</label>
-                  <select
-                    name="buttonType"
-                    value={formData.buttonType}
-                    onChange={handleInputChange}
-                    className="w-full px-4 py-3 border border-slate-200 rounded-2xl focus:outline-none focus:border-[#8A38F5] text-slate-800 bg-white transition-colors"
-                  >
-                    <option value="filled">Filled (Primary Accent)</option>
-                    <option value="outline">Outline</option>
-                  </select>
-                </div>
-
-                {/* External URL */}
                 <div className="md:col-span-2">
-                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">External Portal URL (Digiability Service App Link) *</label>
-                  <input
-                    type="url"
-                    name="externalUrl"
-                    required
-                    value={formData.externalUrl}
-                    onChange={handleInputChange}
-                    placeholder="https://services.digiability.org/register/..."
-                    className="w-full px-4 py-3 border border-slate-200 rounded-2xl focus:outline-none focus:border-[#8A38F5] text-slate-800 transition-colors"
-                  />
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">External Portal URL *</label>
+                  <input name="externalUrl" required type="url" value={formData.externalUrl} onChange={handleInput} placeholder="https://services.digiability.org/..." className="w-full h-11 rounded-xl border border-slate-200 px-4 text-sm outline-none focus:border-[#8A38F5]" />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">Organizer</label>
+                  <input name="organizer" value={formData.organizer} onChange={handleInput} placeholder="e.g. Sahayak Foundation" className="w-full h-11 rounded-xl border border-slate-200 px-4 text-sm outline-none focus:border-[#8A38F5]" />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">Accessibility Tags <span className="normal-case font-normal">(comma-separated)</span></label>
+                  <input name="accessibilityTags" value={formData.accessibilityTags} onChange={handleInput} placeholder="e.g. Wheelchair,Ramp,Sign Language,Free Entry" className="w-full h-11 rounded-xl border border-slate-200 px-4 text-sm outline-none focus:border-[#8A38F5]" />
                 </div>
               </div>
 
-              {/* MODAL FOOTER */}
-              <div className="pt-4 border-t border-slate-100 flex justify-end gap-3 bg-white">
-                <button
-                  type="button"
-                  onClick={() => setIsModalOpen(false)}
-                  className="px-5 py-3 border border-slate-200 rounded-2xl text-slate-500 hover:text-slate-700 font-bold transition-all hover:bg-slate-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  className="px-5 py-3 bg-[#8A38F5] hover:bg-[#762DD1] disabled:bg-violet-300 text-white rounded-2xl font-bold shadow-lg shadow-violet-500/10 flex items-center gap-2 transition-all active:scale-[0.98]"
-                >
+              <div className="flex justify-end gap-3 pt-2 border-t border-slate-100">
+                <button type="button" onClick={() => setIsModalOpen(false)} className="h-11 px-5 rounded-xl border border-slate-200 text-[#4B4355] font-semibold text-sm hover:bg-slate-50">Cancel</button>
+                <button type="submit" disabled={submitting} className="h-11 px-5 rounded-xl bg-[#8A38F5] hover:bg-[#762DD1] disabled:bg-violet-300 text-white font-bold text-sm flex items-center gap-2">
                   {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
-                  <span>{submitting ? "Publishing..." : "Publish Event"}</span>
+                  {submitting ? "Publishing..." : "Publish Event"}
                 </button>
               </div>
             </form>
           </div>
         </div>
       )}
-    </main>
+    </div>
   );
 }

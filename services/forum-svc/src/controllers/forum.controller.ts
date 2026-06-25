@@ -181,9 +181,11 @@ export const checkDuplicates = async (req: Request, res: Response): Promise<void
       return;
     }
 
-    // Fetch all active questions to run local cosine similarity
+    // Fetch recent active questions for cosine similarity (capped to avoid full-table scan)
     const questions = await prisma.forumQuestion.findMany({
       where: { deletedAt: null },
+      take: 300,
+      orderBy: { createdAt: 'desc' },
       include: {
         tags: true,
         author: {
@@ -933,6 +935,24 @@ export const listNotifications = async (req: Request, res: Response): Promise<vo
 /**
  * Mark notification as read.
  */
+export const markAllNotificationsRead = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const userId = req.user?.sub;
+    if (!userId) {
+      res.status(401).json({ success: false, message: 'Unauthorized' });
+      return;
+    }
+    await prisma.notification.updateMany({
+      where: { userId, read: false },
+      data: { read: true }
+    });
+    res.status(200).json({ success: true });
+  } catch (error: any) {
+    console.error('Mark All Notifications Read Error:', error);
+    res.status(500).json({ success: false, message: 'Failed to update notifications' });
+  }
+};
+
 export const markNotificationRead = async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;

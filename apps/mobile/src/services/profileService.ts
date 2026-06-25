@@ -19,6 +19,7 @@ type UserProfilePayload = {
   gender?: string;
   city?: string;
   state?: string;
+  phoneNo?: string;
 };
 
 function isConflictError(error: unknown) {
@@ -87,6 +88,10 @@ export function parseDateInput(
 
   const isoDate = new Date(Date.UTC(year, month - 1, day));
   if (Number.isNaN(isoDate.getTime())) return undefined;
+  // Reject rollovers like Feb 31 → Mar 3
+  if (isoDate.getUTCDate() !== day || isoDate.getUTCMonth() + 1 !== month || isoDate.getUTCFullYear() !== year) {
+    return undefined;
+  }
 
   return isoDate.toISOString();
 }
@@ -123,8 +128,8 @@ export async function checkUsernameAvailability(
         message: error.response.data?.message ?? 'Invalid username format',
       };
     }
-    // Network/server error — optimistically allow typing to continue
-    return { available: true, message: '' };
+    // Network/server error — treat as unavailable so user retries rather than submitting blindly
+    return { available: false, message: 'Unable to verify — please try again' };
   }
 }
 
@@ -232,8 +237,9 @@ export async function submitFullOnboarding(params: {
   }
 
   // 3. Save role-specific details (server marks profileComplete=true)
+  // Pass roles so the server can check completion without an extra DB round-trip (BUG-019)
   try {
-    await submitProfileDetails(userId, roleDetails);
+    await submitProfileDetails(userId, { ...roleDetails, roles: rolesToSave });
   } catch (error) {
     logApiError('Submit profile details', error);
     throw error;
@@ -254,14 +260,34 @@ function formatIsoToDmy(isoString?: string | null) {
   return `${day}/${month}/${year}`;
 }
 
-export async function getUserProfile(userId: string) {
+export async function getMyProfile() {
   const response = await apiClient.get<ApiResponse<any>>('/api/users/profile/me');
   const profile = response.data.data;
   if (profile) {
     profile.dob = formatIsoToDmy(profile.dob);
-    profile.roleDetails = profile; // Map flat model fields to roleDetails key for compatibility
+    // Extract role-specific fields into a typed sub-object for EditProfileScreen
+    profile.roleDetails = {
+      disabilityType: profile.disabilityType,
+      disabilitySince: profile.disabilitySince,
+      supportNeeded: profile.supportNeeded,
+      carePersonName: profile.carePersonName,
+      careRelation: profile.careRelation,
+      careDob: profile.careDob,
+      careDisabilityType: profile.careDisabilityType,
+      speciality: profile.speciality,
+      organization: profile.organization,
+      yearsOfExperience: profile.yearsOfExperience,
+      ngoName: profile.ngoName,
+      ngoRole: profile.ngoRole,
+      district: profile.district,
+    };
   }
   return profile;
+}
+
+/** @deprecated Use getMyProfile() instead */
+export async function getUserProfile(_userId: string) {
+  return getMyProfile();
 }
 
 // ─────────────────────────────────────────────

@@ -376,10 +376,11 @@ const ProfileDetailsScreen = () => {
 
         setUser({
           ...user,
-          role: roles[0] || null,
+          fullName: pendingProfile?.fullName ?? user.fullName,
+          username: pendingProfile?.username ?? user.username,
+          role: roles[0] ?? null,
           roles,
-          profileComplete:
-            true,
+          profileComplete: true,
         });
 
         clearPending();
@@ -1067,7 +1068,17 @@ const ProfileDetailsScreen = () => {
                     styles.infoValue
                   }
                 >
-                  {roles.map(r => r === "skill_trainer" ? "Skill Trainer" : "Community Member").join(", ")}
+                  {roles.map(r => ({
+                    pwd: 'Person with Disability',
+                    caregiver: 'Caregiver',
+                    educator: 'Educator',
+                    ngo_worker: 'NGO Worker',
+                    skill_trainer: 'Skill Trainer',
+                    community_member: 'Community Member',
+                    therapist: 'Therapist',
+                    volunteer: 'Volunteer',
+                    student: 'Student',
+                  } as Record<string, string>)[r] ?? r).join(", ")}
                 </Text>
               </View>
             </View>

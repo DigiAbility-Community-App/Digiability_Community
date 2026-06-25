@@ -10,6 +10,7 @@ export interface BasicProfileData {
   gender?: string | null;
   city?: string | null;
   state?: string | null;
+  phoneNo?: string | null; // Stored on User model
 }
 
 // Role-specific profile details structure
@@ -47,11 +48,20 @@ const getStringVal = (val: string | null | undefined): string | null | undefined
 };
 
 export const profileService = {
-  // Find profile by userId
+  // Find profile by userId (includes phoneNo from User model)
   findByUserId: async (userId: string) => {
-    return prisma.userProfile.findUnique({
+    const profile = await prisma.userProfile.findUnique({
       where: { userId },
+      include: {
+        user: {
+          select: { phoneNo: true },
+        },
+      },
     });
+    if (!profile) return null;
+    // Flatten phoneNo onto the profile object for convenience
+    const { user, ...rest } = profile as any;
+    return { ...rest, phoneNo: user?.phoneNo ?? null };
   },
 
   // Find profile by username
@@ -94,6 +104,14 @@ export const profileService = {
       city: getStringVal(data.city),
       state: getStringVal(data.state),
     };
+
+    // phoneNo lives on the User model — update it separately when provided
+    if (data.phoneNo !== undefined) {
+      await prisma.user.update({
+        where: { id: userId },
+        data: { phoneNo: getStringVal(data.phoneNo) ?? null },
+      });
+    }
 
     return prisma.userProfile.upsert({
       where: { userId },

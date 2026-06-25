@@ -12,8 +12,16 @@ export interface EventModel {
   spots: number;
   buttonType: string;
   externalUrl: string;
+  organizer: string;
+  accessibility_tags: string;
   createdAt: string;
   updatedAt: string;
+}
+
+/** Parse comma-separated accessibility_tags string into a clean array */
+export function parseAccessibilityTags(tags: string | null | undefined): string[] {
+  if (!tags) return [];
+  return tags.split(',').map(t => t.trim()).filter(Boolean);
 }
 
 /**

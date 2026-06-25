@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useCallback } from "react";
 import {
     View,
     Text,
@@ -105,7 +105,7 @@ const AccessibilityScreen = ({ navigation }: Props) => {
         };
     }, [user?.id]);
 
-    const handleBack = () => {
+    const handleBack = useCallback(() => {
         if (navigation.canGoBack()) {
             navigation.goBack();
         } else {
@@ -131,7 +131,7 @@ const AccessibilityScreen = ({ navigation }: Props) => {
                 ]
             );
         }
-    };
+    }, [navigation]);
 
     useFocusEffect(
         React.useCallback(() => {
@@ -146,7 +146,7 @@ const AccessibilityScreen = ({ navigation }: Props) => {
             );
 
             return () => subscription.remove();
-        }, [navigation])
+        }, [handleBack])
     );
 
     const continueToNext = () => {
@@ -179,7 +179,7 @@ const AccessibilityScreen = ({ navigation }: Props) => {
                 language: "English",
                 pushNotif,
                 emailNotif,
-                smsNotif,
+                // smsNotif intentionally omitted — its UI toggle is not yet implemented
             });
         } catch {
             Alert.alert(

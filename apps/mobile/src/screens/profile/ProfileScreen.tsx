@@ -2,6 +2,7 @@ import React, {
   useState,
   useRef,
   useCallback,
+  useMemo,
 } from "react";
 
 import {
@@ -71,6 +72,7 @@ type FieldErrors = {
   fullName?: string;
   username?: string;
   dob?: string;
+  phoneNo?: string;
 };
 
 type UsernameStatus =
@@ -124,6 +126,9 @@ const ProfileScreen = () => {
 
   const [showGenderDropdown, setShowGenderDropdown] =
     useState(false);
+
+  const [phoneNo, setPhoneNo] =
+    useState(user?.phoneNo ?? "");
 
   const [houseNo, setHouseNo] =
     useState("");
@@ -320,6 +325,10 @@ const ProfileScreen = () => {
         "Username is required.";
     }
 
+    if (usernameStatus === "checking") {
+      newErrors.username = "Checking availability, please wait…";
+    }
+
     if (
       usernameStatus === "taken"
     ) {
@@ -337,6 +346,16 @@ const ProfileScreen = () => {
       if (!parsed) {
         newErrors.dob =
           "Invalid date format.";
+      }
+    }
+
+    const rawPhone = phoneNo.trim();
+    if (rawPhone) {
+      const digitsOnly = rawPhone.replace(/\D/g, "");
+      if (digitsOnly.length < 10 || digitsOnly.length > 15) {
+        newErrors.phoneNo = "Phone number must be 10–15 digits.";
+      } else if (!/^[+]?[0-9\s\-()]{10,18}$/.test(rawPhone)) {
+        newErrors.phoneNo = "Enter a valid phone number.";
       }
     }
 
@@ -382,6 +401,11 @@ const ProfileScreen = () => {
           gender
         ),
 
+      phoneNo:
+        optionalString(
+          phoneNo
+        ),
+
       city:
         optionalString(city),
 
@@ -389,13 +413,8 @@ const ProfileScreen = () => {
         optionalString(state),
     });
 
-    setTimeout(() => {
-      setLoading(false);
-
-      navigation.navigate(
-        "ProfileDetails"
-      );
-    }, 600);
+    setLoading(false);
+    navigation.navigate("ProfileDetails");
   };
 
   // --------------------------------------------------
@@ -453,32 +472,15 @@ const ProfileScreen = () => {
   // Generate username suggestions
   // --------------------------------------------------
 
-  const generateUsernameSuggestions = () => {
-    const name =
-      fullName
-        .trim()
-        .toLowerCase()
-        .replace(/\s+/g, "");
-
+  const usernameSuggestions = useMemo(() => {
+    const name = fullName.trim().toLowerCase().replace(/\s+/g, "");
     if (!name) return [];
-
     return [
-      `${name}${Math.floor(
-        Math.random() * 100
-      )}`,
-
-      `${name}_${Math.floor(
-        Math.random() * 999
-      )}`,
-
-      `${name}.${Math.floor(
-        Math.random() * 9999
-      )}`,
+      `${name}${Math.floor(Math.random() * 100)}`,
+      `${name}_${Math.floor(Math.random() * 999)}`,
+      `${name}.${Math.floor(Math.random() * 9999)}`,
     ];
-  };
-
-  const usernameSuggestions =
-    generateUsernameSuggestions();
+  }, [fullName]);
 
   // --------------------------------------------------
   // 
@@ -546,18 +548,13 @@ const ProfileScreen = () => {
       {/* HEADER */}
       <View style={styles.header}>
         <TouchableOpacity
-          style={
-            styles.backButton
-          }
+          style={styles.backButton}
           onPress={handleBack}
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
+          accessibilityHint="Returns to the previous screen"
         >
-          <Text
-            style={
-              styles.backText
-            }
-          >
-            ←
-          </Text>
+          <Text style={styles.backText}>←</Text>
         </TouchableOpacity>
 
         <View
@@ -671,9 +668,9 @@ const ProfileScreen = () => {
               placeholderTextColor="#7E7383"
               style={styles.input}
               value={fullName}
-              onChangeText={
-                setFullName
-              }
+              onChangeText={setFullName}
+              accessibilityLabel="Full Name"
+              accessibilityHint="Enter your first and last name"
             />
           </View>
 
@@ -694,17 +691,21 @@ const ProfileScreen = () => {
             activeOpacity={0.9}
             onPress={() => setShowDatePicker(true)}
             style={styles.inputContainer}
+            accessibilityRole="button"
+            accessibilityLabel="Date of birth"
+            accessibilityHint={dob ? `Selected: ${dob}. Double tap to change` : "Double tap to open date picker"}
           >
-            <Text style={styles.inputIcon}>
-              📅
-            </Text>
-
+            <Text style={styles.inputIcon}>📅</Text>
             <TextInput
               placeholder="DD/MM/YYYY"
               placeholderTextColor="#7E7383"
               style={styles.input}
               value={dob}
               onChangeText={setDob}
+              accessibilityLabel="Date of birth input"
+              accessibilityHint="Enter your date of birth in DD/MM/YYYY format"
+              editable={false}
+              pointerEvents="none"
             />
           </TouchableOpacity>
 
@@ -735,23 +736,15 @@ const ProfileScreen = () => {
           <TouchableOpacity
             style={styles.inputContainer}
             activeOpacity={0.9}
-            onPress={() =>
-              setShowGenderDropdown(
-                !showGenderDropdown
-              )
-            }
+            onPress={() => setShowGenderDropdown(!showGenderDropdown)}
+            accessibilityRole="combobox"
+            accessibilityLabel="Gender"
+            accessibilityHint={gender ? `Selected: ${gender}. Double tap to change` : "Double tap to select your gender"}
+            accessibilityState={{ expanded: showGenderDropdown }}
           >
-            <Text style={styles.inputIcon}>
-              ⚧
-            </Text>
-
-            <Text style={styles.dropdownText}>
-              {gender || "Select Gender"}
-            </Text>
-
-            <Text style={styles.dropdownArrow}>
-              {showGenderDropdown ? "▲" : "▼"}
-            </Text>
+            <Text style={styles.inputIcon}>⚧</Text>
+            <Text style={styles.dropdownText}>{gender || "Select Gender"}</Text>
+            <Text style={styles.dropdownArrow}>{showGenderDropdown ? "▲" : "▼"}</Text>
           </TouchableOpacity>
 
           {showGenderDropdown && (
@@ -773,6 +766,43 @@ const ProfileScreen = () => {
             </View>
           )}
 
+          {/* PHONE NUMBER */}
+          <View
+            style={
+              styles.inputContainer
+            }
+          >
+            <Text
+              style={
+                styles.inputIcon
+              }
+            >
+              📞
+            </Text>
+
+            <TextInput
+              placeholder="+91 XXXXX XXXXX"
+              placeholderTextColor="#7E7383"
+              style={styles.input}
+              value={phoneNo}
+              onChangeText={setPhoneNo}
+              keyboardType="phone-pad"
+              maxLength={18}
+              accessibilityLabel="Phone number"
+              accessibilityHint="Enter your mobile number with country code, for example +91 98765 43210. This field is optional."
+              textContentType="telephoneNumber"
+            />
+          </View>
+
+          {errors.phoneNo && (
+            <Text
+              style={
+                styles.errorText
+              }
+            >
+              {errors.phoneNo}
+            </Text>
+          )}
 
         </View>
 
@@ -803,14 +833,14 @@ const ProfileScreen = () => {
             <TextInput
               placeholder="username"
               placeholderTextColor="#7E7383"
-              style={
-                styles.usernameInput
-              }
+              style={styles.usernameInput}
               value={username}
-              onChangeText={
-                handleUsernameChange
-              }
+              onChangeText={handleUsernameChange}
               autoCapitalize="none"
+              autoCorrect={false}
+              accessibilityLabel="Username"
+              accessibilityHint="Enter a unique username with 3 to 20 lowercase letters, numbers, underscores, or dots"
+              textContentType="username"
             />
           </View>
 
@@ -875,10 +905,11 @@ const ProfileScreen = () => {
             style={styles.locationBtn}
             onPress={fetchCurrentLocation}
             activeOpacity={0.9}
+            accessibilityRole="button"
+            accessibilityLabel="Use Current Location"
+            accessibilityHint="Double tap to auto-fill your address using GPS"
           >
-            <Text style={styles.locationBtnText}>
-              📍 Use Current Location
-            </Text>
+            <Text style={styles.locationBtnText}>📍 Use Current Location</Text>
           </TouchableOpacity>
 
           {/* ADDRESS LINE 1 */}
@@ -960,13 +991,13 @@ const ProfileScreen = () => {
         {/* BUTTON */}
         <TouchableOpacity
           activeOpacity={0.9}
-          onPress={
-            handleContinue
-          }
+          onPress={handleContinue}
           disabled={loading}
-          style={
-            styles.buttonWrapper
-          }
+          style={styles.buttonWrapper}
+          accessibilityRole="button"
+          accessibilityLabel="Continue"
+          accessibilityHint="Saves your profile information and continues to the next step"
+          accessibilityState={{ disabled: loading }}
         >
           <LinearGradient
             colors={[

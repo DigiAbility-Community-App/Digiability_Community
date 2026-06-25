@@ -4,7 +4,6 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  ActivityIndicator,
   Alert,
   BackHandler,
   ScrollView,
@@ -90,8 +89,6 @@ const RoleSelectionScreen = () => {
   const [selected, setSelected] =
     useState<RoleType[]>([]);
 
-  const [loading, setLoading] =
-    useState(false);
 
   const navigation = useNavigation<any>();
 
@@ -178,18 +175,8 @@ const RoleSelectionScreen = () => {
       return;
     }
 
-    setLoading(true);
-
-    // SAVE ROLES
     setPendingRoles(selected);
-
-    setTimeout(() => {
-      setLoading(false);
-
-      navigation.navigate(
-        "Profile"
-      );
-    }, 700);
+    navigation.navigate("Profile");
   };
 
   return (
@@ -360,7 +347,6 @@ const RoleSelectionScreen = () => {
         <TouchableOpacity
           activeOpacity={0.9}
           onPress={handleContinue}
-          disabled={loading}
         >
           <LinearGradient
             colors={[
@@ -369,17 +355,13 @@ const RoleSelectionScreen = () => {
             ]}
             style={styles.button}
           >
-            {loading ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text
+            <Text
                 style={
                   styles.buttonText
                 }
               >
                 Continue
               </Text>
-            )}
           </LinearGradient>
         </TouchableOpacity>
       </View>

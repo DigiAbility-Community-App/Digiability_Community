@@ -1,5 +1,5 @@
 import * as SecureStore from 'expo-secure-store';
-import apiClient, { REFRESH_TOKEN_KEY } from './apiClient';
+import apiClient, { REFRESH_TOKEN_KEY, cancelPendingRequests } from './apiClient';
 import { useAuthStore, AuthUser } from '@store/authStore';
 
 // ─────────────────────────────────────────────────────────
@@ -13,6 +13,7 @@ export interface RegisterInput {
   name: string;
   email: string;
   password: string;
+  phoneNo?: string;
   role?: string;
   roles?: string[];
 }
@@ -148,6 +149,8 @@ export async function login(input: LoginInput): Promise<AuthUser> {
 // ── Logout ─────────────────────────────────────────────────
 
 export async function logout(): Promise<void> {
+  // Drain any queued requests before clearing state
+  cancelPendingRequests();
   try {
     await apiClient.post('/api/auth/logout');
   } catch {
