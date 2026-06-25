@@ -1,111 +1,196 @@
 "use client";
 
-// ----------------------
-// IMPORTS
-// ----------------------
-
-import Link from "next/link";
-import { useState, useEffect } from "react";
-
+import { useRouter } from "next/navigation";
+import { useState, useEffect, useCallback } from "react";
 import {
   Search,
   ChevronDown,
   Eye,
-  MoreHorizontal,
-  Download,
-  Ban,
-  Trash2,
-  CheckCircle2,
   Users,
   UserCheck,
   UserX,
   ShieldAlert,
+  SlidersHorizontal,
+  Trash2,
+  X,
+  AlertTriangle,
+  ChevronLeft,
+  ChevronRight,
+  ShieldOff,
+  ShieldCheck,
 } from "lucide-react";
 
-// ----------------------
-// COMPONENT
-// ----------------------
+const PAGE_SIZE = 25;
+
+interface User {
+  id: string;
+  name: string;
+  email: string;
+  username?: string;
+  roles: string[];
+  joined: string;
+  joinedRaw: string;
+  location: string;
+  disabilityType: string;
+  status: string;
+  isSuspended?: boolean;
+}
+
+// How many days back to allow
+const DATE_FILTER_DAYS: Record<string, number | null> = {
+  "Any time": null,
+  "Last 7 days": 7,
+  "Last 30 days": 30,
+  "Last 3 months": 90,
+  "Last year": 365,
+};
 
 export default function UserManagementPage() {
-  // ----------------------
-  // STATES
-  // ----------------------
+  const router = useRouter();
 
-  const [usersList, setUsersList] = useState<any[]>([]);
-  const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
+  const [usersList, setUsersList] = useState<User[]>([]);
   const [stats, setStats] = useState({ total: "0", active: "0", inactive: "0", suspended: "0" });
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
-
   const [selectedRole, setSelectedRole] = useState("ALL");
   const [selectedStatus, setSelectedStatus] = useState("ALL");
   const [roleDropdownOpen, setRoleDropdownOpen] = useState(false);
   const [statusDropdownOpen, setStatusDropdownOpen] = useState(false);
+  const [dateDropdownOpen, setDateDropdownOpen] = useState(false);
+  const [selectedDate, setSelectedDate] = useState("Any time");
+  const [currentPage, setCurrentPage] = useState(1);
+  // Delete state
+  const [deleteTarget, setDeleteTarget] = useState<User | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  // Suspend state
+  const [suspendTarget, setSuspendTarget] = useState<User | null>(null);
+  const [suspending, setSuspending] = useState(false);
 
-  // ----------------------
-  // EFFECTS
-  // ----------------------
-
-  useEffect(() => {
-    async function fetchUsers() {
-      try {
-        const res = await fetch("/api/users");
-        const data = await res.json();
-        if (data.success) {
-          setUsersList(data.users);
-          setStats(data.stats);
-        }
-      } catch (err) {
-        console.error("Error loading users:", err);
-      } finally {
-        setLoading(false);
+  const fetchUsers = useCallback(async () => {
+    try {
+      const res = await fetch("/api/users");
+      const data = await res.json();
+      if (data.success) {
+        setUsersList(data.users);
+        setStats(data.stats);
       }
+    } catch (err) {
+      console.error("Error loading users:", err);
+    } finally {
+      setLoading(false);
     }
-    fetchUsers();
   }, []);
 
-  // ----------------------
-  // FUNCTIONS
-  // ----------------------
+  useEffect(() => { fetchUsers(); }, [fetchUsers]);
 
-  const toggleUserSelection = (id: string) => {
-    setSelectedUsers((prev) =>
-      prev.includes(id)
-        ? prev.filter((item) => item !== id)
-        : [...prev, id]
-    );
-  };
+  // Reset to page 1 whenever filters change
+  useEffect(() => { setCurrentPage(1); }, [searchQuery, selectedRole, selectedStatus, selectedDate]);
 
-  const toggleAllUsers = () => {
-    if (selectedUsers.length === filteredUsers.length) {
-      setSelectedUsers([]);
+
+
+  // ──────────────────────────────────────────
+  // FILTERING
+  // ──────────────────────────────────────────
+  const filteredUsers = usersList.filter((user) => {
+    const s = searchQuery.toLowerCase();
+    const safeName = (user.name || "").toLowerCase();
+    const matchSearch =
+      safeName.includes(s) ||
+      (user.username || "").toLowerCase().includes(s) ||
+      (user.email || "").toLowerCase().includes(s) ||
+      (user.id || "").toLowerCase().includes(s) ||
+      (user.location || "").toLowerCase().includes(s);
+
+    const matchRole = selectedRole === "ALL" || (user.roles && user.roles.includes(selectedRole));
+    const matchStatus = selectedStatus === "ALL" || user.status === selectedStatus;
+
+    // Date filter
+    let matchDate = true;
+    const days = DATE_FILTER_DAYS[selectedDate];
+    if (days !== null && days !== undefined && user.joinedRaw) {
+      const cutoff = new Date();
+      cutoff.setDate(cutoff.getDate() - days);
+      matchDate = new Date(user.joinedRaw) >= cutoff;
+    }
+
+    return matchSearch && matchRole && matchStatus && matchDate;
+  });
+
+
+
+  // ──────────────────────────────────────────
+  // PAGINATION
+  // ──────────────────────────────────────────
+  const totalPages = Math.max(1, Math.ceil(filteredUsers.length / PAGE_SIZE));
+  const safePage = Math.min(currentPage, totalPages);
+  const paginatedUsers = filteredUsers.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+
+  const pageNumbers = (() => {
+    const pages: (number | "...")[] = [];
+    if (totalPages <= 7) {
+      for (let i = 1; i <= totalPages; i++) pages.push(i);
     } else {
-      setSelectedUsers(filteredUsers.map((user) => user.id));
+      pages.push(1);
+      if (safePage > 3) pages.push("...");
+      for (let i = Math.max(2, safePage - 1); i <= Math.min(totalPages - 1, safePage + 1); i++) pages.push(i);
+      if (safePage < totalPages - 2) pages.push("...");
+      pages.push(totalPages);
+    }
+    return pages;
+  })();
+
+  // ──────────────────────────────────────────
+  // DELETE  (soft-delete persisted to DB)
+  // ──────────────────────────────────────────
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    try {
+      const res = await fetch(`/api/users/${deleteTarget.id}`, { method: "DELETE" });
+      const data = await res.json();
+      if (data.success) {
+        setUsersList(prev => prev.filter(u => u.id !== deleteTarget.id));
+      }
+    } catch (err) {
+      console.error("Delete failed:", err);
+    } finally {
+      setDeleting(false);
+      setDeleteTarget(null);
+      fetchUsers(); // re-fetch to get fresh stats
     }
   };
 
-  // Filter users based on search query, role, and status
-  const filteredUsers = usersList.filter(user => {
-    const matchesSearch =
-      user.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      user.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      user.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      user.location.toLowerCase().includes(searchQuery.toLowerCase());
-
-    const matchesRole =
-      selectedRole === "ALL" ||
-      (user.roles && user.roles.includes(selectedRole));
-
-    const matchesStatus =
-      selectedStatus === "ALL" ||
-      user.status === selectedStatus;
-
-    return matchesSearch && matchesRole && matchesStatus;
-  });
-
-  // ----------------------
-  // RENDER
-  // ----------------------
+  // ──────────────────────────────────────────
+  // SUSPEND / UNSUSPEND  (persisted to DB)
+  // ──────────────────────────────────────────
+  const handleSuspendToggle = async () => {
+    if (!suspendTarget) return;
+    setSuspending(true);
+    const action = suspendTarget.status === "Suspended" ? "unsuspend" : "suspend";
+    try {
+      const res = await fetch(`/api/users/${suspendTarget.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, duration: "Permanent" }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setUsersList(prev =>
+          prev.map(u =>
+            u.id === suspendTarget.id
+              ? { ...u, status: action === "suspend" ? "Suspended" : "Active", isSuspended: action === "suspend" }
+              : u
+          )
+        );
+      }
+    } catch (err) {
+      console.error("Suspend toggle failed:", err);
+    } finally {
+      setSuspending(false);
+      setSuspendTarget(null);
+      fetchUsers(); // sync with DB
+    }
+  };
 
   if (loading) {
     return (
@@ -115,436 +200,420 @@ export default function UserManagementPage() {
     );
   }
 
+  const activeCount = Number(stats.active.replace(",", ""));
+  const totalCount = Number(stats.total.replace(",", ""));
+  const activePct = totalCount > 0 ? ((activeCount / totalCount) * 100).toFixed(1) : "0";
+
   return (
     <div className="px-8 py-8 space-y-6 relative">
+
       {/* HEADER */}
       <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-4xl font-extrabold tracking-tight text-[#1A1C1C]">
-            User Management
-          </h1>
-          <p className="text-sm text-[#7D7387] mt-2">
-            Manage all registered community users and permissions
-          </p>
-        </div>
-
-        <button className="h-12 px-5 rounded-xl bg-[#7004DC] hover:bg-[#5f03bb] transition text-white font-bold shadow-lg shadow-violet-300/30">
-          Add New User
-        </button>
+        <h1 className="text-2xl font-extrabold text-[#7004DC] tracking-tight">Users Management</h1>
       </div>
 
-      {/* STATS ROW */}
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
-        <StatsCard
-          title="Total Users"
-          value={stats.total}
-          icon={<Users className="w-5 h-5" />}
-          valueColor="text-[#1A1C1C]"
-        />
-
-        <StatsCard
-          title="Active"
-          value={stats.active}
-          growth="+12%"
-          icon={<UserCheck className="w-5 h-5" />}
-          valueColor="text-green-600"
-        />
-
-        <StatsCard
-          title="Inactive"
-          value={stats.inactive}
-          icon={<UserX className="w-5 h-5" />}
-          valueColor="text-slate-400"
-        />
-
-        <StatsCard
-          title="Suspended"
-          value={stats.suspended}
-          icon={<ShieldAlert className="w-5 h-5" />}
-          valueColor="text-red-600"
-        />
+      {/* STATS */}
+      <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
+        <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
+          <div className="flex items-center gap-2 mb-1">
+            <Users className="w-4 h-4 text-[#7D7387]" />
+            <p className="text-sm text-[#7D7387]">Total Users</p>
+          </div>
+          <h2 className="text-3xl font-extrabold text-[#1A1C1C] mt-1">{stats.total}</h2>
+        </div>
+        <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
+          <div className="flex items-center gap-2 mb-1">
+            <UserCheck className="w-4 h-4 text-green-600" />
+            <p className="text-sm text-[#7D7387]">Active</p>
+          </div>
+          <div className="flex items-end gap-2 mt-1">
+            <h2 className="text-3xl font-extrabold text-green-600">{stats.active}</h2>
+            <span className="text-xs font-bold text-green-600 mb-1">{activePct}%</span>
+          </div>
+        </div>
+        <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
+          <div className="flex items-center gap-2 mb-1">
+            <ShieldAlert className="w-4 h-4 text-slate-400" />
+            <p className="text-sm text-[#7D7387]">Inactive</p>
+          </div>
+          <h2 className="text-3xl font-extrabold text-slate-400 mt-1">{stats.inactive}</h2>
+        </div>
+        <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
+          <div className="flex items-center gap-2 mb-1">
+            <UserX className="w-4 h-4 text-red-600" />
+            <p className="text-sm text-[#7D7387]">Suspended</p>
+          </div>
+          <h2 className="text-3xl font-extrabold text-red-600 mt-1">{stats.suspended}</h2>
+        </div>
       </div>
 
       {/* FILTER BAR */}
-      <div className="bg-[#F3F3F3] rounded-2xl p-4 flex flex-col xl:flex-row xl:items-center gap-4">
+      <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4 flex flex-wrap items-center gap-3">
         {/* SEARCH */}
-        <div className="relative w-full xl:w-[320px]">
+        <div className="relative flex-1 min-w-[220px]">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-[#7D7387]" />
           <input
             type="text"
             placeholder="Search by name, email or ID..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full h-11 rounded-xl bg-white pl-11 pr-4 text-sm outline-none border border-transparent focus:border-[#8A38F5]"
+            className="w-full h-10 rounded-lg bg-[#F7F5FA] pl-10 pr-4 text-sm outline-none border border-transparent focus:border-[#8A38F5]"
           />
         </div>
 
-        {/* ROLE FILTER */}
+        {/* ROLE */}
         <div className="relative z-50">
           <button
-            onClick={() => {
-              setRoleDropdownOpen(!roleDropdownOpen);
-              setStatusDropdownOpen(false);
-            }}
-            className="h-11 px-4 bg-white rounded-xl flex items-center justify-between gap-6 text-sm font-medium text-[#1A1C1C] min-w-[160px] border border-gray-200/50 shadow-sm"
+            onClick={() => { setRoleDropdownOpen(!roleDropdownOpen); setStatusDropdownOpen(false); setDateDropdownOpen(false); }}
+            className="h-10 px-4 bg-[#F7F5FA] rounded-lg flex items-center gap-2 text-sm font-medium text-[#1A1C1C] min-w-[130px] border border-transparent hover:border-[#CEC2D8]"
           >
-            <span>{selectedRole === "ALL" ? "All Roles" : selectedRole}</span>
-            <ChevronDown className="w-4 h-4 text-slate-500" />
+            <span>Role: {selectedRole === "ALL" ? "All" : selectedRole}</span>
+            <ChevronDown className="w-3.5 h-3.5 text-slate-400 ml-auto" />
           </button>
-
           {roleDropdownOpen && (
-            <div className="absolute left-0 mt-2 w-48 bg-white border border-gray-100 rounded-xl shadow-lg z-50 py-1">
-              <button
-                onClick={() => {
-                  setSelectedRole("ALL");
-                  setRoleDropdownOpen(false);
-                }}
-                className={`w-full text-left px-4 py-2.5 text-xs font-semibold hover:bg-[#F3F3F3] ${selectedRole === "ALL" ? "font-bold text-[#7004DC]" : "text-[#4B4355]"}`}
-              >
-                All Roles
-              </button>
-              {["PWD", "CAREGIVER", "THERAPIST", "NGO", "VOLUNTEER", "STUDENT"].map((role) => (
+            <div className="absolute top-12 left-0 w-48 bg-white border border-gray-100 rounded-xl shadow-lg z-50 py-1">
+              {["ALL", "PWD", "CAREGIVER", "THERAPIST", "NGO", "VOLUNTEER", "STUDENT"].map((r) => (
                 <button
-                  key={role}
-                  onClick={() => {
-                    setSelectedRole(role);
-                    setRoleDropdownOpen(false);
-                  }}
-                  className={`w-full text-left px-4 py-2.5 text-xs font-semibold hover:bg-[#F3F3F3] ${selectedRole === role ? "font-bold text-[#7004DC]" : "text-[#4B4355]"}`}
+                  key={r}
+                  onClick={() => { setSelectedRole(r); setRoleDropdownOpen(false); }}
+                  className={`w-full text-left px-4 py-2.5 text-xs font-semibold hover:bg-[#F3F3F3] ${selectedRole === r ? "text-[#7004DC] font-bold" : "text-[#4B4355]"}`}
                 >
-                  {role}
+                  {r === "ALL" ? "All Roles" : r}
                 </button>
               ))}
             </div>
           )}
         </div>
 
-        {/* STATUS FILTER */}
+        {/* STATUS */}
         <div className="relative z-50">
           <button
-            onClick={() => {
-              setStatusDropdownOpen(!statusDropdownOpen);
-              setRoleDropdownOpen(false);
-            }}
-            className="h-11 px-4 bg-white rounded-xl flex items-center justify-between gap-6 text-sm font-medium text-[#1A1C1C] min-w-[160px] border border-gray-200/50 shadow-sm"
+            onClick={() => { setStatusDropdownOpen(!statusDropdownOpen); setRoleDropdownOpen(false); setDateDropdownOpen(false); }}
+            className="h-10 px-4 bg-[#F7F5FA] rounded-lg flex items-center gap-2 text-sm font-medium text-[#1A1C1C] min-w-[130px] border border-transparent hover:border-[#CEC2D8]"
           >
-            <span>{selectedStatus === "ALL" ? "All Statuses" : selectedStatus}</span>
-            <ChevronDown className="w-4 h-4 text-slate-500" />
+            <span>Status: {selectedStatus === "ALL" ? "All" : selectedStatus}</span>
+            <ChevronDown className="w-3.5 h-3.5 text-slate-400 ml-auto" />
           </button>
-
           {statusDropdownOpen && (
-            <div className="absolute left-0 mt-2 w-48 bg-white border border-gray-100 rounded-xl shadow-lg z-50 py-1">
-              <button
-                onClick={() => {
-                  setSelectedStatus("ALL");
-                  setStatusDropdownOpen(false);
-                }}
-                className={`w-full text-left px-4 py-2.5 text-xs font-semibold hover:bg-[#F3F3F3] ${selectedStatus === "ALL" ? "font-bold text-[#7004DC]" : "text-[#4B4355]"}`}
-              >
-                All Statuses
-              </button>
-              {["Active", "Inactive", "Suspended"].map((status) => (
+            <div className="absolute top-12 left-0 w-48 bg-white border border-gray-100 rounded-xl shadow-lg z-50 py-1">
+              {["ALL", "Active", "Inactive", "Suspended"].map((s) => (
                 <button
-                  key={status}
-                  onClick={() => {
-                    setSelectedStatus(status);
-                    setStatusDropdownOpen(false);
-                  }}
-                  className={`w-full text-left px-4 py-2.5 text-xs font-semibold hover:bg-[#F3F3F3] ${selectedStatus === status ? "font-bold text-[#7004DC]" : "text-[#4B4355]"}`}
+                  key={s}
+                  onClick={() => { setSelectedStatus(s); setStatusDropdownOpen(false); }}
+                  className={`w-full text-left px-4 py-2.5 text-xs font-semibold hover:bg-[#F3F3F3] ${selectedStatus === s ? "text-[#7004DC] font-bold" : "text-[#4B4355]"}`}
                 >
-                  {status}
+                  {s === "ALL" ? "All Statuses" : s}
                 </button>
               ))}
             </div>
           )}
         </div>
 
-        {/* EXPORT */}
-        <button className="h-11 px-5 bg-white rounded-xl flex items-center gap-2 text-sm font-semibold text-[#7004DC]">
-          <Download className="w-4 h-4" />
-          Export Users
+        {/* DATE JOINED */}
+        <div className="relative z-50">
+          <button
+            onClick={() => { setDateDropdownOpen(!dateDropdownOpen); setRoleDropdownOpen(false); setStatusDropdownOpen(false); }}
+            className="h-10 px-4 bg-[#F7F5FA] rounded-lg flex items-center gap-2 text-sm font-medium text-[#1A1C1C] min-w-[160px] border border-transparent hover:border-[#CEC2D8]"
+          >
+            <span>Joined: {selectedDate}</span>
+            <ChevronDown className="w-3.5 h-3.5 text-slate-400 ml-auto" />
+          </button>
+          {dateDropdownOpen && (
+            <div className="absolute top-12 left-0 w-52 bg-white border border-gray-100 rounded-xl shadow-lg z-50 py-1">
+              {Object.keys(DATE_FILTER_DAYS).map((d) => (
+                <button
+                  key={d}
+                  onClick={() => { setSelectedDate(d); setDateDropdownOpen(false); }}
+                  className={`w-full text-left px-4 py-2.5 text-xs font-semibold hover:bg-[#F3F3F3] ${selectedDate === d ? "text-[#7004DC] font-bold" : "text-[#4B4355]"}`}
+                >
+                  {d}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* CLEAR FILTERS */}
+        {(selectedRole !== "ALL" || selectedStatus !== "ALL" || selectedDate !== "Any time" || searchQuery) && (
+          <button
+            onClick={() => { setSelectedRole("ALL"); setSelectedStatus("ALL"); setSelectedDate("Any time"); setSearchQuery(""); }}
+            className="h-10 px-3 rounded-lg bg-red-50 text-red-500 hover:bg-red-100 text-xs font-bold flex items-center gap-1.5 transition"
+          >
+            <X className="w-3.5 h-3.5" /> Clear
+          </button>
+        )}
+
+        {/* MORE FILTERS */}
+        <button className="h-10 px-4 rounded-lg bg-[#F7F5FA] flex items-center gap-2 text-sm font-semibold text-[#7004DC] border border-transparent hover:border-[#CEC2D8] ml-auto">
+          <SlidersHorizontal className="w-4 h-4" />
+          More Filters
         </button>
       </div>
 
       {/* TABLE */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-        {/* TABLE HEADER */}
-        <div className="bg-[#F3F3F3] border-b border-gray-200">
-          <div className="grid grid-cols-[60px_2fr_1fr_1fr_1fr_1fr_120px] items-center">
-            {/* CHECKBOX */}
-            <div className="p-6">
-              <input
-                type="checkbox"
-                checked={
-                  filteredUsers.length > 0 &&
-                  selectedUsers.length === filteredUsers.length
-                }
-                onChange={toggleAllUsers}
-                className="w-4 h-4 rounded border-gray-400 accent-[#7004DC]"
-              />
+        {/* HEADER — serial number column */}
+        <div className="grid grid-cols-[56px_2fr_120px_160px_140px_140px_120px_96px] bg-[#F7F5FA] border-b border-gray-100">
+          <div className="px-4 py-4 text-[10px] font-bold uppercase tracking-[0.15em] text-[#7D7387]">#</div>
+          {["USER", "ROLE", "DISABILITY TYPE", "CITY", "JOINED DATE", "STATUS", ""].map((h) => (
+            <div key={h} className="px-4 py-4 text-[10px] font-bold uppercase tracking-[0.15em] text-[#7D7387]">
+              {h}
             </div>
-
-            <TableHeading label="User" />
-            <TableHeading label="Role" />
-            <TableHeading label="Joined" />
-            <TableHeading label="Location" />
-            <TableHeading label="Status" />
-            <TableHeading label="Actions" />
-          </div>
+          ))}
         </div>
 
-        {/* TABLE BODY */}
-        <div>
-          {filteredUsers.length === 0 ? (
-            <div className="h-64 flex items-center justify-center text-[#7D7387] font-semibold">
-              No users found matching your search.
-            </div>
-          ) : (
-            filteredUsers.map((user) => (
+        {/* ROWS */}
+        {paginatedUsers.length === 0 ? (
+          <div className="h-48 flex items-center justify-center text-[#7D7387] font-semibold">
+            No users found.
+          </div>
+        ) : (
+          paginatedUsers.map((user, index) => {
+            const serialNo = (safePage - 1) * PAGE_SIZE + index + 1;
+            return (
               <div
                 key={user.id}
-                className="grid grid-cols-[60px_2fr_1fr_1fr_1fr_1fr_120px] items-center border-b border-gray-100 hover:bg-[#FAFAFA] transition"
+                className="grid grid-cols-[56px_2fr_120px_160px_140px_140px_120px_96px] items-center border-b border-gray-100 hover:bg-[#FAFAFA] transition"
               >
-                {/* CHECKBOX */}
-                <div className="p-6">
-                  <input
-                    type="checkbox"
-                    checked={selectedUsers.includes(user.id)}
-                    onChange={() => toggleUserSelection(user.id)}
-                    className="w-4 h-4 rounded border-gray-400 accent-[#7004DC]"
-                  />
+                {/* SERIAL NUMBER */}
+                <div className="px-4 py-4 text-sm font-semibold text-[#7D7387]">
+                  {serialNo}
                 </div>
 
                 {/* USER */}
-                <div className="flex items-center gap-4 py-5">
-                  <div
-                    className={`w-11 h-11 rounded-full flex items-center justify-center font-bold text-sm ${user.status === "Suspended"
-                        ? "bg-gray-200 text-gray-700"
-                        : "bg-[#EDDCFF] text-[#7004DC]"
-                      }`}
-                  >
-                    {user.name
-                      .split(" ")
-                      .map((n: string) => n[0])
-                      .join("")}
+                <div className="flex items-center gap-3 py-4 px-2">
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm shrink-0 ${
+                    user.status === "Suspended" ? "bg-red-100 text-red-500" : "bg-[#EDDCFF] text-[#7004DC]"
+                  }`}>
+                    {(user.name || "?").split(" ").filter(Boolean).map((n: string) => n[0]).join("").slice(0, 2).toUpperCase() || "?"}
                   </div>
-
-                  <div>
-                    <h3 className="font-bold text-sm text-[#1A1C1C]">
-                      {user.name}
-                    </h3>
-                    <p className="text-xs text-[#7D7387] mt-1">
-                      {user.email}
-                    </p>
+                  <div className="min-w-0">
+                    <p className="font-bold text-sm text-[#1A1C1C] truncate">{user.name}</p>
+                    <p className="text-xs text-[#7D7387] truncate">{user.username}</p>
                   </div>
                 </div>
 
                 {/* ROLE */}
-                <div className="flex flex-wrap gap-1">
+                <div className="px-4 py-4">
                   {user.roles && user.roles.length > 0 ? (
-                    user.roles.map((r: string, idx: number) => (
-                      <span
-                        key={idx}
-                        className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase ${r === "NGO"
-                            ? "bg-gray-200 text-[#4B4355]"
-                            : "bg-[#EEDBFF] text-[#7004DC]"
-                          }`}
-                      >
-                        {r}
-                      </span>
-                    ))
-                  ) : (
-                    <span className="px-2 py-1 rounded-md text-[10px] font-bold uppercase bg-slate-100 text-slate-500">
-                      USER
+                    <span className={`px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase ${user.roles[0] === "NGO" ? "bg-gray-100 text-slate-600" : "bg-[#EDDCFF] text-[#7004DC]"}`}>
+                      {user.roles[0]}
                     </span>
+                  ) : (
+                    <span className="px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase bg-slate-100 text-slate-500">USER</span>
                   )}
                 </div>
 
-                {/* JOINED */}
-                <div className="text-sm text-[#4B4355]">
-                  {user.joined}
+                {/* DISABILITY TYPE */}
+                <div className="px-4 py-4 text-sm text-[#4B4355]">
+                  {user.disabilityType && user.disabilityType !== "N/A" ? user.disabilityType : (
+                    <span className="text-slate-400">N/A</span>
+                  )}
                 </div>
 
-                {/* LOCATION */}
-                <div className="text-sm text-[#4B4355]">
-                  {user.location}
-                </div>
+                {/* CITY */}
+                <div className="px-4 py-4 text-sm text-[#4B4355]">{user.location}</div>
+
+                {/* JOINED DATE */}
+                <div className="px-4 py-4 text-sm text-[#4B4355]">{user.joined}</div>
 
                 {/* STATUS */}
-                <div>
-                  <span
-                    className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold ${user.status === "Active"
-                        ? "bg-green-100 text-green-700"
-                        : user.status === "Inactive"
-                          ? "bg-gray-200 text-gray-600"
-                          : "bg-red-100 text-red-700"
-                      }`}
-                  >
-                    <div
-                      className={`w-2 h-2 rounded-full ${user.status === "Active"
-                          ? "bg-green-600"
-                          : user.status === "Inactive"
-                            ? "bg-gray-500"
-                            : "bg-red-600"
-                        }`}
-                    />
+                <div className="px-4 py-4">
+                  <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold ${
+                    user.status === "Active" ? "bg-green-100 text-green-700" :
+                    user.status === "Suspended" ? "bg-red-100 text-red-700" :
+                    "bg-gray-100 text-gray-500"
+                  }`}>
+                    <div className={`w-1.5 h-1.5 rounded-full ${
+                      user.status === "Active" ? "bg-green-600" :
+                      user.status === "Suspended" ? "bg-red-600" : "bg-gray-400"
+                    }`} />
                     {user.status}
                   </span>
                 </div>
 
-                {/* ACTIONS */}
-                <div className="flex items-center gap-2">
-                  <button className="w-9 h-9 rounded-lg hover:bg-violet-50 flex items-center justify-center text-[#8A38F5] transition">
+                {/* ACTIONS — View + Delete only */}
+                <div className="px-4 py-4 flex items-center gap-1">
+                  <button
+                    onClick={() => router.push(`/users/${user.id}`)}
+                    title="View profile"
+                    className="w-8 h-8 rounded-lg hover:bg-violet-50 flex items-center justify-center text-[#8A38F5] transition"
+                  >
                     <Eye className="w-4 h-4" />
                   </button>
-                  <button className="w-9 h-9 rounded-lg hover:bg-slate-100 flex items-center justify-center text-slate-500 transition">
-                    <MoreHorizontal className="w-4 h-4" />
+                  <button
+                    onClick={() => {
+                      if (window.confirm(`Are you sure you want to delete user "${user.name}"?`)) {
+                        setDeleteTarget(user);
+                      }
+                    }}
+                    title="Delete user"
+                    className="w-8 h-8 rounded-lg hover:bg-red-50 flex items-center justify-center text-red-300 hover:text-red-500 transition"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
                   </button>
                 </div>
               </div>
-            ))
-          )}
-        </div>
+            );
+          })
+        )}
 
-        {/* FOOTER */}
-        <div className="bg-[#F3F3F3] px-6 py-4 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-          {/* LEFT */}
-          <div className="flex items-center gap-4 text-sm text-[#7D7387]">
-            <span>Rows per page</span>
-            <button className="h-9 px-3 rounded-lg bg-white flex items-center gap-2">
-              10
-              <ChevronDown className="w-4 h-4" />
-            </button>
+        {/* FOOTER / PAGINATION */}
+        <div className="bg-[#F7F5FA] px-5 py-3.5 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+          <div className="flex items-center gap-3 text-sm text-[#7D7387]">
             <span>
-              Showing 1–{filteredUsers.length} of {usersList.length} users
+              Showing {filteredUsers.length === 0 ? 0 : (safePage - 1) * PAGE_SIZE + 1}–{Math.min(safePage * PAGE_SIZE, filteredUsers.length)} of {filteredUsers.length} users
+              {filteredUsers.length !== usersList.length && ` (filtered from ${usersList.length})`}
             </span>
           </div>
-
-          {/* PAGINATION */}
-          <div className="flex items-center gap-2">
-            <button className="w-9 h-9 rounded-lg bg-white text-slate-400">
-              ←
-            </button>
-            <button className="w-9 h-9 rounded-lg bg-[#7004DC] text-white font-bold">
-              1
-            </button>
-            <button className="w-9 h-9 rounded-lg bg-white text-slate-500 font-bold">
-              2
-            </button>
-            <button className="w-9 h-9 rounded-lg bg-white text-slate-500 font-bold">
-              3
-            </button>
-            <button className="w-9 h-9 rounded-lg bg-white text-slate-500">
-              →
-            </button>
-          </div>
+          {totalPages > 1 && (
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                disabled={safePage === 1}
+                className="w-8 h-8 rounded-lg bg-white border border-gray-200 text-slate-400 flex items-center justify-center disabled:opacity-40"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+              {pageNumbers.map((p, i) =>
+                p === "..." ? (
+                  <span key={`ellipsis-${i}`} className="text-slate-400 text-sm px-1">...</span>
+                ) : (
+                  <button
+                    key={p}
+                    onClick={() => setCurrentPage(p as number)}
+                    className={`w-8 h-8 rounded-lg text-sm font-bold transition ${safePage === p
+                      ? "bg-[#7004DC] text-white"
+                      : "bg-white border border-gray-200 text-slate-500 hover:bg-[#F3F0FF]"
+                      }`}
+                  >
+                    {p}
+                  </button>
+                )
+              )}
+              <button
+                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                disabled={safePage === totalPages}
+                className="w-8 h-8 rounded-lg bg-white border border-gray-200 text-slate-400 flex items-center justify-center disabled:opacity-40"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* BULK ACTIONS */}
-      {selectedUsers.length > 0 && (
-        <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 bg-[#280056] shadow-2xl rounded-2xl px-6 py-4 flex items-center gap-8">
-          {/* SELECTED */}
-          <div className="flex items-center gap-3 border-r border-white/20 pr-8">
-            <div className="w-7 h-7 rounded-full bg-[#D2A500] flex items-center justify-center text-xs font-bold text-[#4F3D00]">
-              {selectedUsers.length}
-            </div>
-            <span className="text-white font-semibold text-sm">
-              Selected Users
-            </span>
-          </div>
+      {/* DROPDOWN BACKDROP */}
+      {(roleDropdownOpen || statusDropdownOpen || dateDropdownOpen) && (
+        <div
+          className="fixed inset-0 z-40"
+          onClick={() => { setRoleDropdownOpen(false); setStatusDropdownOpen(false); setDateDropdownOpen(false); }}
+        />
+      )}
 
-          {/* ACTIONS */}
-          <div className="flex items-center gap-4">
-            <button className="flex items-center gap-2 text-sm text-white hover:text-violet-200 transition">
-              <CheckCircle2 className="w-4 h-4" />
-              Activate
-            </button>
-            <button className="flex items-center gap-2 text-sm text-white hover:text-yellow-300 transition">
-              <Ban className="w-4 h-4" />
-              Suspend
-            </button>
-            <button className="flex items-center gap-2 text-sm text-red-300 hover:text-red-200 transition">
-              <Trash2 className="w-4 h-4" />
-              Delete
-            </button>
+      {/* ── DELETE CONFIRMATION MODAL ── */}
+      {deleteTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+          <div className="bg-white rounded-[24px] w-full max-w-sm shadow-2xl overflow-hidden">
+            <div className="flex flex-col items-center px-8 pt-8 pb-4 text-center">
+              <div className="w-16 h-16 rounded-full bg-red-100 flex items-center justify-center mb-4">
+                <Trash2 className="w-7 h-7 text-red-600" />
+              </div>
+              <h3 className="text-xl font-extrabold text-[#1A1C1C]">Delete User?</h3>
+              <p className="mt-2 text-sm text-[#7D7387] leading-relaxed">
+                Are you sure you want to permanently delete{" "}
+                <span className="font-bold text-[#1A1C1C]">{deleteTarget.name}</span>?
+                <br />
+                This action <span className="font-bold text-red-600">cannot be undone</span> and will
+                erase all personal data from the database.
+              </p>
+            </div>
+
+            <div className="mx-8 mb-5 bg-red-50 border border-red-100 rounded-xl p-3">
+              <p className="text-xs font-bold text-red-600 flex items-center gap-1 mb-1.5">
+                <AlertTriangle className="w-3.5 h-3.5" /> What will happen:
+              </p>
+              {["All personal information will be erased", "User will be permanently locked out", "Forum posts will be anonymised"].map(e => (
+                <p key={e} className="text-xs text-red-500 font-medium">• {e}</p>
+              ))}
+            </div>
+
+            <div className="flex gap-3 px-8 pb-8">
+              <button
+                onClick={() => setDeleteTarget(null)}
+                className="flex-1 h-12 rounded-xl border border-gray-200 text-[#4B4355] font-semibold text-sm hover:bg-gray-50 transition"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDelete}
+                disabled={deleting}
+                className="flex-1 h-12 rounded-xl bg-red-600 hover:bg-red-700 disabled:bg-red-300 text-white font-bold text-sm transition"
+              >
+                {deleting ? "Deleting..." : "Yes, Delete"}
+              </button>
+            </div>
           </div>
         </div>
       )}
 
-      {/* DROPDOWN BACKDROP */}
-      {(roleDropdownOpen || statusDropdownOpen) && (
-        <div
-          className="fixed inset-0 z-40"
-          onClick={() => {
-            setRoleDropdownOpen(false);
-            setStatusDropdownOpen(false);
-          }}
-        />
+      {/* ── SUSPEND / UNSUSPEND CONFIRMATION MODAL ── */}
+      {suspendTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+          <div className="bg-white rounded-[24px] w-full max-w-sm shadow-2xl overflow-hidden">
+            <div className="flex flex-col items-center px-8 pt-8 pb-4 text-center">
+              <div className={`w-16 h-16 rounded-full flex items-center justify-center mb-4 ${
+                suspendTarget.status === "Suspended" ? "bg-green-100" : "bg-orange-100"
+              }`}>
+                {suspendTarget.status === "Suspended"
+                  ? <ShieldCheck className="w-7 h-7 text-green-600" />
+                  : <ShieldOff className="w-7 h-7 text-orange-500" />
+                }
+              </div>
+              <h3 className="text-xl font-extrabold text-[#1A1C1C]">
+                {suspendTarget.status === "Suspended" ? "Unsuspend User?" : "Suspend User?"}
+              </h3>
+              <p className="mt-2 text-sm text-[#7D7387] leading-relaxed">
+                {suspendTarget.status === "Suspended"
+                  ? <>
+                      Restore access for{" "}
+                      <span className="font-bold text-[#1A1C1C]">{suspendTarget.name}</span>?
+                      {" "}They will be able to log in again.
+                    </>
+                  : <>
+                      Suspend{" "}
+                      <span className="font-bold text-[#1A1C1C]">{suspendTarget.name}</span>?
+                      {" "}They will be locked out of the platform immediately.
+                    </>
+                }
+              </p>
+            </div>
+
+            <div className="flex gap-3 px-8 pb-8 pt-4">
+              <button
+                onClick={() => setSuspendTarget(null)}
+                className="flex-1 h-12 rounded-xl border border-gray-200 text-[#4B4355] font-semibold text-sm hover:bg-gray-50 transition"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSuspendToggle}
+                disabled={suspending}
+                className={`flex-1 h-12 rounded-xl font-bold text-sm text-white transition disabled:opacity-60 ${
+                  suspendTarget.status === "Suspended"
+                    ? "bg-green-600 hover:bg-green-700"
+                    : "bg-orange-500 hover:bg-orange-600"
+                }`}
+              >
+                {suspending
+                  ? (suspendTarget.status === "Suspended" ? "Restoring..." : "Suspending...")
+                  : (suspendTarget.status === "Suspended" ? "Yes, Unsuspend" : "Yes, Suspend")
+                }
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
 }
-
-// ----------------------
-// STATS CARD
-// ----------------------
-
-type StatsCardProps = {
-  title: string;
-  value: string;
-  icon: React.ReactNode;
-  valueColor: string;
-  growth?: string;
-};
-
-const StatsCard = ({
-  title,
-  value,
-  icon,
-  valueColor,
-  growth,
-}: StatsCardProps) => {
-  return (
-    <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
-      <div className="flex items-start justify-between">
-        <div>
-          <p className="text-sm font-semibold text-[#7D7387]">
-            {title}
-          </p>
-          <div className="flex items-end gap-2 mt-3">
-            <h2 className={`text-4xl font-extrabold tracking-tight ${valueColor}`}>
-              {value}
-            </h2>
-            {growth && (
-              <span className="text-xs font-bold text-green-600 mb-2">
-                {growth}
-              </span>
-            )}
-          </div>
-        </div>
-        <div className="w-11 h-11 rounded-xl bg-[#F3E8FF] flex items-center justify-center text-[#7004DC]">
-          {icon}
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// ----------------------
-// TABLE HEADER
-// ----------------------
-
-type TableHeadingProps = {
-  label: string;
-};
-
-const TableHeading = ({
-  label,
-}: TableHeadingProps) => {
-  return (
-    <div className="px-6 py-5 text-[11px] font-bold uppercase tracking-[0.15em] text-[#7D7387]">
-      {label}
-    </div>
-  );
-};

@@ -22,15 +22,15 @@ import AppFooter from "../../components/layout/AppFooter";
 import { useTheme } from "../../theme/ThemeContext";
 import { AccessibleText } from "../../components/shared/AccessibleText";
 import { AccessibleButton } from "../../components/shared/AccessibleButton";
-import { fetchAllEvents, EventModel } from "../../services/eventService";
+import { fetchAllEvents, EventModel, parseAccessibilityTags } from "../../services/eventService";
 
-const categories = [
-  "All",
-  "Medical Support",
-  "Legal Aid",
-  "Skill Training",
-  "Assistive Technology",
-  "General Support",
+const CATEGORY_FILTERS = [
+  { label: "All",        value: "All" },
+  { label: "Medical",    value: "Medical Support" },
+  { label: "Legal",      value: "Legal Aid" },
+  { label: "Training",   value: "Skill Training" },
+  { label: "Assistive",  value: "Assistive Technology" },
+  { label: "General",    value: "General Support" },
 ];
 
 export default function EventsScreen() {
@@ -69,8 +69,9 @@ export default function EventsScreen() {
   };
 
   const filteredEvents = events.filter((event) => {
+    const activeFilter = CATEGORY_FILTERS.find(f => f.label === selectedCategory);
     const matchesCategory =
-      selectedCategory === "All" || event.category === selectedCategory;
+      selectedCategory === "All" || event.category === (activeFilter?.value ?? selectedCategory);
     const matchesSearch =
       event.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
       event.location.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -113,41 +114,27 @@ export default function EventsScreen() {
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.filterScroll}
         >
-          {categories.map((item) => {
-            const active = selectedCategory === item;
-
+          {CATEGORY_FILTERS.map((filter) => {
+            const active = selectedCategory === filter.label;
             return (
               <TouchableOpacity
-                key={item}
+                key={filter.value}
                 style={[
                   styles.filterChip,
-                  {
-                    backgroundColor: colors.card,
-                    borderColor: colors.border,
-                  },
-                  active && {
-                    backgroundColor: colors.primary,
-                    borderColor: colors.primary,
-                  },
-                  highContrast && {
-                    borderWidth: 2,
-                    borderColor: "#000000",
-                  },
+                  { backgroundColor: colors.card, borderColor: colors.border },
+                  active && { backgroundColor: colors.primary, borderColor: colors.primary },
+                  highContrast && { borderWidth: 2, borderColor: "#000000" },
                 ]}
-                onPress={() => setSelectedCategory(item)}
+                onPress={() => setSelectedCategory(filter.label)}
                 accessibilityRole="button"
-                accessibilityLabel={`${item} filter`}
+                accessibilityLabel={`${filter.label} filter`}
                 accessibilityState={{ selected: active }}
               >
                 <AccessibleText
                   variant="body"
-                  style={[
-                    styles.filterText,
-                    { color: colors.text },
-                    active && { color: "#FFFFFF" },
-                  ]}
+                  style={[styles.filterText, { color: colors.text }, active && { color: "#FFFFFF" }]}
                 >
-                  {item}
+                  {filter.label}
                 </AccessibleText>
               </TouchableOpacity>
             );
@@ -197,11 +184,25 @@ export default function EventsScreen() {
                 cardBorder,
               ]}
             >
-              <Image
-                source={{ uri: event.image }}
-                style={styles.cardImage}
-                defaultSource={require("../../../assets/logo.png")} // Fallback icon on loading
-              />
+              {/* IMAGE + ACCESSIBILITY TAG PILLS OVERLAY */}
+              <View style={styles.imageWrapper}>
+                <Image
+                  source={{ uri: event.image }}
+                  style={styles.cardImage}
+                  defaultSource={require("../../../assets/logo.png")}
+                />
+                {parseAccessibilityTags(event.accessibility_tags).length > 0 && (
+                  <View style={styles.tagRow}>
+                    {parseAccessibilityTags(event.accessibility_tags).slice(0, 3).map((tag) => (
+                      <View key={tag} style={[styles.tagPill, highContrast && { backgroundColor: "#000000" }]}>
+                        <AccessibleText style={[styles.tagText, highContrast && { color: "#FFFFFF" }]}>
+                          {tag.toUpperCase()}
+                        </AccessibleText>
+                      </View>
+                    ))}
+                  </View>
+                )}
+              </View>
 
               <View style={styles.cardBody}>
                 <View
@@ -333,9 +334,34 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     elevation: 3,
   },
+  imageWrapper: {
+    width: "100%",
+    height: 180,
+    position: "relative",
+  },
   cardImage: {
     width: "100%",
     height: 180,
+  },
+  tagRow: {
+    position: "absolute",
+    bottom: 10,
+    left: 12,
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6,
+  },
+  tagPill: {
+    backgroundColor: "rgba(255,255,255,0.88)",
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  tagText: {
+    fontSize: 9,
+    fontWeight: "800",
+    color: "#1A1B20",
+    letterSpacing: 0.6,
   },
   cardBody: {
     padding: 20,

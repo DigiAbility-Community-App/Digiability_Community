@@ -8,6 +8,7 @@ import VerifyEmailScreen from '@screens/auth/VerifyEmailScreen';
 import ProfileScreen from '@screens/profile/ProfileScreen';
 import ProfileDetailsScreen from '@screens/profile/ProfileDetailsScreen';
 import CareCircleScreen from '@screens/profile/CareCircleScreen';
+import CreateCareCircleScreen from '@screens/profile/CreateCareCircleScreen';
 import NotificationsScreen from '@screens/home/NotificationScreen';
 import EditProfileScreen from '@screens/profile/EditProfileScreen';
 import ChatsStack from './ChatsStack';
@@ -29,6 +30,7 @@ export type MainStackParamList = {
   Profile: undefined;
   ProfileDetails: undefined;
   CareCircle: undefined;
+  CreateCareCircle: undefined;
   Chats: undefined;
   Notifications: undefined;
   EditProfile: undefined;
@@ -38,7 +40,7 @@ export type MainStackParamList = {
   SearchQuestions: undefined;
   Events: undefined;
   EventDetails: { eventId: string };
-  LeavePortal: { eventId: string; externalUrl: string; eventTitle: string };
+  LeavePortal: { eventId: string; externalUrl: string; eventTitle: string; eventDate?: string; eventLocation?: string; organizer?: string };
 };
 
 const Stack = createNativeStackNavigator<MainStackParamList>();
@@ -157,6 +159,7 @@ const MainNavigator = () => {
       <Stack.Screen name="Profile" component={ProfileScreen} />
       <Stack.Screen name="ProfileDetails" component={ProfileDetailsScreen} />
       <Stack.Screen name="CareCircle" component={CareCircleScreen} />
+      <Stack.Screen name="CreateCareCircle" component={CreateCareCircleScreen} />
       <Stack.Screen name="MainTabs" component={MainTabNavigator} />
       <Stack.Screen name="Chats" component={ChatsStack} />
       <Stack.Screen name="Notifications" component={NotificationsScreen} />

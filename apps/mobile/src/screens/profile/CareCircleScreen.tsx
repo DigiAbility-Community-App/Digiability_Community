@@ -11,6 +11,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useNavigation } from "@react-navigation/native";
 import ScreenWrapper from "../../components/layout/ScreenWrapper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { AccessibleText } from "../../components/shared/AccessibleText";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
@@ -40,10 +41,7 @@ const CareCircleScreen = () => {
   const navigation = useNavigation<any>();
 
   const handleCreate = () => {
-    navigation.reset({
-      index: 0,
-      routes: [{ name: "MainTabs" }],
-    });
+    navigation.navigate("CreateCareCircle");
   };
 
   const handleSkip = () => {
@@ -100,13 +98,13 @@ const CareCircleScreen = () => {
         </View>
 
         {/* Text */}
-        <Text style={styles.heroTitle}>
+        <AccessibleText style={styles.heroTitle} accessibilityRole="header">
           Welcome to{"\n"}DigiAbility!
-        </Text>
+        </AccessibleText>
 
-        <Text style={styles.heroSubtitle}>
+        <AccessibleText style={styles.heroSubtitle}>
           Your profile is complete
-        </Text>
+        </AccessibleText>
       </LinearGradient>
 
       {/* WHITE CARD */}
@@ -123,16 +121,13 @@ const CareCircleScreen = () => {
 
           {/* Heading */}
           <View style={styles.textBlock}>
-            <Text style={styles.cardTitle}>
+            <AccessibleText style={styles.cardTitle} accessibilityRole="header">
               Create Your Care Circle
-            </Text>
+            </AccessibleText>
 
-            <Text style={styles.cardDescription}>
-              Invite trusted people — family,
-              friends, or caregivers — to support
-              you. Together you stay safer,
-              informed, and connected.
-            </Text>
+            <AccessibleText style={styles.cardDescription}>
+              Invite trusted people — family, friends, or caregivers — to support you. Together you stay safer, informed, and connected.
+            </AccessibleText>
           </View>
 
           {/* Features */}
@@ -149,13 +144,8 @@ const CareCircleScreen = () => {
                 </View>
 
                 <View style={styles.featureText}>
-                  <Text style={styles.featureTitle}>
-                    {f.title}
-                  </Text>
-
-                  <Text style={styles.featureDesc}>
-                    {f.description}
-                  </Text>
+                  <AccessibleText style={styles.featureTitle}>{f.title}</AccessibleText>
+                  <AccessibleText style={styles.featureDesc}>{f.description}</AccessibleText>
                 </View>
               </View>
             ))}
@@ -168,6 +158,9 @@ const CareCircleScreen = () => {
               activeOpacity={0.9}
               onPress={handleCreate}
               style={styles.primaryWrapper}
+              accessibilityRole="button"
+              accessibilityLabel="Create Care Circle"
+              accessibilityHint="Double tap to set up your care circle and invite trusted contacts"
             >
               <LinearGradient
                 colors={["#500088", "#6B21A8"]}
@@ -175,9 +168,7 @@ const CareCircleScreen = () => {
                 end={{ x: 1, y: 0 }}
                 style={styles.primaryButton}
               >
-                <Text style={styles.primaryText}>
-                  Create Care Circle
-                </Text>
+                <AccessibleText style={styles.primaryText}>Create Care Circle</AccessibleText>
               </LinearGradient>
             </TouchableOpacity>
 
@@ -186,10 +177,11 @@ const CareCircleScreen = () => {
               activeOpacity={0.7}
               onPress={handleSkip}
               style={styles.skipButton}
+              accessibilityRole="button"
+              accessibilityLabel="Maybe Later"
+              accessibilityHint="Double tap to skip and go to the main app. You can create a care circle later."
             >
-              <Text style={styles.skipText}>
-                Maybe Later
-              </Text>
+              <AccessibleText style={styles.skipText}>Maybe Later</AccessibleText>
             </TouchableOpacity>
           </View>
         </View>

@@ -935,6 +935,24 @@ export const listNotifications = async (req: Request, res: Response): Promise<vo
 /**
  * Mark notification as read.
  */
+export const markAllNotificationsRead = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const userId = req.user?.sub;
+    if (!userId) {
+      res.status(401).json({ success: false, message: 'Unauthorized' });
+      return;
+    }
+    await prisma.notification.updateMany({
+      where: { userId, read: false },
+      data: { read: true }
+    });
+    res.status(200).json({ success: true });
+  } catch (error: any) {
+    console.error('Mark All Notifications Read Error:', error);
+    res.status(500).json({ success: false, message: 'Failed to update notifications' });
+  }
+};
+
 export const markNotificationRead = async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;

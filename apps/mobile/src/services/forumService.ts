@@ -250,5 +250,12 @@ export const forumService = {
   markNotificationRead: async (id: string) => {
     const res = await apiClient.put(`${FORUM_BASE_URL}/api/forum/notifications/${id}/read`);
     return res.data.data;
+  },
+
+  /**
+   * Mark all notifications as read
+   */
+  markAllNotificationsRead: async () => {
+    await apiClient.put(`${FORUM_BASE_URL}/api/forum/notifications/read-all`);
   }
 };

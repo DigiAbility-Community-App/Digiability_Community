@@ -62,6 +62,7 @@ const WelcomeScreen = ({ navigation }: Props) => {
   const [name, setName] = useState("");
   const [signUpEmail, setSignUpEmail] = useState("");
   const [signUpPassword, setSignUpPassword] = useState("");
+  const [signUpPhone, setSignUpPhone] = useState("");
 
   // Login
   const [loginEmail, setLoginEmail] = useState("");
@@ -86,8 +87,15 @@ const WelcomeScreen = ({ navigation }: Props) => {
     const trimmedEmail = signUpEmail.trim().toLowerCase();
     const trimmedPassword = signUpPassword.trim();
 
+    const trimmedPhone = signUpPhone.trim();
+
     if (!trimmedName || !trimmedEmail || !trimmedPassword) {
-      setError("Please fill in all fields.");
+      setError("Please fill in all required fields.");
+      return;
+    }
+
+    if (trimmedPhone && !/^[+]?[0-9\s\-]{10,15}$/.test(trimmedPhone)) {
+      setError("Please enter a valid phone number (10–15 digits).");
       return;
     }
 
@@ -123,6 +131,7 @@ const WelcomeScreen = ({ navigation }: Props) => {
         name: trimmedName,
         email: trimmedEmail,
         password: trimmedPassword,
+        ...(trimmedPhone ? { phoneNo: trimmedPhone } : {}),
       });
       // register() calls setAuth() in the auth store → isAuthenticated flips
       // to true → RootNavigator auto-switches to Main stack (Accessibility first).
@@ -293,6 +302,15 @@ const WelcomeScreen = ({ navigation }: Props) => {
               onChangeText={setSignUpPassword}
               secureTextEntry={true}
               accessibilityHint="Enter a password containing uppercase, lowercase, and a number"
+            />
+
+            <Input
+              label="Phone Number (optional)"
+              placeholder="+91 XXXXX XXXXX"
+              value={signUpPhone}
+              onChangeText={setSignUpPhone}
+              keyboardType="phone-pad"
+              accessibilityHint="Enter your mobile number including country code. This field is optional."
             />
 
             <AccessibleButton

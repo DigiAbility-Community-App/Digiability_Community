@@ -116,6 +116,7 @@ function toAuthUser(user: {
   roles: Role[];
   profileComplete: boolean;
   isEmailVerified: boolean;
+  phoneNo?: string | null;
 }) {
   return {
     id: user.id,
@@ -125,11 +126,12 @@ function toAuthUser(user: {
     roles: user.roles,
     profileComplete: user.profileComplete,
     isEmailVerified: user.isEmailVerified,
+    phoneNo: user.phoneNo ?? null,
   };
 }
 
 export async function registerUser(input: RegisterInput): Promise<LoginResult> {
-  const { name, email, password, role, roles } = input as any;
+  const { name, email, password, role, roles, phoneNo } = input as any;
 
   const existing = await prisma.user.findUnique({ where: { email } });
   if (existing) {
@@ -145,9 +147,12 @@ export async function registerUser(input: RegisterInput): Promise<LoginResult> {
     dbRoles = [role as Role];
   }
 
-  const user = await prisma.user.create({
-    data: { name, email, password: hashedPassword, roles: dbRoles, isEmailVerified: true },
-  });
+  const userData: any = { name, email, password: hashedPassword, roles: dbRoles, isEmailVerified: true };
+  if (phoneNo && typeof phoneNo === 'string' && phoneNo.trim()) {
+    userData.phoneNo = phoneNo.trim();
+  }
+
+  const user = await prisma.user.create({ data: userData });
 
   // Email verification is disabled for now
   /*

@@ -16,7 +16,8 @@ import {
   toggleBookmark,
   listBookmarks,
   listNotifications,
-  markNotificationRead
+  markNotificationRead,
+  markAllNotificationsRead
 } from '../controllers/forum.controller';
 import { authenticate } from '../middleware/auth.middleware';
 import { upload } from '../middleware/uploadMiddleware';
@@ -73,6 +74,7 @@ router.get('/bookmarks', authenticate, listBookmarks);
 
 // ── Notification Routes ───────────────────────────────
 router.get('/notifications', authenticate, listNotifications);
+router.put('/notifications/read-all', authenticate, markAllNotificationsRead);
 router.put('/notifications/:id/read', authenticate, markNotificationRead);
 
 export default router;
