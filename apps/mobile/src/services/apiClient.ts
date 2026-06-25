@@ -82,6 +82,12 @@ function processQueue(error: unknown, token: string | null) {
   pendingQueue = [];
 }
 
+// Call this on logout to reject any in-flight queued requests immediately
+export function cancelPendingRequests() {
+  processQueue(new Error('Session ended'), null);
+  isRefreshing = false;
+}
+
 apiClient.interceptors.response.use(
   (response) => response,
   async (error: AxiosError) => {

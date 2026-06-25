@@ -16,6 +16,7 @@ export interface AuthUser {
   isEmailVerified: boolean;
   fullName?: string;
   username?: string;
+  phoneNo?: string | null;
 }
 
 // Basic profile fields collected during onboarding (not yet in DB)
@@ -26,6 +27,7 @@ export interface PendingBasicProfile {
   gender?: string;
   city?: string;
   state?: string;
+  phoneNo?: string;
 }
 
 interface AuthState {
@@ -71,7 +73,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     set((state) => ({
       accessToken: state.accessToken,
       user,
-      isAuthenticated: true,
+      isAuthenticated: user != null,
     })),
 
   clearAuth: () =>
@@ -86,7 +88,7 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   setPendingRole: (role) => set({ pendingRole: role, pendingRoles: [role] }),
 
-  setPendingRoles: (roles) => set({ pendingRoles: roles, pendingRole: roles[0] || null }),
+  setPendingRoles: (roles) => set({ pendingRoles: roles, pendingRole: roles[0] ?? null }),
 
   setPendingProfile: (profile) => set({ pendingProfile: profile }),
 

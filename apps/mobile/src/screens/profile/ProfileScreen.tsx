@@ -2,6 +2,7 @@ import React, {
   useState,
   useRef,
   useCallback,
+  useMemo,
 } from "react";
 
 import {
@@ -71,6 +72,7 @@ type FieldErrors = {
   fullName?: string;
   username?: string;
   dob?: string;
+  phoneNo?: string;
 };
 
 type UsernameStatus =
@@ -124,6 +126,9 @@ const ProfileScreen = () => {
 
   const [showGenderDropdown, setShowGenderDropdown] =
     useState(false);
+
+  const [phoneNo, setPhoneNo] =
+    useState("");
 
   const [houseNo, setHouseNo] =
     useState("");
@@ -320,6 +325,10 @@ const ProfileScreen = () => {
         "Username is required.";
     }
 
+    if (usernameStatus === "checking") {
+      newErrors.username = "Checking availability, please wait…";
+    }
+
     if (
       usernameStatus === "taken"
     ) {
@@ -338,6 +347,10 @@ const ProfileScreen = () => {
         newErrors.dob =
           "Invalid date format.";
       }
+    }
+
+    if (phoneNo.trim() && !/^[+]?[0-9\s\-]{7,15}$/.test(phoneNo.trim())) {
+      newErrors.phoneNo = "Enter a valid phone number.";
     }
 
     setErrors(newErrors);
@@ -382,6 +395,11 @@ const ProfileScreen = () => {
           gender
         ),
 
+      phoneNo:
+        optionalString(
+          phoneNo
+        ),
+
       city:
         optionalString(city),
 
@@ -389,13 +407,8 @@ const ProfileScreen = () => {
         optionalString(state),
     });
 
-    setTimeout(() => {
-      setLoading(false);
-
-      navigation.navigate(
-        "ProfileDetails"
-      );
-    }, 600);
+    setLoading(false);
+    navigation.navigate("ProfileDetails");
   };
 
   // --------------------------------------------------
@@ -453,32 +466,15 @@ const ProfileScreen = () => {
   // Generate username suggestions
   // --------------------------------------------------
 
-  const generateUsernameSuggestions = () => {
-    const name =
-      fullName
-        .trim()
-        .toLowerCase()
-        .replace(/\s+/g, "");
-
+  const usernameSuggestions = useMemo(() => {
+    const name = fullName.trim().toLowerCase().replace(/\s+/g, "");
     if (!name) return [];
-
     return [
-      `${name}${Math.floor(
-        Math.random() * 100
-      )}`,
-
-      `${name}_${Math.floor(
-        Math.random() * 999
-      )}`,
-
-      `${name}.${Math.floor(
-        Math.random() * 9999
-      )}`,
+      `${name}${Math.floor(Math.random() * 100)}`,
+      `${name}_${Math.floor(Math.random() * 999)}`,
+      `${name}.${Math.floor(Math.random() * 9999)}`,
     ];
-  };
-
-  const usernameSuggestions =
-    generateUsernameSuggestions();
+  }, [fullName]);
 
   // --------------------------------------------------
   // 
@@ -773,6 +769,40 @@ const ProfileScreen = () => {
             </View>
           )}
 
+          {/* PHONE NUMBER */}
+          <View
+            style={
+              styles.inputContainer
+            }
+          >
+            <Text
+              style={
+                styles.inputIcon
+              }
+            >
+              📞
+            </Text>
+
+            <TextInput
+              placeholder="Phone Number"
+              placeholderTextColor="#7E7383"
+              style={styles.input}
+              value={phoneNo}
+              onChangeText={setPhoneNo}
+              keyboardType="phone-pad"
+              maxLength={15}
+            />
+          </View>
+
+          {errors.phoneNo && (
+            <Text
+              style={
+                styles.errorText
+              }
+            >
+              {errors.phoneNo}
+            </Text>
+          )}
 
         </View>
 

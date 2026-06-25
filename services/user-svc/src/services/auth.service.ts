@@ -146,13 +146,16 @@ export async function registerUser(input: RegisterInput): Promise<LoginResult> {
   }
 
   const user = await prisma.user.create({
-    data: { name, email, password: hashedPassword, roles: dbRoles },
+    data: { name, email, password: hashedPassword, roles: dbRoles, isEmailVerified: true },
   });
 
+  // Email verification is disabled for now
+  /*
   const rawOtp = await createEmailVerificationOtp(user.id);
   sendVerificationOtpEmail(user.email, user.name, rawOtp).catch((err) =>
     console.error("[EmailService] Failed to send verification OTP:", err)
   );
+  */
 
   const accessToken = signAccessToken({ sub: user.id, email: user.email });
   const refreshToken = await createRefreshToken(user.id);
@@ -286,12 +289,24 @@ export async function getCurrentUser(userId: string) {
   };
 }
 
+const VALID_ROLES: string[] = [
+  'pwd', 'caregiver', 'educator', 'ngo_worker', 'skill_trainer',
+  'community_member', 'therapist', 'volunteer', 'student',
+];
+
 export async function updateUserRole(userId: string, input: UpdateRoleInput) {
   const { role, roles } = input as any;
   let dbRoles: Role[] = [];
   if (roles && Array.isArray(roles)) {
-    dbRoles = roles.map(r => r as Role);
+    const invalid = roles.filter((r: string) => !VALID_ROLES.includes(r));
+    if (invalid.length > 0) {
+      throw createError(`Invalid role(s): ${invalid.join(', ')}`, 400);
+    }
+    dbRoles = roles.map((r: string) => r as Role);
   } else if (role) {
+    if (!VALID_ROLES.includes(role)) {
+      throw createError(`Invalid role: ${role}`, 400);
+    }
     dbRoles = [role as Role];
   }
 

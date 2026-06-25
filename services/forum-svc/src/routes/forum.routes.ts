@@ -24,6 +24,7 @@ import { validate } from '../middleware/validate.middleware';
 import {
   QuestionSchema,
   AnswerSchema,
+  EditAnswerSchema,
   VoteSchema,
   ReportSchema,
   BookmarkSchema
@@ -42,7 +43,8 @@ router.post(
   createQuestion
 );
 router.get('/questions', listQuestions);
-router.get('/questions/duplicates', checkDuplicates);
+// IMPORTANT: /questions/check-duplicates must remain above /questions/:id to avoid being shadowed
+router.get('/questions/check-duplicates', checkDuplicates);
 router.get('/questions/:id', getQuestionDetails);
 router.delete('/questions/:id', authenticate, deleteQuestion);
 router.get('/questions/:id/summary', getQuestionSummary);
@@ -56,7 +58,7 @@ router.post(
   validate(AnswerSchema),
   createAnswer
 );
-router.put('/answers/:id', authenticate, validate(AnswerSchema), editAnswer);
+router.put('/answers/:id', authenticate, validate(EditAnswerSchema), editAnswer);
 router.delete('/answers/:id', authenticate, deleteAnswer);
 router.post('/answers/:id/vote', authenticate, validate(VoteSchema), voteAnswer);
 router.post('/answers/:id/accept', authenticate, acceptAnswer);

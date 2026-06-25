@@ -15,9 +15,15 @@ const router = Router();
 // Ensure all profile routes are authenticated
 router.use(authenticate);
 
-// Extract userId from token (set by authenticateToken middleware)
+// Extract userId from token — throws 401 if missing rather than returning empty string
 const getUserIdFromAuthToken = (req: Request): string => {
-  return req.user?.sub ?? '';
+  const sub = req.user?.sub;
+  if (!sub) {
+    const err: any = new Error('Unauthorized');
+    err.statusCode = 401;
+    throw err;
+  }
+  return sub;
 };
 
 // ─────────────────────────────────────────────
@@ -38,6 +44,7 @@ const basicProfileSchema = z.object({
   gender: z.string().optional(),
   city: z.string().optional(),
   state: z.string().optional(),
+  phoneNo: z.string().max(20, 'Phone number is too long').optional(),
 });
 
 const profileDetailsSchema = z.object({
@@ -65,6 +72,9 @@ const profileDetailsSchema = z.object({
   // Verification
   verificationStatus: z.string().optional(),
   verificationDoc: z.string().optional(),
+
+  // Optional: pass roles from the client to avoid an extra DB round-trip when checking completion
+  roles: z.array(z.string()).optional(),
 });
 
 const pwdProfileSchema = z.object({
@@ -148,7 +158,7 @@ router.get('/check-username', async (req: Request, res: Response) => {
 router.post('/', validate(basicProfileSchema), async (req: Request, res: Response) => {
   try {
     const userId = getUserIdFromAuthToken(req);
-    
+
     // Check username uniqueness if provided
     if (req.body.username) {
       const existingUsername = await profileService.findByUsername(req.body.username);
@@ -160,14 +170,15 @@ router.post('/', validate(basicProfileSchema), async (req: Request, res: Respons
       }
     }
 
+    const isNew = !(await profileService.findByUserId(userId));
     const profile = await profileService.upsertBasicProfile(userId, req.body);
-    res.status(201).json({
+    res.status(isNew ? 201 : 200).json({
       success: true,
       data: profile,
-      message: 'Basic profile created successfully',
+      message: isNew ? 'Basic profile created successfully' : 'Basic profile updated successfully',
     });
   } catch (error: any) {
-    res.status(500).json({
+    res.status(error.statusCode ?? 500).json({
       success: false,
       message: error.message || 'Failed to create basic profile',
     });
@@ -197,7 +208,7 @@ router.put('/', validate(basicProfileSchema), async (req: Request, res: Response
       message: 'Basic profile updated successfully',
     });
   } catch (error: any) {
-    res.status(500).json({
+    res.status(error.statusCode ?? 500).json({
       success: false,
       message: error.message || 'Failed to update basic profile',
     });
@@ -227,11 +238,16 @@ function hasRequiredRoleFields(roles: string[] | string | undefined | null, body
 router.post('/details', validate(profileDetailsSchema), async (req: Request, res: Response) => {
   try {
     const userId = getUserIdFromAuthToken(req);
-    const profile = await profileService.upsertProfileDetails(userId, req.body);
+    const { roles: bodyRoles, ...detailsData } = req.body;
+    const profile = await profileService.upsertProfileDetails(userId, detailsData);
 
-    // Only mark complete when the user's role fields are actually present
-    const userRecord = await profileService.getUserWithProfile(userId);
-    if (hasRequiredRoleFields(userRecord?.roles, req.body)) {
+    // Prefer roles passed in the request body to avoid an extra DB round-trip
+    let rolesToCheck = bodyRoles;
+    if (!rolesToCheck) {
+      const userRecord = await profileService.getUserWithProfile(userId);
+      rolesToCheck = userRecord?.roles;
+    }
+    if (hasRequiredRoleFields(rolesToCheck, req.body)) {
       await profileService.markAsComplete(userId);
     }
 
@@ -241,7 +257,7 @@ router.post('/details', validate(profileDetailsSchema), async (req: Request, res
       message: 'Profile details saved successfully',
     });
   } catch (error: any) {
-    res.status(500).json({
+    res.status(error.statusCode ?? 500).json({
       success: false,
       message: error.message || 'Failed to save profile details',
     });
@@ -252,10 +268,15 @@ router.post('/details', validate(profileDetailsSchema), async (req: Request, res
 router.put('/details', validate(profileDetailsSchema), async (req: Request, res: Response) => {
   try {
     const userId = getUserIdFromAuthToken(req);
-    const profile = await profileService.upsertProfileDetails(userId, req.body);
+    const { roles: bodyRoles, ...detailsData } = req.body;
+    const profile = await profileService.upsertProfileDetails(userId, detailsData);
 
-    const userRecord = await profileService.getUserWithProfile(userId);
-    if (hasRequiredRoleFields(userRecord?.roles, req.body)) {
+    let rolesToCheck = bodyRoles;
+    if (!rolesToCheck) {
+      const userRecord = await profileService.getUserWithProfile(userId);
+      rolesToCheck = userRecord?.roles;
+    }
+    if (hasRequiredRoleFields(rolesToCheck, req.body)) {
       await profileService.markAsComplete(userId);
     }
 
@@ -265,7 +286,7 @@ router.put('/details', validate(profileDetailsSchema), async (req: Request, res:
       message: 'Profile details updated successfully',
     });
   } catch (error: any) {
-    res.status(500).json({
+    res.status(error.statusCode ?? 500).json({
       success: false,
       message: error.message || 'Failed to update profile details',
     });
@@ -288,7 +309,7 @@ router.get('/me', async (req: Request, res: Response) => {
       data: profile,
     });
   } catch (error: any) {
-    res.status(500).json({
+    res.status(error.statusCode ?? 500).json({
       success: false,
       message: error.message || 'Failed to fetch profile',
     });
@@ -315,7 +336,7 @@ router.post('/pwd', validate(pwdProfileSchema), async (req: Request, res: Respon
     await profileService.markAsComplete(userId);
     res.status(201).json({ success: true, data: profile });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    res.status(error.statusCode ?? 500).json({ success: false, message: error.message });
   }
 });
 
@@ -326,23 +347,31 @@ router.get('/pwd/me', async (req: Request, res: Response) => {
     if (!profile) return res.status(404).json({ success: false, message: 'Profile not found' });
     res.json({ success: true, data: profile });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    res.status(error.statusCode ?? 500).json({ success: false, message: error.message });
   }
 });
 
 router.get('/pwd/:userId', async (req: Request, res: Response) => {
   try {
+    const requesterId = getUserIdFromAuthToken(req);
+    if (requesterId !== req.params.userId) {
+      return res.status(403).json({ success: false, message: 'Forbidden' });
+    }
     const profile = await pwdProfileService.findByUserId(req.params.userId);
     if (!profile) return res.status(404).json({ success: false, message: 'Profile not found' });
     res.json({ success: true, data: profile });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    res.status(error.statusCode ?? 500).json({ success: false, message: error.message });
   }
 });
 
 router.put('/pwd/:userId', validate(pwdProfileSchema), async (req: Request, res: Response) => {
   try {
+    const requesterId = getUserIdFromAuthToken(req);
     const { userId } = req.params;
+    if (requesterId !== userId) {
+      return res.status(403).json({ success: false, message: 'Forbidden' });
+    }
     if (req.body.username) {
       const existingUsername = await pwdProfileService.findByUsername(req.body.username);
       if (existingUsername && existingUsername.userId !== userId) {
@@ -352,16 +381,20 @@ router.put('/pwd/:userId', validate(pwdProfileSchema), async (req: Request, res:
     const profile = await pwdProfileService.update(userId, req.body);
     res.json({ success: true, data: profile });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    res.status(error.statusCode ?? 500).json({ success: false, message: error.message });
   }
 });
 
 router.delete('/pwd/:userId', async (req: Request, res: Response) => {
   try {
+    const requesterId = getUserIdFromAuthToken(req);
+    if (requesterId !== req.params.userId) {
+      return res.status(403).json({ success: false, message: 'Forbidden' });
+    }
     await pwdProfileService.delete(req.params.userId);
     res.json({ success: true, message: 'Profile deleted successfully' });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    res.status(error.statusCode ?? 500).json({ success: false, message: error.message });
   }
 });
 
@@ -376,7 +409,7 @@ router.post('/caregiver', validate(caregiverProfileSchema), async (req: Request,
     await profileService.markAsComplete(userId);
     res.status(201).json({ success: true, data: profile });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    res.status(error.statusCode ?? 500).json({ success: false, message: error.message });
   }
 });
 
@@ -387,35 +420,47 @@ router.get('/caregiver/me', async (req: Request, res: Response) => {
     if (!profile) return res.status(404).json({ success: false, message: 'Profile not found' });
     res.json({ success: true, data: profile });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    res.status(error.statusCode ?? 500).json({ success: false, message: error.message });
   }
 });
 
 router.get('/caregiver/:userId', async (req: Request, res: Response) => {
   try {
+    const requesterId = getUserIdFromAuthToken(req);
+    if (requesterId !== req.params.userId) {
+      return res.status(403).json({ success: false, message: 'Forbidden' });
+    }
     const profile = await caregiverProfileService.findByUserId(req.params.userId);
     if (!profile) return res.status(404).json({ success: false, message: 'Profile not found' });
     res.json({ success: true, data: profile });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    res.status(error.statusCode ?? 500).json({ success: false, message: error.message });
   }
 });
 
 router.put('/caregiver/:userId', validate(caregiverProfileSchema), async (req: Request, res: Response) => {
   try {
+    const requesterId = getUserIdFromAuthToken(req);
+    if (requesterId !== req.params.userId) {
+      return res.status(403).json({ success: false, message: 'Forbidden' });
+    }
     const profile = await caregiverProfileService.update(req.params.userId, req.body);
     res.json({ success: true, data: profile });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    res.status(error.statusCode ?? 500).json({ success: false, message: error.message });
   }
 });
 
 router.delete('/caregiver/:userId', async (req: Request, res: Response) => {
   try {
+    const requesterId = getUserIdFromAuthToken(req);
+    if (requesterId !== req.params.userId) {
+      return res.status(403).json({ success: false, message: 'Forbidden' });
+    }
     await caregiverProfileService.delete(req.params.userId);
     res.json({ success: true, message: 'Profile deleted successfully' });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    res.status(error.statusCode ?? 500).json({ success: false, message: error.message });
   }
 });
 
@@ -436,7 +481,7 @@ router.post('/therapist', validate(therapistProfileSchema), async (req: Request,
     await profileService.markAsComplete(userId);
     res.status(201).json({ success: true, data: profile });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    res.status(error.statusCode ?? 500).json({ success: false, message: error.message });
   }
 });
 
@@ -449,7 +494,7 @@ router.get('/therapist/list/verified', async (req: Request, res: Response) => {
     });
     res.json({ success: true, data: profiles });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    res.status(error.statusCode ?? 500).json({ success: false, message: error.message });
   }
 });
 
@@ -460,23 +505,31 @@ router.get('/therapist/me', async (req: Request, res: Response) => {
     if (!profile) return res.status(404).json({ success: false, message: 'Profile not found' });
     res.json({ success: true, data: profile });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    res.status(error.statusCode ?? 500).json({ success: false, message: error.message });
   }
 });
 
 router.get('/therapist/:userId', async (req: Request, res: Response) => {
   try {
+    const requesterId = getUserIdFromAuthToken(req);
+    if (requesterId !== req.params.userId) {
+      return res.status(403).json({ success: false, message: 'Forbidden' });
+    }
     const profile = await therapistProfileService.findByUserId(req.params.userId);
     if (!profile) return res.status(404).json({ success: false, message: 'Profile not found' });
     res.json({ success: true, data: profile });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    res.status(error.statusCode ?? 500).json({ success: false, message: error.message });
   }
 });
 
 router.put('/therapist/:userId', validate(therapistProfileSchema), async (req: Request, res: Response) => {
   try {
+    const requesterId = getUserIdFromAuthToken(req);
     const { userId } = req.params;
+    if (requesterId !== userId) {
+      return res.status(403).json({ success: false, message: 'Forbidden' });
+    }
     if (req.body.username) {
       const existingUsername = await therapistProfileService.findByUsername(req.body.username);
       if (existingUsername && existingUsername.userId !== userId) {
@@ -486,16 +539,20 @@ router.put('/therapist/:userId', validate(therapistProfileSchema), async (req: R
     const profile = await therapistProfileService.update(userId, req.body);
     res.json({ success: true, data: profile });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    res.status(error.statusCode ?? 500).json({ success: false, message: error.message });
   }
 });
 
 router.delete('/therapist/:userId', async (req: Request, res: Response) => {
   try {
+    const requesterId = getUserIdFromAuthToken(req);
+    if (requesterId !== req.params.userId) {
+      return res.status(403).json({ success: false, message: 'Forbidden' });
+    }
     await therapistProfileService.delete(req.params.userId);
     res.json({ success: true, message: 'Profile deleted successfully' });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    res.status(error.statusCode ?? 500).json({ success: false, message: error.message });
   }
 });
 
@@ -516,7 +573,7 @@ router.post('/ngo', validate(ngoProfileSchema), async (req: Request, res: Respon
     await profileService.markAsComplete(userId);
     res.status(201).json({ success: true, data: profile });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    res.status(error.statusCode ?? 500).json({ success: false, message: error.message });
   }
 });
 
@@ -528,7 +585,7 @@ router.get('/ngo/list/verified', async (req: Request, res: Response) => {
     });
     res.json({ success: true, data: profiles });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    res.status(error.statusCode ?? 500).json({ success: false, message: error.message });
   }
 });
 
@@ -539,23 +596,31 @@ router.get('/ngo/me', async (req: Request, res: Response) => {
     if (!profile) return res.status(404).json({ success: false, message: 'Profile not found' });
     res.json({ success: true, data: profile });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    res.status(error.statusCode ?? 500).json({ success: false, message: error.message });
   }
 });
 
 router.get('/ngo/:userId', async (req: Request, res: Response) => {
   try {
+    const requesterId = getUserIdFromAuthToken(req);
+    if (requesterId !== req.params.userId) {
+      return res.status(403).json({ success: false, message: 'Forbidden' });
+    }
     const profile = await ngoProfileService.findByUserId(req.params.userId);
     if (!profile) return res.status(404).json({ success: false, message: 'Profile not found' });
     res.json({ success: true, data: profile });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    res.status(error.statusCode ?? 500).json({ success: false, message: error.message });
   }
 });
 
 router.put('/ngo/:userId', validate(ngoProfileSchema), async (req: Request, res: Response) => {
   try {
+    const requesterId = getUserIdFromAuthToken(req);
     const { userId } = req.params;
+    if (requesterId !== userId) {
+      return res.status(403).json({ success: false, message: 'Forbidden' });
+    }
     if (req.body.username) {
       const existingUsername = await ngoProfileService.findByUsername(req.body.username);
       if (existingUsername && existingUsername.userId !== userId) {
@@ -565,16 +630,20 @@ router.put('/ngo/:userId', validate(ngoProfileSchema), async (req: Request, res:
     const profile = await ngoProfileService.update(userId, req.body);
     res.json({ success: true, data: profile });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    res.status(error.statusCode ?? 500).json({ success: false, message: error.message });
   }
 });
 
 router.delete('/ngo/:userId', async (req: Request, res: Response) => {
   try {
+    const requesterId = getUserIdFromAuthToken(req);
+    if (requesterId !== req.params.userId) {
+      return res.status(403).json({ success: false, message: 'Forbidden' });
+    }
     await ngoProfileService.delete(req.params.userId);
     res.json({ success: true, message: 'Profile deleted successfully' });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    res.status(error.statusCode ?? 500).json({ success: false, message: error.message });
   }
 });
 

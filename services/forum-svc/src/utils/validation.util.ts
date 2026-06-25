@@ -17,6 +17,14 @@ export const AnswerSchema = z.object({
   audioUrl: z.string().url('Audio URL must be valid').optional().nullable(),
 });
 
+// Edits allow image/audio-only updates (no text required)
+export const EditAnswerSchema = z.object({
+  content: z.string().min(3, 'Answer content must be at least 3 characters long').optional(),
+  imageUrl: z.string().url('Image URL must be valid').optional().nullable(),
+  altText: z.string().max(250, 'Alt text cannot exceed 250 characters').optional().nullable(),
+  audioUrl: z.string().url('Audio URL must be valid').optional().nullable(),
+});
+
 export const VoteSchema = z.object({
   type: z.enum(['UP', 'DOWN']),
 });

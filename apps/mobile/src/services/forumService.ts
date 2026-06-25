@@ -1,8 +1,8 @@
 import apiClient from "./apiClient";
 
-const FORUM_BASE_URL = (
-  process.env.EXPO_PUBLIC_API_BASE_URL || "http://10.0.2.2:4001"
-).replace("4001", "4003");
+const FORUM_BASE_URL =
+  process.env.EXPO_PUBLIC_FORUM_API_URL ??
+  (process.env.EXPO_PUBLIC_API_BASE_URL ?? 'http://10.0.2.2:4001').replace('4001', '4003');
 
 export interface QuestionFilters {
   search?: string;
@@ -38,7 +38,7 @@ export const forumService = {
    * Check for similar existing questions to prevent duplicates
    */
   checkDuplicates: async (title: string) => {
-    const res = await apiClient.get(`${FORUM_BASE_URL}/api/forum/questions/duplicates`, {
+    const res = await apiClient.get(`${FORUM_BASE_URL}/api/forum/questions/check-duplicates`, {
       params: { title }
     });
     return res.data.data;

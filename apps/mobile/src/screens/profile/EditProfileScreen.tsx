@@ -96,6 +96,9 @@ const EditProfileScreen = () => {
     const [state, setState] =
         useState("");
 
+    const [phoneNo, setPhoneNo] =
+        useState("");
+
     // ───────────────── ROLE ─────────────────
 
     const roles = user?.roles && user.roles.length > 0
@@ -207,6 +210,10 @@ const EditProfileScreen = () => {
                 response?.state || ""
             );
 
+            setPhoneNo(
+                response?.phoneNo || ""
+            );
+
             // ROLE DETAILS
             const details =
                 response?.roleDetails;
@@ -307,7 +314,7 @@ const EditProfileScreen = () => {
 
             if (roles.includes("pwd")) {
                 payload.disabilityType = selectedDisability;
-                payload.disabilitySince = disabilitySince;
+                payload.disabilitySince = disabilitySince ? (parseInt(disabilitySince, 10) || undefined) : undefined;
                 payload.supportNeeded = selectedSupport;
             }
 
@@ -351,6 +358,7 @@ const EditProfileScreen = () => {
                         gender,
                         city,
                         state,
+                        phoneNo,
                     },
 
                     roleDetails:
@@ -523,6 +531,15 @@ const EditProfileScreen = () => {
                         onChangeText={
                             setState
                         }
+                    />
+
+                    <TextInput
+                        placeholder="Phone Number"
+                        style={styles.input}
+                        value={phoneNo}
+                        onChangeText={setPhoneNo}
+                        keyboardType="phone-pad"
+                        maxLength={15}
                     />
                 </View>
 

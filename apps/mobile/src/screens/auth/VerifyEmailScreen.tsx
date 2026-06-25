@@ -60,7 +60,7 @@ const VerifyEmailScreen = ({ navigation }: Props) => {
       } else if (!user.profileComplete) {
         navigation.replace("Profile");
       } else {
-        navigation.replace("Home");
+        navigation.replace("MainTabs");
       }
     } catch (err: any) {
       console.error("[VerifyEmailError]", err);

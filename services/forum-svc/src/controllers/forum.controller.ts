@@ -181,9 +181,11 @@ export const checkDuplicates = async (req: Request, res: Response): Promise<void
       return;
     }
 
-    // Fetch all active questions to run local cosine similarity
+    // Fetch recent active questions for cosine similarity (capped to avoid full-table scan)
     const questions = await prisma.forumQuestion.findMany({
       where: { deletedAt: null },
+      take: 300,
+      orderBy: { createdAt: 'desc' },
       include: {
         tags: true,
         author: {

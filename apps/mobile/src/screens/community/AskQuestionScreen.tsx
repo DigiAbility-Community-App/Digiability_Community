@@ -9,13 +9,13 @@ import {
   Image,
   Alert,
   ActivityIndicator,
-  Modal
+  Modal,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
-import { ArrowLeft, Camera, HelpCircle, X, Check, Mic, Square } from "lucide-react-native";
+import { ArrowLeft, Camera, HelpCircle, X, Check, Mic } from "lucide-react-native";
 import * as ImagePicker from "expo-image-picker";
 import { Dropdown } from "react-native-element-dropdown";
-import { Audio } from "expo-av";
 import { useForumStore } from "../../store/forumStore";
 import { AccessibleText } from "../../components/shared/AccessibleText";
 
@@ -42,23 +42,15 @@ const AskQuestionScreen = () => {
   const [tags, setTags] = useState("");
   const [imageUri, setImageUri] = useState<string | null>(null);
   const [altText, setAltText] = useState("");
-  const [audioUri, setAudioUri] = useState<string | null>(null);
-  const [isRecording, setIsRecording] = useState(false);
-  const [recording, setRecording] = useState<Audio.Recording | null>(null);
-
   const [showDuplicateModal, setShowDuplicateModal] = useState(false);
   const [isCheckingDuplicates, setIsCheckingDuplicates] = useState(false);
 
-  // Request permissions for camera roll and microphone
+  // Request camera roll permission on mount
   useEffect(() => {
     (async () => {
       const libraryStatus = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (libraryStatus.status !== "granted") {
         Alert.alert("Permission Needed", "We need access to your camera roll to pick images.");
-      }
-      const audioStatus = await Audio.requestPermissionsAsync();
-      if (audioStatus.status !== "granted") {
-        console.log("Microphone permission not granted for voice typing");
       }
     })();
   }, []);
@@ -81,54 +73,8 @@ const AskQuestionScreen = () => {
     setAltText("");
   };
 
-  const startVoiceTyping = async () => {
-    try {
-      const perm = await Audio.requestPermissionsAsync();
-      if (perm.status !== "granted") {
-        Alert.alert("Permission Required", "Please allow microphone access to use voice typing.");
-        return;
-      }
-
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: true,
-        playsInSilentModeIOS: true,
-      });
-
-      const { recording: newRecording } = await Audio.Recording.createAsync(
-        Audio.RecordingOptionsPresets.HIGH_QUALITY
-      );
-      setRecording(newRecording);
-      setIsRecording(true);
-    } catch (err) {
-      console.error("Failed to start voice typing:", err);
-      Alert.alert("Error", "Failed to start microphone recording.");
-    }
-  };
-
-  const stopVoiceTyping = async () => {
-    if (!recording) return;
-    setIsRecording(false);
-    try {
-      await recording.stopAndUnloadAsync();
-      const uri = recording.getURI();
-      setAudioUri(uri);
-      setRecording(null);
-
-      // Simulate transcription text addition
-      const simulatedTranscriptions = [
-        "Need suggestions for managing evening calming routines",
-        "Looking for sensory calming methods for toddlers during bedtime",
-        "Tips for evening restlessness and sleep transitions"
-      ];
-      const randomText = simulatedTranscriptions[Math.floor(Math.random() * simulatedTranscriptions.length)];
-      setDescription(prev => prev + (prev ? " " : "") + randomText);
-    } catch (err) {
-      console.error("Failed to stop voice typing:", err);
-    }
-  };
-
-  const handleClearAudio = () => {
-    setAudioUri(null);
+  const handleVoiceTyping = () => {
+    Alert.alert("Coming Soon", "Voice typing will be available in a future update.");
   };
 
   const checkAndSubmit = async () => {
@@ -147,8 +93,8 @@ const AskQuestionScreen = () => {
       await checkDuplicateQuestions(title);
       setIsCheckingDuplicates(false);
 
-      const suggestions = useForumStore.getState().duplicateSuggestions;
-      if (suggestions && suggestions.length > 0) {
+      // Use the reactive store value that was updated by checkDuplicateQuestions
+      if (duplicateSuggestions && duplicateSuggestions.length > 0) {
         setShowDuplicateModal(true);
       } else {
         submitPost();
@@ -171,7 +117,6 @@ const AskQuestionScreen = () => {
         tags: tags.trim(),
         imageUri,
         altText: imageUri ? altText.trim() : null,
-        audioUrl: audioUri
       });
 
       Alert.alert("Success", "Your question has been posted!", [
@@ -183,7 +128,7 @@ const AskQuestionScreen = () => {
   };
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container}>
       {/* HEADER */}
       <View style={styles.header}>
         <TouchableOpacity
@@ -238,22 +183,13 @@ const AskQuestionScreen = () => {
         <View style={styles.descriptionHeader}>
           <Text style={styles.inputLabel}>Description</Text>
           <TouchableOpacity
-            onPress={isRecording ? stopVoiceTyping : startVoiceTyping}
-            style={[styles.voiceBtn, isRecording && styles.voiceBtnRecording]}
+            onPress={handleVoiceTyping}
+            style={styles.voiceBtn}
             accessibilityRole="button"
-            accessibilityLabel={isRecording ? "Stop voice typing" : "Start voice typing"}
+            accessibilityLabel="Voice typing — coming soon"
           >
-            {isRecording ? (
-              <>
-                <Square size={14} color="#FFFFFF" style={{ marginRight: 4 }} />
-                <Text style={styles.voiceBtnTextRecording}>Listening...</Text>
-              </>
-            ) : (
-              <>
-                <Mic size={14} color="#7E22CE" style={{ marginRight: 4 }} />
-                <Text style={styles.voiceBtnText}>Voice Type</Text>
-              </>
-            )}
+            <Mic size={14} color="#7E22CE" style={{ marginRight: 4 }} />
+            <Text style={styles.voiceBtnText}>Voice Type</Text>
           </TouchableOpacity>
         </View>
 
@@ -268,16 +204,6 @@ const AskQuestionScreen = () => {
           accessibilityLabel="Question Description"
           accessibilityHint="Detail your question here"
         />
-
-        {/* VOICE RECORDING PREVIEW */}
-        {audioUri && (
-          <View style={styles.audioPreviewContainer}>
-            <AccessibleText style={styles.audioPreviewText}>🎙 Voice Note Attached</AccessibleText>
-            <TouchableOpacity style={styles.removeAudioBtn} onPress={handleClearAudio}>
-              <X size={16} color="#EF4444" />
-            </TouchableOpacity>
-          </View>
-        )}
 
         {/* TAGS */}
         <Text style={styles.inputLabel}>Tags (comma-separated)</Text>
@@ -391,7 +317,7 @@ const AskQuestionScreen = () => {
           </View>
         </View>
       </Modal>
-    </View>
+    </SafeAreaView>
   );
 };
 
