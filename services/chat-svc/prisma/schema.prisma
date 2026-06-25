@@ -71,6 +71,7 @@ enum InviteStatus {
   DECLINED
   EXPIRED
   CANCELLED
+  AWAITING_APPROVAL
 }
 
 // ─────────────────────────────────────────────
@@ -95,6 +96,9 @@ model Conversation {
   editGroupInfo  String        @default("ADMINS_ONLY")
   addMembers     String        @default("ADMINS_ONLY")
   sendMessages   String        @default("ALL_MEMBERS")
+
+  // WhatsApp-style: when enabled, non-admin joins require admin approval
+  approveNewMembers Boolean    @default(false)
 
   // Denormalized for fast query: last message preview
   lastMessageId   String?
@@ -268,5 +272,20 @@ model OutboxEvent {
   @@index([published, createdAt])
   @@index([streamName, published])
   @@map("outbox_events")
+}
+
+// ─────────────────────────────────────────────
+// HIDDEN MESSAGE (Delete for Me)
+// Per-user message hiding — does not affect other users
+// ─────────────────────────────────────────────
+model HiddenMessage {
+  id        String   @id @default(uuid())
+  userId    String
+  messageId String
+  createdAt DateTime @default(now())
+
+  @@unique([userId, messageId])
+  @@index([userId])
+  @@map("hidden_messages")
 }
 

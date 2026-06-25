@@ -73,16 +73,25 @@ export const chatService = {
     const res = await apiClient.get(`${CHAT_BASE_URL}/api/messages/${conversationId}/history`);
     const rawMessages = res.data.data || [];
     // Map REST response to ChatMessage shape
-    return rawMessages.map((m: any) => ({
-      id: m.id || m.messageId,
-      clientMessageId: m.clientMessageId || m.id || m.messageId,
-      conversationId: m.conversationId || conversationId,
-      senderId: m.senderId,
-      content: m.content,
-      type: m.type || 'TEXT',
-      status: m.status === 'PERSISTED' ? 'sent' : (m.status || 'sent'),
-      createdAt: m.createdAt,
-    }));
+    return rawMessages.map((m: any) => {
+      let computedStatus = m.status === 'PERSISTED' ? 'sent' : (m.status || 'sent');
+      if (m.recipients && Array.isArray(m.recipients) && m.recipients.length > 0) {
+        if (m.recipients.some((r: any) => r.status === 'DELIVERED' || r.status === 'READ')) {
+          computedStatus = 'delivered';
+        }
+      }
+
+      return {
+        id: m.id || m.messageId,
+        clientMessageId: m.clientMessageId || m.id || m.messageId,
+        conversationId: m.conversationId || conversationId,
+        senderId: m.senderId,
+        content: m.content,
+        type: m.type || 'TEXT',
+        status: computedStatus,
+        createdAt: m.createdAt,
+      };
+    });
   },
 
   searchUsers: async (query: string) => {
@@ -168,6 +177,30 @@ export const chatService = {
 
   cancelInvite: async (inviteId: string) => {
     const res = await apiClient.delete(`${CHAT_BASE_URL}/api/invites/${inviteId}`);
+    return res.data;
+  },
+
+  // ─── Admin Controls ──────────────────────────
+  removeMember: async (conversationId: string, userId: string) => {
+    const res = await apiClient.delete(
+      `${CHAT_BASE_URL}/api/conversations/${conversationId}/members/${userId}`
+    );
+    return res.data;
+  },
+
+  transferOwnership: async (conversationId: string, newOwnerId: string) => {
+    const res = await apiClient.post(
+      `${CHAT_BASE_URL}/api/conversations/${conversationId}/transfer-ownership`,
+      { userId: newOwnerId }
+    );
+    return res.data;
+  },
+
+  approveJoinRequest: async (inviteId: string, approve: boolean) => {
+    const res = await apiClient.post(
+      `${CHAT_BASE_URL}/api/conversations/join-requests/${inviteId}/approve`,
+      { approve }
+    );
     return res.data;
   },
 };

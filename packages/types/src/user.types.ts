@@ -8,6 +8,7 @@ export enum UserRole {
   THERAPIST = 'therapist',
   NGO = 'ngo',
   OTHER = 'other',
+  MENTOR = 'mentor',
 }
 
 export enum VerificationStatus {
@@ -244,3 +245,34 @@ export interface GetUserWithProfileResponse {
   data?: UserWithProfile;
   message: string;
 }
+
+// ─────────────────────────────────────────────
+// MENTOR TYPES
+// ─────────────────────────────────────────────
+
+export interface MentorProfileData {
+  bio?: string | null;
+  skills?: string[];
+  disabilitySpecialties?: string[];
+  isAvailable?: boolean;
+}
+
+export interface MentorReviewData {
+  rating: number;      // 1-5
+  comment?: string;
+}
+
+export interface MentorMatchResult {
+  mentorId: string;
+  userId: string;
+  name: string;
+  bio: string | null;
+  skills: string[];
+  disabilitySpecialties: string[];
+  city: string | null;
+  state: string | null;
+  avgRating: number;
+  reviewCount: number;
+  matchPercentage: number;
+}
+

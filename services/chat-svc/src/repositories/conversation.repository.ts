@@ -31,6 +31,7 @@ export interface ConversationWithMembers {
   editGroupInfo: string;
   addMembers: string;
   sendMessages: string;
+  approveNewMembers: boolean;
   lastMessageText: string | null;
   lastMessageAt: Date | null;
   createdAt: Date;

@@ -75,31 +75,78 @@ const GroupInfoScreen = ({ navigation, route }: Props) => {
     }
   };
 
+  const handleToggleApproveMembers = async () => {
+    if (!hasAdminRights) {
+      Alert.alert("Permission Denied", "Only admins can change group settings.");
+      return;
+    }
+
+    const newValue = !(conversation.approveNewMembers ?? false);
+    updateConversation(conversationId, { approveNewMembers: newValue });
+    setIsUpdatingSettings(true);
+
+    try {
+      await chatService.updateGroupSettings(conversationId, { approveNewMembers: newValue });
+    } catch (err) {
+      updateConversation(conversationId, { approveNewMembers: !newValue });
+      Alert.alert("Error", "Failed to update group settings.");
+    } finally {
+      setIsUpdatingSettings(false);
+    }
+  };
+
+  const handleTransferOwnership = (memberId: string, memberName: string) => {
+    Alert.alert(
+      "Transfer Ownership",
+      `Transfer group ownership to ${memberName}? You will become an Admin.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Transfer",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await chatService.transferOwnership(conversationId, memberId);
+              Alert.alert("Success", `Ownership transferred to ${memberName}`);
+            } catch (err: any) {
+              Alert.alert("Error", err?.response?.data?.message || "Failed to transfer ownership");
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const handleMemberAction = (memberId: string, currentRole: string, memberName: string) => {
     if (!hasAdminRights) return;
     if (memberId === user?.id) return;
     
     if (isCareCircle && (myRole === 'OWNER' || myRole === 'CAREGIVER')) {
       // Care Circle role management
-      const options = ['Cancel', 'Change Role', 'Remove Member'];
+      const options = isOwner
+        ? ['Cancel', 'Change Role', 'Transfer Ownership', 'Remove Member']
+        : ['Cancel', 'Change Role', 'Remove Member'];
+      const destructiveIndex = isOwner ? 3 : 2;
       if (Platform.OS === 'ios') {
         ActionSheetIOS.showActionSheetWithOptions(
-          { options, cancelButtonIndex: 0, destructiveButtonIndex: 2 },
+          { options, cancelButtonIndex: 0, destructiveButtonIndex: destructiveIndex },
           (idx) => {
             if (idx === 1) promptCareCircleRole(memberId, currentRole, memberName);
-            if (idx === 2) confirmRemoveMember(memberId, memberName);
+            if (isOwner && idx === 2) handleTransferOwnership(memberId, memberName);
+            if (idx === destructiveIndex) confirmRemoveMember(memberId, memberName);
           }
         );
       }
     } else if (!isCareCircle && isOwner) {
       // General Group role management (only OWNER can promote/demote ADMINS)
-      const options = ['Cancel', currentRole === 'ADMIN' ? 'Dismiss as Admin' : 'Make Admin', 'Remove Member'];
+      const options = ['Cancel', currentRole === 'ADMIN' ? 'Dismiss as Admin' : 'Make Admin', 'Transfer Ownership', 'Remove Member'];
       if (Platform.OS === 'ios') {
         ActionSheetIOS.showActionSheetWithOptions(
-          { options, cancelButtonIndex: 0, destructiveButtonIndex: 2 },
+          { options, cancelButtonIndex: 0, destructiveButtonIndex: 3 },
           (idx) => {
             if (idx === 1) changeRole(memberId, currentRole === 'ADMIN' ? 'MEMBER' : 'ADMIN');
-            if (idx === 2) confirmRemoveMember(memberId, memberName);
+            if (idx === 2) handleTransferOwnership(memberId, memberName);
+            if (idx === 3) confirmRemoveMember(memberId, memberName);
           }
         );
       }
@@ -150,9 +197,13 @@ const GroupInfoScreen = ({ navigation, route }: Props) => {
           style: "destructive",
           onPress: async () => {
             try {
-              // Note: actual chatService.removeMember call would go here
-              Alert.alert("Notice", "Member removal to be fully wired up in future PR");
-            } catch (err) {}
+              await chatService.removeMember(conversationId, memberId);
+              // Remove from local store
+              const updatedParticipants = conversation.participants.filter(p => p.userId !== memberId);
+              updateConversation(conversationId, { participants: updatedParticipants } as any);
+            } catch (err: any) {
+              Alert.alert("Error", err?.response?.data?.message || "Failed to remove member");
+            }
           }
         }
       ]
@@ -226,6 +277,19 @@ const GroupInfoScreen = ({ navigation, route }: Props) => {
                 <Switch 
                   value={conversation.sendMessages === 'ALL_MEMBERS'}
                   onValueChange={() => handleToggleSetting('sendMessages', conversation.sendMessages || 'ALL_MEMBERS')}
+                  disabled={isUpdatingSettings}
+                  trackColor={{ true: '#8A38F5', false: '#E8E5F0' }}
+                />
+              </View>
+              <View style={styles.settingDivider} />
+              <View style={styles.settingRow}>
+                <View style={styles.settingInfo}>
+                  <Text style={styles.settingTitle}>Approve New Members</Text>
+                  <Text style={styles.settingSub}>Admin approval required before joining</Text>
+                </View>
+                <Switch 
+                  value={conversation.approveNewMembers ?? false}
+                  onValueChange={handleToggleApproveMembers}
                   disabled={isUpdatingSettings}
                   trackColor={{ true: '#8A38F5', false: '#E8E5F0' }}
                 />

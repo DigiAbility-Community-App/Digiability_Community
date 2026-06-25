@@ -40,16 +40,27 @@ const NewChatScreen = ({ navigation }: Props) => {
       duration: 500,
       useNativeDriver: true,
     }).start();
+
+    // Fetch all users on mount
+    const fetchAllUsers = async () => {
+      setIsSearching(true);
+      try {
+        const results = await chatService.searchUsers("");
+        setSearchResults(results);
+        setHasSearched(true);
+      } catch (err) {
+        console.error("Failed to fetch initial users:", err);
+      } finally {
+        setIsSearching(false);
+      }
+    };
+    fetchAllUsers();
   }, []);
 
   const handleSearchChange = useCallback((text: string) => {
     setSearchQuery(text);
     if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
-    if (text.trim().length < 1) {
-      setSearchResults([]);
-      setHasSearched(false);
-      return;
-    }
+    
     searchTimeoutRef.current = setTimeout(async () => {
       setIsSearching(true);
       setHasSearched(true);

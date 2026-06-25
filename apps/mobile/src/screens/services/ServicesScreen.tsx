@@ -5,181 +5,191 @@ import {
   ScrollView,
   TouchableOpacity,
   Platform,
-  Dimensions,
+  Alert,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { useNavigation } from "@react-navigation/native";
 import { useTheme } from "../../theme/ThemeContext";
 import { AccessibleText } from "../../components/shared/AccessibleText";
-import { AccessibleButton } from "../../components/shared/AccessibleButton";
 import ScreenWrapper from "../../components/layout/ScreenWrapper";
 import AppHeader from "../../components/layout/AppHeader";
-import { LayoutGrid, Wrench, Sparkles, MapPin, ArrowRight, HeartHandshake } from "lucide-react-native";
+import { MapPin, Phone, Star, ShieldCheck, Clock } from "lucide-react-native";
 
-const { width: SCREEN_WIDTH } = Dimensions.get("window");
+const MOCK_SERVICES = [
+  {
+    id: "srv-1",
+    name: "Dr. Sarah Jenkins",
+    type: "Occupational Therapist",
+    category: "therapists",
+    logo: "👩‍⚕️",
+    description: "Specialized in pediatric occupational therapy and sensory integration for children with autism and developmental delays.",
+    location: "Downtown Clinic & Home Visits",
+    rating: 4.9,
+    reviews: 124,
+    verified: true,
+    price: "$80 - $150 / session",
+    availability: "Next available: Tomorrow"
+  },
+  {
+    id: "srv-2",
+    name: "Mobility Solutions Inc.",
+    type: "Equipment Vendor",
+    category: "equipment",
+    logo: "🦽",
+    description: "Rental and purchase of wheelchairs, walkers, and custom-fitted seating systems. Same-day delivery available.",
+    location: "Westside Hub",
+    rating: 4.7,
+    reviews: 89,
+    verified: true,
+    price: "Varies by equipment",
+    availability: "Open 9AM - 6PM"
+  },
+  {
+    id: "srv-3",
+    name: "CareBridge Support",
+    type: "Respite Care",
+    category: "care",
+    logo: "🤝",
+    description: "Professional respite care providers offering short-term relief for primary caregivers. Background-checked and certified.",
+    location: "All City Areas",
+    rating: 4.8,
+    reviews: 210,
+    verified: true,
+    price: "$25 - $40 / hour",
+    availability: "24/7 Availability"
+  },
+  {
+    id: "srv-4",
+    name: "Legal Advocates for Disability",
+    type: "Legal Services",
+    category: "legal",
+    logo: "⚖️",
+    description: "Assistance with disability claims, appeals, and educational advocacy (IEP meetings).",
+    location: "City Center",
+    rating: 4.6,
+    reviews: 45,
+    verified: true,
+    price: "Free consultation",
+    availability: "By appointment"
+  },
+  {
+    id: "srv-5",
+    name: "Accessible Transit Co.",
+    type: "Transportation",
+    category: "transport",
+    logo: "🚐",
+    description: "Wheelchair-accessible vans and specialized transport services for medical appointments and daily commuting.",
+    location: "Metro Area",
+    rating: 4.9,
+    reviews: 312,
+    verified: true,
+    price: "$2.50 / mile",
+    availability: "Book 24h in advance"
+  }
+];
 
-const UPCOMING_SERVICES = [
-  {
-    id: "therapists",
-    icon: "🏥",
-    title: "Verified Therapist Network",
-    description: "Book home or clinic visits with certified occupational, speech, and physical therapists.",
-    tag: "Verified Providers",
-  },
-  {
-    id: "assistance",
-    icon: "🦽",
-    title: "Assistive Aids & Rental",
-    description: "Rent or purchase wheelchairs, sensory tools, and specialized equipment near you.",
-    tag: "Local Delivery",
-  },
-  {
-    id: "ngo-support",
-    icon: "🤝",
-    title: "NGO Care Programs",
-    description: "Connect with verified NGOs and government support programs in your state.",
-    tag: "Free & Assisted",
-  },
+const CATEGORIES = [
+  { id: "all", label: "All" },
+  { id: "therapists", label: "Therapists" },
+  { id: "equipment", label: "Equipment" },
+  { id: "care", label: "Respite Care" },
+  { id: "legal", label: "Legal" },
+  { id: "transport", label: "Transport" },
 ];
 
 export const ServicesScreen = () => {
   const navigation = useNavigation<any>();
   const { colors, spacing, highContrast } = useTheme();
-  const [isSubscribed, setIsSubscribed] = useState(false);
+  const [activeCategory, setActiveCategory] = useState("all");
 
-  const cardBorder = highContrast
-    ? { borderWidth: 2, borderColor: "#000000" }
-    : { borderWidth: 1, borderColor: "rgba(0,0,0,0.05)" };
-
-  const handleNotifyToggle = () => {
-    setIsSubscribed(!isSubscribed);
-  };
-
-  const handleReturnHome = () => {
-    navigation.navigate("Home");
-  };
+  const filteredServices = MOCK_SERVICES.filter(
+    s => activeCategory === "all" || s.category === activeCategory
+  );
 
   return (
     <ScreenWrapper>
-      {/* HEADER */}
       <AppHeader title="Professional Services" hideBackButton={true} />
+
+      <View style={styles.categoriesContainer}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoriesScroll}>
+          {CATEGORIES.map(cat => {
+            const isActive = activeCategory === cat.id;
+            return (
+              <TouchableOpacity
+                key={cat.id}
+                style={[
+                  styles.categoryBtn,
+                  { backgroundColor: isActive ? "#E2D3FD" : colors.card },
+                  isActive && { borderColor: "#9333EA", borderWidth: 1 }
+                ]}
+                onPress={() => setActiveCategory(cat.id)}
+              >
+                <AccessibleText style={{ 
+                  color: isActive ? "#500088" : colors.text, 
+                  fontWeight: isActive ? "700" : "500",
+                  fontSize: 14 
+                }}>
+                  {cat.label}
+                </AccessibleText>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      </View>
 
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={[styles.scrollContent, { paddingBottom: Platform.OS === "ios" ? 150 : 120 }]}
       >
-        {/* HERO CARD */}
-        <LinearGradient
-          colors={highContrast ? ["#000000", "#000000"] : ["#500088", "#7E22CE"]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={[
-            styles.heroCard,
-            highContrast && { borderWidth: 2, borderColor: "#FFFFFF" },
-          ]}
-        >
-          <View style={styles.heroContent}>
-            <View style={[styles.heroIconBg, { backgroundColor: "rgba(255, 255, 255, 0.15)" }]}>
-              <LayoutGrid color="#FFFFFF" size={32} strokeWidth={2} />
-            </View>
-            <View style={styles.heroTextContainer}>
-              <AccessibleText variant="heroTitle" style={{ color: "#FFFFFF", fontSize: 24, lineHeight: 30 }}>
-                Services Hub
-              </AccessibleText>
-              <AccessibleText variant="body" style={{ color: "rgba(255,255,255,0.85)", marginTop: 4 }}>
-                Find verified support and resources in your area.
-              </AccessibleText>
-            </View>
-          </View>
-        </LinearGradient>
-
-        {/* STATUS CARD */}
-        <View style={[styles.statusCard, { backgroundColor: colors.card }, cardBorder]}>
-          <View style={[styles.iconWrapper, { backgroundColor: highContrast ? "#FFFFFF" : "#F4F3FA" }]}>
-            <Wrench color={colors.primary} size={28} />
-          </View>
-          <AccessibleText variant="title" style={{ textAlign: "center", marginTop: spacing.md }}>
-            Currently Under Development
-          </AccessibleText>
-          <AccessibleText variant="body" style={{ color: colors.subtext, textAlign: "center", marginTop: spacing.sm, lineHeight: 22 }}>
-            We are hard at work building a secure directory of professional caregivers, therapists, and certified equipment vendors to offer you reliable assistance.
-          </AccessibleText>
-        </View>
-
-        {/* NOTIFY BLOCK */}
-        <TouchableOpacity
-          activeOpacity={0.9}
-          onPress={handleNotifyToggle}
-          style={[
-            styles.notifyCard,
-            { backgroundColor: isSubscribed ? (highContrast ? "#000000" : "#F0FDF4") : colors.card },
-            cardBorder,
-            isSubscribed && !highContrast && { borderColor: "#BBF7D0", borderWidth: 1 }
-          ]}
-          accessibilityRole="button"
-          accessibilityLabel={isSubscribed ? "Subscribed to notifications. Tap to unsubscribe." : "Tap to get notified when services launch."}
-          accessibilityHint="Double tap to toggle notifications subscription for this feature."
-        >
-          <View style={styles.notifyRow}>
-            <View style={styles.notifyText}>
-              <AccessibleText variant="title" style={{ fontSize: 16, color: isSubscribed && !highContrast ? "#166534" : colors.text }}>
-                {isSubscribed ? "🔔 You're on the list!" : "📩 Get Notified When Ready"}
-              </AccessibleText>
-              <AccessibleText variant="caption" style={{ color: isSubscribed && !highContrast ? "#166534" : colors.subtext, marginTop: 2 }}>
-                {isSubscribed ? "We will alert you as soon as verified partners launch." : "Be the first to know when services are available."}
-              </AccessibleText>
-            </View>
-            <View style={[
-              styles.notifyBadge,
-              { backgroundColor: isSubscribed ? "#16A34A" : colors.primary }
-            ]}>
-              <AccessibleText variant="caption" style={{ color: "#FFFFFF", fontWeight: "700" }}>
-                {isSubscribed ? "Subscribed" : "Notify Me"}
-              </AccessibleText>
-            </View>
-          </View>
-        </TouchableOpacity>
-
-        {/* UPCOMING SHOWCASE */}
-        <AccessibleText variant="label" style={{ marginTop: spacing.lg, marginBottom: spacing.sm }}>
-          UPCOMING CAPABILITIES
-        </AccessibleText>
-
-        {UPCOMING_SERVICES.map((service) => (
-          <View
-            key={service.id}
-            style={[styles.featureCard, { backgroundColor: colors.card }, cardBorder]}
-          >
-            <View style={[styles.featureHeader]}>
-              <View style={styles.featureIconContainer}>
-                <AccessibleText style={{ fontSize: 26 }}>{service.icon}</AccessibleText>
+        {filteredServices.map(service => (
+          <View key={service.id} style={[styles.serviceCard, { backgroundColor: colors.card }]}>
+            <View style={styles.serviceHeader}>
+              <View style={styles.providerLogo}>
+                <AccessibleText style={{ fontSize: 24 }}>{service.logo}</AccessibleText>
               </View>
-              <View style={styles.featureTitleContainer}>
-                <AccessibleText variant="title" style={{ fontSize: 16 }}>
-                  {service.title}
-                </AccessibleText>
-                <View style={[styles.tag, { backgroundColor: highContrast ? "#000000" : "#F3E8FF" }, highContrast && { borderWidth: 1, borderColor: "#000000" }]}>
-                  <AccessibleText variant="caption" style={{ color: highContrast ? "#FFFFFF" : colors.primary, fontSize: 10, fontWeight: "700" }}>
-                    {service.tag}
-                  </AccessibleText>
+              <View style={styles.providerInfo}>
+                <View style={styles.nameRow}>
+                  <AccessibleText variant="title" style={{ fontSize: 16, flexShrink: 1 }}>{service.name}</AccessibleText>
+                  {service.verified && <ShieldCheck size={16} color="#059669" style={{ marginLeft: 4 }} />}
+                </View>
+                <View style={styles.typeBadge}>
+                  <AccessibleText style={{ color: "#500088", fontSize: 11, fontWeight: "700" }}>{service.type}</AccessibleText>
                 </View>
               </View>
             </View>
-            <AccessibleText variant="body" style={{ color: colors.subtext, marginTop: spacing.sm, lineHeight: 20 }}>
+
+            <AccessibleText style={{ color: colors.subtext, fontSize: 14, lineHeight: 20, marginBottom: 16 }}>
               {service.description}
             </AccessibleText>
+
+            <View style={styles.metaContainer}>
+              <View style={styles.metaRow}>
+                <MapPin size={14} color="#94A3B8" />
+                <AccessibleText style={{ color: colors.subtext, fontSize: 13, marginLeft: 6 }}>{service.location}</AccessibleText>
+              </View>
+              <View style={styles.metaRow}>
+                <Clock size={14} color="#94A3B8" />
+                <AccessibleText style={{ color: colors.subtext, fontSize: 13, marginLeft: 6 }}>{service.availability}</AccessibleText>
+              </View>
+              <View style={styles.metaRow}>
+                <Star size={14} color="#F59E0B" fill="#F59E0B" />
+                <AccessibleText style={{ color: colors.text, fontSize: 13, fontWeight: "600", marginLeft: 6 }}>{service.rating}</AccessibleText>
+                <AccessibleText style={{ color: colors.subtext, fontSize: 13, marginLeft: 4 }}>({service.reviews} reviews)</AccessibleText>
+              </View>
+            </View>
+
+            <View style={styles.cardFooter}>
+              <AccessibleText style={{ color: colors.text, fontSize: 14, fontWeight: "700" }}>{service.price}</AccessibleText>
+              <TouchableOpacity 
+                style={styles.contactBtn}
+                onPress={() => Alert.alert("Contact", `Initiating contact with ${service.name}...`)}
+              >
+                <Phone size={14} color="#fff" />
+                <AccessibleText style={{ color: "#fff", fontSize: 13, fontWeight: "700", marginLeft: 6 }}>Contact</AccessibleText>
+              </TouchableOpacity>
+            </View>
           </View>
         ))}
-
-        {/* RETURN BUTTON */}
-        <AccessibleButton
-          accessibilityLabel="Return to Home Dashboard"
-          accessibilityHint="Navigates back to the main Home screen"
-          onPress={handleReturnHome}
-          style={{ marginTop: spacing.xl }}
-        >
-          Return to Dashboard
-        </AccessibleButton>
       </ScrollView>
     </ScreenWrapper>
   );
@@ -188,105 +198,86 @@ export const ServicesScreen = () => {
 export default ServicesScreen;
 
 const styles = StyleSheet.create({
-  scrollContent: {
-    paddingTop: 16,
-    paddingHorizontal: 24,
+  categoriesContainer: {
+    paddingVertical: 12,
+    backgroundColor: "#FAF8FF",
   },
-  heroCard: {
-    borderRadius: 24,
-    padding: 20,
-    marginBottom: 20,
+  categoriesScroll: {
+    paddingHorizontal: 20,
+    gap: 10,
+  },
+  categoryBtn: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "transparent",
+  },
+  scrollContent: {
+    paddingTop: 8,
+    paddingHorizontal: 20,
+  },
+  serviceCard: {
+    borderRadius: 20,
+    padding: 18,
+    marginBottom: 16,
     shadowColor: "#500088",
-    shadowOpacity: 0.1,
+    shadowOpacity: 0.05,
     shadowRadius: 10,
     shadowOffset: { width: 0, height: 4 },
     elevation: 3,
   },
-  heroContent: {
+  serviceHeader: {
     flexDirection: "row",
     alignItems: "center",
-  },
-  heroIconBg: {
-    width: 60,
-    height: 60,
-    borderRadius: 18,
-    justifyContent: "center",
-    alignItems: "center",
-    marginRight: 16,
-  },
-  heroTextContainer: {
-    flex: 1,
-  },
-  statusCard: {
-    borderRadius: 24,
-    padding: 24,
-    alignItems: "center",
-    marginBottom: 16,
-    shadowColor: "#000",
-    shadowOpacity: 0.03,
-    shadowRadius: 8,
-    elevation: 1,
-  },
-  iconWrapper: {
-    width: 64,
-    height: 64,
-    borderRadius: 20,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  notifyCard: {
-    borderRadius: 20,
-    padding: 16,
-    marginBottom: 24,
-    shadowColor: "#000",
-    shadowOpacity: 0.02,
-    shadowRadius: 6,
-    elevation: 1,
-  },
-  notifyRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  notifyText: {
-    flex: 1,
-    marginRight: 12,
-  },
-  notifyBadge: {
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 14,
-  },
-  featureCard: {
-    borderRadius: 20,
-    padding: 18,
     marginBottom: 14,
-    shadowColor: "#000",
-    shadowOpacity: 0.02,
-    shadowRadius: 6,
-    elevation: 1,
   },
-  featureHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  featureIconContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 14,
+  providerLogo: {
+    width: 54,
+    height: 54,
+    borderRadius: 16,
+    backgroundColor: "#F1F5F9",
     justifyContent: "center",
     alignItems: "center",
     marginRight: 14,
   },
-  featureTitleContainer: {
+  providerInfo: {
     flex: 1,
-    gap: 4,
-    flexDirection: "column",
-    alignItems: "flex-start",
   },
-  tag: {
+  nameRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 4,
+  },
+  typeBadge: {
+    backgroundColor: "#F3E8FF",
     paddingHorizontal: 8,
-    paddingVertical: 2,
+    paddingVertical: 4,
     borderRadius: 8,
+    alignSelf: "flex-start",
   },
+  metaContainer: {
+    gap: 8,
+    marginBottom: 16,
+  },
+  metaRow: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  cardFooter: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    borderTopWidth: 1,
+    borderTopColor: "#F1F5F9",
+    paddingTop: 16,
+  },
+  contactBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#500088",
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 12,
+  }
 });

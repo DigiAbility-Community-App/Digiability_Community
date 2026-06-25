@@ -9,6 +9,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
+  Keyboard,
 } from "react-native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { RouteProp } from "@react-navigation/native";
@@ -20,6 +21,7 @@ import { sendSocketMessage } from "@services/socketService";
 import { generateUUID } from "../../utils/uuid";
 import ScreenWrapper from "../../components/layout/ScreenWrapper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { Send, ArrowLeft, MoreVertical, Paperclip, Mic, Image as ImageIcon, Smile, Check, CheckCheck } from "lucide-react-native";
 
 // ─────────────────────────────────────────────────────────
 // 1:1 Chat Screen — Direct Message Thread
@@ -131,6 +133,22 @@ const ChatScreen = ({ navigation, route }: Props) => {
   const [messageText, setMessageText] = useState("");
   const [isTyping, setIsTyping] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+
+  useEffect(() => {
+    if (Platform.OS !== "android") return;
+    const showSub = Keyboard.addListener("keyboardDidShow", (e) => {
+      setKeyboardHeight(e.endCoordinates.height);
+    });
+    const hideSub = Keyboard.addListener("keyboardDidHide", () => {
+      setKeyboardHeight(0);
+    });
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
+
   const flatListRef = useRef<FlatList>(null);
 
   // Deduplicate messages — prefer server-confirmed messages over optimistic ones
@@ -228,12 +246,14 @@ const ChatScreen = ({ navigation, route }: Props) => {
 
   const renderStatusIcon = (status: string) => {
     switch (status) {
+      case "sending":
+        return <Text style={styles.statusIcon}>...</Text>;
       case "sent":
-        return <Text style={styles.statusIcon}>✓</Text>;
+        return <Check size={14} color="rgba(255,255,255,0.8)" style={{ marginLeft: 4 }} />;
       case "delivered":
-        return <Text style={styles.statusIcon}>✓✓</Text>;
+        return <CheckCheck size={14} color="rgba(255,255,255,0.8)" style={{ marginLeft: 4 }} />;
       case "read":
-        return <Text style={[styles.statusIcon, styles.statusRead]}>✓✓</Text>;
+        return <CheckCheck size={14} color="#38bdf8" style={{ marginLeft: 4 }} />;
       default:
         return null;
     }
@@ -335,71 +355,131 @@ const ChatScreen = ({ navigation, route }: Props) => {
       </View>
 
       {/* ── Messages List ────────────────────────────────── */}
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-        keyboardVerticalOffset={0}
-      >
-        <FlatList
-          ref={flatListRef}
-          data={dedupedMessages}
-          keyExtractor={(item, index) => item.id ? `${item.id}-${index}` : `msg-${index}`}
-          renderItem={renderMessage}
-          contentContainerStyle={styles.messageList}
-          showsVerticalScrollIndicator={false}
-          onContentSizeChange={() =>
-            flatListRef.current?.scrollToEnd({ animated: false })
-          }
-          ListFooterComponent={
-            isTyping ? (
-              <View style={styles.typingContainer}>
-                <View style={styles.typingBubble}>
-                  <View style={styles.typingDots}>
-                    <View style={[styles.typingDot, styles.typingDot1]} />
-                    <View style={[styles.typingDot, styles.typingDot2]} />
-                    <View style={[styles.typingDot, styles.typingDot3]} />
+      <View style={{ flex: 1, paddingBottom: Platform.OS === 'android' ? (keyboardHeight > 0 ? keyboardHeight + 10 : 0) : 0 }}>
+        {Platform.OS === 'ios' ? (
+          <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding" keyboardVerticalOffset={0}>
+            {/* iOS wrapper */}
+            <FlatList
+              ref={flatListRef}
+              data={[...dedupedMessages].reverse()}
+              inverted
+              keyExtractor={(item, index) => item.id ? `${item.id}-${index}` : `msg-${index}`}
+              renderItem={renderMessage}
+              contentContainerStyle={[styles.messageList, { paddingBottom: 10 }]}
+              showsVerticalScrollIndicator={false}
+              ListHeaderComponent={
+                isTyping ? (
+                  <View style={styles.typingContainer}>
+                    <View style={styles.typingBubble}>
+                      <View style={styles.typingDots}>
+                        <View style={[styles.typingDot, styles.typingDot1]} />
+                        <View style={[styles.typingDot, styles.typingDot2]} />
+                        <View style={[styles.typingDot, styles.typingDot3]} />
+                      </View>
+                    </View>
                   </View>
-                </View>
-              </View>
-            ) : null
-          }
-        />
-
-        {/* ── Composer ───────────────────────────────────── */}
-        <View style={[styles.composer, { paddingBottom: Math.max(insets.bottom, 10) }]}>
-          <TouchableOpacity style={styles.attachBtn}>
-            <Text style={styles.attachIcon}>+</Text>
-          </TouchableOpacity>
-
-          <View style={styles.inputContainer}>
-            <TextInput
-              style={styles.textInput}
-              placeholder="Type a message..."
-              placeholderTextColor="#999"
-              value={messageText}
-              onChangeText={setMessageText}
-              multiline
-              maxLength={5000}
+                ) : null
+              }
             />
-            <TouchableOpacity style={styles.emojiBtn}>
-              <Text style={styles.emojiIcon}>😊</Text>
-            </TouchableOpacity>
-          </View>
 
-          <TouchableOpacity
-            style={[
-              styles.sendBtn,
-              messageText.trim() ? styles.sendBtnActive : {},
-            ]}
-            onPress={handleSend}
-            disabled={!messageText.trim()}
-          >
-            <Text style={styles.sendIcon}>
-              {messageText.trim() ? "➤" : "🎤"}
-            </Text>
-          </TouchableOpacity>
-        </View>
-      </KeyboardAvoidingView>
+            {/* ── Composer ───────────────────────────────────────── */}
+            <View style={[styles.composer, { paddingBottom: Math.max(insets.bottom, 10) }]}>
+              <TouchableOpacity style={styles.attachBtn}>
+                <Text style={styles.attachIcon}>+</Text>
+              </TouchableOpacity>
+              
+              <View style={styles.inputContainer}>
+                <TextInput
+                  style={styles.textInput}
+                  placeholder="Type a message..."
+                  placeholderTextColor="#999"
+                  value={messageText}
+                  onChangeText={setMessageText}
+                  multiline
+                  maxLength={5000}
+                />
+                <TouchableOpacity style={styles.emojiBtn}>
+                  <Text style={styles.emojiIcon}>😊</Text>
+                </TouchableOpacity>
+              </View>
+
+              <TouchableOpacity
+                style={[
+                  styles.sendBtn,
+                  messageText.trim() ? styles.sendBtnActive : {},
+                ]}
+                onPress={handleSend}
+                disabled={!messageText.trim()}
+              >
+                <Text style={styles.sendIcon}>
+                  {messageText.trim() ? "➤" : "🎤"}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </KeyboardAvoidingView>
+        ) : (
+          /* Android wrapper */
+          <>
+            <FlatList
+              ref={flatListRef}
+              data={[...dedupedMessages].reverse()}
+              inverted
+              keyExtractor={(item, index) => item.id ? `${item.id}-${index}` : `msg-${index}`}
+              renderItem={renderMessage}
+              contentContainerStyle={[styles.messageList, { paddingBottom: 10 }]}
+              showsVerticalScrollIndicator={false}
+              ListHeaderComponent={
+                isTyping ? (
+                  <View style={styles.typingContainer}>
+                    <View style={styles.typingBubble}>
+                      <View style={styles.typingDots}>
+                        <View style={[styles.typingDot, styles.typingDot1]} />
+                        <View style={[styles.typingDot, styles.typingDot2]} />
+                        <View style={[styles.typingDot, styles.typingDot3]} />
+                      </View>
+                    </View>
+                  </View>
+                ) : null
+              }
+            />
+
+            {/* ── Composer ───────────────────────────────────────── */}
+            <View style={[styles.composer, { paddingBottom: Math.max(insets.bottom, 10) }]}>
+              <TouchableOpacity style={styles.attachBtn}>
+                <Text style={styles.attachIcon}>+</Text>
+              </TouchableOpacity>
+              
+              <View style={styles.inputContainer}>
+                <TextInput
+                  style={styles.textInput}
+                  placeholder="Type a message..."
+                  placeholderTextColor="#999"
+                  value={messageText}
+                  onChangeText={setMessageText}
+                  multiline
+                  maxLength={5000}
+                />
+                <TouchableOpacity style={styles.emojiBtn}>
+                  <Text style={styles.emojiIcon}>😊</Text>
+                </TouchableOpacity>
+              </View>
+
+              <TouchableOpacity
+                style={[
+                  styles.sendBtn,
+                  messageText.trim() ? styles.sendBtnActive : {},
+                ]}
+                onPress={handleSend}
+                disabled={!messageText.trim()}
+              >
+                <Text style={styles.sendIcon}>
+                  {messageText.trim() ? "➤" : "🎤"}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </>
+        )}
+      </View>
     </ScreenWrapper>
   );
 };

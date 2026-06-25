@@ -306,6 +306,7 @@ class ConversationService {
       editGroupInfo?: string;
       addMembers?: string;
       sendMessages?: string;
+      approveNewMembers?: boolean;
     }
   ): Promise<ConversationWithMembers | null> {
     const conversation = await conversationRepository.getById(conversationId);
@@ -321,6 +322,42 @@ class ConversationService {
     }
 
     return conversationRepository.updateSettings(conversationId, settings);
+  }
+
+  /**
+   * Transfer group ownership to another member.
+   * Current owner is demoted to ADMIN; target becomes OWNER.
+   */
+  async transferOwnership(
+    conversationId: string,
+    currentOwnerId: string,
+    newOwnerId: string
+  ): Promise<void> {
+    const conversation = await conversationRepository.getById(conversationId);
+    if (!conversation) throw new Error("Conversation not found");
+    if (conversation.type !== "GROUP") throw new Error("Ownership transfer is only for groups");
+
+    // Verify requester is the current OWNER
+    const currentRole = await conversationRepository.getMemberRole(conversationId, currentOwnerId);
+    if (currentRole !== "OWNER") {
+      throw new Error("Only the current owner can transfer ownership");
+    }
+
+    // Verify target is an active member
+    const targetRole = await conversationRepository.getMemberRole(conversationId, newOwnerId);
+    if (!targetRole) {
+      throw new Error("Target user is not an active member of this group");
+    }
+
+    // Swap roles: current owner → ADMIN, target → OWNER
+    await conversationRepository.updateMemberRole(conversationId, currentOwnerId, "ADMIN");
+    await conversationRepository.updateMemberRole(conversationId, newOwnerId, "OWNER");
+
+    logger.info("Ownership transferred", {
+      conversationId,
+      previousOwner: currentOwnerId,
+      newOwner: newOwnerId,
+    });
   }
 }
 

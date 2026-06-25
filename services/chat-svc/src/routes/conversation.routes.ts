@@ -14,6 +14,8 @@ import {
   updateGroupSettings,
   updateMemberRole,
   initBot,
+  transferOwnership,
+  approveJoinRequest,
 } from "../controllers/conversation.controller";
 import { listGroupInvites } from "../controllers/invite.controller";
 
@@ -51,5 +53,11 @@ router.patch("/:conversationId/members/:userId/role", updateMemberRole);
 
 // DELETE /api/conversations/:conversationId/members/:userId — Remove member
 router.delete("/:conversationId/members/:userId", removeMember);
+
+// POST /api/conversations/:conversationId/transfer-ownership — Transfer ownership
+router.post("/:conversationId/transfer-ownership", transferOwnership);
+
+// POST /api/conversations/join-requests/:inviteId/approve — Approve/reject join request
+router.post("/join-requests/:inviteId/approve", approveJoinRequest);
 
 export default router;

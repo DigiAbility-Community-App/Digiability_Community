@@ -656,6 +656,92 @@ class MessageRepository {
     });
     return members.map((m) => m.userId);
   }
+
+  // ─── Message Deletion ─────────────────────────────────────
+
+  /**
+   * Soft-delete a message (Delete for Everyone).
+   * Sets deletedAt in both Cassandra and Postgres.
+   */
+  async softDeleteMessage(messageId: string, conversationId: string): Promise<void> {
+    const now = new Date();
+    const convUuid = Uuid.fromString(conversationId);
+    const msgUuid = Uuid.fromString(messageId);
+
+    // Update Cassandra: set deleted_at and status
+    await cassandra.execute(
+      `UPDATE messages SET deleted_at = ?, status = ?, updated_at = ? WHERE conversation_id = ? AND message_id = ?`,
+      [now, "DELETED", now, convUuid, msgUuid],
+      { prepare: true }
+    );
+
+    // Update Postgres stub
+    await prisma.message.update({
+      where: { id: messageId },
+      data: { deletedAt: now },
+    });
+
+    logger.info("Message soft-deleted (for everyone)", { messageId, conversationId });
+  }
+
+  /**
+   * Get the original message from Cassandra (for permission checks during delete).
+   */
+  async getMessageById(
+    messageId: string,
+    conversationId: string
+  ): Promise<{ senderId: string; createdAt: Date; status: string } | null> {
+    const convUuid = Uuid.fromString(conversationId);
+    const msgUuid = Uuid.fromString(messageId);
+
+    const result = await cassandra.execute(
+      "SELECT sender_id, created_at, status FROM messages WHERE conversation_id = ? AND message_id = ?",
+      [convUuid, msgUuid],
+      { prepare: true }
+    );
+
+    if (result.rowLength === 0) return null;
+    const row = result.first();
+    return {
+      senderId: row.sender_id.toString(),
+      createdAt: row.created_at,
+      status: row.status,
+    };
+  }
+
+  /**
+   * Hide a message for a specific user (Delete for Me).
+   * Only affects the requesting user's view; other users still see it.
+   */
+  async hideMessageForUser(userId: string, messageId: string): Promise<void> {
+    await prisma.hiddenMessage.upsert({
+      where: {
+        userId_messageId: { userId, messageId },
+      },
+      update: {},
+      create: { userId, messageId },
+    });
+
+    logger.info("Message hidden for user", { userId, messageId });
+  }
+
+  /**
+   * Batch check which messages are hidden for a user.
+   * Used to filter messages during history fetch.
+   */
+  async getHiddenMessageIds(userId: string, messageIds: string[]): Promise<Set<string>> {
+    if (messageIds.length === 0) return new Set();
+
+    const hidden = await prisma.hiddenMessage.findMany({
+      where: {
+        userId,
+        messageId: { in: messageIds },
+      },
+      select: { messageId: true },
+    });
+
+    return new Set(hidden.map((h) => h.messageId));
+  }
 }
 
 export const messageRepository = new MessageRepository();

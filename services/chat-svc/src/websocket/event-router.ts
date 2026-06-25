@@ -14,6 +14,7 @@ import { logger } from "../config/logger";
 import { wsEnvelopeSchema } from "../utils/validation.util";
 import { WS_EVENTS, WS_ERROR_CODES, WsEnvelope } from "../types/ws-events";
 import { handleMessageSend } from "./handlers/message.handler";
+import { handleMessageDelete } from "./handlers/delete.handler";
 import { handleMessageDelivered, handleMessageRead } from "./handlers/ack.handler";
 import { handleSyncRequest } from "./handlers/sync.handler";
 import { handleTypingStart, handleTypingStop } from "./handlers/typing.handler";
@@ -42,6 +43,10 @@ export function routeEvent(
   switch (event) {
     case WS_EVENTS.MESSAGE_SEND:
       handleMessageSend(ws, connId, userId, deviceId, data, requestId);
+      break;
+
+    case WS_EVENTS.MESSAGE_DELETE:
+      handleMessageDelete(ws, connId, userId, data, requestId);
       break;
 
     case WS_EVENTS.MESSAGE_DELIVERED:

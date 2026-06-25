@@ -35,6 +35,12 @@ export const typingSchema = z.object({
   conversationId: z.string().uuid(),
 });
 
+export const messageDeleteSchema = z.object({
+  messageId: z.string().min(1),
+  conversationId: z.string().uuid(),
+  deleteFor: z.enum(["everyone", "me"]),
+});
+
 export const syncRequestSchema = z.object({
   conversations: z.array(
     z.object({
@@ -73,6 +79,7 @@ export const updateGroupSettingsSchema = z.object({
   editGroupInfo: z.enum(["ADMINS_ONLY", "ALL_MEMBERS"]).optional(),
   addMembers: z.enum(["ADMINS_ONLY", "ALL_MEMBERS"]).optional(),
   sendMessages: z.enum(["ADMINS_ONLY", "ALL_MEMBERS"]).optional(),
+  approveNewMembers: z.boolean().optional(),
 });
 
 export const updateGroupInfoSchema = z.object({

@@ -81,6 +81,14 @@ const ConversationListScreen = ({ navigation: propNavigation, isTab = false }: P
       if (other) displayName = other.name;
     }
 
+      let lastMsgText = c.lastMessageText || "No messages yet";
+      if (c.type === "GROUP" && c.lastMessage?.senderId && c.lastMessage.senderId !== user?.id) {
+        const sender = c.participants?.find((p: any) => p.userId === c.lastMessage!.senderId)?.user;
+        if (sender) {
+          lastMsgText = `${sender.name}: ${lastMsgText}`;
+        }
+      }
+
     return {
       id: c.id,
       type: c.type,
@@ -89,7 +97,7 @@ const ConversationListScreen = ({ navigation: propNavigation, isTab = false }: P
       avatar: c.type === "GROUP" 
         ? (c.subType === "CARE_CIRCLE" ? "🦽" : "👥") 
         : (displayName === "DigiBot" ? "🤖" : "👤"),
-      lastMessage: c.lastMessage?.content || "No messages yet",
+      lastMessage: lastMsgText,
       time: c.updatedAt ? new Date(c.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "",
       unread: c.unreadCount || 0,
       isOnline: false, // Wire to presence store later

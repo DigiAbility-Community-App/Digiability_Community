@@ -34,6 +34,9 @@ cd services/chat-svc && npm install && cd ../..
 
 # Install mobile app dependencies
 cd apps/mobile && npm install && cd ../..
+
+# Install web app dependencies
+cd apps/web && npm install && cd ../..
 ```
 
 ---
@@ -243,6 +246,16 @@ Then:
 
 ---
 
+## Step 11: Start the Web App (Desktop Experience)
+
+```bash
+cd apps/web
+npm run dev
+```
+**Expected:** `➜  Local:   http://localhost:3000/`
+
+---
+
 ## Full Stack Test Checklist
 
 ### 1. Register a New Account
@@ -354,11 +367,11 @@ npm install
 ## Architecture Quick Reference
 
 ```
-┌──────────────┐    ┌──────────────┐    ┌──────────────┐
-│  Mobile App  │    │   user-svc   │    │   chat-svc   │
-│  (Expo/RN)   │───▶│  :4001       │    │  :4002       │
-│              │    │  Auth/Users  │    │  Chat/WS     │
-└──────┬───────┘    └──────────────┘    └───────┬──────┘
+┌───────────────┐    ┌──────────────┐    ┌──────────────┐
+│Mobile/Web Apps│    │   user-svc   │    │   chat-svc   │
+│(Expo / Vite)  │───▶│  :4001       │    │  :4002       │
+│               │    │  Auth/Users  │    │  Chat/WS     │
+└───────┬───────┘    └──────────────┘    └───────┬──────┘
        │                                        │
        │              WebSocket                 │
        └────────────────────────────────────────┘
