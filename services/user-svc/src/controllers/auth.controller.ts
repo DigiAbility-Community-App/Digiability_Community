@@ -12,6 +12,8 @@ import {
   updateUserRole,
   getUsersByIds,
   searchUsers,
+  registerDeviceToken,
+  removeDeviceToken,
 } from "../services/auth.service";
 import { rotateRefreshToken, revokeRefreshToken } from "../services/token.service";
 import {
@@ -182,4 +184,34 @@ export const searchUsersHandler = asyncHandler(async (req: Request, res: Respons
 
   const users = await searchUsers(query, userId);
   res.status(200).json({ success: true, data: { users } });
+});
+
+// ─── POST /auth/device-token ───────────────────────────
+// Registers an Expo push token for the authenticated user.
+export const registerDeviceTokenHandler = asyncHandler(async (req: Request, res: Response) => {
+  const userId = req.user!.sub;
+  const { token, platform } = req.body;
+
+  if (!token || typeof token !== "string") {
+    res.status(400).json({ success: false, message: "token is required" });
+    return;
+  }
+
+  await registerDeviceToken(userId, token, platform || "unknown");
+  res.status(200).json({ success: true, message: "Device token registered" });
+});
+
+// ─── DELETE /auth/device-token ─────────────────────────
+// Removes an Expo push token (called on logout).
+export const removeDeviceTokenHandler = asyncHandler(async (req: Request, res: Response) => {
+  const userId = req.user!.sub;
+  const { token } = req.body;
+
+  if (!token || typeof token !== "string") {
+    res.status(400).json({ success: false, message: "token is required" });
+    return;
+  }
+
+  await removeDeviceToken(userId, token);
+  res.status(200).json({ success: true, message: "Device token removed" });
 });

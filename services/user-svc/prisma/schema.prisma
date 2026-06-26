@@ -47,9 +47,29 @@ model User {
   userProfile             UserProfile?
   mentorProfile           MentorProfile?
   givenReviews            MentorReview[]  @relation("ReviewerRelation")
+  deviceTokens            DeviceToken[]
 
   @@index([email])
   @@map("users")
+}
+
+// ─────────────────────────────────────────────
+// DEVICE TOKEN
+// Stores Expo push tokens for push notifications.
+// One user can have multiple tokens (multiple devices).
+// ─────────────────────────────────────────────
+model DeviceToken {
+  id        String   @id @default(uuid())
+  userId    String
+  token     String   @unique
+  platform  String   // 'ios' | 'android'
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("device_tokens")
 }
 
 // ─────────────────────────────────────────────

@@ -180,6 +180,15 @@ const ConversationListScreen = ({ navigation: propNavigation, isTab = false }: P
     [navigation, isTab]
   );
 
+  const navigateToScreen = (screen: string, params?: object) => {
+    if (isTab) {
+      // When rendered as a tab, screens inside ChatsStack are reached via parent navigator
+      navigation.navigate('Chats', { screen, params });
+    } else {
+      navigation.navigate(screen as any, params as any);
+    }
+  };
+
   const handleNewAction = () => {
     if (Platform.OS === 'ios') {
       ActionSheetIOS.showActionSheetWithOptions(
@@ -189,19 +198,19 @@ const ConversationListScreen = ({ navigation: propNavigation, isTab = false }: P
         },
         (buttonIndex) => {
           if (buttonIndex === 1) {
-            navigation.navigate('NewChat');
+            navigateToScreen('NewChat');
           } else if (buttonIndex === 2) {
-            navigation.navigate('CreateGroup', { subType: 'CARE_CIRCLE' });
+            navigateToScreen('CreateGroup', { subType: 'CARE_CIRCLE' });
           } else if (buttonIndex === 3) {
-            navigation.navigate('CreateGroup', { subType: 'GENERAL' });
+            navigateToScreen('CreateGroup', { subType: 'GENERAL' });
           }
         }
       );
     } else {
       Alert.alert('New Chat', 'Choose an option:', [
-        { text: 'New 1:1 Chat', onPress: () => navigation.navigate('NewChat') },
-        { text: 'Create Care Circle', onPress: () => navigation.navigate('CreateGroup', { subType: 'CARE_CIRCLE' }) },
-        { text: 'Create General Group', onPress: () => navigation.navigate('CreateGroup', { subType: 'GENERAL' }) },
+        { text: 'New 1:1 Chat', onPress: () => navigateToScreen('NewChat') },
+        { text: 'Create Care Circle', onPress: () => navigateToScreen('CreateGroup', { subType: 'CARE_CIRCLE' }) },
+        { text: 'Create General Group', onPress: () => navigateToScreen('CreateGroup', { subType: 'GENERAL' }) },
         { text: 'Cancel', style: 'cancel' },
       ]);
     }

@@ -3,6 +3,7 @@ import { dbPool } from "@/lib/db";
 
 // ─────────────────────────────────────────────
 // POST — create a new group / community
+// Writes to chat schema so groups appear in the mobile app.
 // ─────────────────────────────────────────────
 export async function POST(request: Request) {
   try {
@@ -16,7 +17,7 @@ export async function POST(request: Request) {
       addMembers = "ADMINS_ONLY",
       sendMessages = "ALL_MEMBERS",
       approveNewMembers = false,
-      initialMembers = [],   // [{ userId, role }]
+      initialMembers = [],
     } = body;
 
     if (!name?.trim()) {
@@ -29,16 +30,16 @@ export async function POST(request: Request) {
     const defaultMax = subType === "CARE_CIRCLE" ? 15 : 256;
     const resolvedMax = Number(maxMembers) > 0 ? Number(maxMembers) : defaultMax;
 
-    // Insert conversation
+    // Write into chat schema — same schema chat-svc reads from
     const convResult = await dbPool.query(`
-      INSERT INTO conversations
+      INSERT INTO chat.conversations
         (id, type, "subType", name, description, "createdBy", "maxMembers",
          "editGroupInfo", "addMembers", "sendMessages", "approveNewMembers",
          "createdAt", "updatedAt")
       VALUES
         (gen_random_uuid()::text,
-         'GROUP'::"ConversationType",
-         $1::"GroupSubType",
+         'GROUP'::"chat"."ConversationType",
+         $1::"chat"."GroupSubType",
          $2, $3, 'SYSTEM_ADMIN', $4, $5, $6, $7, $8,
          NOW(), NOW())
       RETURNING id, name, "subType", "createdAt"
@@ -47,21 +48,20 @@ export async function POST(request: Request) {
 
     const group = convResult.rows[0];
 
-    // Insert initial members (if any) with their roles
     if (Array.isArray(initialMembers) && initialMembers.length > 0) {
-      const validRolesGeneral   = ["OWNER","ADMIN","MEMBER"];
-      const validRolesCareCircle = ["OWNER","CAREGIVER","MENTOR","PROFESSIONAL","MEMBER"];
+      const validRolesGeneral    = ["OWNER", "ADMIN", "MEMBER"];
+      const validRolesCareCircle = ["OWNER", "CAREGIVER", "MENTOR", "PROFESSIONAL", "MEMBER"];
       const validRoles = subType === "CARE_CIRCLE" ? validRolesCareCircle : validRolesGeneral;
 
       for (const m of initialMembers) {
         if (!m.userId) continue;
         const role = validRoles.includes(m.role) ? m.role : "MEMBER";
         await dbPool.query(`
-          INSERT INTO conversation_members
+          INSERT INTO chat.conversation_members
             (id, "conversationId", "userId", role, "joinedAt", "updatedAt")
-          VALUES (gen_random_uuid()::text, $1, $2, $3::"MemberRole", NOW(), NOW())
+          VALUES (gen_random_uuid()::text, $1, $2, $3::"chat"."MemberRole", NOW(), NOW())
           ON CONFLICT ("conversationId", "userId")
-            DO UPDATE SET "leftAt" = NULL, role = $3::"MemberRole", "updatedAt" = NOW()
+            DO UPDATE SET "leftAt" = NULL, role = $3::"chat"."MemberRole", "updatedAt" = NOW()
         `, [group.id, m.userId, role]);
       }
     }
@@ -74,24 +74,18 @@ export async function POST(request: Request) {
 }
 
 // ─────────────────────────────────────────────
-// GET — list all groups
+// GET — list all groups (from chat schema)
 // ─────────────────────────────────────────────
 export async function GET() {
   try {
     const [groupsResult, statsResult] = await Promise.all([
       dbPool.query(`
         SELECT
-          c.id,
-          c.name,
-          c.description,
-          c."subType",
-          c."createdAt",
-          c."lastMessageAt",
-          c."lastMessageText",
-          c."maxMembers",
-          COUNT(cm.id) FILTER (WHERE cm."leftAt" IS NULL) as "memberCount"
-        FROM conversations c
-        LEFT JOIN conversation_members cm ON c.id = cm."conversationId"
+          c.id, c.name, c.description, c."subType",
+          c."createdAt", c."lastMessageAt", c."lastMessageText", c."maxMembers",
+          COUNT(cm.id) FILTER (WHERE cm."leftAt" IS NULL) AS "memberCount"
+        FROM chat.conversations c
+        LEFT JOIN chat.conversation_members cm ON c.id = cm."conversationId"
         WHERE c.type = 'GROUP' AND c."deletedAt" IS NULL
         GROUP BY c.id
         ORDER BY c."createdAt" DESC
@@ -99,11 +93,11 @@ export async function GET() {
       `),
       dbPool.query(`
         SELECT
-          COUNT(*) FILTER (WHERE type = 'GROUP' AND "deletedAt" IS NULL) as "totalGroups",
-          COUNT(*) FILTER (WHERE type = 'GROUP' AND "subType" = 'CARE_CIRCLE' AND "deletedAt" IS NULL) as "careCircles",
-          COUNT(*) FILTER (WHERE type = 'GROUP' AND "subType" = 'GENERAL' AND "deletedAt" IS NULL) as "generalGroups",
-          COUNT(*) FILTER (WHERE type = 'DIRECT' AND "deletedAt" IS NULL) as "directMessages"
-        FROM conversations
+          COUNT(*) FILTER (WHERE type = 'GROUP' AND "deletedAt" IS NULL) AS "totalGroups",
+          COUNT(*) FILTER (WHERE type = 'GROUP' AND "subType" = 'CARE_CIRCLE' AND "deletedAt" IS NULL) AS "careCircles",
+          COUNT(*) FILTER (WHERE type = 'GROUP' AND "subType" = 'GENERAL' AND "deletedAt" IS NULL) AS "generalGroups",
+          COUNT(*) FILTER (WHERE type = 'DIRECT' AND "deletedAt" IS NULL) AS "directMessages"
+        FROM chat.conversations
       `),
     ]);
 
@@ -111,16 +105,13 @@ export async function GET() {
       success: true,
       groups: groupsResult.rows.map((g) => ({
         ...g,
+        memberCount: Number(g.memberCount),
         createdAt: new Date(g.createdAt).toLocaleDateString("en-GB", {
-          day: "2-digit",
-          month: "short",
-          year: "numeric",
+          day: "2-digit", month: "short", year: "numeric",
         }),
         lastMessageAt: g.lastMessageAt
           ? new Date(g.lastMessageAt).toLocaleDateString("en-GB", {
-              day: "2-digit",
-              month: "short",
-              year: "numeric",
+              day: "2-digit", month: "short", year: "numeric",
             })
           : null,
       })),
@@ -128,9 +119,6 @@ export async function GET() {
     });
   } catch (error) {
     console.error("Failed to fetch groups:", error);
-    return NextResponse.json(
-      { success: false, message: "Internal server error" },
-      { status: 500 }
-    );
+    return NextResponse.json({ success: false, message: "Internal server error" }, { status: 500 });
   }
 }

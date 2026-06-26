@@ -2,7 +2,38 @@ import apiClient from './apiClient';
 
 const CHAT_BASE_URL = (process.env.EXPO_PUBLIC_API_BASE_URL || 'http://10.0.2.2:4001').replace('4001', '4002');
 
+export interface CommunityGroup {
+  id: string;
+  name: string;
+  description: string | null;
+  subType: string;
+  memberCount: number;
+  isMember: boolean;
+  lastMessageText: string | null;
+  lastMessageAt: string | null;
+  createdAt: string;
+  avatarUrl: string | null;
+}
+
 export const chatService = {
+  /**
+   * Fetch ALL community groups (discovery — not filtered by membership).
+   * Each group includes isMember: boolean for the requesting user.
+   */
+  fetchAllGroups: async (subType: 'GENERAL' | 'CARE_CIRCLE' = 'GENERAL'): Promise<CommunityGroup[]> => {
+    const res = await apiClient.get(`${CHAT_BASE_URL}/api/conversations/groups`, {
+      params: { subType },
+    });
+    return res.data.data || [];
+  },
+
+  /**
+   * Self-join an open community group
+   */
+  joinGroup: async (conversationId: string): Promise<void> => {
+    await apiClient.post(`${CHAT_BASE_URL}/api/conversations/${conversationId}/join`);
+  },
+
   getConversations: async () => {
     // Initialize the global bot conversation for the user
     try {

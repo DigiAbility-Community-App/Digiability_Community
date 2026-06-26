@@ -1,10 +1,16 @@
 # ─────────────────────────────────────────────────────────────
 # Digiability Community — Docker Compose
-# Runs all infrastructure services (DB, cache, etc.)
-# Usage:
-#   docker-compose up -d          → start all
-#   docker-compose down           → stop all
-#   docker-compose logs -f        → tail logs
+#
+# 4 containers only:
+#   postgres   — all persistent data (users, chat, groups)
+#   redis      — pub/sub + stream queue
+#   user-svc   — auth, users, events, profiles  (port 4001)
+#   chat-svc   — chat API + WebSocket + embedded workers (port 4002)
+#
+# Removed:
+#   cassandra          — messages now stored in PostgreSQL
+#   chat-msg-worker    — embedded inside chat-svc
+#   chat-delivery-worker — embedded inside chat-svc
 # ─────────────────────────────────────────────────────────────
 
 services:
@@ -33,7 +39,7 @@ services:
       retries: 5
       start_period: 10s
 
-  # ── Redis — Caching / Pub-Sub ────────────────────────────────
+  # ── Redis — Pub-Sub + Stream Queue ──────────────────────────
   redis:
     image: redis:7-alpine
     container_name: digiability_redis
@@ -74,7 +80,7 @@ services:
     profiles:
       - dev   # Only starts with: docker-compose --profile dev up
 
-  # ── user-svc — Auth & User Management API ──────────────────
+  # ── user-svc — Auth, Users, Events, Profiles ────────────────
   user-svc:
     build:
       context: ./services/user-svc
@@ -99,7 +105,37 @@ services:
       retries: 5
       start_period: 20s
 
-  # ── chat-svc — Realtime Chat API + WebSocket Gateway ────────
+  # ── notif-svc — Push Notification Service ───────────────────
+  notif-svc:
+    build:
+      context: ./services/notif-svc
+      dockerfile: Dockerfile
+    container_name: digiability_notif_svc
+    restart: unless-stopped
+    environment:
+      PORT: "4004"
+      NODE_ENV: production
+      REDIS_URL: redis://:${REDIS_PASSWORD:-redis_secret}@redis:6379
+      DATABASE_URL: postgresql://${POSTGRES_USER:-digiability}:${POSTGRES_PASSWORD:-digiability_secret}@postgres:5432/${POSTGRES_DB:-digiability_db}
+    ports:
+      - "${NOTIF_SVC_PORT:-4004}:4004"
+    networks:
+      - digiability_network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:4004/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  # ── chat-svc — Chat API + WebSocket + embedded workers ──────
+  # Workers (msg persistence + delivery routing) run in-process.
+  # No separate worker containers needed.
   chat-svc:
     build:
       context: ./services/chat-svc
@@ -112,7 +148,6 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-digiability}:${POSTGRES_PASSWORD:-digiability_secret}@postgres:5432/${POSTGRES_DB:-digiability_db}?schema=chat
       REDIS_URL: redis://:${REDIS_PASSWORD:-redis_secret}@redis:6379
       SERVER_ID: chat-svc-docker-01
-      CASSANDRA_HOST: cassandra
     ports:
       - "${CHAT_SVC_PORT:-4002}:4002"
     networks:
@@ -122,96 +157,12 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      cassandra:
-        condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:4002/health || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 5
       start_period: 20s
-
-  # ── chat-msg-worker — Message Persistence Consumer ──────────
-  chat-msg-worker:
-    build:
-      context: ./services/chat-svc
-      dockerfile: Dockerfile
-    container_name: digiability_chat_msg_worker
-    restart: unless-stopped
-    command: ["node", "dist/workers/msg-svc.worker.js"]
-    env_file:
-      - ./services/chat-svc/.env
-    environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-digiability}:${POSTGRES_PASSWORD:-digiability_secret}@postgres:5432/${POSTGRES_DB:-digiability_db}?schema=chat
-      REDIS_URL: redis://:${REDIS_PASSWORD:-redis_secret}@redis:6379
-    networks:
-      - digiability_network
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-
-  # ── chat-delivery-worker — Message Delivery Router ──────────
-  chat-delivery-worker:
-    build:
-      context: ./services/chat-svc
-      dockerfile: Dockerfile
-    container_name: digiability_chat_delivery_worker
-    restart: unless-stopped
-    command: ["node", "dist/workers/delivery.worker.js"]
-    env_file:
-      - ./services/chat-svc/.env
-    environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-digiability}:${POSTGRES_PASSWORD:-digiability_secret}@postgres:5432/${POSTGRES_DB:-digiability_db}?schema=chat
-      REDIS_URL: redis://:${REDIS_PASSWORD:-redis_secret}@redis:6379
-    networks:
-      - digiability_network
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-
-  # ── notif-svc — Push/Email Notification Worker ──────────────
-  # (Currently disabled as it lacks a Dockerfile)
-  # notif-svc:
-  #   build:
-  #     context: ./services/notif-svc
-  #     dockerfile: Dockerfile
-  #   container_name: digiability_notif_svc
-  #   restart: unless-stopped
-  #   environment:
-  #     REDIS_URL: redis://:${REDIS_PASSWORD:-redis_secret}@redis:6379
-  #   networks:
-  #     - digiability_network
-  #   depends_on:
-  #     redis:
-  #       condition: service_healthy
-
-  # ── Cassandra — Message Storage (Write-optimized) ────────────
-  cassandra:
-    image: cassandra:4.1
-    container_name: digiability_cassandra
-    restart: unless-stopped
-    environment:
-      CASSANDRA_CLUSTER_NAME: digiability_cluster
-      CASSANDRA_DC: datacenter1
-      CASSANDRA_RACK: rack1
-      MAX_HEAP_SIZE: 512M
-      HEAP_NEWSIZE: 128M
-    ports:
-      - "${CASSANDRA_PORT:-9042}:9042"
-    volumes:
-      - cassandra_data:/var/lib/cassandra
-    networks:
-      - digiability_network
-    healthcheck:
-      test: ["CMD-SHELL", "cqlsh -e 'describe cluster'"]
-      interval: 30s
-      timeout: 10s
-      retries: 10
-      start_period: 60s
 
 # ─────────────────────────────────────────────────────────────
 # Volumes
@@ -223,8 +174,6 @@ volumes:
     name: digiability_redis_data
   pgadmin_data:
     name: digiability_pgadmin_data
-  cassandra_data:
-    name: digiability_cassandra_data
 
 # ─────────────────────────────────────────────────────────────
 # Networks

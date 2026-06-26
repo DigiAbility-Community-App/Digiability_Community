@@ -41,6 +41,10 @@ COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
 COPY prisma ./prisma
 
+# Copy generated Prisma client to the path the compiled JS expects.
+# dist/models/prisma.client.js: require('../generated/client') → dist/generated/client
+COPY --from=builder /app/src/generated ./dist/generated
+
 EXPOSE 4001
 
 CMD ["node", "dist/index.js"]
