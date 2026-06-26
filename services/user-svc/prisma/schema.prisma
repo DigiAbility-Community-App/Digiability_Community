@@ -24,6 +24,29 @@ enum Role {
   mentor
 }
 
+enum ReportTargetType {
+  USER
+  MESSAGE
+  GROUP
+}
+
+enum ReportReason {
+  SPAM
+  HARASSMENT
+  HATE_SPEECH
+  INAPPROPRIATE_CONTENT
+  MISINFORMATION
+  IMPERSONATION
+  OTHER
+}
+
+enum ReportStatus {
+  PENDING
+  REVIEWED
+  ACTIONED
+  DISMISSED
+}
+
 // ─────────────────────────────────────────────
 // USER
 // ─────────────────────────────────────────────
@@ -37,6 +60,7 @@ model User {
   isEmailVerified Boolean   @default(false)
   roles           Role[]    @default([])
   profileComplete Boolean   @default(false)
+  deletedAt       DateTime?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
@@ -48,8 +72,10 @@ model User {
   mentorProfile           MentorProfile?
   givenReviews            MentorReview[]  @relation("ReviewerRelation")
   deviceTokens            DeviceToken[]
+  filedReports            UserReport[]    @relation("ReporterRelation")
 
   @@index([email])
+  @@index([deletedAt])
   @@map("users")
 }
 
@@ -238,5 +264,33 @@ model MentorReview {
   @@unique([mentorId, reviewerId])
   @@index([mentorId])
   @@map("mentor_reviews")
+}
+
+// ─────────────────────────────────────────────
+// USER REPORT
+// Unified report table for users, chat messages, and groups.
+// Consumed by the admin moderation queue (Phase 3).
+// Unique constraint prevents duplicate reports from the same reporter.
+// ─────────────────────────────────────────────
+model UserReport {
+  id          String           @id @default(uuid())
+  reporterId  String
+  targetType  ReportTargetType
+  targetId    String           // userId | messageId | conversationId
+  reason      ReportReason
+  details     String?          // optional free-text, max 500 chars
+  status      ReportStatus     @default(PENDING)
+  reviewedBy  String?          // admin userId who reviewed
+  reviewedAt  DateTime?
+  actionTaken String?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  reporter User @relation("ReporterRelation", fields: [reporterId], references: [id], onDelete: Cascade)
+
+  @@unique([reporterId, targetType, targetId])
+  @@index([status, createdAt(sort: Desc)])
+  @@index([targetType, targetId])
+  @@map("user_reports")
 }
 

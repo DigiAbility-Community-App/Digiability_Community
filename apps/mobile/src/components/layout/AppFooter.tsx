@@ -7,16 +7,17 @@ import {
   House,
   Users,
   LayoutGrid,
-  BookOpen,
+  Calendar,
+  // BookOpen, // temporarily hidden with Learn tab
   User,
 } from "lucide-react-native";
 
 export interface AppFooterProps {
   /**
    * The currently active tab name.
-   * Values: "Home" | "Community" | "Services" | "Learn" | "Profile"
+   * Values: "Home" | "Community" | "Services" | "Events" | "Profile"
    */
-  activeTab?: "Home" | "Community" | "Services" | "Learn" | "Profile";
+  activeTab?: "Home" | "Community" | "Services" | "Events" | "Profile";
   // React Navigation Custom Tab Bar Props
   state?: any;
   descriptors?: any;
@@ -64,12 +65,12 @@ export const AppFooter: React.FC<AppFooterProps> = ({
       accessibilityHint: "Navigates to professional services listings",
     },
     {
-      id: "Learn" as const,
-      icon: BookOpen,
-      label: "Learn",
-      route: "Learn",
-      accessibilityLabel: "Learn tab",
-      accessibilityHint: "Navigates to the learning academy resources",
+      id: "Events" as const,
+      icon: Calendar,
+      label: "Events",
+      route: "Events",
+      accessibilityLabel: "Events tab",
+      accessibilityHint: "Navigates to community events",
     },
     {
       id: "Profile" as const,
@@ -88,7 +89,7 @@ export const AppFooter: React.FC<AppFooterProps> = ({
       if (routeName === "Home") return "Home";
       if (routeName === "CommunityDetail") return "Community";
       if (routeName === "Services") return "Services";
-      if (routeName === "Learn") return "Learn";
+      if (routeName === "Events") return "Events";
       if (routeName === "HomeProfile") return "Profile";
     }
     return activeTab || "Home";

@@ -49,8 +49,25 @@ const CreateCareCircleScreen = () => {
     if (!validate()) return;
     setLoading(true);
     try {
-      await chatService.createCareCircle(name.trim(), description.trim(), []);
-      navigation.reset({ index: 0, routes: [{ name: "MainTabs" }] });
+      const created = await chatService.createCareCircle(name.trim(), description.trim(), []);
+      // Reset to MainTabs + open the new care circle chat so the user lands directly in it
+      navigation.reset({
+        index: 1,
+        routes: [
+          { name: "MainTabs" },
+          {
+            name: "Chats",
+            params: {
+              screen: "GroupChat",
+              params: {
+                conversationId: created.id,
+                groupName: created.name,
+                subType: "CARE_CIRCLE",
+              },
+            },
+          },
+        ],
+      });
     } catch (err: any) {
       const msg =
         err?.response?.data?.message ?? "Failed to create care circle. Please try again.";

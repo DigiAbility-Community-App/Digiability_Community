@@ -1,61 +1,77 @@
-# CLAUDE.md
+# CLAUDE.md — Digiability Community
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Developer reference for working in this repository. Accurate to the code as of June 2026.
 
 ---
 
-## Commands
+## Workspace layout
 
-### Daily startup (Docker-first)
+npm workspaces + Turborepo (`turbo.json`). Node ≥ 18, npm ≥ 9 (lockfile uses npm 11).
+
+```
+digiability-community/
+├── apps/
+│   ├── admin/          Next.js 15 App Router admin panel            :3001
+│   ├── mobile/         Expo 54 + React Native 0.81 mobile app
+│   └── web/            Vite 8 + React 19 web app                    :3000
+├── packages/
+│   ├── api/            API client wrappers (consumed by admin panel)
+│   ├── types/          Shared TypeScript types (stub — minimal content)
+│   └── utils/          Shared utilities (stub — minimal content)
+├── services/
+│   ├── user-svc/       Auth, users, profiles, events, mentors       :4001
+│   ├── chat-svc/       WebSocket, REST chat API, embedded workers   :4002
+│   ├── forum-svc/      Forum Q&A, Socket.io realtime                :4003
+│   ├── notif-svc/      Push notification worker (Redis consumer)    :4004
+│   ├── group-svc/      Stub — no DB schema, not in docker-compose
+│   └── app/            Stub placeholder — no implementation
+├── docker/
+│   └── postgres/init.sql   Runs once on first container boot
+├── docker-compose.yml
+├── turbo.json
+└── package.json
+```
+
+**Important stubs**: `group-svc`, `app`, `packages/types`, and `packages/utils` are scaffolded but contain minimal code. Group and Care Circle logic lives inside `chat-svc`. Services do **not** import from each other's source — they communicate over HTTP and Redis only.
+
+---
+
+## Running locally
+
+### Infrastructure (Docker — always start first)
+
 ```bash
-# Start infrastructure + core backend services
+# Start PostgreSQL 16 + Redis 7
 docker compose up -d postgres redis
+
+# Start dockerized services (rebuilds image if code changed)
 docker compose up -d --build user-svc chat-svc notif-svc
 
-# After code changes to user-svc or chat-svc, rebuild only that service:
-docker compose up -d --build chat-svc
-
-# Verify both services are healthy:
+# Verify healthy
 curl http://localhost:4001/health
 curl http://localhost:4002/health
+curl http://localhost:4004/health
+
+# Rebuild a single service after code changes
+docker compose up -d --build chat-svc
+
+# Dev-only: pgAdmin UI at http://localhost:5050
+docker compose --profile dev up -d pgadmin
 ```
 
-### Local-only services (run in separate terminals)
+### Local-only services (separate terminals)
+
 ```bash
-cd services/forum-svc && npm run dev    # port 4003
-cd apps/web       && npm run dev        # port 3000
-cd apps/admin     && npm run dev -- -p 3001  # port 3001
-cd apps/mobile    && npx expo start     # Expo DevTools
+cd services/forum-svc && npm run dev   # port 4003
+cd apps/web           && npm run dev   # port 3000
+cd apps/admin         && npm run dev   # port 3001
+cd apps/mobile        && npx expo start
 ```
 
-### Prisma database management
-```bash
-# After editing a prisma/schema.prisma — push schema without migrations (dev only)
-cd services/user-svc  && npx prisma db push
-cd services/chat-svc  && npx prisma db push
-cd services/forum-svc && npx prisma db push
-
-# Regenerate Prisma client after schema changes
-cd services/user-svc  && npx prisma generate
-cd services/chat-svc  && npx prisma generate
-
-# Open Prisma Studio (visual DB browser)
-cd services/user-svc  && npm run db:studio
-cd services/chat-svc  && npm run db:studio
-
-# Seed the DigiBot user (required once after DB setup)
-cd services/user-svc && npm run db:seed-bot
-```
-
-### TypeScript checks (all packages)
-```bash
-cd services/chat-svc && npx tsc --noEmit
-cd services/user-svc && npx tsc --noEmit
-cd apps/web          && npx tsc --noEmit
-cd apps/mobile       && npx tsc --noEmit
-```
+`forum-svc`, `web`, `admin`, and `mobile` run locally (not in Docker) because they need hot-reload during development.
 
 ### Logs
+
 ```bash
 docker logs digiability_chat_svc -f
 docker logs digiability_user_svc -f
@@ -64,62 +80,319 @@ docker logs digiability_postgres -f
 
 ---
 
-## Architecture
+## Build, lint, TypeScript
 
-### Service Map
+Turborepo orchestrates all workspaces. Most services do not yet have test suites.
 
-| Service | Port | Runtime | Responsibility |
-|---|---|---|---|
-| `user-svc` | 4001 | Docker | Auth, JWT, profiles, OTP email, events, mentors |
-| `chat-svc` | 4002 | Docker | WebSocket, REST chat API, embedded workers |
-| `forum-svc` | 4003 | Local | Forum posts, comments, Socket.io |
-| `notif-svc` | 4004 | Docker | Push notification worker (Redis stream consumer) |
-| `postgres` | 5432 | Docker | All persistent data (two Prisma schemas) |
-| `redis` | 6379 | Docker | Redis Streams (message pipeline) + Pub/Sub + session registry |
-| `web` | 3000 | Local | Vite + React (desktop) |
-| `admin` | 3001 | Local | Next.js admin dashboard |
-| `mobile` | — | Expo | React Native (iOS/Android) |
+```bash
+# From repo root — runs turbo across all workspaces:
+npm run build
+npm run lint
 
-### Message Pipeline (Critical Path)
+# Per-service TypeScript checks (no emit):
+cd services/chat-svc && npx tsc --noEmit
+cd services/user-svc && npx tsc --noEmit
+cd apps/web          && npx tsc --noEmit
+cd apps/mobile       && npx tsc --noEmit
+
+# web uses oxlint (not ESLint):
+cd apps/web && npm run lint
+```
+
+Individual service scripts (run from `services/<name>/`):
+
+| Script | What it does |
+|---|---|
+| `npm run dev` | ts-node-dev hot-reload |
+| `npm run build` | tsc → dist/ |
+| `npm run start` | node dist/index.js (production) |
+| `npm run db:generate` | prisma generate |
+| `npm run db:migrate` | prisma migrate dev (creates migration files) |
+| `npm run db:push` | prisma db push (sync schema without migration files — dev only) |
+| `npm run db:studio` | open Prisma Studio |
+
+---
+
+## Databases and Prisma
+
+All services share a single PostgreSQL 16 instance (`digiability_db`) but use separate **schemas** (PostgreSQL namespaces):
+
+| Service | PostgreSQL schema | Key models |
+|---|---|---|
+| `user-svc` | `public` | User, UserProfile, MentorProfile, RefreshToken, EmailVerificationToken, PasswordResetToken, DeviceToken, Event, MentorReview |
+| `chat-svc` | `chat` | Conversation, ConversationMember, Message, MessageRecipient, MessageReceipt, GroupInvite, OutboxEvent, HiddenMessage |
+| `forum-svc` | `forum` | ForumQuestion, ForumAnswer, ForumVote, ForumTag, ForumReport, ForumUserStats, Bookmark, Notification (plus local User/UserProfile mirror) |
+| `notif-svc` | — | No Prisma — uses raw `pg` Pool, reads `device_tokens` directly from `public` schema |
+
+Each service with Prisma has its own `prisma/schema.prisma` and generates its client to `src/generated/client/` (not `node_modules`). Import as:
+```typescript
+import prisma from "./models/prisma.client";
+```
+
+### Schema management
+
+```bash
+# Dev schema sync (no migration files):
+cd services/user-svc  && npx prisma db push
+cd services/chat-svc  && npx prisma db push
+cd services/forum-svc && npx prisma db push
+
+# Regenerate client after schema edits:
+cd services/user-svc  && npx prisma generate
+cd services/chat-svc  && npx prisma generate
+
+# Seed the DigiBot system user (once after first DB setup):
+cd services/user-svc && npm run db:seed-bot
+```
+
+---
+
+## Service ports and communication
+
+| Service | Port | Runtime |
+|---|---|---|
+| `user-svc` | 4001 | Docker |
+| `chat-svc` | 4002 | Docker |
+| `forum-svc` | 4003 | Local |
+| `notif-svc` | 4004 | Docker |
+| PostgreSQL | 5432 | Docker |
+| Redis | 6379 | Docker |
+| pgAdmin | 5050 | Docker (`--profile dev`) |
+| `web` | 3000 | Local |
+| `admin` | 3001 | Local |
+
+### How services communicate
+
+There is no API gateway. Clients call services directly.
+
+- **user-svc → (nobody)**: Signs JWTs. Does not call other services at runtime.
+- **chat-svc → user-svc**: None at runtime. JWT public key is shared at deploy time; chat-svc never makes HTTP calls to user-svc.
+- **forum-svc → notif-svc**: HTTP `POST /internal/notify` for push notifications on forum activity.
+- **chat-svc → notif-svc**: Via Redis Stream `msg:notify` (not HTTP). delivery.worker publishes; notif-svc consumes.
+- **admin → user-svc/chat-svc**: Next.js API routes proxy HTTP requests.
+
+### Redis usage (three distinct roles)
+
+**1. Redis Streams — durable message pipeline:**
+
+| Stream | Producer | Consumer |
+|---|---|---|
+| `msg:created` | WS message handler | msg-svc.worker |
+| `msg:persisted` | msg-svc.worker | delivery.worker |
+| `msg:notify` | delivery.worker | notif-svc |
+| `forum:notify` | forum-svc | notif-svc |
+| `msg:receipts` | delivery.worker | receipt-processor |
+
+**2. Redis Pub/Sub — ephemeral cross-server WS delivery:**
+- `ws:deliver:{serverId}` — route message to connections on target server
+- `ws:receipt:{serverId}` — broadcast receipts
+- `ws:typing:{serverId}` — broadcast typing indicators
+
+**3. Session Registry — WebSocket session tracking:**
+- `ws:sessions:{userId}` — Hash of connId → SessionInfo (TTL: 120s, refreshed on heartbeat)
+- `ws:server:{serverId}` — Set of connIds owned by this server
+- `ws:presence:{userId}` — `"online"` | ISO timestamp of last seen (24h TTL when offline)
+
+---
+
+## Message pipeline (critical path)
 
 ```
-Client WS send
-  → event-router.ts (chat-svc/src/websocket/event-router.ts)
-  → message.handler.ts → publishMessageCreated() → Redis Stream msg:created
-  → [ACK to sender immediately]
+Client WS → event-router.ts
+  → handleMessageSend() → publishMessageCreated() → Redis Stream msg:created
+  → [ACK sent to sender immediately]
 
-msg-svc.worker.ts (embedded in chat-svc)
-  → reads msg:created → persistMessage() (Prisma/PostgreSQL)
+msg-svc.worker.ts (embedded in chat-svc process)
+  → XREADGROUP msg:created → persistMessage() via Prisma → PostgreSQL
   → publishMessagePersisted() → Redis Stream msg:persisted
 
-delivery.worker.ts (embedded in chat-svc)
-  → reads msg:persisted → getRecipientSessions() from Redis registry
-  → Pub/Sub publish to ws:deliver:{serverId}
+delivery.worker.ts (embedded in chat-svc process)
+  → XREADGROUP msg:persisted → lookup sessions in Redis hash
+  → online: Pub/Sub publish to ws:deliver:{serverId}
+  → offline: publishMessageNotify() → Redis Stream msg:notify
 
-delivery.service.ts (Pub/Sub subscriber)
-  → connectionManager.sendToUser() → client receives message.new WS event
+delivery.service.ts (Pub/Sub subscriber in chat-svc)
+  → receives ws:deliver:{serverId} → connectionManager.sendToUser()
+  → client receives message.new WS event
+
+notif-svc
+  → XREADGROUP msg:notify → getDeviceTokens() (Postgres) → Expo Push API
 ```
 
-Both workers start **automatically** when chat-svc starts (`index.ts` lines 114-117). No separate worker processes.
+Both workers start **automatically** inside chat-svc on boot (see `src/index.ts`). No separate containers needed.
 
-### Authentication Flow
+---
 
-- **user-svc** signs JWT (RS256 private key). Issues short-lived access token + long-lived refresh token.
-- **chat-svc** verifies JWT using the **public key only** (`JWT_PUBLIC_KEY` env var). Never has the private key.
-- Mobile: access token stored in Zustand (in-memory); refresh token in `SecureStore`.
-- Web: access token in Zustand; refresh token in `localStorage`.
-- On 401: `apiClient` interceptor silently refreshes via `POST /api/auth/refresh` with the stored refresh token.
+## Authentication flow
 
-### Two Separate Prisma Schemas
+### JWT (RS256 asymmetric)
 
-`user-svc` and `chat-svc` each have their own `prisma/schema.prisma` with separate generated clients at `src/generated/client`. They share the same PostgreSQL instance but use different schemas (`public` vs `chat`).
+- **user-svc only** holds the private key (`JWT_PRIVATE_KEY`) and signs access tokens.
+- **chat-svc and forum-svc** hold the public key only (`JWT_PUBLIC_KEY`) — they verify but never sign.
+- Access token lifetime: `15m` (env `JWT_EXPIRES_IN`)
+- Refresh token lifetime: `30 days` (env `REFRESH_TOKEN_EXPIRES_DAYS`)
+- All tokens stored in DB as SHA-256 hashes (raw tokens are never persisted)
 
-- user-svc schema: `User`, `UserProfile`, `MentorProfile`, `Event`, `RefreshToken`, `DeviceToken`, etc.
-- chat-svc schema: `Conversation`, `ConversationMember`, `Message`, `MessageRecipient`, `GroupInvite`, etc.
+### Token delivery
 
-### Path Aliases (Mobile)
+- **Web**: access token in Zustand (in-memory); refresh token in `localStorage` (key: `digiability_refresh_token`). Also set as HTTP-only `sameSite=strict` cookie. Token read from `x-refresh-token` response header or cookie.
+- **Mobile**: access token in Zustand; refresh token in `expo-secure-store` (key: `digiability_refresh_token`).
+- **Refresh endpoint**: `POST /api/auth/refresh`. Reads token from cookie first; falls back to `Authorization: Bearer <token>` header (native clients can't reliably read cookies).
 
-Configured in both `tsconfig.json` and `babel.config.js`:
+### Silent refresh (web)
+
+`apps/web/src/services/apiClient.ts` — Axios response interceptor catches 401, calls `/api/auth/refresh`, queues concurrent requests during refresh, retries them all on success. On refresh failure, clears auth state and `localStorage`.
+
+### Email verification (OTP)
+
+- 6-digit OTP via `crypto.randomInt` (cryptographically random)
+- Expires: 10 minutes
+- Max attempts: 5 (OTP deleted on lockout — must request new one)
+- Resend rate limit: 60-second cooldown
+- Login is blocked until email is verified
+
+### Password reset
+
+- Token: 64-byte random, stored as SHA-256 hash, expires in 1 hour
+- On success: revokes all refresh tokens for the user (forces re-login on all devices)
+
+### `auth.middleware.ts`
+
+Reads `Authorization: Bearer <token>` header. Sets `req.user = { sub, email, iat, exp }`. Returns 401 on invalid or expired token (never 403 for token errors).
+
+---
+
+## Coding conventions
+
+### Service structure
+
+**user-svc and forum-svc** (3-layer):
+```
+src/
+├── index.ts / server.ts     Express app + startup
+├── routes/                  Thin — just maps paths to middleware + handler
+├── controllers/             Handle req/res, call service, send response
+├── services/                Business logic — orchestrates DB and external calls
+├── middleware/              auth, error, validate
+├── models/prisma.client.ts  Prisma singleton
+├── utils/                   jwt, hash, cookie, validation
+└── generated/client/        Prisma output — do not edit
+```
+
+**chat-svc** (4-layer + workers):
+```
+src/
+├── index.ts
+├── routes/, controllers/, services/
+├── repositories/            Only layer that calls Prisma directly
+├── websocket/               gateway.ts, event-router.ts, handlers/, connection-manager.ts
+├── workers/                 msg-svc.worker.ts, delivery.worker.ts
+├── streams/                 producer.ts, constants.ts
+├── config/                  env.ts, redis.ts, logger.ts
+├── types/                   ws-events.ts, message.types.ts, common.types.ts
+└── utils/
+```
+
+chat-svc adds a repository layer between service and Prisma. user-svc calls Prisma directly from the service layer.
+
+### Validation
+
+All request bodies are validated with **Zod** before controllers run. The `validate(ZodSchema)` middleware (`src/middleware/validate.middleware.ts`) returns 422 with field-level errors on failure and replaces `req.body` with the parsed+coerced data.
+
+```typescript
+router.post("/register", validate(RegisterSchema), register);
+```
+
+### Error handling
+
+`createError(message, statusCode)` creates an `AppError` with `isOperational: true`. These are safe to surface to clients. Unexpected throws produce a generic 500 in production. `asyncHandler(fn)` wraps async controllers to forward thrown errors to `next()`.
+
+```typescript
+// Throw:
+throw createError("Invalid email or password", 400);
+
+// Client receives:
+{ "success": false, "message": "Invalid email or password" }
+```
+
+All success responses: `{ "success": true, "data": { ... } }`
+All error responses: `{ "success": false, "message": "...", "errors": [...] }`
+
+### File naming
+
+- `kebab-case.ts` for files (`auth.service.ts`, `event-router.ts`)
+- Services: named exports from plain functions or class instances
+- Prisma tables: `snake_case` via `@@map`
+- TypeScript types: `PascalCase`
+
+### TypeScript
+
+All services use `strict: true`. Backend targets `ES2020 / commonjs`. Web targets `esnext / module`. Avoid `any` — use `unknown` and narrow with type guards.
+
+### BigInt serialization
+
+chat-svc patches `BigInt.prototype.toJSON` in `src/index.ts` to serialize as strings. Prisma uses `BigInt` for `sequenceNo`. Do not remove this patch.
+
+---
+
+## Environment variables
+
+### Root `.env` (Docker infra)
+
+```
+POSTGRES_USER / POSTGRES_PASSWORD / POSTGRES_DB / POSTGRES_PORT
+REDIS_PASSWORD / REDIS_PORT
+PGADMIN_EMAIL / PGADMIN_PASSWORD / PGADMIN_PORT
+```
+
+### `services/user-svc/.env`
+
+```
+PORT=4001
+DATABASE_URL=postgresql://...@localhost:5432/digiability_db?schema=public
+JWT_PRIVATE_KEY=...        # RS256 private key — literal \n for line breaks
+JWT_PUBLIC_KEY=...         # RS256 public key
+JWT_EXPIRES_IN=15m
+REFRESH_TOKEN_EXPIRES_DAYS=30
+COOKIE_SECRET=...
+MAIL_HOST / MAIL_USER / MAIL_PASS / EMAIL_FROM
+CLIENT_BASE_URL=http://localhost:3000
+REDIS_URL=redis://:password@localhost:6379
+```
+
+### `services/chat-svc/.env`
+
+```
+PORT=4002
+SERVER_ID=chat-svc-local-01     # unique per instance; used for Redis Pub/Sub routing
+DATABASE_URL=...?schema=chat    # "chat" schema, not "public"
+REDIS_URL=redis://:password@localhost:6379
+JWT_PUBLIC_KEY=...              # same public key as user-svc — copy it
+CLIENT_BASE_URL=http://localhost:3000
+REGISTRY_TTL_SECONDS=120        # session TTL in Redis
+HEARTBEAT_INTERVAL_MS=30000     # client ping interval
+```
+
+### `services/forum-svc/.env`
+
+```
+PORT=4003
+DATABASE_URL=...?schema=forum
+JWT_PUBLIC_KEY=...              # same public key
+NOTIF_SVC_URL=http://localhost:4004
+```
+
+### `apps/mobile/.env`
+
+```
+EXPO_PUBLIC_API_BASE_URL=http://<LAN-IP>:4001   # LAN IP required for physical devices — not localhost
+```
+
+---
+
+## Mobile app
+
+### Path aliases (tsconfig.json + babel.config.js must both define these)
 
 | Alias | Resolves to |
 |---|---|
@@ -129,16 +402,17 @@ Configured in both `tsconfig.json` and `babel.config.js`:
 | `@navigation/*` | `src/navigation/*` |
 | `@components/*` | `src/components/*` |
 | `@hooks/*` | `src/hooks/*` |
+| `@assets/*` | `assets/*` |
 
-### Mobile Navigation Structure
+### Navigation structure
 
 ```
 RootNavigator
-  └── AuthNavigator     (login, register, verify-email)
+  ├── AuthNavigator     (Splash, Welcome, Login/Register, VerifyEmail, ForgotPassword, RoleSelection, AccessibilityScreen)
   └── MainNavigator     (NativeStack)
-        ├── MainTabs    (Bottom tabs: Home, Community, Services, Learn, Profile)
-        │     └── CommunityDetail → has tab bar with Chats/Groups/Care Circles
-        └── Chats       (ChatsStack — pushed on top of tabs)
+        ├── MainTabs    (bottom tabs: Home, Community, Services, Learn, Profile)
+        │     └── CommunityScreen → tabs: Chats, Groups, Care Circles, Forums, Mentors
+        └── Chats       (ChatsStack — pushed modal-style over tabs)
               ├── ConversationList
               ├── Chat (DM)
               ├── GroupChat
@@ -148,7 +422,7 @@ RootNavigator
               └── UserProfile
 ```
 
-**Navigation gotcha**: Screens inside `ChatsStack` are registered as `"Chats"` in `MainNavigator`. When navigating to them from tab components (e.g., `GroupsTab`), always use nested navigation:
+**Navigation gotcha**: ChatsStack screens are registered as `"Chats"` in MainNavigator. Navigate from tab components using nested navigation:
 ```typescript
 navigation.navigate("Chats", {
   screen: "GroupChat",
@@ -156,63 +430,90 @@ navigation.navigate("Chats", {
 } as any);
 ```
 
-### Web App Structure (Vite + React)
-
-Routes under `/app/*` are protected. `MainLayout` wraps all authenticated routes and manages the sidebar nav and socket lifecycle.
-
-- `/app/chats/:conversationId` → `ChatsLayout` + `ChatView` (DMs + Care Circles)
-- `/app/groups/:conversationId` → `ChatsLayout` + `ChatView` (General Groups)
-
-`ChatsLayout` determines which conversation type to show via `location.pathname.includes('/app/groups')`.
-
-### Key Stores (Zustand)
-
-**Mobile & Web both use Zustand.** Mobile has additional stores:
+### Zustand stores (mobile)
 
 | Store | File | Purpose |
 |---|---|---|
-| `useAuthStore` | `src/store/authStore.ts` | JWT tokens, user, onboarding pending state |
+| `useAuthStore` | `src/store/authStore.ts` | JWT tokens, user, onboarding state |
 | `useChatStore` | `src/store/chatStore.ts` | Conversations, messages, presence, pending invites |
-| `useForumStore` | `src/store/forumStore.ts` (mobile only) | Forum posts |
-| `useGroupStore` | `src/store/groupStore.ts` (mobile only) | Group state |
+| `useForumStore` | `src/store/forumStore.ts` | Forum posts |
+| `useGroupStore` | `src/store/groupStore.ts` | Group state |
+| `useAccessibilityStore` | `src/store/accessibilityStore.ts` | Accessibility preferences (persisted per userId) |
+| `usePresenceStore` | `src/store/presenceStore.ts` | Online/offline presence |
 
-### Real-time Events (WebSocket)
-
-WS events are defined in `services/chat-svc/src/types/ws-events.ts`. The client uses the same event name strings:
-- `message.send` / `message.new` / `message.ack` / `message.deleted`
-- `invite.new` / `invite.accepted` / `invite.declined`
-- `member.joined` / `member.left` / `member.removed` / `member.role.updated`
-- `group.settings.updated` / `group.info.updated`
-- `typing.start` / `typing.stop.broadcast` / `presence.update`
-- `sync.request` / `sync.response`
-
-### Mobile API Base URL
-
-Mobile `chatService.ts` derives chat-svc URL by replacing port 4001 → 4002 on `EXPO_PUBLIC_API_BASE_URL`. For physical devices, `apps/mobile/.env` must have the machine's LAN IP, not `localhost`:
-```
-EXPO_PUBLIC_API_BASE_URL=http://<your-lan-ip>:4001
-```
-
-### Group vs Care Circle
-
-Both are `type: "GROUP"` conversations with `subType: "GENERAL"` or `"CARE_CIRCLE"`. The distinction affects:
-- Which roles are valid (Care Circle: OWNER/CAREGIVER/MENTOR/PROFESSIONAL/MEMBER; Group: OWNER/ADMIN/MEMBER)
-- Admin permission checks (`hasAdminAccess()` in conversation.service.ts)
-- `maxMembers` (Care Circle: 15, General: 256)
-
-### Admin Panel
-
-Next.js 13+ App Router. API routes at `app/api/*` proxy to user-svc/chat-svc. Dashboard pages at `app/(dashboard)/*`. Auth at `app/(auth)/login`. Runs on port 3001 to avoid conflict with web on 3000.
+Session restore on boot: `RootNavigator` reads refresh token from `expo-secure-store`, calls `getMe()` silently, populates auth store.
 
 ---
 
-## Environment Variables Reference
+## Web app
 
-| Service | Key env vars |
-|---|---|
-| Root `.env` | `POSTGRES_USER/PASSWORD/DB`, `REDIS_PASSWORD` |
-| `user-svc/.env` | `DATABASE_URL`, `JWT_PRIVATE_KEY`, `JWT_PUBLIC_KEY`, `MAIL_USER`, `MAIL_PASS` |
-| `chat-svc/.env` | `DATABASE_URL` (schema=chat), `REDIS_URL`, `JWT_PUBLIC_KEY` |
-| `apps/mobile/.env` | `EXPO_PUBLIC_API_BASE_URL` (LAN IP for physical device testing) |
+Vite 8 + React 19 + React Router 6. Routes:
 
-`chat-svc` needs only the JWT **public key**. The private key lives only in `user-svc`.
+- `/` → redirect to `/app/chats` or `/login`
+- `/login`, `/register`, `/verify-email` → `AuthLayout`
+- `/onboarding/accessibility`, `/onboarding/role`, `/onboarding/profile` → `OnboardingLayout`
+- `/app/chats/:conversationId` → `ChatsLayout` + `ChatView` (DMs)
+- `/app/groups/:conversationId` → `ChatsLayout` + `ChatView` (General Groups)
+- `/app/care-circles/:conversationId` → `ChatsLayout` + `ChatView` (Care Circles)
+- `/app/mentors`, `/app/forums`, `/app/events`, `/app/services`, `/app/learn`
+
+`ChatsLayout` detects conversation type via `location.pathname` prefix.
+
+`apiClient` (`src/services/apiClient.ts`): Axios instance with request interceptor (attach `Bearer` token) and response interceptor (silent 401 → `/api/auth/refresh` → retry queued requests). Refresh token read from `localStorage`.
+
+---
+
+## Admin panel
+
+Next.js 15 App Router. Port 3001. Some API routes proxy to user-svc/chat-svc; others query PostgreSQL directly via `pg` Pool.
+
+Structure:
+- `app/(auth)/login` — admin login
+- `app/(dashboard)/*` — users, groups, events, forums, moderation, notifications, analytics, settings
+- `app/api/*` — Next.js API routes
+
+The moderation section (`/moderation`, `/moderation/appeals`, `/moderation/audit-log`, `/moderation/keyword-filters`) is scaffolded but backend enforcement is still in progress.
+
+---
+
+## Group vs Care Circle
+
+Both are `type: "GROUP"` conversations with `subType: "GENERAL"` or `"CARE_CIRCLE"`.
+
+| Attribute | General Group | Care Circle |
+|---|---|---|
+| `subType` | `GENERAL` | `CARE_CIRCLE` |
+| `maxMembers` | 256 | 15 |
+| Admin roles | OWNER, ADMIN | OWNER, CAREGIVER |
+| All valid roles | OWNER, ADMIN, MEMBER | OWNER, CAREGIVER, MENTOR, PROFESSIONAL, MEMBER |
+
+`hasAdminAccess(role, subType)` in `services/chat-svc/src/services/conversation.service.ts` handles the branching.
+
+---
+
+## WebSocket protocol
+
+WS endpoint: `ws://localhost:4002/ws?token=<accessToken>&deviceId=<uuid>`
+
+All messages use a JSON envelope:
+```typescript
+{ event: string; requestId?: string; data: unknown; timestamp: number }
+```
+
+**Client → Server**: `message.send`, `message.delivered`, `message.read`, `message.delete`, `typing.start`, `typing.stop`, `session.ping`, `sync.request`
+
+**Server → Client**: `message.ack`, `message.new`, `message.delivered.receipt`, `message.read.receipt`, `message.deleted`, `presence.update`, `typing.start.broadcast`, `typing.stop.broadcast`, `session.pong`, `sync.response`, `error`, `invite.new`, `invite.accepted`, `invite.declined`, `invite.cancelled`, `member.joined`, `member.left`, `member.removed`, `member.role.updated`, `group.settings.updated`, `group.info.updated`
+
+Full definitions: `services/chat-svc/src/types/ws-events.ts`
+
+---
+
+## Roadmap context
+
+Upcoming work (as of June 2026) — keep in mind when making changes:
+
+- **Content moderation**: Admin moderation pages are scaffolded. Backend enforcement (keyword filters, appeals, audit log) is not yet built. forum-svc uses the `bad-words` npm package for basic client-side profanity filtering.
+- **Security hardening**: Ongoing — rate limiting, input sanitization, token storage review.
+- **Privacy / DPDP compliance**: India's Digital Personal Data Protection Act. Affects data retention, consent flows, and data export/deletion. When adding new data fields, consider: does this need to be deletable? Does it require user consent?
+- **In-app account deletion**: `deleteAccount()` exists in `services/user-svc/src/services/auth.service.ts` and cascades via Prisma. Mobile/web UI flow is in progress.
+- **App store launch**: iOS and Android. Expo push tokens are registered in `device_tokens` table; notif-svc sends via Expo Push API.

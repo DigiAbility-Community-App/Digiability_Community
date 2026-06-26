@@ -1,10 +1,13 @@
-import React from "react";
+import React, { useState } from "react";
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
+  Alert,
+  Modal,
+  ActivityIndicator,
 } from "react-native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { RouteProp } from "@react-navigation/native";
@@ -12,6 +15,11 @@ import { ChatsStackParamList } from "@navigation/ChatsStack";
 
 import ScreenWrapper from "../../components/layout/ScreenWrapper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import {
+  submitReport,
+  REPORT_REASON_LABELS,
+  ReportReason,
+} from "@services/reportService";
 
 // ─────────────────────────────────────────────────────────
 // User Profile Screen
@@ -25,9 +33,40 @@ type Props = {
   route: RouteProp<ChatsStackParamList, "UserProfile">;
 };
 
+const REPORT_REASONS: ReportReason[] = [
+  "SPAM",
+  "HARASSMENT",
+  "HATE_SPEECH",
+  "INAPPROPRIATE_CONTENT",
+  "MISINFORMATION",
+  "IMPERSONATION",
+  "OTHER",
+];
+
 const UserProfileScreen = ({ navigation, route }: Props) => {
   const { userId, userName } = route.params;
   const insets = useSafeAreaInsets();
+  const [showReportSheet, setShowReportSheet] = useState(false);
+  const [submittingReport, setSubmittingReport] = useState(false);
+
+  const handleReportUser = () => setShowReportSheet(true);
+
+  const handleSelectReason = async (reason: ReportReason) => {
+    setShowReportSheet(false);
+    setSubmittingReport(true);
+    try {
+      await submitReport({ targetType: "USER", targetId: userId, reason });
+      Alert.alert(
+        "Report submitted",
+        "Thank you. Our moderation team will review this report.",
+        [{ text: "OK" }]
+      );
+    } catch {
+      Alert.alert("Error", "Could not submit report. Please try again.");
+    } finally {
+      setSubmittingReport(false);
+    }
+  };
 
   return (
     <ScreenWrapper statusBarStyle="light">
@@ -123,11 +162,57 @@ const UserProfileScreen = ({ navigation, route }: Props) => {
           <TouchableOpacity style={styles.dangerBtn}>
             <Text style={styles.dangerText}>🚫 Block User</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.dangerBtn}>
-            <Text style={styles.dangerText}>⚠️ Report User</Text>
+          <TouchableOpacity
+            style={styles.dangerBtn}
+            onPress={handleReportUser}
+            disabled={submittingReport}
+            accessibilityRole="button"
+            accessibilityLabel="Report user"
+            accessibilityHint="Report this user to the moderation team"
+          >
+            {submittingReport ? (
+              <ActivityIndicator color="#E53E3E" />
+            ) : (
+              <Text style={styles.dangerText}>⚠️ Report User</Text>
+            )}
           </TouchableOpacity>
         </View>
       </ScrollView>
+
+      {/* ── Report Reason Sheet ──────────────────────────── */}
+      <Modal
+        visible={showReportSheet}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowReportSheet(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setShowReportSheet(false)}
+        >
+          <View style={styles.reasonSheet}>
+            <Text style={styles.reasonTitle}>Why are you reporting {userName}?</Text>
+            {REPORT_REASONS.map((reason) => (
+              <TouchableOpacity
+                key={reason}
+                style={styles.reasonRow}
+                onPress={() => handleSelectReason(reason)}
+                accessibilityRole="button"
+                accessibilityLabel={REPORT_REASON_LABELS[reason]}
+              >
+                <Text style={styles.reasonLabel}>{REPORT_REASON_LABELS[reason]}</Text>
+              </TouchableOpacity>
+            ))}
+            <TouchableOpacity
+              style={[styles.reasonRow, styles.cancelRow]}
+              onPress={() => setShowReportSheet(false)}
+            >
+              <Text style={styles.cancelLabel}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </ScreenWrapper>
   );
 };
@@ -331,10 +416,57 @@ const styles = StyleSheet.create({
     padding: 16,
     borderRadius: 14,
     alignItems: "center",
+    minHeight: 52,
+    justifyContent: "center",
   },
   dangerText: {
     fontSize: 14,
     color: "#E53E3E",
+    fontWeight: "600",
+  },
+
+  // ── Report Reason Sheet ──────────────────────────────────
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.4)",
+    justifyContent: "flex-end",
+  },
+  reasonSheet: {
+    backgroundColor: "#fff",
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingBottom: 32,
+    paddingTop: 8,
+  },
+  reasonTitle: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#333",
+    textAlign: "center",
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: "#f0f0f0",
+  },
+  reasonRow: {
+    paddingVertical: 16,
+    paddingHorizontal: 24,
+    borderBottomWidth: 1,
+    borderBottomColor: "#f0f0f0",
+  },
+  reasonLabel: {
+    fontSize: 15,
+    color: "#E53E3E",
+    textAlign: "center",
+  },
+  cancelRow: {
+    marginTop: 8,
+    borderBottomWidth: 0,
+  },
+  cancelLabel: {
+    fontSize: 15,
+    color: "#888",
+    textAlign: "center",
     fontWeight: "600",
   },
 });

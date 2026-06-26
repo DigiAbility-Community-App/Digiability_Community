@@ -94,8 +94,8 @@ const WelcomeScreen = ({ navigation }: Props) => {
       return;
     }
 
-    if (trimmedPhone && !/^[+]?[0-9\s\-]{10,15}$/.test(trimmedPhone)) {
-      setError("Please enter a valid phone number (10–15 digits).");
+    if (trimmedPhone && !/^[0-9]{10}$/.test(trimmedPhone)) {
+      setError("Please enter a valid 10-digit mobile number.");
       return;
     }
 
@@ -304,14 +304,34 @@ const WelcomeScreen = ({ navigation }: Props) => {
               accessibilityHint="Enter a password containing uppercase, lowercase, and a number"
             />
 
-            <Input
-              label="Phone Number (optional)"
-              placeholder="+91 XXXXX XXXXX"
-              value={signUpPhone}
-              onChangeText={setSignUpPhone}
-              keyboardType="phone-pad"
-              accessibilityHint="Enter your mobile number including country code. This field is optional."
-            />
+            {/* Phone Number — split: fixed +91 | digit input */}
+            <View style={styles.phoneContainer}>
+              <Text style={styles.phoneLabel}>Phone Number (optional)</Text>
+              <View style={styles.phoneWrapper}>
+                {/* Static country code section */}
+                <View style={styles.phonePrefix}
+                  accessible={true}
+                  accessibilityLabel="Country code India plus 91"
+                >
+                  <Text style={styles.phonePrefixText}>+91</Text>
+                </View>
+                {/* Divider */}
+                <View style={styles.phoneDivider} />
+                {/* Phone number digit section */}
+                <TextInput
+                  style={styles.phoneInput}
+                  placeholder="XXXXX XXXXX"
+                  placeholderTextColor="rgba(126,115,131,0.5)"
+                  value={signUpPhone}
+                  onChangeText={(t) => setSignUpPhone(t.replace(/[^0-9]/g, ''))}
+                  keyboardType="phone-pad"
+                  maxLength={10}
+                  accessible={true}
+                  accessibilityLabel="Phone number"
+                  accessibilityHint="Enter your 10-digit mobile number without country code. This field is optional."
+                />
+              </View>
+            </View>
 
             <AccessibleButton
               accessibilityLabel="Create Account"
@@ -408,6 +428,57 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#FAF8FF",
   },
+
+  // PHONE INPUT
+  phoneContainer: {
+    width: '100%',
+  },
+  phoneLabel: {
+    textTransform: 'uppercase',
+    fontSize: 12,
+    fontFamily: 'Inter-SemiBold',
+    color: '#4B4558',
+    marginBottom: 6,
+    letterSpacing: 0.5,
+  },
+  phoneWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E2DFF0',
+    backgroundColor: '#F4F3FA',
+    overflow: 'hidden',
+    minHeight: 48,
+  },
+  phonePrefix: {
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#EDEAF8',
+  },
+  phonePrefixText: {
+    fontSize: 16,
+    fontFamily: 'Inter-SemiBold',
+    color: '#4B4558',
+    letterSpacing: 0.5,
+  },
+  phoneDivider: {
+    width: 1,
+    height: '60%',
+    backgroundColor: '#C8C3DC',
+  },
+  phoneInput: {
+    flex: 1,
+    fontSize: 16,
+    fontFamily: 'Inter-Regular',
+    color: '#1A1625',
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    minHeight: 48,
+  },
+
 
   // HEADER
   header: {

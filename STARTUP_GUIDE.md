@@ -194,6 +194,15 @@ docker logs digiability_chat_svc -f
 
 ## Step 7 — Start Local Services
 
+> **IMPORTANT — DO NOT run `npm run dev` for these services — they are already running in Docker:**
+> - `user-svc` (port 4001) — Docker only
+> - `chat-svc` (port 4002) — Docker only
+> - `notif-svc` (port 4004) — Docker only
+>
+> Running them locally will fail with `EADDRINUSE` (port already in use).
+
+Only these four need `npm run dev` in a local terminal:
+
 Open **separate terminal tabs** for each:
 
 ### Terminal 1 — forum-svc
@@ -350,6 +359,13 @@ docker compose up -d postgres     # Start it if not
 ### ❌ "WebSocket won't connect" on physical device
 - Ensure `EXPO_PUBLIC_API_BASE_URL` in `apps/mobile/.env` uses your LAN IP, not `localhost`
 - Run `ipconfig getifaddr en0` (Mac) to find it
+
+### ❌ `EADDRINUSE` on port 4004 (notif-svc)
+Port 4004 is held by the Docker container — this is expected. Do **not** run `npm run dev` for `notif-svc`. It runs in Docker only. Check it's healthy with:
+```bash
+curl http://localhost:4004/health
+docker logs digiability_notif_svc -f
+```
 
 ### ❌ Port 4001 or 4002 already in use
 You have a stale local process. Kill it:

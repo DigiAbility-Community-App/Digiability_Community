@@ -459,6 +459,19 @@ class ConversationRepository {
       data: { isPinned: pinned },
     });
   }
+
+  /**
+   * Set leftAt = now() for every active membership of a user.
+   * Called when a user account is deleted so the user disappears from all
+   * group member lists. Uses updateMany for efficiency (one query).
+   */
+  async removeAllMemberships(userId: string): Promise<number> {
+    const result = await prisma.conversationMember.updateMany({
+      where: { userId, leftAt: null },
+      data: { leftAt: new Date() },
+    });
+    return result.count;
+  }
 }
 
 export const conversationRepository = new ConversationRepository();

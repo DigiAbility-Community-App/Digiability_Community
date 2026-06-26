@@ -1,10 +1,11 @@
-import React from "react";
+import React, { useState } from "react";
 import {
     View,
     StyleSheet,
     ScrollView,
     TouchableOpacity,
     Image,
+    Alert,
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { useAuthStore } from "../../store/authStore";
@@ -13,11 +14,50 @@ import { AccessibleText } from "../../components/shared/AccessibleText";
 import { AccessibleButton } from "../../components/shared/AccessibleButton";
 import ScreenWrapper from "../../components/layout/ScreenWrapper";
 import AppHeader from "../../components/layout/AppHeader";
+import { deleteAccount } from "@services/authService";
 
 const ProfileScreen = () => {
     const navigation = useNavigation<any>();
     const user = useAuthStore((state) => state.user);
     const clearAuth = useAuthStore((state) => state.clearAuth);
+    const [deletingAccount, setDeletingAccount] = useState(false);
+
+    const handleDeleteAccount = () => {
+        Alert.alert(
+            "Delete Account",
+            "This will permanently delete your account and remove all your personal data. This cannot be undone.",
+            [
+                { text: "Cancel", style: "cancel" },
+                {
+                    text: "Continue",
+                    style: "destructive",
+                    onPress: () => {
+                        Alert.alert(
+                            "Are you absolutely sure?",
+                            "Your profile, preferences, and account information will be erased. Your messages and forum posts will be anonymised.",
+                            [
+                                { text: "No, keep my account", style: "cancel" },
+                                {
+                                    text: "Yes, delete my account",
+                                    style: "destructive",
+                                    onPress: async () => {
+                                        setDeletingAccount(true);
+                                        try {
+                                            await deleteAccount();
+                                            // clearAuth + SecureStore cleanup handled inside deleteAccount()
+                                        } catch {
+                                            setDeletingAccount(false);
+                                            Alert.alert("Error", "Could not delete account. Please try again.");
+                                        }
+                                    },
+                                },
+                            ]
+                        );
+                    },
+                },
+            ]
+        );
+    };
     const { colors, spacing, highContrast } = useTheme();
 
     const familySupport = [
@@ -343,6 +383,20 @@ const ProfileScreen = () => {
                     LOGOUT
                 </AccessibleButton>
 
+                {/* DELETE ACCOUNT */}
+                <TouchableOpacity
+                    style={styles.deleteAccountBtn}
+                    onPress={handleDeleteAccount}
+                    disabled={deletingAccount}
+                    accessibilityRole="button"
+                    accessibilityLabel="Delete account"
+                    accessibilityHint="Permanently deletes your account and all personal data"
+                >
+                    <AccessibleText style={styles.deleteAccountText}>
+                        {deletingAccount ? "Deleting account…" : "Delete account"}
+                    </AccessibleText>
+                </TouchableOpacity>
+
             </ScrollView>
         </ScreenWrapper>
     );
@@ -481,6 +535,21 @@ const styles = StyleSheet.create({
         alignItems: "center",
         flexDirection: "row",
         paddingVertical: 0,
+    },
+
+    deleteAccountBtn: {
+        alignSelf: "center",
+        marginTop: 12,
+        marginBottom: 8,
+        paddingVertical: 8,
+        paddingHorizontal: 16,
+    },
+
+    deleteAccountText: {
+        color: "#BA1A1A",
+        fontSize: 13,
+        textDecorationLine: "underline",
+        opacity: 0.75,
     },
 
     // Legacy navbar style removed

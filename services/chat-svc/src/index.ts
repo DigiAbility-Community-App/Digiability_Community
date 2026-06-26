@@ -44,6 +44,7 @@ import conversationRoutes from "./routes/conversation.routes";
 import messageRoutes from "./routes/message.routes";
 import presenceRoutes from "./routes/presence.routes";
 import inviteRoutes from "./routes/invite.routes";
+import internalRoutes from "./routes/internal.routes";
 
 // ─── Express Application ──────────────────────────────────────
 
@@ -79,6 +80,7 @@ app.use("/api/conversations", conversationRoutes);
 app.use("/api/messages", messageRoutes);
 app.use("/api/presence", presenceRoutes);
 app.use("/api/invites", inviteRoutes);
+app.use("/api/internal", internalRoutes);
 
 // 404 + Error Handlers
 app.use(notFoundHandler);

@@ -264,11 +264,77 @@ export async function resetPassword(
 }
 
 // ─── Delete Account ────────────────────────────────────
+// Soft-delete: anonymise all PII in place, then revoke sessions and tokens.
+// The User row is kept so foreign-key references (forum posts, chat senderIds)
+// resolve to "Deleted User" rather than erroring. The account cannot be
+// recovered or logged into after this point.
 
 export async function deleteAccount(userId: string): Promise<{ message: string }> {
-  // Cascade deletes all related tokens via Prisma schema (onDelete: Cascade)
-  await prisma.user.delete({ where: { id: userId } });
-  return { message: "Account deleted successfully." };
+  await prisma.$transaction(async (tx) => {
+    // 1. Anonymise the user row — unique email keeps the constraint satisfied
+    await tx.user.update({
+      where: { id: userId },
+      data: {
+        name: "Deleted User",
+        email: `deleted_${userId}@digiability.deleted`,
+        phoneNo: null,
+        deletedAt: new Date(),
+        isEmailVerified: false,
+        profileComplete: false,
+        roles: [],
+      },
+    });
+
+    // 2. Zero out all PII in the profile
+    await tx.userProfile.updateMany({
+      where: { userId },
+      data: {
+        fullName: null,
+        username: null,
+        dob: null,
+        gender: null,
+        city: null,
+        state: null,
+        disabilityType: null,
+        disabilitySince: null,
+        supportNeeded: null,
+        carePersonName: null,
+        careRelation: null,
+        careDob: null,
+        careDisabilityType: null,
+        speciality: null,
+        organization: null,
+        yearsOfExperience: null,
+        ngoName: null,
+        ngoRole: null,
+        district: null,
+        verificationDoc: null,
+      },
+    });
+
+    // 3. Revoke all auth tokens so existing sessions stop working immediately
+    await tx.refreshToken.deleteMany({ where: { userId } });
+    await tx.emailVerificationToken.deleteMany({ where: { userId } });
+    await tx.passwordResetToken.deleteMany({ where: { userId } });
+
+    // 4. Remove device tokens so no further push notifications are sent
+    await tx.deviceToken.deleteMany({ where: { userId } });
+  });
+
+  // 5. Best-effort: notify chat-svc to remove the user from all conversations.
+  //    Fire-and-forget — a failure here does not roll back the deletion.
+  const chatSvcUrl = process.env.CHAT_SVC_URL;
+  const internalSecret = process.env.INTERNAL_API_SECRET;
+  if (chatSvcUrl && internalSecret) {
+    fetch(`${chatSvcUrl}/api/internal/users/${userId}/memberships`, {
+      method: "DELETE",
+      headers: { "x-internal-secret": internalSecret },
+    }).catch((err) => {
+      console.error("[deleteAccount] chat-svc membership cleanup failed:", err);
+    });
+  }
+
+  return { message: "Your account has been permanently deleted." };
 }
 
 // ─── Get Current User ──────────────────────────────────

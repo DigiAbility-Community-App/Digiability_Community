@@ -9,7 +9,7 @@
 // Community Member
 // ─────────────────────────────────────────────────────────
 
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useEffect } from "react";
 
 import {
   View,
@@ -41,17 +41,23 @@ import {
   submitFullOnboarding,
   parseDateInput,
 } from "@services/profileService";
+import apiClient from "@services/apiClient";
 
 // ─────────────────────────────────────────────────────────
 // CONSTANTS
 // ─────────────────────────────────────────────────────────
 
-const disabilityOptions = [
-  "Visual",
-  "Hearing",
-  "Mobility",
-  "Cognitive",
-  "Speech",
+const FALLBACK_DISABILITY_OPTIONS = [
+  "Visual Impairment",
+  "Locomotor Disability",
+  "Hearing Impairment",
+  "Intellectual Disability",
+  "Autism Spectrum",
+  "Speech & Language",
+  "Physical Disability",
+  "Mental Health",
+  "Learning Disability",
+  "Multiple Disabilities",
 ];
 
 const supportOptions = [
@@ -61,8 +67,8 @@ const supportOptions = [
   "Daily Tasks",
 ];
 
-const CURRENT_YEAR =
-  new Date().getFullYear();
+const CURRENT_YEAR = new Date().getFullYear();
+const MIN_YEAR = 1900;
 
 // ─────────────────────────────────────────────────────────
 // SCREEN
@@ -171,6 +177,14 @@ const ProfileDetailsScreen = () => {
     Record<string, string>
   >({});
 
+  // ───────────────── Disability Types (from API) ─────────────────
+
+  const [disabilityOptions, setDisabilityOptions] = useState<string[]>(FALLBACK_DISABILITY_OPTIONS);
+  const [disabilityDropdownOpen, setDisabilityDropdownOpen] = useState(false);
+  const [disabilitySearch, setDisabilitySearch] = useState("");
+  const [careDropdownOpen, setCareDropdownOpen] = useState(false);
+  const [careSearch, setCareSearch] = useState("");
+
   // ───────────────── BACK HANDLER ─────────────────
 
   const handleBack = useCallback(() => {
@@ -219,6 +233,30 @@ const ProfileDetailsScreen = () => {
     }, [handleBack])
   );
 
+  // ───────────────── FETCH DISABILITY TYPES ─────────────────
+
+  useEffect(() => {
+    apiClient.get<{ success: boolean; data: { name: string }[] }>("/api/master/disability-types")
+      .then(({ data }) => {
+        if (data.success && data.data.length > 0) {
+          setDisabilityOptions(data.data.map((t) => t.name));
+        }
+      })
+      .catch(() => {
+        // silently fall back to FALLBACK_DISABILITY_OPTIONS already set
+      });
+  }, []);
+
+  // ───────────────── YEAR VALIDATION ─────────────────
+
+  const validateYear = (value: string): string | undefined => {
+    if (!value.trim()) return undefined;
+    if (!/^\d{4}$/.test(value.trim())) return "Enter a valid 4-digit year";
+    const y = parseInt(value.trim(), 10);
+    if (y < MIN_YEAR || y > CURRENT_YEAR) return `Year must be between ${MIN_YEAR} and ${CURRENT_YEAR}`;
+    return undefined;
+  };
+
   // ───────────────── VALIDATION ─────────────────
 
   const validateFields = () => {
@@ -229,23 +267,8 @@ const ProfileDetailsScreen = () => {
 
     // PwD
     if (roles.includes("pwd")) {
-      if (
-        disabilitySince.trim()
-      ) {
-        const year = parseInt(
-          disabilitySince.trim(),
-          10
-        );
-
-        if (
-          isNaN(year) ||
-          year < 1900 ||
-          year > CURRENT_YEAR
-        ) {
-          newErrors.disabilitySince =
-            `Year must be between 1900 and ${CURRENT_YEAR}`;
-        }
-      }
+      const yearErr = validateYear(disabilitySince);
+      if (yearErr) newErrors.disabilitySince = yearErr;
     }
 
     // Caregiver
@@ -558,81 +581,82 @@ const ProfileDetailsScreen = () => {
                 </View>
               </View>
 
-              <Text
-                style={
-                  styles.label
-                }
+              <Text style={styles.label}>Disability Type</Text>
+
+              <TouchableOpacity
+                style={styles.dropdownTrigger}
+                activeOpacity={0.8}
+                onPress={() => {
+                  setDisabilityDropdownOpen(!disabilityDropdownOpen);
+                  setDisabilitySearch("");
+                }}
               >
-                Disability Type
-              </Text>
+                <Text style={selectedDisability ? styles.dropdownValue : styles.dropdownPlaceholder}>
+                  {selectedDisability || "Select disability type"}
+                </Text>
+                <Text style={styles.dropdownArrow}>{disabilityDropdownOpen ? "▲" : "▼"}</Text>
+              </TouchableOpacity>
 
-              <View
-                style={
-                  styles.chipsContainer
-                }
-              >
-                {disabilityOptions.map(
-                  (item) => {
-                    const selected =
-                      selectedDisability ===
-                      item;
-
-                    return (
-                      <TouchableOpacity
-                        key={item}
-                        style={[
-                          styles.chip,
-
-                          selected &&
-                          styles.selectedChip,
-                        ]}
-                        onPress={() =>
-                          setSelectedDisability(
-                            item
-                          )
-                        }
-                      >
-                        <Text
-                          style={[
-                            styles.chipText,
-
-                            selected &&
-                            styles.selectedChipText,
-                          ]}
+              {disabilityDropdownOpen && (
+                <View style={styles.dropdownPanel}>
+                  <View style={styles.dropdownSearch}>
+                    <Text style={styles.searchIcon}>🔍</Text>
+                    <TextInput
+                      style={styles.searchInput}
+                      placeholder="Search..."
+                      placeholderTextColor="rgba(126,115,131,0.6)"
+                      value={disabilitySearch}
+                      onChangeText={setDisabilitySearch}
+                      autoFocus
+                    />
+                  </View>
+                  <ScrollView style={styles.dropdownList} nestedScrollEnabled keyboardShouldPersistTaps="handled">
+                    {disabilityOptions
+                      .filter((o) => o.toLowerCase().includes(disabilitySearch.toLowerCase()))
+                      .map((item) => (
+                        <TouchableOpacity
+                          key={item}
+                          style={[styles.dropdownOption, selectedDisability === item && styles.dropdownOptionSelected]}
+                          onPress={() => {
+                            setSelectedDisability(item);
+                            setDisabilityDropdownOpen(false);
+                            setDisabilitySearch("");
+                          }}
                         >
-                          {item}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  }
-                )}
-              </View>
+                          <Text style={[styles.dropdownOptionText, selectedDisability === item && styles.dropdownOptionTextSelected]}>
+                            {item}
+                          </Text>
+                          {selectedDisability === item && <Text style={styles.checkmark}>✓</Text>}
+                        </TouchableOpacity>
+                      ))}
+                    {disabilityOptions.filter((o) => o.toLowerCase().includes(disabilitySearch.toLowerCase())).length === 0 && (
+                      <Text style={styles.noResults}>No results</Text>
+                    )}
+                  </ScrollView>
+                </View>
+              )}
 
-              <Text
-                style={[
-                  styles.label,
-                  {
-                    marginTop: 20,
-                  },
-                ]}
-              >
-                Disability Since
-              </Text>
+              <Text style={[styles.label, { marginTop: 20 }]}>Disability Since</Text>
 
               <TextInput
-                placeholder="Year"
+                placeholder="e.g. 2003"
                 placeholderTextColor="rgba(126,115,131,0.6)"
-                style={
-                  styles.input
-                }
-                value={
-                  disabilitySince
-                }
-                onChangeText={
-                  setDisabilitySince
-                }
+                style={[styles.input, fieldErrors.disabilitySince ? styles.inputError : null]}
+                value={disabilitySince}
+                onChangeText={(v) => {
+                  if (/^\d{0,4}$/.test(v)) {
+                    setDisabilitySince(v);
+                    if (fieldErrors.disabilitySince) {
+                      setFieldErrors((e) => ({ ...e, disabilitySince: undefined as any }));
+                    }
+                  }
+                }}
                 keyboardType="number-pad"
+                maxLength={4}
               />
+              {fieldErrors.disabilitySince && (
+                <Text style={styles.errorText}>{fieldErrors.disabilitySince}</Text>
+              )}
 
               <Text
                 style={[
@@ -790,30 +814,61 @@ const ProfileDetailsScreen = () => {
                 </View>
               </View>
 
-              <Text
-                style={[
-                  styles.label,
-                  {
-                    marginTop: 18,
-                  },
-                ]}
-              >
-                Disability Type
-              </Text>
+              <Text style={[styles.label, { marginTop: 18 }]}>Disability Type</Text>
 
-              <TextInput
-                placeholder="Specify disability type"
-                placeholderTextColor="rgba(126,115,131,0.6)"
-                style={
-                  styles.input
-                }
-                value={
-                  careDisability
-                }
-                onChangeText={
-                  setCareDisability
-                }
-              />
+              <TouchableOpacity
+                style={styles.dropdownTrigger}
+                activeOpacity={0.8}
+                onPress={() => {
+                  setCareDropdownOpen(!careDropdownOpen);
+                  setCareSearch("");
+                }}
+              >
+                <Text style={careDisability ? styles.dropdownValue : styles.dropdownPlaceholder}>
+                  {careDisability || "Select disability type"}
+                </Text>
+                <Text style={styles.dropdownArrow}>{careDropdownOpen ? "▲" : "▼"}</Text>
+              </TouchableOpacity>
+
+              {careDropdownOpen && (
+                <View style={styles.dropdownPanel}>
+                  <View style={styles.dropdownSearch}>
+                    <Text style={styles.searchIcon}>🔍</Text>
+                    <TextInput
+                      style={styles.searchInput}
+                      placeholder="Search..."
+                      placeholderTextColor="rgba(126,115,131,0.6)"
+                      value={careSearch}
+                      onChangeText={setCareSearch}
+                      autoFocus
+                    />
+                  </View>
+                  <ScrollView style={styles.dropdownList} nestedScrollEnabled keyboardShouldPersistTaps="handled">
+                    {disabilityOptions
+                      .filter((o) => o.toLowerCase().includes(careSearch.toLowerCase()))
+                      .map((item) => (
+                        <TouchableOpacity
+                          key={item}
+                          style={[styles.dropdownOption, careDisability === item && styles.dropdownOptionSelected]}
+                          onPress={() => {
+                            setCareDisability(item);
+                            setCareDropdownOpen(false);
+                            setCareSearch("");
+                          }}
+                        >
+                          <Text style={[styles.dropdownOptionText, careDisability === item && styles.dropdownOptionTextSelected]}>
+                            {item}
+                          </Text>
+                          {careDisability === item && <Text style={styles.checkmark}>✓</Text>}
+                        </TouchableOpacity>
+                      ))}
+                    {disabilityOptions.filter((o) => o.toLowerCase().includes(careSearch.toLowerCase())).length === 0 && (
+                      <Text style={styles.noResults}>No results</Text>
+                    )}
+                  </ScrollView>
+                </View>
+              )}
+
             </View>
           )}
 
@@ -1398,5 +1453,118 @@ const styles =
       fontSize: 16,
       fontWeight: "600",
       color: "#1A1B20",
+    },
+
+    inputError: {
+      borderWidth: 1,
+      borderColor: "#DC2626",
+    },
+
+    errorText: {
+      color: "#DC2626",
+      fontSize: 12,
+      marginTop: 4,
+      marginBottom: 8,
+      marginLeft: 4,
+    },
+
+    dropdownTrigger: {
+      height: 52,
+      backgroundColor: "#F4F3FA",
+      borderRadius: 14,
+      paddingHorizontal: 16,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+    },
+
+    dropdownValue: {
+      flex: 1,
+      fontSize: 15,
+      color: "#1A1B20",
+      fontWeight: "500",
+    },
+
+    dropdownPlaceholder: {
+      flex: 1,
+      fontSize: 15,
+      color: "rgba(126,115,131,0.6)",
+    },
+
+    dropdownArrow: {
+      fontSize: 11,
+      color: "#7E7383",
+      marginLeft: 8,
+    },
+
+    dropdownPanel: {
+      marginTop: 6,
+      backgroundColor: "#F4F3FA",
+      borderRadius: 14,
+      overflow: "hidden",
+      borderWidth: 1,
+      borderColor: "#E5E0F0",
+      marginBottom: 4,
+    },
+
+    dropdownSearch: {
+      flexDirection: "row",
+      alignItems: "center",
+      paddingHorizontal: 14,
+      paddingVertical: 10,
+      borderBottomWidth: 1,
+      borderBottomColor: "#E5E0F0",
+    },
+
+    searchIcon: {
+      fontSize: 14,
+      marginRight: 8,
+    },
+
+    searchInput: {
+      flex: 1,
+      fontSize: 14,
+      color: "#1A1B20",
+    },
+
+    dropdownList: {
+      maxHeight: 200,
+    },
+
+    dropdownOption: {
+      flexDirection: "row",
+      alignItems: "center",
+      paddingVertical: 13,
+      paddingHorizontal: 16,
+      borderBottomWidth: 1,
+      borderBottomColor: "rgba(229,224,240,0.5)",
+    },
+
+    dropdownOptionSelected: {
+      backgroundColor: "rgba(80,0,136,0.06)",
+    },
+
+    dropdownOptionText: {
+      flex: 1,
+      fontSize: 14,
+      color: "#1A1B20",
+    },
+
+    dropdownOptionTextSelected: {
+      color: "#500088",
+      fontWeight: "700",
+    },
+
+    checkmark: {
+      fontSize: 14,
+      color: "#500088",
+      fontWeight: "700",
+    },
+
+    noResults: {
+      padding: 16,
+      textAlign: "center",
+      color: "#7E7383",
+      fontSize: 13,
     },
   });

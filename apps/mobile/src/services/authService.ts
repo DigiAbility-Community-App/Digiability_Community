@@ -249,3 +249,12 @@ export async function updateRole(
 ): Promise<AuthUser> {
   return updateRoles([role], options);
 }
+
+// ── Delete account (DPDP right to erasure) ─────────────────
+
+export async function deleteAccount(): Promise<void> {
+  await apiClient.delete('/api/auth/delete-account');
+  // Clear all local auth state after the server confirms deletion
+  useAuthStore.getState().clearAuth();
+  await SecureStore.deleteItemAsync(REFRESH_TOKEN_KEY);
+}

@@ -8,6 +8,8 @@ import authRoutes from "./routes/auth.routes";
 import profileRoutes from "./routes/profile.routes";
 import eventRoutes from "./routes/event.routes";
 import mentorRoutes from "./routes/mentor.routes";
+import reportRoutes from "./routes/report.routes";
+import masterRoutes from "./routes/master.routes";
 import { errorHandler, notFoundHandler } from "./middleware/error.middleware";
 
 // ─────────────────────────────────────────────────────
@@ -99,6 +101,8 @@ app.use("/api/users/profiles", profileRoutes);
 app.use("/api/users/profile", profileRoutes);
 app.use("/api/users/mentors", mentorRoutes);
 app.use("/api/events", eventRoutes);
+app.use("/api/reports", reportRoutes);
+app.use("/api/master", masterRoutes);
 
 // ─── 404 Handler ───────────────────────────────────────
 app.use(notFoundHandler);
