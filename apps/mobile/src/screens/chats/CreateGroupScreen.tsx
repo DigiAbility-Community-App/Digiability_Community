@@ -60,7 +60,7 @@ const CreateGroupScreen = ({ navigation, route }: Props) => {
   const [hasSearched, setHasSearched] = useState(false);
   const [allUsers, setAllUsers] = useState<UserResult[]>([]);
 
-  const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const headerAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -148,18 +148,26 @@ const CreateGroupScreen = ({ navigation, route }: Props) => {
     try {
       let conversation;
       if (subType === 'CARE_CIRCLE') {
-        const roles = selectedMembers.map(m => ({ userId: m.user.id, role: m.role }));
-        conversation = await chatService.createCareCircle(groupName.trim(), description.trim(), roles);
+        conversation = await chatService.createCareCircle(groupName.trim(), description.trim());
       } else {
-        const memberIds = selectedMembers.map(m => m.user.id);
-        conversation = await chatService.createGroup(groupName.trim(), description.trim(), memberIds);
+        conversation = await chatService.createGroup(groupName.trim(), description.trim());
       }
 
-      // Send invites to all selected members in parallel
-      const invitePromises = selectedMembers.map(m =>
-        chatService.sendInvite(conversation.id, m.user.id, m.role, `Join my ${subType === 'CARE_CIRCLE' ? 'Care Circle' : 'Group'}!`)
-      );
-      await Promise.allSettled(invitePromises);
+      // Send invites to all selected members — they must accept before joining.
+      // For Care Circles, the invite carries the assigned role (CAREGIVER, MENTOR, etc.).
+      // For general groups, every invite defaults to MEMBER.
+      if (selectedMembers.length > 0) {
+        const inviteLabel = subType === 'CARE_CIRCLE' ? 'Care Circle' : 'Group';
+        const invitePromises = selectedMembers.map((m) =>
+          chatService.sendInvite(
+            conversation.id,
+            m.user.id,
+            m.role,
+            `You have been invited to join the ${inviteLabel} "${groupName.trim()}"`,
+          )
+        );
+        await Promise.allSettled(invitePromises);
+      }
 
       // Refresh conversations in the store so GroupChatScreen and GroupInfoScreen
       // can find this conversation with properly enriched participants (names, etc.)

@@ -396,7 +396,7 @@ const ConversationListScreen = ({ navigation: propNavigation, isTab = false, dir
         data={filteredConversations}
         keyExtractor={(item) => item.id}
         renderItem={renderConversation}
-        contentContainerStyle={[styles.listContent, isTab && { paddingBottom: 120 }]}
+        contentContainerStyle={[styles.listContent, { paddingBottom: Platform.OS === 'ios' ? 190 : 170 }]}
         showsVerticalScrollIndicator={false}
         ListEmptyComponent={
           <View style={styles.emptyState}>
@@ -411,7 +411,7 @@ const ConversationListScreen = ({ navigation: propNavigation, isTab = false, dir
 
       {/* ── FAB — New Chat ─────────────────── */}
       <TouchableOpacity
-        style={[styles.fab, isTab ? { bottom: 85 } : { bottom: 90 }]}
+        style={[styles.fab, { bottom: Platform.OS === 'ios' ? 120 : 100 }]}
         onPress={handleNewAction}
         activeOpacity={0.85}
       >

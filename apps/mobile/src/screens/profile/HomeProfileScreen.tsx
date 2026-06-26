@@ -1,26 +1,133 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
     View,
     StyleSheet,
     ScrollView,
     TouchableOpacity,
-    Image,
     Alert,
+    Linking,
+    Platform,
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
+import * as Notifications from "expo-notifications";
 import { useAuthStore } from "../../store/authStore";
+import { useChatStore } from "../../store/chatStore";
 import { useTheme } from "../../theme/ThemeContext";
 import { AccessibleText } from "../../components/shared/AccessibleText";
 import { AccessibleButton } from "../../components/shared/AccessibleButton";
 import ScreenWrapper from "../../components/layout/ScreenWrapper";
 import AppHeader from "../../components/layout/AppHeader";
 import { deleteAccount } from "@services/authService";
+import { forumService } from "@services/forumService";
 
-const ProfileScreen = () => {
+// ─────────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────────
+
+const ROLE_LABELS: Record<string, string> = {
+    pwd: "Person with Disability",
+    caregiver: "Caregiver",
+    educator: "Educator",
+    ngo_worker: "NGO Worker",
+    skill_trainer: "Skill Trainer",
+    community_member: "Community Member",
+    therapist: "Therapist",
+    volunteer: "Volunteer",
+    student: "Student",
+    mentor: "Mentor",
+};
+
+function getInitials(name: string): string {
+    return name
+        .trim()
+        .split(/\s+/)
+        .slice(0, 2)
+        .map((w) => w[0]?.toUpperCase() ?? "")
+        .join("");
+}
+
+function comingSoonAlert(feature: string) {
+    Alert.alert(
+        `${feature}`,
+        "This feature is coming soon. We're working hard to bring it to you.",
+        [{ text: "OK" }]
+    );
+}
+
+// ─────────────────────────────────────────────
+// Screen
+// ─────────────────────────────────────────────
+
+const HomeProfileScreen = () => {
     const navigation = useNavigation<any>();
     const user = useAuthStore((state) => state.user);
     const clearAuth = useAuthStore((state) => state.clearAuth);
+    const { colors, highContrast } = useTheme();
+
+    // ── Chat store — derive group + care circle counts ──
+    const conversations = useChatStore((s) => Object.values(s.conversations));
+    const groupCount = conversations.filter(
+        (c) => c.type === "GROUP" && c.subType !== "CARE_CIRCLE"
+    ).length;
+    const careCircles = conversations.filter((c) => c.subType === "CARE_CIRCLE");
+    const careCircleCount = careCircles.length;
+    const careCircleMemberCount = careCircles.reduce(
+        (sum, c) => sum + (c.participants?.length ?? 0),
+        0
+    );
+
+    // ── Forum stats ──
+    const [forumStats, setForumStats] = useState({ questionsCount: 0, answersCount: 0 });
+    const [statsLoading, setStatsLoading] = useState(true);
+
+    // ── Notification permission ──
+    const [notifStatus, setNotifStatus] = useState<"granted" | "denied" | "undetermined">("undetermined");
+
+    // ── Delete ──
     const [deletingAccount, setDeletingAccount] = useState(false);
+
+    const loadData = useCallback(async () => {
+        setStatsLoading(true);
+        try {
+            const stats = await forumService.getMyStats();
+            setForumStats({ questionsCount: stats.questionsCount, answersCount: stats.answersCount });
+        } catch {
+            // silently fall back to 0
+        } finally {
+            setStatsLoading(false);
+        }
+
+        try {
+            const { status } = await Notifications.getPermissionsAsync();
+            setNotifStatus(status as any);
+        } catch {
+            // expo-notifications unavailable in Expo Go
+        }
+    }, []);
+
+    useEffect(() => { loadData(); }, [loadData]);
+
+    const handleNotificationsPress = async () => {
+        if (notifStatus === "granted") {
+            Alert.alert(
+                "Push Notifications",
+                "Notifications are enabled. You can manage them in your device settings.",
+                [
+                    { text: "Open Settings", onPress: () => Linking.openSettings() },
+                    { text: "OK", style: "cancel" },
+                ]
+            );
+        } else {
+            Alert.alert(
+                "Enable Notifications",
+                "Push notifications are currently disabled. Enable them to stay updated.",
+                [
+                    { text: "Open Settings", onPress: () => Linking.openSettings() },
+                    { text: "Not now", style: "cancel" },
+                ]
+            );
+        }
+    };
 
     const handleDeleteAccount = () => {
         Alert.alert(
@@ -31,7 +138,7 @@ const ProfileScreen = () => {
                 {
                     text: "Continue",
                     style: "destructive",
-                    onPress: () => {
+                    onPress: () =>
                         Alert.alert(
                             "Are you absolutely sure?",
                             "Your profile, preferences, and account information will be erased. Your messages and forum posts will be anonymised.",
@@ -44,7 +151,6 @@ const ProfileScreen = () => {
                                         setDeletingAccount(true);
                                         try {
                                             await deleteAccount();
-                                            // clearAuth + SecureStore cleanup handled inside deleteAccount()
                                         } catch {
                                             setDeletingAccount(false);
                                             Alert.alert("Error", "Could not delete account. Please try again.");
@@ -52,115 +158,52 @@ const ProfileScreen = () => {
                                     },
                                 },
                             ]
-                        );
-                    },
+                        ),
                 },
             ]
         );
     };
-    const { colors, spacing, highContrast } = useTheme();
 
-    const familySupport = [
-        {
-            title: "Care Circle",
-            subtitle: "3 members",
-            icon: "👨‍👩‍👧",
-            bg: "#F1DBFF",
-        },
-        {
-            title: "Emergency SOS",
-            subtitle: "Safety settings",
-            icon: "🚨",
-            bg: "#FEE2E2",
-        },
-        {
-            title: "Medical Records",
-            subtitle: "Synced securely",
-            icon: "📄",
-            bg: "#D1FAE5",
-        },
-    ];
-
-    const accountSettings = [
-        {
-            title: "Accessibility",
-            subtitle: "",
-            icon: "♿",
-        },
-        {
-            title: "Notifications",
-            subtitle: "Push enabled",
-            icon: "🔔",
-        },
-        {
-            title: "Privacy & Security",
-            subtitle: "",
-            icon: "🔒",
-        },
-        {
-            title: "Language",
-            subtitle: "English",
-            icon: "🌐",
-        },
-    ];
-
-    const supportItems = [
-        {
-            title: "Help Center",
-            icon: "❓",
-        },
-        {
-            title: "Contact Support",
-            icon: "📞",
-        },
-    ];
+    // ── Derived display values ──
+    const displayName = user?.name || user?.fullName || "User";
+    const roleKey = user?.roles?.[0] ?? user?.role ?? "";
+    const roleLabel = ROLE_LABELS[roleKey] ?? (roleKey ? roleKey : "Community Member");
+    const initials = getInitials(displayName);
+    const notifSubtitle = notifStatus === "granted" ? "Enabled" : notifStatus === "denied" ? "Disabled" : "Not set";
 
     const cardBorder = highContrast
-        ? { borderWidth: 2, borderColor: '#000000' }
-        : { borderWidth: 1, borderColor: 'rgba(0,0,0,0.05)' };
+        ? { borderWidth: 2, borderColor: "#000000" }
+        : { borderWidth: 1, borderColor: "rgba(0,0,0,0.05)" };
 
     return (
         <ScreenWrapper>
-            {/* HEADER */}
-            <AppHeader
-                title="Profile"
-                hideBackButton={true}
-                rightActions={
-                    <TouchableOpacity
-                        style={styles.headerRightTouch}
-                        accessibilityRole="button"
-                        accessibilityLabel="Settings"
-                        accessibilityHint="Opens profile settings"
-                        activeOpacity={0.7}
-                    >
-                        <AccessibleText style={styles.headerIcon}>
-                            ⚙️
-                        </AccessibleText>
-                    </TouchableOpacity>
-                }
-            />
+            <AppHeader title="Profile" hideBackButton />
 
-            {/* BODY */}
             <ScrollView
                 showsVerticalScrollIndicator={false}
                 contentContainerStyle={styles.scrollContent}
             >
-                {/* PROFILE CARD */}
+                {/* ── PROFILE CARD ── */}
                 <View style={[styles.profileCard, { backgroundColor: colors.card, borderTopColor: colors.primary }, cardBorder]}>
-                    {/* TOP */}
                     <View style={styles.profileTop}>
-                        <Image
-                            source={require("../../../assets/user icon.png")}
-                            style={styles.avatar}
-                        />
+                        {/* Avatar — initials circle */}
+                        <View style={[styles.avatarCircle, { backgroundColor: colors.primary }]}>
+                            <AccessibleText style={styles.avatarInitials}>{initials || "?"}</AccessibleText>
+                        </View>
 
-                        <AccessibleText variant="title" style={{ color: colors.primary, fontSize: 24 }}>
-                            {user?.name || "User"}
+                        <AccessibleText variant="title" style={{ color: colors.primary, fontSize: 22, marginTop: 4 }}>
+                            {displayName}
                         </AccessibleText>
 
-                        <AccessibleText variant="body" style={{ color: colors.subtext, marginTop: 4, marginBottom: 20 }}>
-                            Community Member
+                        <AccessibleText variant="body" style={{ color: colors.subtext, marginTop: 4, marginBottom: 4 }}>
+                            {roleLabel}
                         </AccessibleText>
+
+                        {user?.username ? (
+                            <AccessibleText variant="caption" style={{ color: colors.subtext, marginBottom: 16 }}>
+                                @{user.username}
+                            </AccessibleText>
+                        ) : <View style={{ marginBottom: 16 }} />}
 
                         <AccessibleButton
                             variant="outline"
@@ -174,38 +217,24 @@ const ProfileScreen = () => {
                         </AccessibleButton>
                     </View>
 
-                    {/* STATS */}
+                    {/* ── STATS ── */}
                     <View style={[styles.statsRow, { backgroundColor: colors.surface }]}>
                         <View style={styles.statItem}>
-                            <AccessibleText
-                                variant="title"
-                                style={{ color: colors.primary, fontSize: 20 }}
-                            >
-                                12
+                            <AccessibleText variant="title" style={{ color: colors.primary, fontSize: 20 }}>
+                                {statsLoading ? "—" : forumStats.questionsCount}
                             </AccessibleText>
-
-                            <AccessibleText
-                                variant="overline"
-                                style={{ color: colors.subtext }}
-                            >
-                                FORUMS
+                            <AccessibleText variant="overline" style={{ color: colors.subtext }}>
+                                QUESTIONS
                             </AccessibleText>
                         </View>
 
                         <View style={styles.statDivider} />
 
                         <View style={styles.statItem}>
-                            <AccessibleText
-                                variant="title"
-                                style={{ color: colors.primary, fontSize: 20 }}
-                            >
-                                4
+                            <AccessibleText variant="title" style={{ color: colors.primary, fontSize: 20 }}>
+                                {groupCount + careCircleCount}
                             </AccessibleText>
-
-                            <AccessibleText
-                                variant="overline"
-                                style={{ color: colors.subtext }}
-                            >
+                            <AccessibleText variant="overline" style={{ color: colors.subtext }}>
                                 GROUPS
                             </AccessibleText>
                         </View>
@@ -213,166 +242,155 @@ const ProfileScreen = () => {
                         <View style={styles.statDivider} />
 
                         <View style={styles.statItem}>
-                            <AccessibleText
-                                variant="title"
-                                style={{ color: colors.primary, fontSize: 20 }}
-                            >
-                                8
+                            <AccessibleText variant="title" style={{ color: colors.primary, fontSize: 20 }}>
+                                {statsLoading ? "—" : forumStats.answersCount}
                             </AccessibleText>
-
-                            <AccessibleText
-                                variant="overline"
-                                style={{ color: colors.subtext }}
-                            >
-                                POSTS
+                            <AccessibleText variant="overline" style={{ color: colors.subtext }}>
+                                ANSWERS
                             </AccessibleText>
                         </View>
                     </View>
                 </View>
 
-                {/* FAMILY SUPPORT */}
-                <View style={styles.section}>
-                    <AccessibleText variant="overline" style={{ marginBottom: 12, paddingHorizontal: 8 }}>
-                        FAMILY & SUPPORT
-                    </AccessibleText>
-
-                    <View style={[styles.sectionCard, { backgroundColor: colors.surface }, cardBorder]}>
-                        {familySupport.map(
-                            (item, index) => (
-                                <TouchableOpacity
-                                    key={index}
-                                    style={[styles.menuItem, { backgroundColor: colors.card, borderBottomWidth: 1, borderBottomColor: colors.border }]}
-                                    accessibilityRole="button"
-                                    accessibilityLabel={`${item.title}, ${item.subtitle}`}
-                                    accessibilityHint={`Double tap to view ${item.title}`}
-                                    onPress={() => {
-                                        if (item.title === "Care Circle") {
-                                            navigation.navigate("CareCircle");
-                                        }
-                                    }}
-                                >
-                                    <View style={styles.menuLeft}>
-                                        <View
-                                            style={[
-                                                styles.iconWrap,
-                                                {
-                                                    backgroundColor: highContrast ? '#FFFFFF' : item.bg,
-                                                },
-                                                highContrast && { borderWidth: 1, borderColor: '#000000' }
-                                            ]}
-                                        >
-                                            <AccessibleText style={styles.menuIcon}>
-                                                {item.icon}
-                                            </AccessibleText>
-                                        </View>
-
-                                        <View>
-                                            <AccessibleText variant="title" style={{ fontSize: 16 }}>
-                                                {item.title}
-                                            </AccessibleText>
-
-                                            <AccessibleText variant="caption">
-                                                {item.subtitle}
-                                            </AccessibleText>
-                                        </View>
-                                    </View>
-
-                                    <AccessibleText style={styles.arrow}>
-                                        ›
-                                    </AccessibleText>
-                                </TouchableOpacity>
-                            )
-                        )}
-                    </View>
+                {/* ── FAMILY & SUPPORT ── */}
+                <SectionHeader label="FAMILY & SUPPORT" />
+                <View style={[styles.sectionCard, { backgroundColor: colors.surface }, cardBorder]}>
+                    <MenuItem
+                        icon="👥"
+                        iconBg="#F1DBFF"
+                        title="Care Circle"
+                        subtitle={careCircleCount > 0
+                            ? `${careCircleCount} circle${careCircleCount !== 1 ? "s" : ""} · ${careCircleMemberCount} member${careCircleMemberCount !== 1 ? "s" : ""}`
+                            : "No circles yet"}
+                        onPress={() => navigation.navigate("CareCircle")}
+                        colors={colors}
+                        highContrast={highContrast}
+                        cardBorder={cardBorder}
+                    />
+                    <MenuItem
+                        icon="🚨"
+                        iconBg="#FEE2E2"
+                        title="Emergency SOS"
+                        subtitle="Coming soon"
+                        onPress={() => comingSoonAlert("Emergency SOS")}
+                        colors={colors}
+                        highContrast={highContrast}
+                        cardBorder={cardBorder}
+                        comingSoon
+                    />
+                    <MenuItem
+                        icon="📄"
+                        iconBg="#D1FAE5"
+                        title="Medical Records"
+                        subtitle="Coming soon"
+                        onPress={() => comingSoonAlert("Medical Records")}
+                        colors={colors}
+                        highContrast={highContrast}
+                        cardBorder={cardBorder}
+                        comingSoon
+                    />
                 </View>
 
-                {/* ACCOUNT SETTINGS */}
-                <View style={styles.section}>
-                    <AccessibleText variant="overline" style={{ marginBottom: 12, paddingHorizontal: 8 }}>
-                        ACCOUNT SETTINGS
-                    </AccessibleText>
-
-                    <View style={[styles.sectionCard, { backgroundColor: colors.surface }, cardBorder]}>
-                        {accountSettings.map(
-                            (item, index) => (
-                                <TouchableOpacity
-                                    key={index}
-                                    style={[styles.menuItem, { backgroundColor: colors.card, borderBottomWidth: 1, borderBottomColor: colors.border }]}
-                                    accessibilityRole="button"
-                                    accessibilityLabel={`${item.title} settings`}
-                                    accessibilityHint={`Double tap to view ${item.title} options`}
-                                    onPress={() => {
-                                        if (item.title === "Accessibility") {
-                                            navigation.navigate("Accessibility");
-                                        }
-                                        if (item.title === "Notifications") {
-                                            navigation.navigate("Notifications");
-                                        }
-                                    }}
-                                >
-                                    <View style={styles.menuLeft}>
-                                        <AccessibleText style={[styles.settingsIcon, { color: colors.text }]}>
-                                            {item.icon}
-                                        </AccessibleText>
-
-                                        <View>
-                                            <AccessibleText variant="title" style={{ fontSize: 16 }}>
-                                                {item.title}
-                                            </AccessibleText>
-
-                                            {!!item.subtitle && (
-                                                <AccessibleText variant="caption">
-                                                    {item.subtitle}
-                                                </AccessibleText>
-                                            )}
-                                        </View>
-                                    </View>
-
-                                    <AccessibleText style={styles.arrow}>
-                                        ›
-                                    </AccessibleText>
-                                </TouchableOpacity>
-                            )
-                        )}
-                    </View>
+                {/* ── ACCOUNT SETTINGS ── */}
+                <SectionHeader label="ACCOUNT SETTINGS" />
+                <View style={[styles.sectionCard, { backgroundColor: colors.surface }, cardBorder]}>
+                    <MenuItem
+                        icon="♿"
+                        title="Accessibility"
+                        onPress={() => navigation.navigate("Accessibility")}
+                        colors={colors}
+                        highContrast={highContrast}
+                        cardBorder={cardBorder}
+                    />
+                    <MenuItem
+                        icon="🔔"
+                        title="Notifications"
+                        subtitle={notifSubtitle}
+                        subtitleColor={notifStatus === "granted" ? "#059669" : notifStatus === "denied" ? "#DC2626" : undefined}
+                        onPress={handleNotificationsPress}
+                        colors={colors}
+                        highContrast={highContrast}
+                        cardBorder={cardBorder}
+                    />
+                    <MenuItem
+                        icon="🔒"
+                        title="Privacy & Security"
+                        subtitle="Coming soon"
+                        onPress={() => comingSoonAlert("Privacy & Security")}
+                        colors={colors}
+                        highContrast={highContrast}
+                        cardBorder={cardBorder}
+                        comingSoon
+                    />
+                    <MenuItem
+                        icon="🌐"
+                        title="Language"
+                        subtitle="English"
+                        onPress={() => comingSoonAlert("Language Selection")}
+                        colors={colors}
+                        highContrast={highContrast}
+                        cardBorder={cardBorder}
+                        comingSoon
+                    />
                 </View>
 
-                {/* SUPPORT */}
-                <View style={styles.section}>
-                    <AccessibleText variant="overline" style={{ marginBottom: 12, paddingHorizontal: 8 }}>
-                        SUPPORT
-                    </AccessibleText>
-
-                    <View style={[styles.sectionCard, { backgroundColor: colors.surface }, cardBorder]}>
-                        {supportItems.map(
-                            (item, index) => (
-                                <TouchableOpacity
-                                    key={index}
-                                    style={[styles.menuItem, { backgroundColor: colors.card, borderBottomWidth: 1, borderBottomColor: colors.border }]}
-                                    accessibilityRole="button"
-                                    accessibilityLabel={item.title}
-                                    accessibilityHint={`Double tap to open ${item.title}`}
-                                >
-                                    <View style={styles.menuLeft}>
-                                        <AccessibleText style={[styles.settingsIcon, { color: colors.text }]}>
-                                            {item.icon}
-                                        </AccessibleText>
-
-                                        <AccessibleText variant="title" style={{ fontSize: 16 }}>
-                                            {item.title}
-                                        </AccessibleText>
-                                    </View>
-
-                                    <AccessibleText style={styles.arrow}>
-                                        ›
-                                    </AccessibleText>
-                                </TouchableOpacity>
-                            )
-                        )}
-                    </View>
+                {/* ── LEGAL ── */}
+                <SectionHeader label="LEGAL" />
+                <View style={[styles.sectionCard, { backgroundColor: colors.surface }, cardBorder]}>
+                    <MenuItem
+                        icon="📜"
+                        title="Privacy Policy"
+                        subtitle="How we handle your data"
+                        onPress={() => comingSoonAlert("Privacy Policy")}
+                        colors={colors}
+                        highContrast={highContrast}
+                        cardBorder={cardBorder}
+                        comingSoon
+                    />
+                    <MenuItem
+                        icon="📋"
+                        title="Terms of Service"
+                        subtitle="Community guidelines"
+                        onPress={() => comingSoonAlert("Terms of Service")}
+                        colors={colors}
+                        highContrast={highContrast}
+                        cardBorder={cardBorder}
+                        comingSoon
+                    />
                 </View>
 
-                {/* LOGOUT */}
+                {/* ── SUPPORT ── */}
+                <SectionHeader label="SUPPORT" />
+                <View style={[styles.sectionCard, { backgroundColor: colors.surface }, cardBorder]}>
+                    <MenuItem
+                        icon="❓"
+                        title="Help Center"
+                        onPress={() => comingSoonAlert("Help Center")}
+                        colors={colors}
+                        highContrast={highContrast}
+                        cardBorder={cardBorder}
+                        comingSoon
+                    />
+                    <MenuItem
+                        icon="📞"
+                        title="Contact Support"
+                        onPress={() => comingSoonAlert("Contact Support")}
+                        colors={colors}
+                        highContrast={highContrast}
+                        cardBorder={cardBorder}
+                        comingSoon
+                    />
+                </View>
+
+                {/* ── APP VERSION ── */}
+                <AccessibleText
+                    variant="caption"
+                    style={{ textAlign: "center", color: colors.subtext, marginBottom: 8, marginTop: 4 }}
+                >
+                    Digiability Community v1.0.0
+                </AccessibleText>
+
+                {/* ── LOGOUT ── */}
                 <AccessibleButton
                     variant="danger"
                     accessibilityLabel="Logout"
@@ -383,7 +401,7 @@ const ProfileScreen = () => {
                     LOGOUT
                 </AccessibleButton>
 
-                {/* DELETE ACCOUNT */}
+                {/* ── DELETE ACCOUNT ── */}
                 <TouchableOpacity
                     style={styles.deleteAccountBtn}
                     onPress={handleDeleteAccount}
@@ -396,55 +414,123 @@ const ProfileScreen = () => {
                         {deletingAccount ? "Deleting account…" : "Delete account"}
                     </AccessibleText>
                 </TouchableOpacity>
-
             </ScrollView>
         </ScreenWrapper>
     );
 };
 
-export default ProfileScreen;
+// ─────────────────────────────────────────────
+// Sub-components
+// ─────────────────────────────────────────────
+
+const SectionHeader = ({ label }: { label: string }) => {
+    const { colors } = useTheme();
+    return (
+        <AccessibleText
+            variant="overline"
+            style={{ marginBottom: 8, marginTop: 20, paddingHorizontal: 4, color: colors.subtext }}
+        >
+            {label}
+        </AccessibleText>
+    );
+};
+
+interface MenuItemProps {
+    icon: string;
+    iconBg?: string;
+    title: string;
+    subtitle?: string;
+    subtitleColor?: string;
+    onPress: () => void;
+    colors: any;
+    highContrast: boolean;
+    cardBorder: object;
+    comingSoon?: boolean;
+}
+
+const MenuItem = ({
+    icon, iconBg, title, subtitle, subtitleColor, onPress, colors, highContrast, comingSoon,
+}: MenuItemProps) => (
+    <TouchableOpacity
+        style={[styles.menuItem, { backgroundColor: colors.card, borderBottomWidth: 1, borderBottomColor: colors.border }]}
+        accessibilityRole="button"
+        accessibilityLabel={title}
+        accessibilityHint={comingSoon ? `${title} is coming soon` : `Double tap to open ${title}`}
+        onPress={onPress}
+        activeOpacity={0.7}
+    >
+        <View style={styles.menuLeft}>
+            {iconBg ? (
+                <View style={[styles.iconWrap, { backgroundColor: highContrast ? "#FFFFFF" : iconBg }, highContrast && { borderWidth: 1, borderColor: "#000" }]}>
+                    <AccessibleText style={styles.menuIcon}>{icon}</AccessibleText>
+                </View>
+            ) : (
+                <AccessibleText style={[styles.settingsIcon, { color: colors.text }]}>{icon}</AccessibleText>
+            )}
+            <View style={{ flex: 1 }}>
+                <AccessibleText variant="title" style={{ fontSize: 15, color: colors.text }}>
+                    {title}
+                </AccessibleText>
+                {!!subtitle && (
+                    <AccessibleText
+                        variant="caption"
+                        style={{ marginTop: 1, color: subtitleColor ?? colors.subtext }}
+                    >
+                        {subtitle}
+                    </AccessibleText>
+                )}
+            </View>
+        </View>
+        <View style={styles.menuRight}>
+            {comingSoon && (
+                <View style={styles.soonBadge}>
+                    <AccessibleText style={styles.soonText}>SOON</AccessibleText>
+                </View>
+            )}
+            <AccessibleText style={styles.arrow}>›</AccessibleText>
+        </View>
+    </TouchableOpacity>
+);
+
+export default HomeProfileScreen;
+
+// ─────────────────────────────────────────────
+// Styles
+// ─────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        backgroundColor: "#FAF8FF",
-    },
-
-    headerIcon: {
-        fontSize: 20,
-    },
-
-    headerRightTouch: {
-        minWidth: 48,
-        minHeight: 48,
-        justifyContent: "center",
-        alignItems: "center",
-    },
-
     scrollContent: {
         padding: 16,
         paddingBottom: 120,
     },
 
     profileCard: {
-        backgroundColor: "#fff",
         borderRadius: 20,
         overflow: "hidden",
         borderTopWidth: 4,
         borderTopColor: "#500088",
-        marginBottom: 24,
+        marginBottom: 4,
     },
 
     profileTop: {
         alignItems: "center",
         padding: 24,
+        paddingBottom: 20,
     },
 
-    avatar: {
+    avatarCircle: {
         width: 80,
         height: 80,
-        borderRadius: 999,
-        marginBottom: 16,
+        borderRadius: 40,
+        justifyContent: "center",
+        alignItems: "center",
+        marginBottom: 12,
+    },
+
+    avatarInitials: {
+        fontSize: 28,
+        fontWeight: "800",
+        color: "#FFFFFF",
     },
 
     editBtn: {
@@ -453,7 +539,7 @@ const styles = StyleSheet.create({
         paddingHorizontal: 24,
         paddingVertical: 10,
         borderRadius: 12,
-        marginTop: 10,
+        marginTop: 8,
     },
 
     editBtnText: {
@@ -463,8 +549,7 @@ const styles = StyleSheet.create({
 
     statsRow: {
         flexDirection: "row",
-        backgroundColor: "#F4F3FA",
-        paddingVertical: 18,
+        paddingVertical: 16,
     },
 
     statItem: {
@@ -474,33 +559,37 @@ const styles = StyleSheet.create({
 
     statDivider: {
         width: 1,
-        backgroundColor: "#DDD",
-    },
-
-    section: {
-        marginBottom: 24,
+        backgroundColor: "rgba(0,0,0,0.08)",
+        marginVertical: 4,
     },
 
     sectionCard: {
-        backgroundColor: "#F4F3FA",
         borderRadius: 12,
         overflow: "hidden",
+        marginBottom: 4,
     },
 
     menuItem: {
-        backgroundColor: "#fff",
-        minHeight: 64,
+        minHeight: 60,
         flexDirection: "row",
         justifyContent: "space-between",
         alignItems: "center",
         paddingHorizontal: 16,
-        paddingVertical: 14,
+        paddingVertical: 12,
         marginBottom: 1,
     },
 
     menuLeft: {
         flexDirection: "row",
         alignItems: "center",
+        flex: 1,
+        marginRight: 8,
+    },
+
+    menuRight: {
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 6,
     },
 
     iconWrap: {
@@ -509,7 +598,7 @@ const styles = StyleSheet.create({
         borderRadius: 12,
         justifyContent: "center",
         alignItems: "center",
-        marginRight: 16,
+        marginRight: 14,
     },
 
     menuIcon: {
@@ -518,12 +607,28 @@ const styles = StyleSheet.create({
 
     settingsIcon: {
         fontSize: 20,
-        marginRight: 16,
+        marginRight: 14,
+        width: 28,
+        textAlign: "center",
     },
 
     arrow: {
-        fontSize: 24,
+        fontSize: 22,
         color: "#CFC2D4",
+    },
+
+    soonBadge: {
+        backgroundColor: "#F3EAFF",
+        paddingHorizontal: 7,
+        paddingVertical: 2,
+        borderRadius: 6,
+    },
+
+    soonText: {
+        fontSize: 9,
+        fontWeight: "800",
+        color: "#7C3AED",
+        letterSpacing: 0.5,
     },
 
     logoutBtn: {
@@ -533,13 +638,12 @@ const styles = StyleSheet.create({
         borderRadius: 16,
         justifyContent: "center",
         alignItems: "center",
-        flexDirection: "row",
-        paddingVertical: 0,
+        marginTop: 16,
     },
 
     deleteAccountBtn: {
         alignSelf: "center",
-        marginTop: 12,
+        marginTop: 10,
         marginBottom: 8,
         paddingVertical: 8,
         paddingHorizontal: 16,
@@ -551,6 +655,4 @@ const styles = StyleSheet.create({
         textDecorationLine: "underline",
         opacity: 0.75,
     },
-
-    // Legacy navbar style removed
 });

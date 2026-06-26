@@ -233,8 +233,9 @@ class ConversationRepository {
   }
 
   /**
-   * List ALL community groups of a given subType (GENERAL or CARE_CIRCLE).
-   * Used for the community discovery screen — not filtered by membership.
+   * List community groups of a given subType.
+   * - GENERAL: public discovery — all groups visible, isMember flag set per user.
+   * - CARE_CIRCLE: private — only circles the requesting user is a member of are returned.
    */
   async listAllGroups(
     subType: "GENERAL" | "CARE_CIRCLE",
@@ -242,8 +243,18 @@ class ConversationRepository {
     limit: number = 50,
     cursor?: string
   ): Promise<{ groups: (ConversationWithMembers & { isMember: boolean })[]; hasMore: boolean }> {
+    const where =
+      subType === "CARE_CIRCLE"
+        ? {
+            type: "GROUP" as const,
+            subType,
+            deletedAt: null,
+            members: { some: { userId: requestingUserId, leftAt: null } },
+          }
+        : { type: "GROUP" as const, subType, deletedAt: null };
+
     const groups = await prisma.conversation.findMany({
-      where: { type: "GROUP", subType, deletedAt: null },
+      where,
       include: {
         members: {
           where: { leftAt: null },

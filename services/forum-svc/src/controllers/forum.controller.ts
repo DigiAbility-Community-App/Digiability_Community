@@ -1017,3 +1017,29 @@ export const markNotificationRead = async (req: Request, res: Response): Promise
     res.status(500).json({ success: false, message: 'Failed to update notification' });
   }
 };
+
+
+export const getMyStats = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const userId = (req as any).user?.sub;
+    if (!userId) { res.status(401).json({ success: false, message: 'Unauthorized' }); return; }
+
+    const [questionsCount, answersCount, stats] = await Promise.all([
+      prisma.forumQuestion.count({ where: { authorId: userId, deletedAt: null } }),
+      prisma.forumAnswer.count({ where: { authorId: userId, deletedAt: null } }),
+      prisma.forumUserStats.findUnique({ where: { userId }, select: { reputation: true } }),
+    ]);
+
+    res.status(200).json({
+      success: true,
+      data: {
+        questionsCount,
+        answersCount,
+        reputation: stats?.reputation ?? 0,
+      },
+    });
+  } catch (error: any) {
+    console.error('Get My Stats Error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch stats' });
+  }
+};

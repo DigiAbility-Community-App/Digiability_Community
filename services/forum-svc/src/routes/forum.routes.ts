@@ -17,7 +17,8 @@ import {
   listBookmarks,
   listNotifications,
   markNotificationRead,
-  markAllNotificationsRead
+  markAllNotificationsRead,
+  getMyStats
 } from '../controllers/forum.controller';
 import { authenticate } from '../middleware/auth.middleware';
 import { upload } from '../middleware/uploadMiddleware';
@@ -76,5 +77,8 @@ router.get('/bookmarks', authenticate, listBookmarks);
 router.get('/notifications', authenticate, listNotifications);
 router.put('/notifications/read-all', authenticate, markAllNotificationsRead);
 router.put('/notifications/:id/read', authenticate, markNotificationRead);
+
+// ── User Stats Route ──────────────────────────────────
+router.get('/me/stats', authenticate, getMyStats);
 
 export default router;

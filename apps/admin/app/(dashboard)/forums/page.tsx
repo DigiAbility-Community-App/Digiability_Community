@@ -2,9 +2,9 @@
 
 import { useEffect, useState } from "react";
 import {
-  Plus, Search, ChevronDown, X, Eye, Settings, Shield, Trash2,
+  Search, ChevronDown, X, Shield, Trash2,
   RefreshCw, AlertTriangle, Users, MessageSquare, CheckCircle2,
-  MoreHorizontal, Heart, Star, ChevronLeft, ChevronRight, Clock, Ban,
+  MoreHorizontal, Star, ChevronRight, Ban,
 } from "lucide-react";
 
 // ─────────────────────────────────────────────
@@ -36,16 +36,36 @@ interface Group {
 }
 
 // ─────────────────────────────────────────────
-// STATIC FORUM DATA (community channels — no DB table, using DB category data)
+// FORUM QUESTION TYPES
 // ─────────────────────────────────────────────
-const FORUM_CHANNELS = [
-  { id: "f1", icon: "🧠", iconBg: "bg-[#EDDCFF]", name: "Autism Support Network", category: "Health", desc: "A safe space for families and individuals on the spectrum to share resources, stories, and local...", members: "2,450", posts: "12.8k", activity: "2m ago", status: "Active" },
-  { id: "f2", icon: "♿", iconBg: "bg-[#EDDCFF]", name: "Accessibility Tech Lab", category: "Technology", desc: "Discussing the latest in screen readers, haptic devices, and web accessibility standards for inclusive...", members: "1,820", posts: "5.4k", activity: "15m ago", status: "Active" },
-  { id: "f3", icon: "🎓", iconBg: "bg-[#EDDCFF]", name: "Inclusive Education Hub", category: "Education", desc: "Bridging the gap between mainstream education and specialized support for diverse learning needs.", members: "3,110", posts: "22.1k", activity: "1h ago", status: "Moderated" },
-  { id: "f4", icon: "❤", iconBg: "bg-[#EDDCFF]", name: "Caregiver Support Circle", category: "Health", desc: "A private circle for primary caregivers to discuss mental health, burnout, and care strategies.", members: "940", posts: "3.2k", activity: "45m ago", status: "Active" },
-  { id: "f5", icon: "⚖", iconBg: "bg-[#EDDCFF]", name: "Legal Rights Advocacy", category: "Legal", desc: "Navigating legal frameworks, disability acts, and international human rights for universal accessibility.", members: "1,430", posts: "4.8k", activity: "5h ago", status: "Inactive" },
-  { id: "f6", icon: "💼", iconBg: "bg-[#EDDCFF]", name: "Employment Opportunities", category: "Employment", desc: "Connecting skilled individuals with disability-friendly employers and remote work opportunities.", members: "4,500", posts: "18.9k", activity: "12s ago", status: "Active" },
-];
+interface ForumQuestion {
+  id: string;
+  title: string;
+  category: string;
+  views: number;
+  answerCount: number;
+  status: "SOLVED" | "UNSOLVED";
+  createdAt: string;
+  isDeleted: boolean;
+  authorName: string;
+  authorEmail: string;
+}
+
+interface ForumAnswer {
+  id: string;
+  content: string;
+  authorName: string;
+  authorEmail: string;
+  isAccepted: boolean;
+  upvotes: number;
+  downvotes: number;
+  createdAt: string;
+}
+
+interface ForumQuestionDetail {
+  question: ForumQuestion & { description: string };
+  answers: ForumAnswer[];
+}
 
 const SUCCESS_STORIES = [
   { id: "s1", img: "https://images.unsplash.com/photo-1523050854058-8df90110c9f1?w=400&q=80", banner: "PENDING REVIEW", bannerColor: "bg-[#D2A500]", category: "EDUCATION MILESTONE", categoryColor: "bg-[#7004DC]", author: "Liam Peterson", role: "PWD·STUDENT", title: "Overcoming Barriers: My Graduation Day Journey", desc: "After four years of dedicated study and navigating complex accessibility challenges, I finally...", time: "Submitted 2 days ago", celebrates: "245 Celebrates", status: "pending" },
@@ -79,19 +99,17 @@ export default function CommunityPage() {
   const [groups, setGroups] = useState<Group[]>([]);
   const [groupsLoading, setGroupsLoading] = useState(false);
 
-  // Forum detail panel
-  const [selectedForum, setSelectedForum] = useState<typeof FORUM_CHANNELS[0] | null>(null);
-
-  // Create Forum modal
-  const [showCreateForum, setShowCreateForum] = useState(false);
-  const [createStep, setCreateStep] = useState(1);
-  const [forumName, setForumName] = useState("");
-  const [forumDesc, setForumDesc] = useState("");
-  const [forumCategory, setForumCategory] = useState("Health & Wellness");
-  const [selectedIcon, setSelectedIcon] = useState("🧠");
+  // Forum data — real questions from DB
+  const [questions, setQuestions] = useState<ForumQuestion[]>([]);
+  const [questionsLoading, setQuestionsLoading] = useState(false);
+  const [forumStats, setForumStats] = useState({ total: 0, solved: 0, unsolved: 0, totalViews: 0, totalAnswers: 0 });
+  const [selectedQuestion, setSelectedQuestion] = useState<ForumQuestionDetail | null>(null);
+  const [questionDetailLoading, setQuestionDetailLoading] = useState(false);
+  const [replyText, setReplyText] = useState("");
+  const [replyPosting, setReplyPosting] = useState(false);
 
   // Suspend Group modal
-  const [suspendGroup, setSuspendGroup] = useState<typeof GROUP_CARDS[0] | null>(null);
+  const [suspendGroup, setSuspendGroup] = useState<(typeof GROUP_CARDS)[0] | null>(null);
   const [suspendReason, setSuspendReason] = useState("Spam/Harassment");
   const [suspendNote, setSuspendNote] = useState("");
 
@@ -134,9 +152,72 @@ export default function CommunityPage() {
     finally { setGroupsLoading(false); }
   };
 
+  const fetchQuestions = async () => {
+    setQuestionsLoading(true);
+    try {
+      const res = await fetch("/api/forums");
+      const data = await res.json();
+      if (data.success) {
+        setQuestions(data.questions);
+        setForumStats(data.stats);
+      }
+    } catch (e) { console.error(e); }
+    finally { setQuestionsLoading(false); }
+  };
+
+  const openQuestion = async (id: string) => {
+    setQuestionDetailLoading(true);
+    setSelectedQuestion(null);
+    setReplyText("");
+    try {
+      const res = await fetch(`/api/forums/${id}`);
+      const data = await res.json();
+      if (data.success) setSelectedQuestion(data);
+    } catch (e) { console.error(e); }
+    finally { setQuestionDetailLoading(false); }
+  };
+
+  const postReply = async () => {
+    if (!selectedQuestion || !replyText.trim()) return;
+    setReplyPosting(true);
+    try {
+      const res = await fetch(`/api/forums/${selectedQuestion.question.id}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: replyText.trim() }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setSelectedQuestion((prev) => prev ? {
+          ...prev,
+          answers: [...prev.answers, data.answer],
+          question: { ...prev.question, answerCount: prev.question.answerCount + 1 },
+        } : prev);
+        setQuestions((prev) => prev.map((q) =>
+          q.id === selectedQuestion.question.id ? { ...q, answerCount: q.answerCount + 1 } : q
+        ));
+        setReplyText("");
+      }
+    } catch (e) { console.error(e); }
+    finally { setReplyPosting(false); }
+  };
+
+  const deleteQuestion = async (questionId: string) => {
+    await fetch("/api/forums", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ questionId }),
+    });
+    setQuestions((prev) => prev.map((q) => q.id === questionId ? { ...q, isDeleted: true } : q));
+    if (selectedQuestion?.question.id === questionId) {
+      setSelectedQuestion((prev) => prev ? { ...prev, question: { ...prev.question, isDeleted: true } } : prev);
+    }
+  };
+
   useEffect(() => {
     if (activeTab === "Reported Content") fetchReports();
     if (activeTab === "Groups") fetchGroups();
+    if (activeTab === "Forums") fetchQuestions();
   }, [activeTab]);
 
   const handleReportAction = async (action: string, report: Report) => {
@@ -150,7 +231,6 @@ export default function CommunityPage() {
   };
 
   const TABS = ["Forums", "Reported Content", "Groups", "Success Stories"] as const;
-  const ICONS = ["🧠", "👥", "⚖", "💼", "🎨", "🏠"];
 
   return (
     <div className="flex flex-col h-full">
@@ -158,12 +238,11 @@ export default function CommunityPage() {
       {/* TOP HEADER */}
       <div className="flex items-center justify-between px-8 py-5 border-b border-gray-100 bg-white">
         <h1 className="text-xl font-extrabold text-[#1A1C1C]">Community Management</h1>
-        <button
-          onClick={() => { setShowCreateForum(true); setCreateStep(1); setForumName(""); setForumDesc(""); }}
-          className="h-10 px-4 rounded-xl bg-[#D2A500] hover:bg-[#b89300] text-white font-bold text-sm flex items-center gap-2 transition shadow-sm"
-        >
-          <Plus className="w-4 h-4" /> Create Forum
-        </button>
+        {activeTab === "Forums" && (
+          <button onClick={fetchQuestions} className="h-10 px-4 rounded-xl border border-gray-200 text-[#4B4355] font-bold text-sm flex items-center gap-2 transition hover:bg-gray-50">
+            <RefreshCw className="w-4 h-4" /> Refresh
+          </button>
+        )}
       </div>
 
       {/* TABS */}
@@ -192,46 +271,69 @@ export default function CommunityPage() {
 
       {/* CONTENT */}
       <div className="flex flex-1 overflow-hidden">
-        <div className={`flex-1 overflow-y-auto p-8 ${(selectedForum || selectedReport) ? "xl:mr-[360px]" : ""}`}>
+        <div className={`flex-1 overflow-y-auto p-8 ${(selectedQuestion || selectedReport) ? "xl:mr-[440px]" : ""}`}>
 
           {/* ── FORUMS TAB ── */}
           {activeTab === "Forums" && (
             <div>
-              <div className="flex items-end justify-between mb-6">
-                <div>
-                  <h2 className="text-2xl font-extrabold text-[#1A1C1C]">Forum Management</h2>
-                </div>
-                <button onClick={() => { setShowCreateForum(true); setCreateStep(1); }} className="h-11 px-5 rounded-2xl bg-[#7004DC] text-white font-bold text-sm flex items-center gap-2 shadow-lg shadow-violet-200/40">
-                  <Plus className="w-4 h-4" /> Create Forum
-                </button>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                {FORUM_CHANNELS.filter(f => !search || f.name.toLowerCase().includes(search.toLowerCase())).map(forum => (
-                  <div key={forum.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 cursor-pointer hover:shadow-md transition" onClick={() => setSelectedForum(selectedForum?.id === forum.id ? null : forum)}>
-                    <div className="flex items-start justify-between mb-3">
-                      <div className="flex items-center gap-3">
-                        <div className={`w-10 h-10 rounded-xl ${forum.iconBg} flex items-center justify-center text-lg`}>{forum.icon}</div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase ${forum.status === "Active" ? "bg-green-100 text-green-700" : forum.status === "Moderated" ? "bg-orange-100 text-orange-700" : "bg-gray-100 text-gray-500"}`}>
-                          {forum.status}
-                        </span>
-                        <button className="w-7 h-7 rounded-full hover:bg-[#F3F3F3] flex items-center justify-center" onClick={e => e.stopPropagation()}><MoreHorizontal className="w-4 h-4 text-slate-400" /></button>
-                      </div>
-                    </div>
-                    <h3 className="font-extrabold text-base text-[#1A1C1C] mb-1">{forum.name}</h3>
-                    <p className="text-xs text-[#7D7387] leading-4 line-clamp-2 mb-3">{forum.desc}</p>
-                    <div className="flex items-center gap-4 text-xs text-[#7D7387] mb-3">
-                      <span>Members <strong className="text-[#1A1C1C]">{forum.members}</strong></span>
-                      <span>Posts <strong className="text-[#1A1C1C]">{forum.posts}</strong></span>
-                      <span>Activity <strong className="text-[#1A1C1C]">{forum.activity}</strong></span>
-                    </div>
-                    <button className="text-sm font-bold text-[#7004DC] flex items-center gap-1 hover:underline" onClick={e => e.stopPropagation()}>
-                      View Details →
-                    </button>
+              {/* Stats row */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                {[
+                  { label: "Total Questions", value: forumStats.total, color: "text-[#7004DC]" },
+                  { label: "Solved", value: forumStats.solved, color: "text-green-600" },
+                  { label: "Unsolved", value: forumStats.unsolved, color: "text-orange-500" },
+                  { label: "Total Answers", value: forumStats.totalAnswers, color: "text-[#1A1C1C]" },
+                ].map(({ label, value, color }) => (
+                  <div key={label} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">{label}</p>
+                    <p className={`text-2xl font-extrabold ${color}`}>{Number(value).toLocaleString()}</p>
                   </div>
                 ))}
               </div>
+
+              {questionsLoading ? (
+                <div className="flex items-center justify-center py-20">
+                  <div className="w-8 h-8 border-4 border-[#7004DC] border-t-transparent rounded-full animate-spin" />
+                </div>
+              ) : (
+                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+                  <div className="grid grid-cols-[3fr_1fr_80px_80px_100px_100px] bg-[#F7F5FA] border-b border-gray-100">
+                    {["QUESTION", "CATEGORY", "VIEWS", "ANSWERS", "STATUS", "POSTED"].map(h => (
+                      <div key={h} className="px-4 py-3 text-[10px] font-bold uppercase tracking-[0.12em] text-[#7D7387]">{h}</div>
+                    ))}
+                  </div>
+                  {questions.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-16 text-slate-400">
+                      <MessageSquare className="w-12 h-12 mb-3 text-slate-300" />
+                      <p className="font-semibold">No forum questions yet</p>
+                    </div>
+                  ) : questions
+                    .filter(q => !search || q.title.toLowerCase().includes(search.toLowerCase()) || q.authorName.toLowerCase().includes(search.toLowerCase()))
+                    .map(q => (
+                      <div
+                        key={q.id}
+                        onClick={() => openQuestion(q.id)}
+                        className={`grid grid-cols-[3fr_1fr_80px_80px_100px_100px] items-center border-b border-gray-100 cursor-pointer transition ${selectedQuestion?.question.id === q.id ? "bg-violet-50" : "hover:bg-[#FAFAFA]"} ${q.isDeleted ? "opacity-50" : ""}`}
+                      >
+                        <div className="px-4 py-3">
+                          <p className="text-sm font-semibold text-[#1A1C1C] line-clamp-1">{q.title}</p>
+                          <p className="text-xs text-[#7D7387] mt-0.5">by {q.authorName}</p>
+                        </div>
+                        <div className="px-4 py-3">
+                          <span className="px-2 py-0.5 rounded-full bg-[#F3F3F3] text-[10px] font-bold text-[#4B4355]">{q.category}</span>
+                        </div>
+                        <div className="px-4 py-3 text-sm text-[#4B4355] font-semibold">{q.views}</div>
+                        <div className="px-4 py-3 text-sm text-[#4B4355] font-semibold">{q.answerCount}</div>
+                        <div className="px-4 py-3">
+                          <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase ${q.isDeleted ? "bg-red-100 text-red-600" : q.status === "SOLVED" ? "bg-green-100 text-green-700" : "bg-orange-100 text-orange-600"}`}>
+                            {q.isDeleted ? "Deleted" : q.status === "SOLVED" ? "Solved" : "Unsolved"}
+                          </span>
+                        </div>
+                        <div className="px-4 py-3 text-xs text-[#7D7387]">{q.createdAt}</div>
+                      </div>
+                    ))}
+                </div>
+              )}
             </div>
           )}
 
@@ -448,58 +550,103 @@ export default function CommunityPage() {
           )}
         </div>
 
-        {/* ── FORUM DETAIL PANEL ── */}
-        {selectedForum && activeTab === "Forums" && (
-          <div className="fixed right-0 top-0 h-full w-[360px] bg-white border-l border-gray-100 shadow-2xl z-40 flex flex-col overflow-y-auto" style={{ top: "0" }}>
-            <div className="flex items-center justify-between p-5 border-b border-gray-100">
-              <h3 className="font-extrabold text-base text-[#1A1C1C]">Forum Details</h3>
-              <button onClick={() => setSelectedForum(null)} className="w-8 h-8 rounded-full hover:bg-gray-100 flex items-center justify-center"><X className="w-4 h-4 text-slate-500" /></button>
+        {/* ── QUESTION DETAIL + REPLY PANEL ── */}
+        {activeTab === "Forums" && (selectedQuestion || questionDetailLoading) && (
+          <div className="fixed right-0 top-0 h-full w-[420px] bg-white border-l border-gray-100 shadow-2xl z-40 flex flex-col" style={{ top: 0 }}>
+            <div className="flex items-center justify-between p-5 border-b border-gray-100 shrink-0">
+              <h3 className="font-extrabold text-base text-[#1A1C1C]">Question Detail</h3>
+              <button onClick={() => setSelectedQuestion(null)} className="w-8 h-8 rounded-full hover:bg-gray-100 flex items-center justify-center"><X className="w-4 h-4 text-slate-500" /></button>
             </div>
-            <div className="p-5 space-y-4">
-              <div className="flex flex-col items-center text-center">
-                <div className={`w-16 h-16 rounded-2xl ${selectedForum.iconBg} flex items-center justify-center text-3xl mb-3`}>{selectedForum.icon}</div>
-                <h3 className="font-extrabold text-lg text-[#1A1C1C]">{selectedForum.name}</h3>
-                <span className="mt-1 px-3 py-1 rounded-full bg-violet-100 text-[#7004DC] text-[10px] font-bold uppercase">{selectedForum.category}</span>
-                <p className="text-xs text-[#7D7387] mt-2 leading-4">{selectedForum.desc}</p>
+
+            {questionDetailLoading ? (
+              <div className="flex items-center justify-center flex-1">
+                <div className="w-8 h-8 border-4 border-[#7004DC] border-t-transparent rounded-full animate-spin" />
               </div>
-              <div className="grid grid-cols-3 gap-3">
-                {[["MEMBERS", selectedForum.members], ["POSTS", selectedForum.posts], ["ACTIVITY", selectedForum.activity]].map(([label, val]) => (
-                  <div key={label} className="bg-[#F7F5FA] rounded-xl p-3 text-center">
-                    <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">{label}</p>
-                    <p className="text-sm font-extrabold text-[#1A1C1C] mt-1">{val}</p>
+            ) : selectedQuestion && (
+              <div className="flex flex-col flex-1 overflow-hidden">
+                {/* Question */}
+                <div className="p-5 border-b border-gray-100 shrink-0 space-y-3">
+                  <div className="flex items-start gap-2">
+                    <span className={`shrink-0 mt-0.5 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${selectedQuestion.question.isDeleted ? "bg-red-100 text-red-600" : selectedQuestion.question.status === "SOLVED" ? "bg-green-100 text-green-700" : "bg-orange-100 text-orange-600"}`}>
+                      {selectedQuestion.question.isDeleted ? "Deleted" : selectedQuestion.question.status === "SOLVED" ? "Solved" : "Unsolved"}
+                    </span>
+                    <span className="px-2 py-0.5 rounded-full bg-[#F3F3F3] text-[10px] font-bold text-[#4B4355]">{selectedQuestion.question.category}</span>
                   </div>
-                ))}
-              </div>
-              <div className="flex gap-2">
-                <span className="px-3 py-1 rounded-full bg-[#F3F3F3] text-[#4B4355] text-[10px] font-bold uppercase flex items-center gap-1">🌐 PUBLIC FORUM</span>
-                <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase ${selectedForum.status === "Active" ? "bg-green-100 text-green-700" : "bg-orange-100 text-orange-700"}`}>● {selectedForum.status}</span>
-              </div>
-              <div>
-                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">MODERATION OVERSIGHT</p>
-                <div className="space-y-2">
-                  {[["⚠ Reported posts", "3", "text-red-500"], ["🚫 Flagged users", "1", "text-[#1A1C1C]"], ["🕐 Last moderation", "2 hours ago", "text-[#1A1C1C]"]].map(([label, val, valClass]) => (
-                    <div key={label as string} className="flex items-center justify-between text-sm">
-                      <span className="text-[#7D7387]">{label}</span>
-                      <span className={`font-bold ${valClass}`}>{val}</span>
+                  <h4 className="font-extrabold text-base text-[#1A1C1C] leading-5">{selectedQuestion.question.title}</h4>
+                  {selectedQuestion.question.description && (
+                    <p className="text-sm text-[#4B4355] leading-5">{selectedQuestion.question.description}</p>
+                  )}
+                  <div className="flex items-center gap-4 text-xs text-[#7D7387]">
+                    <span>👤 {selectedQuestion.question.authorName}</span>
+                    <span>👁 {selectedQuestion.question.views} views</span>
+                    <span>🕐 {selectedQuestion.question.createdAt}</span>
+                  </div>
+                  {!selectedQuestion.question.isDeleted && (
+                    <button
+                      onClick={() => deleteQuestion(selectedQuestion.question.id)}
+                      className="flex items-center gap-1.5 text-xs font-bold text-red-500 hover:underline"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" /> Delete question
+                    </button>
+                  )}
+                </div>
+
+                {/* Answers */}
+                <div className="flex-1 overflow-y-auto p-5 space-y-4">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                    {selectedQuestion.answers.length} {selectedQuestion.answers.length === 1 ? "ANSWER" : "ANSWERS"}
+                  </p>
+                  {selectedQuestion.answers.length === 0 && (
+                    <p className="text-sm text-slate-400 text-center py-6">No answers yet. Be the first to reply.</p>
+                  )}
+                  {selectedQuestion.answers.map((answer) => (
+                    <div key={answer.id} className={`rounded-xl p-4 border ${answer.authorEmail === "admin@digiability.com" ? "border-[#7004DC]/20 bg-violet-50" : "border-gray-100 bg-[#F7F5FA]"}`}>
+                      <div className="flex items-center gap-2 mb-2">
+                        <div className="w-7 h-7 rounded-full bg-[#EDDCFF] text-[#7004DC] flex items-center justify-center text-xs font-bold shrink-0">
+                          {answer.authorName[0]}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-bold text-[#1A1C1C] truncate">{answer.authorName}</p>
+                          <p className="text-[10px] text-[#7D7387]">{answer.createdAt}</p>
+                        </div>
+                        {answer.authorEmail === "admin@digiability.com" && (
+                          <span className="px-2 py-0.5 rounded-full bg-[#7004DC] text-white text-[9px] font-bold uppercase shrink-0">Admin</span>
+                        )}
+                        {answer.isAccepted && (
+                          <CheckCircle2 className="w-4 h-4 text-green-500 shrink-0" />
+                        )}
+                      </div>
+                      <p className="text-sm text-[#1A1C1C] leading-5">{answer.content}</p>
+                      <div className="flex items-center gap-3 mt-2 text-xs text-[#7D7387]">
+                        <span>👍 {answer.upvotes}</span>
+                        <span>👎 {answer.downvotes}</span>
+                      </div>
                     </div>
                   ))}
                 </div>
+
+                {/* Admin Reply Box */}
+                {!selectedQuestion.question.isDeleted && (
+                  <div className="p-5 border-t border-gray-100 shrink-0 space-y-3">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">ADMIN REPLY</p>
+                    <textarea
+                      value={replyText}
+                      onChange={(e) => setReplyText(e.target.value)}
+                      placeholder="Write an official admin reply..."
+                      rows={3}
+                      className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm outline-none focus:border-[#7004DC] resize-none"
+                    />
+                    <button
+                      onClick={postReply}
+                      disabled={!replyText.trim() || replyPosting}
+                      className="w-full h-11 rounded-xl bg-[#7004DC] hover:bg-[#5c03b7] disabled:bg-violet-200 text-white font-bold text-sm transition flex items-center justify-center gap-2"
+                    >
+                      {replyPosting ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <>➤ Post Reply</>}
+                    </button>
+                  </div>
+                )}
               </div>
-              <div className="space-y-2">
-                <button className="w-full h-10 rounded-xl border border-[#7004DC] text-[#7004DC] text-sm font-bold hover:bg-violet-50 transition flex items-center justify-center gap-2"><Eye className="w-4 h-4" /> View Forum</button>
-                <button className="w-full h-10 rounded-xl border border-gray-200 text-[#4B4355] text-sm font-bold hover:bg-gray-50 transition flex items-center justify-center gap-2"><Settings className="w-4 h-4" /> Edit Settings</button>
-                <button className="w-full h-10 rounded-xl bg-[#D2A500] hover:bg-[#b89300] text-[#4F3D00] text-sm font-bold transition flex items-center justify-center gap-2">⚖ Moderate Forum</button>
-                <button className="w-full h-10 rounded-xl bg-[#D2A500]/80 hover:bg-[#b89300]/80 text-[#4F3D00] text-sm font-bold transition flex items-center justify-center gap-2">🚫 Suspend Forum</button>
-                <button className="w-full h-10 rounded-xl border border-red-300 text-red-600 text-sm font-bold hover:bg-red-50 transition flex items-center justify-center gap-2"><Trash2 className="w-4 h-4" /> Delete Forum</button>
-              </div>
-              <div className="border-t border-gray-100 pt-3 space-y-2">
-                {["View Members", "View Recent Posts", "View Moderation Queue"].map(label => (
-                  <button key={label} className="w-full flex items-center justify-between py-2 text-sm font-bold text-[#7004DC] hover:underline">
-                    {label} <ChevronRight className="w-4 h-4" />
-                  </button>
-                ))}
-              </div>
-            </div>
+            )}
           </div>
         )}
 
@@ -562,72 +709,6 @@ export default function CommunityPage() {
       </div>
 
       {/* ────────────────── MODALS ────────────────── */}
-
-      {/* CREATE FORUM MODAL */}
-      {showCreateForum && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-          <div className="bg-white rounded-[24px] w-full max-w-lg shadow-2xl overflow-hidden">
-            <div className="flex items-center justify-between px-7 py-5 border-b border-gray-100">
-              <h3 className="text-lg font-extrabold text-[#1A1C1C]">Create New Forum</h3>
-              <button onClick={() => setShowCreateForum(false)} className="w-8 h-8 rounded-full hover:bg-gray-100 flex items-center justify-center"><X className="w-4 h-4 text-slate-500" /></button>
-            </div>
-            <div className="px-7 py-5 space-y-5">
-              <div className="flex items-center justify-between">
-                <p className="text-sm font-semibold text-[#7D7387]">Step {createStep} of 3</p>
-                <p className="text-sm font-bold text-[#7004DC]">{["Basic Information", "Settings & Access", "Review & Publish"][createStep - 1]}</p>
-              </div>
-              <div className="h-1.5 bg-[#F3F3F3] rounded-full">
-                <div className="h-full bg-[#7004DC] rounded-full transition-all" style={{ width: `${(createStep / 3) * 100}%` }} />
-              </div>
-
-              {createStep === 1 && (
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-semibold text-[#1A1C1C] mb-2">Forum Name</label>
-                    <input value={forumName} onChange={e => setForumName(e.target.value)} placeholder="e.g., Autism Support Network" className="w-full h-12 rounded-xl border border-gray-200 px-4 text-sm outline-none focus:border-[#8A38F5]" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-semibold text-[#1A1C1C] mb-2">Description</label>
-                    <textarea value={forumDesc} onChange={e => setForumDesc(e.target.value)} rows={4} placeholder="Describe the purpose and goals of this forum..." className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm outline-none focus:border-[#8A38F5] resize-none" />
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-semibold text-[#1A1C1C] mb-2">Category</label>
-                      <div className="relative">
-                        <select value={forumCategory} onChange={e => setForumCategory(e.target.value)} className="w-full h-12 rounded-xl border border-gray-200 px-4 text-sm outline-none focus:border-[#8A38F5] bg-white appearance-none pr-8">
-                          {["Health & Wellness", "Technology", "Education", "Legal", "Employment", "Social"].map(c => <option key={c}>{c}</option>)}
-                        </select>
-                        <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-                      </div>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-semibold text-[#1A1C1C] mb-2">Icon Selection</label>
-                      <div className="flex flex-wrap gap-2">
-                        {ICONS.map(icon => (
-                          <button key={icon} onClick={() => setSelectedIcon(icon)} className={`w-10 h-10 rounded-xl text-xl flex items-center justify-center border-2 transition ${selectedIcon === icon ? "border-[#7004DC] bg-violet-50" : "border-gray-200 hover:border-gray-300"}`}>
-                            {icon}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-              {createStep > 1 && (
-                <div className="py-8 text-center text-slate-400">
-                  <p className="font-semibold">Step {createStep} — coming soon</p>
-                </div>
-              )}
-            </div>
-            <div className="px-7 py-5 border-t border-gray-100 flex justify-end gap-3">
-              <button onClick={() => { if (createStep > 1) setCreateStep(s => s - 1); else setShowCreateForum(false); }} className="h-11 px-5 rounded-xl border border-gray-200 text-[#4B4355] font-semibold text-sm hover:bg-gray-50">Cancel</button>
-              <button onClick={() => { if (createStep < 3) setCreateStep(s => s + 1); else setShowCreateForum(false); }} disabled={createStep === 1 && !forumName.trim()} className="h-11 px-5 rounded-xl bg-[#7004DC] hover:bg-[#5c03b7] disabled:bg-violet-200 text-white font-bold text-sm transition">
-                {createStep === 3 ? "Publish Forum" : "Next Step"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* SUSPEND GROUP MODAL */}
       {suspendGroup && (

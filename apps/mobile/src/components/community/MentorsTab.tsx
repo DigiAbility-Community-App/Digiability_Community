@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   RefreshControl,
   Alert,
+  Platform,
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { Star, MapPin, MessageCircle, Search, UserCheck } from "lucide-react-native";
@@ -330,6 +331,7 @@ const styles = StyleSheet.create({
   listContent: {
     padding: 16,
     paddingTop: 8,
+    paddingBottom: Platform.OS === "ios" ? 120 : 100,
   },
 
   // ── Mentor Card ──────────────────────────

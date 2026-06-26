@@ -8,7 +8,8 @@ import {
   TextInput,
   ScrollView,
   ActivityIndicator,
-  RefreshControl
+  RefreshControl,
+  Platform
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { Search, Plus } from "lucide-react-native";
@@ -326,12 +327,12 @@ const styles = StyleSheet.create({
   },
   listContent: {
     padding: 16,
-    paddingBottom: 100
+    paddingBottom: Platform.OS === "ios" ? 190 : 170
   },
   fab: {
     position: "absolute",
     right: 20,
-    bottom: 20,
+    bottom: Platform.OS === "ios" ? 120 : 100,
     width: 56,
     height: 56,
     borderRadius: 28,

@@ -21,7 +21,7 @@ export async function GET(request: NextRequest) {
           u.name as "authorName",
           u.email as "authorEmail"
         FROM forum_questions fq
-        JOIN users u ON fq."authorId" = u.id
+        LEFT JOIN users u ON fq."authorId" = u.id
         ORDER BY fq."createdAt" DESC
         LIMIT 100
       `),

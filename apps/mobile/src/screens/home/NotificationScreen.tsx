@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
     View,
     StyleSheet,
@@ -6,6 +6,7 @@ import {
     TouchableOpacity,
     ActivityIndicator,
     RefreshControl,
+    Alert,
 } from "react-native";
 
 import { useNavigation } from "@react-navigation/native";
@@ -15,98 +16,130 @@ import ScreenWrapper from "../../components/layout/ScreenWrapper";
 import AppHeader from "../../components/layout/AppHeader";
 import AppFooter from "../../components/layout/AppFooter";
 import { forumService } from "../../services/forumService";
+import { useChatStore } from "../../store/chatStore";
 
 // ─────────────────────────────────────────────
 // Types
 // ─────────────────────────────────────────────
-type FilterCategory = "all" | "community" | "events" | "alerts";
 
-interface ApiNotification {
+type FilterCategory = "all" | "community" | "invites" | "alerts";
+
+interface UnifiedNotification {
     id: string;
-    userId: string;
     type: string;
     title: string;
     message: string;
-    read: boolean;
-    relatedId: string | null;
-    createdAt: string;
-}
-
-interface DisplayNotification {
-    id: string;
-    title: string;
-    message: string;
     time: string;
+    rawCreatedAt: number;  // for sorting
     filterType: FilterCategory;
     read: boolean;
     icon: string;
     iconBg: string;
-    iconColor: string;
+    /** ID to navigate to: questionId for forum notifs, inviteId for invites */
+    relatedId: string | null;
+    isInvite: boolean;
 }
 
 // ─────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────
+
 function mapNotifType(type: string): FilterCategory {
-    if (type.startsWith("ADMIN_ANNOUNCEMENT")) return "events";
-    if (type.startsWith("ADMIN_ALERT") || type === "MODERATION") return "alerts";
-    if (type.startsWith("ADMIN_")) return "alerts";
-    return "community"; // ANSWER, ACCEPTED, MENTION, LIKE
+    if (type === "INVITE") return "invites";
+    if (type.startsWith("ADMIN_") || type === "MODERATION") return "alerts";
+    return "community";
 }
 
-function iconForType(type: string): { icon: string; iconBg: string; iconColor: string } {
-    if (type === "ANSWER" || type === "ACCEPTED") return { icon: "💬", iconBg: "#F1DBFF", iconColor: "#500088" };
-    if (type === "MENTION") return { icon: "📣", iconBg: "#FFF3CD", iconColor: "#856404" };
-    if (type === "LIKE") return { icon: "❤️", iconBg: "#D1FAE5", iconColor: "#059669" };
-    if (type === "MODERATION") return { icon: "🚨", iconBg: "#FFDAD6", iconColor: "#BA1A1A" };
-    if (type.includes("ALERT")) return { icon: "⚠️", iconBg: "#FFF3CD", iconColor: "#855300" };
-    if (type.includes("ANNOUNCEMENT")) return { icon: "📢", iconBg: "#DBEAFE", iconColor: "#1D4ED8" };
-    return { icon: "🔔", iconBg: "#F1DBFF", iconColor: "#500088" };
+function iconForType(type: string): { icon: string; iconBg: string } {
+    switch (type) {
+        case "ANSWER":        return { icon: "💬", iconBg: "#F1DBFF" };
+        case "ACCEPTED":      return { icon: "✅", iconBg: "#D1FAE5" };
+        case "MENTION":       return { icon: "📣", iconBg: "#FFF3CD" };
+        case "LIKE":          return { icon: "❤️", iconBg: "#FCE7F3" };
+        case "INVITE":        return { icon: "✉️", iconBg: "#DBEAFE" };
+        case "MODERATION":    return { icon: "🚨", iconBg: "#FFDAD6" };
+        default:
+            if (type.includes("ALERT"))        return { icon: "⚠️", iconBg: "#FFF3CD" };
+            if (type.includes("ANNOUNCEMENT")) return { icon: "📢", iconBg: "#DBEAFE" };
+            return { icon: "🔔", iconBg: "#F1DBFF" };
+    }
 }
 
 function formatTime(iso: string): string {
     const diff = Date.now() - new Date(iso).getTime();
     const mins = Math.floor(diff / 60000);
     if (mins < 1) return "Just now";
-    if (mins < 60) return `${mins} min ago`;
+    if (mins < 60) return `${mins}m ago`;
     const hrs = Math.floor(mins / 60);
-    if (hrs < 24) return `${hrs} hour${hrs > 1 ? "s" : ""} ago`;
+    if (hrs < 24) return `${hrs}h ago`;
     const days = Math.floor(hrs / 24);
-    if (days === 1) return "Yesterday";
-    return `${days} days ago`;
+    return days === 1 ? "Yesterday" : `${days}d ago`;
 }
 
-function toDisplay(n: ApiNotification): DisplayNotification {
-    return {
-        id: n.id,
-        title: n.title,
-        message: n.message,
-        time: formatTime(n.createdAt),
-        filterType: mapNotifType(n.type),
-        read: n.read,
-        ...iconForType(n.type),
-    };
-}
+const FILTER_LABELS: Record<FilterCategory, string> = {
+    all: "All",
+    community: "Forum",
+    invites: "Invites",
+    alerts: "Alerts",
+};
 
 // ─────────────────────────────────────────────
 // Screen
 // ─────────────────────────────────────────────
+
 const NotificationsScreen = () => {
     const navigation = useNavigation<any>();
     const { colors, spacing, highContrast } = useTheme();
 
+    const pendingInvites = useChatStore((s) => s.pendingInvites);
+
     const [activeFilter, setActiveFilter] = useState<FilterCategory>("all");
-    const [notifications, setNotifications] = useState<DisplayNotification[]>([]);
+    const [forumNotifs, setForumNotifs] = useState<UnifiedNotification[]>([]);
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
     const [error, setError] = useState("");
 
+    // ── Build invite notifications from chat store ──
+    const inviteNotifs: UnifiedNotification[] = useMemo(() =>
+        pendingInvites.map((inv) => ({
+            id: `invite-${inv.id}`,
+            type: "INVITE",
+            title: `Invite: ${inv.conversation?.name ?? "Group"}`,
+            message: inv.message
+                ? inv.message
+                : `You've been invited to join as ${inv.role.toLowerCase()}`,
+            time: formatTime(inv.createdAt),
+            rawCreatedAt: new Date(inv.createdAt).getTime(),
+            filterType: "invites" as FilterCategory,
+            read: false,
+            ...iconForType("INVITE"),
+            relatedId: inv.id,
+            isInvite: true,
+        })),
+        [pendingInvites]
+    );
+
+    // ── Fetch forum notifications ──
     const fetchNotifications = useCallback(async (silent = false) => {
         if (!silent) setLoading(true);
         setError("");
         try {
-            const data: ApiNotification[] = await forumService.listNotifications();
-            setNotifications(data.map(toDisplay));
+            const data = await forumService.listNotifications();
+            setForumNotifs(
+                data.map((n: any) => ({
+                    id: n.id,
+                    type: n.type,
+                    title: n.title,
+                    message: n.message,
+                    time: formatTime(n.createdAt),
+                    rawCreatedAt: new Date(n.createdAt).getTime(),
+                    filterType: mapNotifType(n.type),
+                    read: n.read,
+                    ...iconForType(n.type),
+                    relatedId: n.relatedId ?? null,
+                    isInvite: false,
+                }))
+            );
         } catch {
             setError("Could not load notifications. Pull down to retry.");
         } finally {
@@ -117,39 +150,70 @@ const NotificationsScreen = () => {
 
     useEffect(() => { fetchNotifications(); }, [fetchNotifications]);
 
+    // ── Merge + sort newest first ──
+    const allNotifications = useMemo(() =>
+        [...forumNotifs, ...inviteNotifs].sort((a, b) => b.rawCreatedAt - a.rawCreatedAt),
+        [forumNotifs, inviteNotifs]
+    );
+
+    const filtered = useMemo(() =>
+        activeFilter === "all"
+            ? allNotifications
+            : allNotifications.filter((n) => n.filterType === activeFilter),
+        [allNotifications, activeFilter]
+    );
+
+    const hasUnread = allNotifications.some((n) => !n.read);
+    const inviteCount = inviteNotifs.length;
+
+    // ── Actions ──
     const handleMarkAllRead = async () => {
         try {
             await forumService.markAllNotificationsRead();
-            setNotifications(prev => prev.map(n => ({ ...n, read: true })));
-        } catch {
-            // silently ignore
+            setForumNotifs((prev) => prev.map((n) => ({ ...n, read: true })));
+        } catch { /* silent */ }
+    };
+
+    const handleNotificationPress = async (item: UnifiedNotification) => {
+        // 1. Mark forum notification as read
+        if (!item.isInvite && !item.read) {
+            try {
+                await forumService.markNotificationRead(item.id);
+                setForumNotifs((prev) =>
+                    prev.map((n) => n.id === item.id ? { ...n, read: true } : n)
+                );
+            } catch { /* silent */ }
+        }
+
+        // 2. Navigate based on type
+        if (item.type === "INVITE") {
+            // Open the invites screen where user can accept/decline
+            navigation.navigate("Chats", { screen: "Invites" });
+            return;
+        }
+
+        if (
+            (item.type === "ANSWER" || item.type === "ACCEPTED" ||
+             item.type === "MENTION" || item.type === "LIKE") &&
+            item.relatedId
+        ) {
+            // Open the forum question thread
+            navigation.navigate("QuestionDetails", { questionId: item.relatedId });
+            return;
+        }
+
+        if (item.type === "MODERATION" || item.type.startsWith("ADMIN_")) {
+            // No deep-link target — show full content in alert
+            Alert.alert(item.title, item.message, [{ text: "OK" }]);
+            return;
         }
     };
 
-    const handleMarkRead = async (id: string) => {
-        const item = notifications.find(n => n.id === id);
-        if (!item || item.read) return;
-        try {
-            await forumService.markNotificationRead(id);
-            setNotifications(prev =>
-                prev.map(n => n.id === id ? { ...n, read: true } : n)
-            );
-        } catch {
-            // silently ignore
-        }
-    };
-
-    const filtered = activeFilter === "all"
-        ? notifications
-        : notifications.filter(n => n.filterType === activeFilter);
-
-    const cardBorder = (item: DisplayNotification) => {
+    const cardBorderStyle = (item: UnifiedNotification) => {
         if (highContrast) return { borderWidth: 2, borderColor: "#000000" };
         if (!item.read) return { borderLeftWidth: 4, borderLeftColor: colors.primary };
         return { borderWidth: 1, borderColor: "rgba(0,0,0,0.05)" };
     };
-
-    const hasUnread = notifications.some(n => !n.read);
 
     return (
         <ScreenWrapper>
@@ -162,7 +226,6 @@ const NotificationsScreen = () => {
                         <TouchableOpacity
                             style={styles.markAllTouch}
                             onPress={handleMarkAllRead}
-                            accessible={true}
                             accessibilityRole="button"
                             accessibilityLabel="Mark all as read"
                             activeOpacity={0.7}
@@ -173,15 +236,15 @@ const NotificationsScreen = () => {
                 }
             />
 
-            {/* FILTERS */}
+            {/* FILTER PILLS */}
             <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}
                 style={[styles.filterContainer, { paddingHorizontal: spacing.lg }]}
             >
-                {(["all", "community", "events", "alerts"] as FilterCategory[]).map((value) => {
-                    const label = value.charAt(0).toUpperCase() + value.slice(1);
+                {(Object.keys(FILTER_LABELS) as FilterCategory[]).map((value) => {
                     const active = activeFilter === value;
+                    const showBadge = value === "invites" && inviteCount > 0;
                     return (
                         <TouchableOpacity
                             key={value}
@@ -192,13 +255,12 @@ const NotificationsScreen = () => {
                                 highContrast && {
                                     borderWidth: 2,
                                     borderColor: active ? "#000000" : "#888888",
-                                }
+                                },
                             ]}
                             onPress={() => setActiveFilter(value)}
-                            accessible={true}
                             accessibilityRole="tab"
                             accessibilityState={{ selected: active }}
-                            accessibilityLabel={`${label} filter`}
+                            accessibilityLabel={`${FILTER_LABELS[value]} filter`}
                         >
                             <AccessibleText
                                 style={[
@@ -207,8 +269,13 @@ const NotificationsScreen = () => {
                                     active && styles.activeFilterText,
                                 ]}
                             >
-                                {label}
+                                {FILTER_LABELS[value]}
                             </AccessibleText>
+                            {showBadge && (
+                                <View style={styles.filterBadge}>
+                                    <AccessibleText style={styles.filterBadgeText}>{inviteCount}</AccessibleText>
+                                </View>
+                            )}
                         </TouchableOpacity>
                     );
                 })}
@@ -246,8 +313,8 @@ const NotificationsScreen = () => {
                             </AccessibleText>
                             <AccessibleText variant="body" style={[styles.emptyText, { color: colors.subtext }]}>
                                 {activeFilter === "all"
-                                    ? "You don't have any notifications yet."
-                                    : `No ${activeFilter} notifications.`}
+                                    ? "You're all caught up!"
+                                    : `No ${FILTER_LABELS[activeFilter].toLowerCase()} notifications yet.`}
                             </AccessibleText>
                         </View>
                     ) : (
@@ -255,49 +322,64 @@ const NotificationsScreen = () => {
                             <TouchableOpacity
                                 key={item.id}
                                 style={[
-                                    styles.notificationCard,
+                                    styles.card,
                                     { backgroundColor: colors.card },
-                                    cardBorder(item),
+                                    cardBorderStyle(item),
+                                    !item.read && { backgroundColor: highContrast ? colors.card : "rgba(80,0,136,0.04)" },
                                 ]}
-                                onPress={() => handleMarkRead(item.id)}
-                                accessible={true}
+                                onPress={() => handleNotificationPress(item)}
+                                activeOpacity={0.75}
                                 accessibilityRole="button"
                                 accessibilityLabel={`${item.title}. ${item.time}. ${item.read ? "Read" : "Unread"}`}
-                                accessibilityHint="Double tap to mark as read"
+                                accessibilityHint={
+                                    item.type === "INVITE"
+                                        ? "Double tap to view invite"
+                                        : item.relatedId
+                                            ? "Double tap to open"
+                                            : "Double tap to read"
+                                }
                             >
-                                {/* LEFT */}
-                                <View style={styles.notificationLeft}>
-                                    <View
+                                {/* ICON */}
+                                <View
+                                    style={[
+                                        styles.iconWrap,
+                                        { backgroundColor: highContrast ? "#FFFFFF" : item.iconBg },
+                                        highContrast && { borderWidth: 2, borderColor: "#000000" },
+                                    ]}
+                                >
+                                    <AccessibleText style={{ fontSize: 20 }}>{item.icon}</AccessibleText>
+                                </View>
+
+                                {/* CONTENT */}
+                                <View style={styles.contentWrap}>
+                                    <AccessibleText
                                         style={[
-                                            styles.iconWrap,
-                                            { backgroundColor: highContrast ? "#FFFFFF" : item.iconBg },
-                                            highContrast && { borderWidth: 2, borderColor: "#000000" }
+                                            styles.cardTitle,
+                                            { color: colors.text },
+                                            item.read && styles.readTitle,
                                         ]}
+                                        numberOfLines={2}
                                     >
-                                        <AccessibleText style={{ fontSize: 18 }}>{item.icon}</AccessibleText>
-                                    </View>
-                                    <View style={styles.contentWrap}>
+                                        {item.title}
+                                    </AccessibleText>
+                                    {!!item.message && (
                                         <AccessibleText
-                                            style={[
-                                                styles.notificationTitle,
-                                                { color: colors.text },
-                                                item.read && styles.readTitle,
-                                            ]}
+                                            style={[styles.cardMessage, { color: colors.subtext }]}
                                             numberOfLines={2}
                                         >
-                                            {item.title}
+                                            {item.message}
                                         </AccessibleText>
-                                        {item.message ? (
-                                            <AccessibleText
-                                                style={[styles.notificationMessage, { color: colors.subtext }]}
-                                                numberOfLines={1}
-                                            >
-                                                {item.message}
-                                            </AccessibleText>
-                                        ) : null}
-                                        <AccessibleText style={[styles.notificationTime, { color: colors.subtext }]}>
+                                    )}
+                                    <View style={styles.metaRow}>
+                                        <AccessibleText style={[styles.cardTime, { color: colors.subtext }]}>
                                             {item.time}
                                         </AccessibleText>
+                                        {/* Action hint for actionable types */}
+                                        {(item.type === "INVITE" || !!item.relatedId) && (
+                                            <AccessibleText style={[styles.actionHint, { color: colors.primary }]}>
+                                                {item.type === "INVITE" ? "View Invite →" : "Open →"}
+                                            </AccessibleText>
+                                        )}
                                     </View>
                                 </View>
 
@@ -312,7 +394,6 @@ const NotificationsScreen = () => {
                 </ScrollView>
             )}
 
-            {/* NAVBAR */}
             <AppFooter activeTab="Home" />
         </ScreenWrapper>
     );
@@ -321,8 +402,9 @@ const NotificationsScreen = () => {
 export default NotificationsScreen;
 
 // ─────────────────────────────────────────────
-// STYLES
+// Styles
 // ─────────────────────────────────────────────
+
 const styles = StyleSheet.create({
     markAllTouch: {
         minWidth: 48,
@@ -336,16 +418,18 @@ const styles = StyleSheet.create({
         fontSize: 14,
     },
     filterContainer: {
-        maxHeight: 64,
-        paddingTop: 16,
+        maxHeight: 68,
+        paddingTop: 14,
     },
     filterPill: {
-        height: 40,
-        paddingHorizontal: 24,
+        height: 38,
+        paddingHorizontal: 20,
         borderRadius: 999,
         justifyContent: "center",
         alignItems: "center",
-        marginRight: 12,
+        marginRight: 10,
+        flexDirection: "row",
+        gap: 6,
     },
     activeFilterPill: {
         shadowColor: "#500088",
@@ -360,6 +444,20 @@ const styles = StyleSheet.create({
     activeFilterText: {
         fontWeight: "700",
     },
+    filterBadge: {
+        backgroundColor: "#DC2626",
+        borderRadius: 999,
+        minWidth: 18,
+        height: 18,
+        justifyContent: "center",
+        alignItems: "center",
+        paddingHorizontal: 4,
+    },
+    filterBadgeText: {
+        color: "#FFFFFF",
+        fontSize: 10,
+        fontWeight: "800",
+    },
     centered: {
         flex: 1,
         justifyContent: "center",
@@ -368,57 +466,64 @@ const styles = StyleSheet.create({
     listContainer: {
         paddingTop: 12,
     },
-    notificationCard: {
-        minHeight: 80,
-        borderRadius: 12,
-        padding: 16,
+    card: {
+        borderRadius: 14,
+        padding: 14,
         flexDirection: "row",
-        justifyContent: "space-between",
-        alignItems: "center",
-        marginBottom: 12,
-    },
-    notificationLeft: {
-        flexDirection: "row",
-        alignItems: "center",
-        flex: 1,
+        alignItems: "flex-start",
+        marginBottom: 10,
     },
     iconWrap: {
         width: 48,
         height: 48,
-        borderRadius: 12,
+        borderRadius: 14,
         justifyContent: "center",
         alignItems: "center",
-        marginRight: 16,
+        marginRight: 14,
+        flexShrink: 0,
     },
     contentWrap: {
         flex: 1,
+        minWidth: 0,
     },
-    notificationTitle: {
+    cardTitle: {
         fontSize: 15,
         fontWeight: "700",
         lineHeight: 20,
-        marginBottom: 4,
+        marginBottom: 3,
     },
     readTitle: {
-        fontWeight: "600",
+        fontWeight: "500",
     },
-    notificationMessage: {
-        fontSize: 12,
-        lineHeight: 16,
-        marginBottom: 4,
+    cardMessage: {
+        fontSize: 13,
+        lineHeight: 18,
+        marginBottom: 5,
     },
-    notificationTime: {
+    metaRow: {
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "space-between",
+    },
+    cardTime: {
         fontSize: 12,
+    },
+    actionHint: {
+        fontSize: 12,
+        fontWeight: "700",
     },
     unreadDot: {
         width: 10,
         height: 10,
         borderRadius: 999,
-        marginLeft: 12,
+        marginLeft: 10,
+        marginTop: 6,
+        flexShrink: 0,
     },
     emptyState: {
         marginTop: 80,
         alignItems: "center",
+        paddingHorizontal: 24,
     },
     emptyEmoji: {
         fontSize: 48,
@@ -432,6 +537,5 @@ const styles = StyleSheet.create({
     emptyText: {
         textAlign: "center",
         lineHeight: 22,
-        paddingHorizontal: 24,
     },
 });

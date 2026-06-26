@@ -140,25 +140,21 @@ export const chatService = {
     return res.data.data;
   },
 
-  createGroup: async (name: string, description: string, memberIds: string[]) => {
-    // Only pass memberIds on create to match chat-svc logic (which will only add creator).
-    // Note: The UI will follow up by sending invites to these memberIds.
+  createGroup: async (name: string, description: string) => {
+    // Create the group with only the creator as a member.
+    // Invites are sent separately so members must explicitly accept before joining.
     const res = await apiClient.post(`${CHAT_BASE_URL}/api/conversations`, {
       type: 'GROUP',
       subType: 'GENERAL',
       name,
       description,
-      memberIds: [], // We rely on invites now, but schema allows passing them
+      memberIds: [],
     });
     return res.data.data;
   },
 
-  createCareCircle: async (
-    name: string,
-    description: string,
-    memberRoles: { userId: string; role: string }[]
-  ) => {
-    // Care Circles add members via invites too
+  createCareCircle: async (name: string, description: string) => {
+    // Same invite-based flow — members join only after accepting the invite.
     const res = await apiClient.post(`${CHAT_BASE_URL}/api/conversations`, {
       type: 'GROUP',
       subType: 'CARE_CIRCLE',

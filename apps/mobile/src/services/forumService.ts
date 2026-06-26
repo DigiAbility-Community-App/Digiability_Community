@@ -257,5 +257,10 @@ export const forumService = {
    */
   markAllNotificationsRead: async () => {
     await apiClient.put(`${FORUM_BASE_URL}/api/forum/notifications/read-all`);
-  }
+  },
+
+  getMyStats: async (): Promise<{ questionsCount: number; answersCount: number; reputation: number }> => {
+    const res = await apiClient.get(`${FORUM_BASE_URL}/api/forum/me/stats`);
+    return res.data.data;
+  },
 };

@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  FlatList, ActivityIndicator, RefreshControl, Alert,
+  FlatList, ActivityIndicator, RefreshControl, Alert, Platform,
 } from "react-native";
 import { HeartHandshake, Plus, ChevronRight, LogIn } from "lucide-react-native";
 import { useNavigation } from "@react-navigation/native";
@@ -199,7 +199,7 @@ export default CareCirclesTab;
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#FAF8FF" },
   centered: { flex: 1, justifyContent: "center", alignItems: "center", padding: 24, paddingTop: 60 },
-  listContent: { padding: 16, paddingBottom: 100 },
+  listContent: { padding: 16, paddingBottom: Platform.OS === "ios" ? 190 : 170 },
   card: {
     flexDirection: "row", alignItems: "center",
     backgroundColor: "#FFFFFF", padding: 16, borderRadius: 16, marginBottom: 12,
@@ -237,7 +237,7 @@ const styles = StyleSheet.create({
   },
   createBtnText: { color: "#FFFFFF", fontSize: 15, fontWeight: "700", marginLeft: 10 },
   fab: {
-    position: "absolute", bottom: 24, right: 24,
+    position: "absolute", bottom: Platform.OS === "ios" ? 120 : 100, right: 24,
     width: 56, height: 56, borderRadius: 28,
     backgroundColor: "#500088",
     justifyContent: "center", alignItems: "center",
