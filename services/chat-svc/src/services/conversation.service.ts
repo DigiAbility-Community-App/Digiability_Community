@@ -8,6 +8,8 @@
 import { conversationRepository, CreateConversationInput, ConversationWithMembers } from "../repositories/conversation.repository";
 import { MemberRole, ConversationType, GroupSubType } from "../generated/client";
 import { logger } from "../config/logger";
+import { connectionManager } from "../websocket/connection-manager";
+import { WS_EVENTS } from "../types/ws-events";
 
 // Roles that have admin-level access in Care Circles
 const CARE_CIRCLE_ADMIN_ROLES: MemberRole[] = ["OWNER", "CAREGIVER"];
@@ -24,6 +26,14 @@ function hasAdminAccess(role: MemberRole, subType?: GroupSubType | null): boolea
     return CARE_CIRCLE_ADMIN_ROLES.includes(role);
   }
   return GROUP_ADMIN_ROLES.includes(role);
+}
+
+async function broadcastToConversation(conversationId: string, event: string, data: any): Promise<void> {
+  const memberIds = await conversationRepository.getMemberIds(conversationId);
+  const envelope = { event, data, timestamp: Date.now() };
+  for (const memberId of memberIds) {
+    connectionManager.sendToUser(memberId, envelope);
+  }
 }
 
 class ConversationService {
@@ -74,9 +84,8 @@ class ConversationService {
       ? [] // creator-only conversation
       : [...new Set(memberIds.filter((id) => id !== creatorId))];
 
-    // DIRECT conversations need a recipient; GROUPs can start with just the creator
     if (type === "DIRECT" && !isSelfConversation && uniqueMembers.length === 0) {
-      throw new Error("At least one other member is required for a direct conversation");
+      throw new Error("At least one other member is required");
     }
 
     const conversation = await conversationRepository.create({
@@ -161,6 +170,8 @@ class ConversationService {
       userId: newMemberId,
       role,
     });
+
+    broadcastToConversation(conversationId, WS_EVENTS.MEMBER_JOINED, { conversationId, userId: newMemberId, role });
   }
 
   /**
@@ -173,14 +184,17 @@ class ConversationService {
     requesterId: string,
     targetMemberId: string
   ): Promise<void> {
+    const isSelf = requesterId === targetMemberId;
+
     // Self-removal is always allowed (leaving)
-    if (requesterId === targetMemberId) {
+    if (isSelf) {
       // OWNER cannot leave — must transfer ownership first
       const requesterRole = await conversationRepository.getMemberRole(conversationId, requesterId);
       if (requesterRole === "OWNER") {
         throw new Error("Group owner cannot leave. Transfer ownership first or delete the group.");
       }
       await conversationRepository.removeMember(conversationId, targetMemberId);
+      broadcastToConversation(conversationId, WS_EVENTS.MEMBER_LEFT, { conversationId, userId: targetMemberId });
       return;
     }
 
@@ -213,6 +227,8 @@ class ConversationService {
       conversationId,
       userId: targetMemberId,
     });
+
+    broadcastToConversation(conversationId, WS_EVENTS.MEMBER_REMOVED, { conversationId, userId: targetMemberId });
   }
 
   /**
@@ -271,6 +287,8 @@ class ConversationService {
       oldRole: targetRole,
       newRole,
     });
+
+    broadcastToConversation(conversationId, WS_EVENTS.MEMBER_ROLE_UPDATED, { conversationId, userId: targetUserId, role: newRole });
   }
 
   /**
@@ -293,7 +311,9 @@ class ConversationService {
       throw new Error("Only admins can edit group info");
     }
 
-    return conversationRepository.updateGroupInfo(conversationId, data);
+    const updated = await conversationRepository.updateGroupInfo(conversationId, data);
+    broadcastToConversation(conversationId, WS_EVENTS.GROUP_INFO_UPDATED, { conversationId, ...data });
+    return updated;
   }
 
   /**
@@ -322,7 +342,9 @@ class ConversationService {
       throw new Error("Only admins can change group settings");
     }
 
-    return conversationRepository.updateSettings(conversationId, settings);
+    const updated = await conversationRepository.updateSettings(conversationId, settings);
+    broadcastToConversation(conversationId, WS_EVENTS.GROUP_SETTINGS_UPDATED, { conversationId, ...settings });
+    return updated;
   }
 
   /**
@@ -359,6 +381,18 @@ class ConversationService {
       previousOwner: currentOwnerId,
       newOwner: newOwnerId,
     });
+  }
+
+  async muteConversation(conversationId: string, userId: string, muted: boolean): Promise<void> {
+    const isMember = await conversationRepository.isMember(conversationId, userId);
+    if (!isMember) throw new Error("You are not a member of this conversation");
+    await conversationRepository.muteConversation(conversationId, userId, muted);
+  }
+
+  async pinConversation(conversationId: string, userId: string, pinned: boolean): Promise<void> {
+    const isMember = await conversationRepository.isMember(conversationId, userId);
+    if (!isMember) throw new Error("You are not a member of this conversation");
+    await conversationRepository.pinConversation(conversationId, userId, pinned);
   }
 }
 

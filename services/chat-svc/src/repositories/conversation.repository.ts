@@ -72,9 +72,8 @@ class ConversationRepository {
       ? [] // creator-only conversation
       : [...new Set(memberIds.filter((id) => id !== createdBy))];
 
-    // Only DIRECT conversations require a recipient; GROUP can start creator-only
     if (type === "DIRECT" && !isSelfConversation && uniqueMembers.length === 0) {
-      throw new Error("At least one other member is required for a direct conversation");
+      throw new Error("At least one other member is required");
     }
 
     if (type === "DIRECT") {
@@ -419,6 +418,7 @@ class ConversationRepository {
       editGroupInfo?: string;
       addMembers?: string;
       sendMessages?: string;
+      approveNewMembers?: boolean;
     }
   ): Promise<ConversationWithMembers | null> {
     return prisma.conversation.update({
@@ -435,6 +435,28 @@ class ConversationRepository {
           },
         },
       },
+    });
+  }
+
+  async muteConversation(
+    conversationId: string,
+    userId: string,
+    muted: boolean
+  ): Promise<void> {
+    await prisma.conversationMember.update({
+      where: { conversationId_userId: { conversationId, userId } },
+      data: { isMuted: muted },
+    });
+  }
+
+  async pinConversation(
+    conversationId: string,
+    userId: string,
+    pinned: boolean
+  ): Promise<void> {
+    await prisma.conversationMember.update({
+      where: { conversationId_userId: { conversationId, userId } },
+      data: { isPinned: pinned },
     });
   }
 }

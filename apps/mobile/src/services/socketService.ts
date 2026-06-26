@@ -254,6 +254,13 @@ const handleSocketEvent = (message: any) => {
       chatService.getConversations().then(convos => store.setConversations(convos));
       break;
 
+    case 'message.deleted':
+      console.log('[WS-EVENT] message.deleted:', payload);
+      if (payload.conversationId && payload.messageId) {
+        store.removeMessage(payload.conversationId, payload.messageId);
+      }
+      break;
+
     case 'error':
       console.error('Socket error event:', payload);
       break;

@@ -333,20 +333,20 @@ const CreateGroupScreen = ({ navigation, route }: Props) => {
                     
                     {/* Role Selector for Care Circles */}
                     {isCareCircle && (
-                      <TouchableOpacity 
+                      <TouchableOpacity
                         style={styles.roleSelector}
                         onPress={() => {
+                          const roles = ['MEMBER', 'CAREGIVER', 'MENTOR', 'PROFESSIONAL'];
                           if (Platform.OS === 'ios') {
                             ActionSheetIOS.showActionSheetWithOptions(
-                              {
-                                options: ['Cancel', 'Member', 'Caregiver', 'Mentor', 'Professional'],
-                                cancelButtonIndex: 0,
-                              },
-                              (idx) => {
-                                const roles = ['MEMBER', 'MEMBER', 'CAREGIVER', 'MENTOR', 'PROFESSIONAL'];
-                                if (idx > 0) updateMemberRole(m.user.id, roles[idx]);
-                              }
+                              { options: ['Cancel', 'Member', 'Caregiver', 'Mentor', 'Professional'], cancelButtonIndex: 0 },
+                              (idx) => { if (idx > 0) updateMemberRole(m.user.id, roles[idx - 1]); }
                             );
+                          } else {
+                            Alert.alert('Select Role', `Role for ${m.user.name.split(' ')[0]}`, [
+                              ...roles.map((r) => ({ text: r.charAt(0) + r.slice(1).toLowerCase(), onPress: () => updateMemberRole(m.user.id, r) })),
+                              { text: 'Cancel', style: 'cancel' as const },
+                            ]);
                           }
                         }}
                       >

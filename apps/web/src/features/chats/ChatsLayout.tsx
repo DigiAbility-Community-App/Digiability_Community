@@ -1,19 +1,25 @@
 import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useParams, useLocation } from 'react-router-dom';
-import { Edit, Search, MessageSquare } from 'lucide-react';
+import { Edit, Search, MessageSquare, Users, Bell } from 'lucide-react';
 import clsx from 'clsx';
 import { useChatStore } from '../../store/chatStore';
 import { useAuthStore } from '../../store/authStore';
 import { chatService } from '../../services/chatService';
 import NewChatModal from './NewChatModal';
+import CreateGroupModal from './CreateGroupModal';
+import InvitesPanel from './InvitesPanel';
 import './ChatsLayout.css';
 
 const ChatsLayout = () => {
   const { conversationId } = useParams();
   const conversations = useChatStore(s => s.conversations);
   const setConversations = useChatStore(s => s.setConversations);
+  const pendingInvites = useChatStore(s => s.pendingInvites);
   const currentUser = useAuthStore(s => s.user);
+
   const [isNewChatModalOpen, setIsNewChatModalOpen] = useState(false);
+  const [isCreateGroupOpen, setIsCreateGroupOpen] = useState(false);
+  const [isInvitesPanelOpen, setIsInvitesPanelOpen] = useState(false);
 
   const location = useLocation();
   const isGroupsRoute = location.pathname.includes('/app/groups');
@@ -22,6 +28,10 @@ const ChatsLayout = () => {
     chatService.getConversations().then((convos) => {
       setConversations(convos);
     });
+    // Load pending invites on mount
+    chatService.getPendingInvites().then((invites) => {
+      useChatStore.getState().setPendingInvites(invites);
+    }).catch(console.error);
   }, [setConversations]);
 
   const convoList = Object.values(conversations)
@@ -43,15 +53,63 @@ const ChatsLayout = () => {
       {isNewChatModalOpen && (
         <NewChatModal onClose={() => setIsNewChatModalOpen(false)} />
       )}
+      {isCreateGroupOpen && (
+        <CreateGroupModal
+          initialType={isGroupsRoute ? 'GENERAL' : 'CARE_CIRCLE'}
+          onClose={() => setIsCreateGroupOpen(false)}
+        />
+      )}
+      {isInvitesPanelOpen && (
+        <InvitesPanel onClose={() => setIsInvitesPanelOpen(false)} />
+      )}
+
       {/* Middle Pane: Conversation List */}
       <aside className="chats-sidebar">
         <div className="chats-header">
           <h2>{isGroupsRoute ? 'Groups' : 'Chats'}</h2>
           <div className="chats-actions">
-            {!isGroupsRoute && (
-              <button className="icon-btn" aria-label="New Chat" onClick={() => setIsNewChatModalOpen(true)}>
-                <Edit size={18} />
+            {/* Pending Invites badge */}
+            <button
+              className="icon-btn chats-invite-btn"
+              aria-label="Pending invites"
+              onClick={() => setIsInvitesPanelOpen(true)}
+              title="Pending invites"
+            >
+              <Bell size={18} />
+              {pendingInvites.length > 0 && (
+                <span className="invite-count-badge">{pendingInvites.length}</span>
+              )}
+            </button>
+
+            {/* New Group / New Chat */}
+            {isGroupsRoute ? (
+              <button
+                className="icon-btn"
+                aria-label="New Group"
+                onClick={() => setIsCreateGroupOpen(true)}
+                title="New Group"
+              >
+                <Users size={18} />
               </button>
+            ) : (
+              <>
+                <button
+                  className="icon-btn"
+                  aria-label="New Care Circle"
+                  onClick={() => setIsCreateGroupOpen(true)}
+                  title="New Care Circle"
+                >
+                  <Users size={18} />
+                </button>
+                <button
+                  className="icon-btn"
+                  aria-label="New Chat"
+                  onClick={() => setIsNewChatModalOpen(true)}
+                  title="New Chat"
+                >
+                  <Edit size={18} />
+                </button>
+              </>
             )}
           </div>
         </div>
@@ -59,10 +117,10 @@ const ChatsLayout = () => {
         <div className="chats-search">
           <div className="search-wrapper">
             <Search size={16} className="search-icon" />
-            <input 
-              type="text" 
-              className="search-input" 
-              placeholder="Search chats..." 
+            <input
+              type="text"
+              className="search-input"
+              placeholder="Search chats..."
             />
           </div>
         </div>
@@ -71,22 +129,21 @@ const ChatsLayout = () => {
           {convoList.map(convo => {
             let title = convo.name;
             if (!title && convo.type === 'DIRECT') {
-              // Extract the other participant's name
               const other = (convo.participants || []).find(p => p.userId !== currentUser?.id);
               title = other?.user?.name || 'Unknown User';
             }
 
             return (
-              <NavLink 
+              <NavLink
                 key={convo.id}
-                to={`/app/chats/${convo.id}`}
-                className={({ isActive }: { isActive: boolean }) => clsx("chat-item", { active: isActive })}
+                to={`/app/${isGroupsRoute ? 'groups' : 'chats'}/${convo.id}`}
+                className={({ isActive }: { isActive: boolean }) => clsx('chat-item', { active: isActive })}
               >
                 <div className="chat-avatar">
                   {convo.avatarUrl ? (
                     <img src={convo.avatarUrl} alt={title} />
                   ) : (
-                    <span>{title?.substring(0,2).toUpperCase() || 'CH'}</span>
+                    <span>{title?.substring(0, 2).toUpperCase() || 'CH'}</span>
                   )}
                 </div>
                 <div className="chat-info">
@@ -101,7 +158,7 @@ const ChatsLayout = () => {
                   <div className="chat-bottom-row">
                     <span className="chat-preview">
                       {convo.type === 'GROUP' && convo.lastMessage?.senderId && convo.lastMessage.senderId !== currentUser?.id
-                        ? `${(convo.participants || []).find(p => p.userId === convo.lastMessage?.senderId)?.user?.name || 'Unknown'}: ` 
+                        ? `${(convo.participants || []).find(p => p.userId === convo.lastMessage?.senderId)?.user?.name || 'Unknown'}: `
                         : ''}
                       {convo.lastMessageText || 'No messages yet'}
                     </span>
