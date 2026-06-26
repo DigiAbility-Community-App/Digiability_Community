@@ -7,15 +7,25 @@ import prisma from "../models/prisma.client";
  */
 export async function getEvents(req: Request, res: Response, next: NextFunction) {
   try {
+    const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
+    const cursor = req.query.cursor as string | undefined;
+
     const events = await prisma.event.findMany({
-      orderBy: {
-        createdAt: "desc",
-      },
+      orderBy: { createdAt: "desc" },
+      take: limit + 1,
+      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
     });
+
+    const hasMore = events.length > limit;
+    const result = hasMore ? events.slice(0, limit) : events;
 
     res.status(200).json({
       success: true,
-      data: events,
+      data: result,
+      pagination: {
+        hasMore,
+        nextCursor: hasMore ? result[result.length - 1].id : undefined,
+      },
     });
   } catch (error) {
     next(error);

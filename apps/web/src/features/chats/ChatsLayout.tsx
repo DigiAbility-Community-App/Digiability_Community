@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useParams, useLocation } from 'react-router-dom';
-import { Edit, Search, MessageSquare, Users, Bell } from 'lucide-react';
+import { Edit, Search, MessageSquare, Users, Bell, HeartHandshake } from 'lucide-react';
 import clsx from 'clsx';
 import { useChatStore } from '../../store/chatStore';
 import { useAuthStore } from '../../store/authStore';
@@ -9,6 +9,8 @@ import NewChatModal from './NewChatModal';
 import CreateGroupModal from './CreateGroupModal';
 import InvitesPanel from './InvitesPanel';
 import './ChatsLayout.css';
+
+type Section = 'chats' | 'groups' | 'care-circles';
 
 const ChatsLayout = () => {
   const { conversationId } = useParams();
@@ -22,31 +24,40 @@ const ChatsLayout = () => {
   const [isInvitesPanelOpen, setIsInvitesPanelOpen] = useState(false);
 
   const location = useLocation();
-  const isGroupsRoute = location.pathname.includes('/app/groups');
+  const section: Section = location.pathname.includes('/app/groups')
+    ? 'groups'
+    : location.pathname.includes('/app/care-circles')
+      ? 'care-circles'
+      : 'chats';
+
+  const isGroupsRoute      = section === 'groups';
+  const isCareCirclesRoute = section === 'care-circles';
+  const isChatsRoute       = section === 'chats';
 
   useEffect(() => {
-    chatService.getConversations().then((convos) => {
-      setConversations(convos);
-    });
-    // Load pending invites on mount
-    chatService.getPendingInvites().then((invites) => {
+    chatService.getConversations().then(convos => setConversations(convos));
+    chatService.getPendingInvites().then(invites => {
       useChatStore.getState().setPendingInvites(invites);
     }).catch(console.error);
-  }, [setConversations]);
+  }, [setConversations, section]); // re-fetch when switching sections
 
+  // Filter conversations based on active section
   const convoList = Object.values(conversations)
     .filter(c => {
-      if (isGroupsRoute) {
-        return c.type === 'GROUP' && c.subType === 'GENERAL';
-      } else {
-        return c.type === 'DIRECT' || c.subType === 'CARE_CIRCLE';
-      }
+      if (isGroupsRoute)      return c.type === 'GROUP' && c.subType === 'GENERAL';
+      if (isCareCirclesRoute) return c.type === 'GROUP' && c.subType === 'CARE_CIRCLE';
+      return c.type === 'DIRECT'; // chats = DMs only
     })
     .sort((a, b) => {
       const aTime = a.lastMessageAt ? new Date(a.lastMessageAt).getTime() : 0;
       const bTime = b.lastMessageAt ? new Date(b.lastMessageAt).getTime() : 0;
       return bTime - aTime;
     });
+
+  const sectionTitle = isGroupsRoute ? 'Groups' : isCareCirclesRoute ? 'Care Circles' : 'Chats';
+  const navBase      = isGroupsRoute ? '/app/groups' : isCareCirclesRoute ? '/app/care-circles' : '/app/chats';
+
+  const createGroupType = isGroupsRoute ? 'GENERAL' : 'CARE_CIRCLE';
 
   return (
     <div className="chats-container">
@@ -55,7 +66,7 @@ const ChatsLayout = () => {
       )}
       {isCreateGroupOpen && (
         <CreateGroupModal
-          initialType={isGroupsRoute ? 'GENERAL' : 'CARE_CIRCLE'}
+          initialType={createGroupType}
           onClose={() => setIsCreateGroupOpen(false)}
         />
       )}
@@ -63,12 +74,12 @@ const ChatsLayout = () => {
         <InvitesPanel onClose={() => setIsInvitesPanelOpen(false)} />
       )}
 
-      {/* Middle Pane: Conversation List */}
+      {/* Sidebar: conversation list */}
       <aside className="chats-sidebar">
         <div className="chats-header">
-          <h2>{isGroupsRoute ? 'Groups' : 'Chats'}</h2>
+          <h2>{sectionTitle}</h2>
           <div className="chats-actions">
-            {/* Pending Invites badge */}
+            {/* Invite bell with badge */}
             <button
               className="icon-btn chats-invite-btn"
               aria-label="Pending invites"
@@ -81,35 +92,21 @@ const ChatsLayout = () => {
               )}
             </button>
 
-            {/* New Group / New Chat */}
-            {isGroupsRoute ? (
-              <button
-                className="icon-btn"
-                aria-label="New Group"
-                onClick={() => setIsCreateGroupOpen(true)}
-                title="New Group"
-              >
+            {/* Section-appropriate action buttons */}
+            {isChatsRoute && (
+              <button className="icon-btn" aria-label="New Chat" onClick={() => setIsNewChatModalOpen(true)} title="New Chat">
+                <Edit size={18} />
+              </button>
+            )}
+            {isGroupsRoute && (
+              <button className="icon-btn" aria-label="New Group" onClick={() => setIsCreateGroupOpen(true)} title="New Group">
                 <Users size={18} />
               </button>
-            ) : (
-              <>
-                <button
-                  className="icon-btn"
-                  aria-label="New Care Circle"
-                  onClick={() => setIsCreateGroupOpen(true)}
-                  title="New Care Circle"
-                >
-                  <Users size={18} />
-                </button>
-                <button
-                  className="icon-btn"
-                  aria-label="New Chat"
-                  onClick={() => setIsNewChatModalOpen(true)}
-                  title="New Chat"
-                >
-                  <Edit size={18} />
-                </button>
-              </>
+            )}
+            {isCareCirclesRoute && (
+              <button className="icon-btn" aria-label="New Care Circle" onClick={() => setIsCreateGroupOpen(true)} title="New Care Circle">
+                <HeartHandshake size={18} />
+              </button>
             )}
           </div>
         </div>
@@ -117,11 +114,7 @@ const ChatsLayout = () => {
         <div className="chats-search">
           <div className="search-wrapper">
             <Search size={16} className="search-icon" />
-            <input
-              type="text"
-              className="search-input"
-              placeholder="Search chats..."
-            />
+            <input type="text" className="search-input" placeholder={`Search ${sectionTitle.toLowerCase()}...`} />
           </div>
         </div>
 
@@ -136,8 +129,8 @@ const ChatsLayout = () => {
             return (
               <NavLink
                 key={convo.id}
-                to={`/app/${isGroupsRoute ? 'groups' : 'chats'}/${convo.id}`}
-                className={({ isActive }: { isActive: boolean }) => clsx('chat-item', { active: isActive })}
+                to={`${navBase}/${convo.id}`}
+                className={({ isActive }) => clsx('chat-item', { active: isActive })}
               >
                 <div className="chat-avatar">
                   {convo.avatarUrl ? (
@@ -173,17 +166,17 @@ const ChatsLayout = () => {
         </div>
       </aside>
 
-      {/* Main Pane: Active Chat */}
+      {/* Main pane */}
       <section className="chat-main">
         {conversationId ? (
           <Outlet />
         ) : (
           <div className="chat-empty">
             <div className="chat-empty-icon">
-              <MessageSquare size={32} />
+              {isCareCirclesRoute ? <HeartHandshake size={32} /> : <MessageSquare size={32} />}
             </div>
-            <h3>Your Messages</h3>
-            <p>Select a chat to start messaging.</p>
+            <h3>{sectionTitle}</h3>
+            <p>Select a conversation to get started.</p>
           </div>
         )}
       </section>

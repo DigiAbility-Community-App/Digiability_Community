@@ -127,15 +127,22 @@ const GroupChatScreen = ({ navigation, route }: Props) => {
   const nameMap = memberNameMap();
   const colorMap = memberColorMap();
 
-  // Load message history on mount
+  // Load message history and ensure conversation is in the store
   useEffect(() => {
     const loadMessages = async () => {
       try {
+        // If conversation isn't in store yet (e.g. just created), refresh the list first
+        const storeConv = useChatStore.getState().conversations[conversationId];
+        if (!storeConv || !storeConv.participants?.length) {
+          const convos = await chatService.getConversations();
+          useChatStore.getState().setConversations(convos);
+        }
+
         const data = (await chatService.getMessages(conversationId)) as ChatMessage[];
         const existing = useChatStore.getState().messages[conversationId] || [];
         const existingIds = new Set(existing.map(m => m.id));
         const existingClientIds = new Set(existing.map(m => m.clientMessageId));
-        
+
         const merged: ChatMessage[] = [...existing];
         for (const msg of data) {
           if (!existingIds.has(msg.id) && !existingClientIds.has(msg.clientMessageId)) {
@@ -153,8 +160,13 @@ const GroupChatScreen = ({ navigation, route }: Props) => {
     loadMessages();
   }, [conversationId]);
 
+  const isSendingRef = React.useRef(false);
+
   const handleSend = useCallback(() => {
     if (!messageText.trim() || !user) return;
+    if (isSendingRef.current) return; // prevent double-tap
+    isSendingRef.current = true;
+    setTimeout(() => { isSendingRef.current = false; }, 300);
 
     const content = messageText.trim();
     const clientMessageId = generateUUID();

@@ -1,4 +1,5 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { requireAdminAuth } from "@/lib/auth";
 import { dbPool } from "@/lib/db";
 
 async function ensureTables() {
@@ -18,7 +19,10 @@ async function ensureTables() {
 // ─────────────────────────────────────────────
 // GET — broadcast history
 // ─────────────────────────────────────────────
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const authError = await requireAdminAuth(request);
+  if (authError) return authError;
+
   try {
     await ensureTables();
     const result = await dbPool.query(`
@@ -53,12 +57,15 @@ export async function GET() {
 // ─────────────────────────────────────────────
 // POST — send broadcast to users
 // ─────────────────────────────────────────────
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
+  const authError = await requireAdminAuth(request);
+  if (authError) return authError;
+
   try {
     await ensureTables();
     const body = await request.json();
-    const title   = (body.title   ?? "").toString().trim();
-    const message = (body.message ?? "").toString().trim();
+    const title   = (body.title   ?? "").toString().trim().slice(0, 200);
+    const message = (body.message ?? "").toString().trim().slice(0, 2000);
     const type    = (body.type    ?? "INFO").toString();
     const audience = (body.audience ?? "ALL").toString();
 

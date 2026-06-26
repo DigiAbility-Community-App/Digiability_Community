@@ -38,7 +38,11 @@ export async function POST(request: Request) {
 
     // Verify using bcrypt compare
     if (hashedPassword && bcrypt.compareSync(password, hashedPassword)) {
-      const secret = process.env.JWT_SECRET || "super-secret-admin-key-2026";
+      const secret = process.env.JWT_SECRET;
+      if (!secret) {
+        console.error("JWT_SECRET environment variable is not set");
+        return NextResponse.json({ success: false, message: "Server configuration error" }, { status: 500 });
+      }
       
       // Create session payload with 1 day expiration
       const exp = Math.floor(Date.now() / 1000) + 60 * 60 * 24;

@@ -1,9 +1,8 @@
 import { Pool } from "pg";
 
-const connectionString =
-  process.env.DATABASE_URL ||
-  "postgresql://digiability:digiability_secret@localhost:5432/digiability_db?schema=public";
+const connectionString = process.env.DATABASE_URL;
+if (!connectionString) {
+  throw new Error("DATABASE_URL environment variable is required");
+}
 
-export const dbPool = new Pool({
-  connectionString,
-});
+export const dbPool = new Pool({ connectionString });

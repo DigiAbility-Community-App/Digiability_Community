@@ -198,7 +198,7 @@
 .message-sender-name {
   font-size: 12px;
   font-weight: 600;
-  color: var(--color-primary-dark, var(--color-primary));
+  color: var(--color-primary-hover, var(--color-primary));
   margin-bottom: 4px;
 }
 

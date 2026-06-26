@@ -1,4 +1,5 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { requireAdminAuth } from "@/lib/auth";
 import { dbPool } from "@/lib/db";
 
 export async function GET(

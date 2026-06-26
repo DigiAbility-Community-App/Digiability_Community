@@ -3,6 +3,7 @@ import React, {
   useRef,
   useCallback,
   useMemo,
+  useEffect,
 } from "react";
 
 import {
@@ -171,6 +172,13 @@ const ProfileScreen = () => {
     useRef<ReturnType<
       typeof setTimeout
     > | null>(null);
+
+  // M8: Clean up debounce timer on unmount to prevent state update on unmounted component
+  useEffect(() => {
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, []);
 
   // --------------------------------------------------
   // ROLE BADGE

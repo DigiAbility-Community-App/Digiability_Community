@@ -1,6 +1,6 @@
 # 🚀 Digiability Community — Startup Guide
 
-Step-by-step guide to start the entire project stack from scratch.
+Complete guide to run the full stack from scratch.
 
 ---
 
@@ -11,455 +11,410 @@ Step-by-step guide to start the entire project stack from scratch.
 | **Node.js** | ≥ 18.x | `node -v` |
 | **npm** | ≥ 9.x | `npm -v` |
 | **Docker Desktop** | Latest | `docker -v` |
-| **Docker Compose** | ≥ 2.x | `docker compose version` |
 
-> [!IMPORTANT]
-> Make sure Docker Desktop is **running** before you start. PostgreSQL and Redis run in Docker containers. user-svc and chat-svc also run as Docker containers (built from their Dockerfiles).
+> **Docker Desktop must be running** before any `docker compose` command.
 
 ---
 
-## Current Architecture Overview
+## Architecture
 
-| Layer | What runs where |
-|-------|----------------|
-| **PostgreSQL, Redis** | Docker container |
-| **user-svc** (:4001) | Docker container (built from `services/user-svc/Dockerfile`) |
-| **chat-svc** (:4002) | Docker container (built from `services/chat-svc/Dockerfile`) — msg & delivery workers embedded |
-| **forum-svc** (:4003) | Local `npm run dev` |
-| **notif-svc** | Local `npm run dev` (Redis stream consumer worker) |
-| **Mobile App** | Expo (local) |
-| **Web App** (:3000) | Local `npm run dev` (Vite + React) |
-| **Admin Panel** (:3001) | Local `npm run dev` (Next.js) |
+| Service | Port | Runs in | Purpose |
+|---------|------|---------|---------|
+| `postgres` | 5432 | Docker | All persistent data (two schemas: public + chat) |
+| `redis` | 6379 | Docker | Redis Streams (message pipeline) + Pub/Sub + session registry |
+| `user-svc` | 4001 | Docker | Auth, JWT, profiles, OTP email, events, mentors |
+| `chat-svc` | 4002 | Docker | WebSocket, REST chat API, embedded msg + delivery workers |
+| `notif-svc` | 4004 | Docker | Push notification worker (Redis stream consumer) |
+| `forum-svc` | 4003 | Local | Forum posts, comments |
+| `web` | 3000 | Local | Vite + React desktop app |
+| `admin` | 3001 | Local | Next.js admin dashboard |
+| `mobile` | — | Expo | React Native (iOS / Android) |
 
-> [!NOTE]
-> Cassandra has been removed. Messages are now stored in PostgreSQL.
+> **Message workers** (persistence + delivery) are **embedded inside chat-svc** and start automatically. No separate worker containers are needed.
 
 ---
 
-## Step 1: Install Dependencies
-
-Install dependencies for services that run **locally** (Docker handles user-svc and chat-svc at build time, but you still need them locally for Prisma CLI commands):
+## Step 1 — Install Dependencies
 
 ```bash
-# Install root workspace dependencies
+# From the project root
 npm install
 
-# Install user-svc (needed for prisma db push)
-cd services/user-svc && npm install && cd ../..
+# Services that run locally need their own install:
+cd services/forum-svc  && npm install && cd ../..
+cd apps/web            && npm install && cd ../..
+cd apps/admin          && npm install && cd ../..
+cd apps/mobile         && npm install && cd ../..
 
-# Install chat-svc (needed for prisma db push)
-cd services/chat-svc && npm install && cd ../..
-
-# Install forum-svc
-cd services/forum-svc && npm install && cd ../..
-
-# Install mobile app dependencies
-cd apps/mobile && npm install && cd ../..
-
-# Install web app dependencies
-cd apps/web && npm install && cd ../..
-
-# Install admin app dependencies
-cd apps/admin && npm install && cd ../..
+# user-svc and chat-svc: needed for Prisma CLI commands even though they run in Docker
+cd services/user-svc   && npm install && cd ../..
+cd services/chat-svc   && npm install && cd ../..
 ```
 
 ---
 
-## Step 2: Environment Variables
+## Step 2 — Verify Environment Files
 
-The project ships with working `.env` files for development. Verify they exist:
+All `.env` files ship with working development values. Confirm they exist:
 
 ```bash
-# Root .env (Docker infrastructure secrets)
-cat .env
-
-# user-svc .env
-cat services/user-svc/.env
-
-# chat-svc .env
-cat services/chat-svc/.env
+ls .env                        # Root — Docker infrastructure secrets
+ls services/user-svc/.env      # Auth service
+ls services/chat-svc/.env      # Chat service
+ls apps/mobile/.env            # Mobile app (physical device IP)
 ```
 
-Key environment variables:
-- **Root**: `POSTGRES_USER`, `POSTGRES_PASSWORD`, `REDIS_PASSWORD`
-- **user-svc**: `DATABASE_URL`, `JWT_PRIVATE_KEY`, `MAIL_*` (SMTP credentials)
-- **chat-svc**: `DATABASE_URL`, `REDIS_URL`, `JWT_PUBLIC_KEY`
+### Key values to check
 
-> [!TIP]
-> If you need to change SMTP credentials, update `MAIL_USER` and `MAIL_PASS` in `services/user-svc/.env`.
+**`.env` (root)**
+```
+POSTGRES_USER=digiability
+POSTGRES_PASSWORD=digiability_secret
+POSTGRES_DB=digiability_db
+REDIS_PASSWORD=redis_secret
+```
+
+**`services/user-svc/.env`** — must have:
+- `DATABASE_URL` pointing to `localhost:5432` (local Prisma CLI) 
+- `JWT_PRIVATE_KEY` and `JWT_PUBLIC_KEY` — RS256 key pair (already populated)
+- `MAIL_USER` + `MAIL_PASS` — Gmail App Password for OTP emails
+
+**`services/chat-svc/.env`** — must have:
+- `DATABASE_URL` with `?schema=chat`
+- `REDIS_URL`
+- `JWT_PUBLIC_KEY` — **same public key as user-svc** (already populated)
+
+**`apps/mobile/.env`** — for physical device testing, set your machine's LAN IP:
+```bash
+# Find your IP:
+ipconfig getifaddr en0        # macOS
+ip route get 1 | awk '{print $7}' # Linux
+
+# Then update:
+EXPO_PUBLIC_API_BASE_URL=http://<your-lan-ip>:4001
+```
+> Emulators can use the default `http://10.0.2.2:4001` (Android) or `http://localhost:4001` (iOS Simulator) — no change needed.
 
 ---
 
-## Step 3: Start Database Infrastructure
-
-Start only the database containers first — you need these running before the Prisma setup steps:
+## Step 3 — Start Infrastructure
 
 ```bash
+# Start PostgreSQL and Redis
 docker compose up -d postgres redis
-```
 
-### Wait for containers to be healthy:
-
-```bash
-# Check status (repeat until both show "healthy")
+# Wait ~30 seconds, then verify both are healthy:
 docker compose ps
 ```
 
-**Expected output after ~30 seconds:**
+Expected output:
 
-| Container | Status |
-|-----------|--------|
+| Name | Status |
+|------|--------|
 | `digiability_postgres` | healthy |
 | `digiability_redis` | healthy |
 
-You can verify manually:
+Manual health checks:
 ```bash
-# Test PostgreSQL
 docker exec digiability_postgres pg_isready
-
-# Test Redis
 docker exec digiability_redis redis-cli -a redis_secret PING
 ```
 
 ---
 
-## Step 4: Setup user-svc Database (Prisma)
+## Step 4 — Database Setup (Prisma)
+
+Run once after first clone, or after schema changes:
 
 ```bash
+# user-svc schema (schema=public)
 cd services/user-svc
-
-# Generate the Prisma client
 npx prisma generate
-
-# Push schema to PostgreSQL (creates tables)
 npx prisma db push
-```
+cd ../..
 
-> [!NOTE]
-> `prisma db push` is used instead of `prisma migrate dev` for initial setup. For production, use `prisma migrate dev` to create tracked migrations.
-
----
-
-## Step 5: Setup chat-svc Database (Prisma)
-
-```bash
+# chat-svc schema (schema=chat)
 cd services/chat-svc
-
-# Generate the Prisma client
 npx prisma generate
-
-# Push schema to PostgreSQL (creates tables)
 npx prisma db push
-```
+cd ../..
 
----
-
-## Step 6: Setup forum-svc Database (Prisma)
-
-```bash
+# forum-svc schema
 cd services/forum-svc
-
-# Generate the Prisma client
 npx prisma generate
-
-# Push schema to PostgreSQL (creates tables)
 npx prisma db push
+cd ../..
 ```
 
 ---
 
-## Step 7: Seed the Bot User
+## Step 5 — Seed the Bot User
+
+Required once after the DB is set up:
 
 ```bash
 cd services/user-svc
-
 npm run db:seed-bot
 ```
 
-**Expected output:**
+Expected output:
 ```
-🤖 Seeding Digiability Bot user...
-
 ✅ Bot user created/updated:
-   ID:       00000000-0000-0000-0000-000000000001
-   Name:     Digiability Bot
-   Email:    bot@digiability.com
-   Verified: true
-
-🔑 Login credentials:
-   Email:    bot@digiability.com
-   Password: DigiBot@2024
+   ID:    00000000-0000-0000-0000-000000000001
+   Email: bot@digiability.com
 ```
+
+Bot login credentials: `bot@digiability.com` / `DigiBot@2024`
 
 ---
 
-## Step 8: Build & Start Docker Services
-
-Build and start user-svc and chat-svc as Docker containers:
+## Step 6 — Build & Start Backend Services (Docker)
 
 ```bash
-# First time (or after code changes): build the images then start
-docker compose up -d --build user-svc chat-svc
+# First time or after code changes — build images then start:
+docker compose up -d --build user-svc chat-svc notif-svc
+
+# Subsequent starts (no code changes):
+docker compose up -d user-svc chat-svc notif-svc
 ```
 
-> [!TIP]
-> On subsequent starts (no code changes), you can skip `--build`:
-> ```bash
-> docker compose up -d user-svc chat-svc
-> ```
-
-The message persistence worker and delivery worker are **embedded inside chat-svc** — no separate processes needed.
-
----
-
-## Step 9: Verify Backend Health
-
+Verify health:
 ```bash
-# user-svc health check
-curl http://localhost:4001/health
-
-# chat-svc health check
-curl http://localhost:4002/health
+curl http://localhost:4001/health   # → {"status":"healthy","service":"user-svc"}
+curl http://localhost:4002/health   # → {"status":"healthy","service":"chat-svc"}
 ```
 
-Both should return `{ "success": true, "status": "healthy" }`.
+View live logs:
+```bash
+docker logs digiability_user_svc -f
+docker logs digiability_chat_svc -f
+```
 
 ---
 
-## Step 10: Start Local Backend Services
+## Step 7 — Start Local Services
 
-Open **2 separate terminal tabs:**
+Open **separate terminal tabs** for each:
 
-### Terminal 1: forum-svc (Forums & Community)
+### Terminal 1 — forum-svc
 ```bash
 cd services/forum-svc
 npm run dev
+# Expected: 🚀 forum-svc running on http://localhost:4003
 ```
-**Expected:** `🚀 forum-svc running on http://localhost:4003`
 
-### Terminal 2: Notification Worker
+### Terminal 2 — Web App
 ```bash
-cd services/notif-svc
+cd apps/web
 npm run dev
+# Expected: ➜ Local: http://localhost:3000
 ```
-**Expected:** `notif-svc consumer started`
 
----
+### Terminal 3 — Admin Panel
+```bash
+cd apps/admin
+npm run dev -- -p 3001
+# Expected: ▲ Next.js ready on http://localhost:3001
+```
 
-## Step 11: Start the Mobile App
-
+### Terminal 4 — Mobile App
 ```bash
 cd apps/mobile
 npx expo start
 ```
 
-Then:
-- Press `i` for iOS Simulator
-- Press `a` for Android Emulator
-- Scan QR code with Expo Go on your physical device
+Select platform:
+- `a` → Android emulator
+- `i` → iOS simulator
+- Scan QR code → Expo Go on physical device
 
 ---
 
-## Step 12: Start the Web App (Desktop Experience)
+## Step 8 — Full Stack Verification Checklist
 
-```bash
-cd apps/web
-npm run dev
-```
-**Expected:** `➜  Local:   http://localhost:3000/`
+### Auth & Onboarding
+- [ ] Open app → Register with email + password
+- [ ] OTP sent to email (or check `docker logs digiability_user_svc` for `[EmailService / DEV] OTP for <email>: <otp>`)
+- [ ] Enter OTP → email verified
+- [ ] Complete accessibility preferences
+- [ ] Select role (PwD / Caregiver / Therapist / NGO / Volunteer / Student / Mentor)
+- [ ] Complete profile details (name, DOB, city, etc.)
+- [ ] Login with credentials → lands on home screen
 
----
+### 1:1 Direct Messaging
+- [ ] Community → Chats tab (shows DMs only — no groups here)
+- [ ] Tap compose → search for DigiBot → start chat
+- [ ] Send message → DigiBot appears in conversation list
+- [ ] Login as DigiBot on second device/emulator → receive message
+- [ ] Reply from DigiBot → appears on first device in real-time
 
-## Step 13: Start the Admin Panel
+### Groups
+- [ ] Community → **Groups** tab (shows GENERAL groups only)
+- [ ] Groups not a member of show a **Join** badge → tap to join
+- [ ] FAB (+) → Create Group → enter name + description → add members → Create
+- [ ] New group appears in Groups tab immediately
+- [ ] Tap group → GroupChat opens → send messages
+- [ ] Tap group header → GroupInfo screen:
+  - [ ] Members list with role badges (Owner/Admin/Member)
+  - [ ] Admin can toggle: Edit Group Info / Add Members / Send Messages / Approve New Members
+  - [ ] Admin can change member roles
+  - [ ] Admin can remove members
+  - [ ] Non-owner members see Leave Group button
+- [ ] Invite another user → they get invite notification
+- [ ] Invited user: Community → Chats tab → tap bell icon → Pending Invites → Accept
+- [ ] After accepting: navigates to GroupChat, new member appears in GroupInfo
 
-```bash
-cd apps/admin
-npm run dev -- -p 3001
-```
-**Expected:** `▲ Next.js ready on http://localhost:3001`
+### Care Circles
+- [ ] Community → **Care Circles** tab (shows CARE_CIRCLE groups only)
+- [ ] Same flow as Groups above — join, create, message, manage
+- [ ] Create Care Circle: roles available = Member / Caregiver / Mentor / Professional
+- [ ] Care Circles do **not** appear in Groups tab and vice versa
+- [ ] DMs do **not** appear in either Groups or Care Circles tab
 
-> [!NOTE]
-> Admin runs on port **3001** to avoid conflict with the web app on port 3000.
+### Forums
+- [ ] Community → Forums tab → posts load
+- [ ] Create a post → appears in list
+- [ ] Tap post → view comments → add comment
+- [ ] Upvote/downvote works
 
----
+### Notifications
+- [ ] Receive a message while app is backgrounded → push notification appears
+- [ ] Tap notification → opens correct conversation
 
-## Full Stack Test Checklist
+### Web App (`http://localhost:3000`)
+- [ ] Login → lands on `/app/chats` (DMs only)
+- [ ] Sidebar: Chats (DM) | Groups | Care Circles | Mentors | Forums | Events
+- [ ] `/app/groups` → shows GENERAL groups only, with "New Group" button
+- [ ] `/app/care-circles` → shows CARE_CIRCLE groups only, with "New Care Circle" button
+- [ ] Create group → appears in sidebar immediately
+- [ ] Bell icon → Pending Invites panel → Accept → navigates to conversation
+- [ ] Open a group → click ℹ️ icon → GroupInfoPanel slides in with member list + toggles
+- [ ] Right-click a message → Delete for Me / Delete for Everyone
 
-### 1. Register a New Account
-1. Open the app → Sign Up tab
-2. Enter name, email, password
-3. You'll be redirected to the OTP screen
-4. Check your email (or the user-svc logs for the OTP in dev mode: `docker logs digiability_user_svc`)
-5. Enter the 6-digit OTP → Email verified! ✅
-
-### 2. Login with the Bot Account
-1. Open a second device/emulator
-2. Login with: `bot@digiability.com` / `DigiBot@2024`
-3. The bot account is pre-verified ✅
-
-### 3. Test Messaging
-1. On your first account, go to conversations
-2. The Digiability Bot should appear in your conversation list
-3. Send a message to the bot
-4. On the second device (logged in as bot), you should see the message
-5. Reply from the bot account → verify it appears on the first device
-
-### 4. Test Self-Messaging
-1. Create a new conversation with yourself
-2. Send messages to yourself
-3. Verify they appear immediately
-
-### 5. Multi-Device Sync
-1. Login to the same account on two devices
-2. Send a message from Device A
-3. Verify it appears on Device B in real-time
-
-### 6. Test Care Circles & Groups
-1. Open the app on the first device.
-2. Tap the pencil icon in the header to create a new group.
-3. Choose "Care Circle" or "General Group".
-4. Search for another user (like the Bot) and select them. Give them a role (for Care Circles).
-5. Create the group. This sends an invite.
-6. Log in as the invited user on a second device.
-7. Go to Invites (envelope icon in the header), and accept the pending invite.
-8. Verify you can now see the group on both devices and chat in it.
-9. Verify the Group Info screen permissions by tapping the header in the group chat.
-
-### 7. Test Forgot Password
-1. On the login screen, tap **Forgot Password**.
-2. Enter your registered email address.
-3. Check your email (or `docker logs digiability_user_svc` in dev mode) for the OTP.
-4. Enter the OTP and set a new password.
-5. Log in with the new password → should succeed ✅
-
-### 8. Browse Mentors
-1. Navigate to **Community → Mentors tab**.
-2. Verify mentor cards load with profile info and areas of expertise.
-3. Tap a mentor card to view their full profile.
-
-### 9. Access Admin Panel
-1. Open `http://localhost:3001` in a browser.
-2. Log in with an admin account.
-3. Verify these pages load with real data: **Dashboard, Users, Groups, Forums, Events, Moderation, Notifications, Settings**.
-4. Try viewing a user detail page and modifying their status.
-
----
-
-## Shutdown Procedure
-
-```bash
-# Stop all Docker containers (keeps data volumes)
-docker compose down
-
-# To also remove all data volumes (WARNING: deletes all data!):
-docker compose down -v
-```
+### Admin Panel (`http://localhost:3001`)
+- [ ] Login with admin account
+- [ ] Dashboard → stats cards load with real data
+- [ ] Users → list loads, can view user detail
+- [ ] Groups → list loads
+- [ ] Forums → list loads with moderation controls
+- [ ] Events → list loads
+- [ ] Notifications → send broadcast notification
+- [ ] Settings → loads
 
 ---
 
 ## Rebuilding After Code Changes
 
-When you change code in **user-svc** or **chat-svc**, rebuild their Docker images:
-
 ```bash
-docker compose up -d --build user-svc chat-svc
+# Changed user-svc or chat-svc code:
+docker compose up -d --build user-svc
+docker compose up -d --build chat-svc
+
+# Changed Prisma schema:
+cd services/user-svc && npx prisma db push  # then rebuild Docker image
+cd services/chat-svc && npx prisma db push
+
+# Changed forum-svc: just restart npm run dev (hot reload handles it)
 ```
 
-For **forum-svc** or **notif-svc**, just restart the local `npm run dev` process.
+---
+
+## Shutdown
+
+```bash
+# Stop all containers (data is preserved in volumes)
+docker compose down
+
+# Nuclear reset — removes all data:
+docker compose down -v
+npx prisma db push  # re-run steps 4–5 after this
+```
 
 ---
 
 ## Troubleshooting
 
+### ❌ OTP not received
+Check the user-svc container logs:
+```bash
+docker logs digiability_user_svc | grep "OTP for"
+```
+Look for: `[EmailService / DEV] OTP for <email>: <otp>`
+
 ### ❌ "Cannot connect to database"
 ```bash
-# Check if PostgreSQL is running
-docker compose ps postgres
-# If not running:
-docker compose up -d postgres
-# Wait for healthy, then try again
+docker compose ps postgres        # Is it healthy?
+docker compose up -d postgres     # Start it if not
 ```
 
-### ❌ "ECONNREFUSED" on Redis
-```bash
-docker compose ps redis
-docker compose up -d redis
-```
-
-### ❌ "OTP not received"
-- In development, OTP is logged inside the **user-svc container**
-- Check with: `docker logs digiability_user_svc`
-- Look for: `[EmailService / DEV] Verification OTP for <email>: <otp>`
-- If using real email, check spam/junk folder
-
-### ❌ "WebSocket won't connect"
-- Ensure chat-svc is running: `curl http://localhost:4002/health`
-- Check that the mobile app's API URL points to `http://<your-ip>:4001` (user-svc) and `ws://<your-ip>:4002/ws` (chat-svc)
-- On physical devices, use your machine's local IP (not `localhost`)
-
-### ❌ "Prisma schema drift"
-```bash
-# Re-sync the database schema
-cd services/<service-name>
-npx prisma db push --force-reset  # WARNING: drops all data
-npx prisma generate
-```
-
-### ❌ user-svc or chat-svc container won't start
-```bash
-# Check container logs
-docker logs digiability_user_svc
-docker logs digiability_chat_svc
-
-# Rebuild from scratch
-docker compose up -d --build user-svc chat-svc
-```
+### ❌ "WebSocket won't connect" on physical device
+- Ensure `EXPO_PUBLIC_API_BASE_URL` in `apps/mobile/.env` uses your LAN IP, not `localhost`
+- Run `ipconfig getifaddr en0` (Mac) to find it
 
 ### ❌ Port 4001 or 4002 already in use
-You may have a stale local `npm run dev` process from a previous session. Kill it:
+You have a stale local process. Kill it:
 ```bash
 lsof -ti:4001 | xargs kill -9
 lsof -ti:4002 | xargs kill -9
 ```
-Then restart the Docker containers.
+
+### ❌ "Prisma schema drift"
+```bash
+cd services/<service>
+npx prisma db push --force-reset   # WARNING: deletes all data
+npx prisma generate
+```
+
+### ❌ Docker service won't start
+```bash
+docker logs digiability_user_svc   # Read the error
+docker logs digiability_chat_svc
+docker compose up -d --build user-svc chat-svc  # Rebuild from scratch
+```
 
 ---
 
-## Architecture Quick Reference
+## Open pgAdmin (Database UI)
+
+```bash
+docker compose --profile dev up -d pgadmin
+# Open: http://localhost:5050
+# Email: admin@digiability.com / Password: admin123
+```
+
+---
+
+## Architecture Diagram
 
 ```
-┌───────────────────────────────────────────────────────────────┐
-│                        Docker Compose                         │
-│                                                               │
-│  ┌─────────────┐  ┌─────────────┐  ┌──────────┐  ┌───────┐  │
-│  │  user-svc   │  │  chat-svc   │  │ postgres │  │ redis │  │
-│  │   :4001     │  │   :4002     │  │  :5432   │  │ :6379 │  │
-│  │ Auth/Users  │  │ Chat/WS +   │  │          │  │       │  │
-│  │             │  │ Workers     │  │          │  │       │  │
-│  └─────────────┘  └─────────────┘  └──────────┘  └───────┘  │
-└───────────────────────────────────────────────────────────────┘
+┌─────────────────────────── Docker Compose ──────────────────────────┐
+│                                                                       │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────┐  ┌────────────┐   │
+│  │  user-svc    │  │  chat-svc    │  │ postgres │  │   redis    │   │
+│  │  :4001       │  │  :4002       │  │  :5432   │  │  :6379     │   │
+│  │ Auth/Users/  │  │ WS + REST +  │  │          │  │ Streams +  │   │
+│  │ Events/JWT   │  │ Workers      │  │          │  │ Pub/Sub    │   │
+│  └──────────────┘  └──────────────┘  └──────────┘  └────────────┘   │
+│                                                                       │
+│  ┌──────────────┐                                                     │
+│  │  notif-svc   │                                                     │
+│  │  :4004       │                                                     │
+│  └──────────────┘                                                     │
+└───────────────────────────────────────────────────────────────────────┘
 
          Local processes (npm run dev)
-  ┌──────────────┐  ┌──────────────┐
-  │  forum-svc   │  │  notif-svc   │
-  │    :4003     │  │   (worker)   │
-  └──────────────┘  └──────────────┘
+  ┌──────────────┐
+  │  forum-svc   │
+  │    :4003     │
+  └──────────────┘
 
-         Frontend apps (local)
+         Frontend (local dev servers)
   ┌───────────┐  ┌───────────┐  ┌─────────────┐
   │  Mobile   │  │  Web App  │  │ Admin Panel │
   │  (Expo)   │  │   :3000   │  │    :3001    │
   └───────────┘  └───────────┘  └─────────────┘
 ```
 
-| Service | Port | Runs in | Purpose |
-|---------|------|---------|---------|
-| user-svc | 4001 | Docker | Auth, users, profiles, OTP verification |
-| chat-svc | 4002 | Docker | Chat REST API + WebSocket + embedded workers |
-| forum-svc | 4003 | Local | Forums, posts, community discussions |
-| notif-svc | — | Local | Notification worker (Redis stream consumer) |
-| PostgreSQL | 5432 | Docker | All persistent data (users, chat, groups, forums) |
-| Redis | 6379 | Docker | Message streams, Pub/Sub, presence registry |
-| Web App | 3000 | Local | Desktop web experience (Vite + React) |
-| Admin Panel | 3001 | Local | Admin dashboard (Next.js) |
-| pgAdmin | 5050 | Docker (dev profile) | PostgreSQL web UI |
+---
+
+**Last Updated:** June 2026 | **Node.js:** ≥ 18 | **Docker:** Required

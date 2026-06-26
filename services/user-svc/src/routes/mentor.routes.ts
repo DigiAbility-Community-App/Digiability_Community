@@ -16,8 +16,12 @@ const router = Router();
 // All mentor routes require authentication
 router.use(authenticate);
 
-// Helper — extract userId from JWT token
-const getUserId = (req: Request): string => req.user?.sub ?? '';
+// Helper — extract userId from JWT token (throws if missing — should never happen after authenticate middleware)
+const getUserId = (req: Request): string => {
+  const id = req.user?.sub;
+  if (!id) throw new Error("Authenticated user ID missing from request");
+  return id;
+};
 
 // ─── Validation Schemas ───────────────────────────────────
 

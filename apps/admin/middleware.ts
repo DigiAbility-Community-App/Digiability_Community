@@ -6,7 +6,12 @@ export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const sessionCookie = request.cookies.get("admin-session");
   
-  const secret = process.env.JWT_SECRET || "super-secret-admin-key-2026";
+  const secret = process.env.JWT_SECRET;
+  if (!secret) {
+    // JWT_SECRET is not set — deny all access to force proper configuration
+    const loginUrl = new URL("/login", request.url);
+    return NextResponse.redirect(loginUrl);
+  }
   let isValid = false;
 
   if (sessionCookie?.value) {

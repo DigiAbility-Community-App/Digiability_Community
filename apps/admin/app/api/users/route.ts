@@ -1,5 +1,6 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { dbPool } from "@/lib/db";
+import { requireAdminAuth } from "@/lib/auth";
 
 // Helper to parse custom Postgres enum array string formats like "{pwd,caregiver}"
 function parsePostgresArray(val: any): string[] {
@@ -15,9 +16,16 @@ function parsePostgresArray(val: any): string[] {
   return [];
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const authError = await requireAdminAuth(request);
+  if (authError) return authError;
+
   try {
-    // Query users, join with profiles for city, and join forum_user_stats for suspension status
+    // Query users with pagination (max 500 per request)
+    const url = new URL(request.url);
+    const limit = Math.min(parseInt(url.searchParams.get("limit") ?? "200"), 500);
+    const offset = Math.max(parseInt(url.searchParams.get("offset") ?? "0"), 0);
+
     const result = await dbPool.query(`
       SELECT
         u.id,
@@ -36,7 +44,8 @@ export async function GET() {
       LEFT JOIN forum_user_stats fus ON u.id = fus."userId"
       WHERE u."deletedAt" IS NULL
       ORDER BY u."createdAt" DESC
-    `);
+      LIMIT $1 OFFSET $2
+    `, [limit, offset]);
 
     const formattedUsers = result.rows.map((row) => {
       const rawRoles = parsePostgresArray(row.roles);

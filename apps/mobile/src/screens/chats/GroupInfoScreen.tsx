@@ -289,6 +289,28 @@ const GroupInfoScreen = ({ navigation, route }: Props) => {
   const getInitials = (name: string) =>
     name.split(" ").map((w) => w[0]).join("").toUpperCase().slice(0, 2);
 
+  const getRoleLabel = (role: string) => {
+    switch (role) {
+      case 'OWNER': return 'Group admin';
+      case 'ADMIN': return 'Admin';
+      case 'CAREGIVER': return 'Caregiver';
+      case 'MENTOR': return 'Mentor';
+      case 'PROFESSIONAL': return 'Professional';
+      default: return null;
+    }
+  };
+
+  const getRoleBadgeStyle = (role: string) => {
+    switch (role) {
+      case 'OWNER': return { backgroundColor: '#EDE9FE', color: '#6B21A8' };
+      case 'ADMIN': return { backgroundColor: '#DBEAFE', color: '#1D4ED8' };
+      case 'CAREGIVER': return { backgroundColor: '#D1FAE5', color: '#065F46' };
+      case 'MENTOR': return { backgroundColor: '#FEF3C7', color: '#92400E' };
+      case 'PROFESSIONAL': return { backgroundColor: '#FEE2E2', color: '#991B1B' };
+      default: return null;
+    }
+  };
+
   return (
     <ScreenWrapper statusBarStyle="light">
       <View style={[styles.header, { paddingTop: insets.top + 10 }]}>
@@ -412,29 +434,38 @@ const GroupInfoScreen = ({ navigation, route }: Props) => {
           )}
 
           <View style={styles.membersCard}>
-            {conversation.participants.map((p, index) => (
-              <TouchableOpacity
-                key={p.userId}
-                style={[styles.memberRow, index < conversation.participants.length - 1 && styles.memberBorder]}
-                onPress={() => handleMemberAction(p.userId, p.role, p.user?.name || "")}
-                disabled={!hasAdminRights || p.userId === user?.id}
-              >
-                <View style={styles.memberAvatar}>
-                  <Text style={styles.memberAvatarText}>{getInitials(p.user?.name || "?")}</Text>
-                </View>
-                <View style={styles.memberInfo}>
-                  <Text style={styles.memberName}>
-                    {p.user?.name} {p.userId === user?.id ? "(You)" : ""}
-                  </Text>
-                  {p.role !== "MEMBER" && (
-                    <Text style={[styles.memberRoleBadge, p.role === "OWNER" && { color: "#500088" }]}>
-                      {p.role}
+            {conversation.participants.map((p, index) => {
+              const roleLabel = getRoleLabel(p.role);
+              const roleBadge = getRoleBadgeStyle(p.role);
+              const name = p.user?.name || 'Unknown';
+              const isMe = p.userId === user?.id;
+              return (
+                <TouchableOpacity
+                  key={p.userId}
+                  style={[styles.memberRow, index < conversation.participants.length - 1 && styles.memberBorder]}
+                  onPress={() => handleMemberAction(p.userId, p.role, name)}
+                  disabled={!hasAdminRights || isMe}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.memberAvatar}>
+                    <Text style={styles.memberAvatarText}>{getInitials(name)}</Text>
+                  </View>
+                  <View style={styles.memberInfo}>
+                    <Text style={styles.memberName}>
+                      {name}{isMe ? <Text style={styles.youTag}> (You)</Text> : null}
                     </Text>
+                    {roleLabel && roleBadge && (
+                      <View style={[styles.rolePill, { backgroundColor: roleBadge.backgroundColor }]}>
+                        <Text style={[styles.rolePillText, { color: roleBadge.color }]}>{roleLabel}</Text>
+                      </View>
+                    )}
+                  </View>
+                  {hasAdminRights && !isMe && p.role !== 'OWNER' && (
+                    <Text style={styles.chevron}>›</Text>
                   )}
-                </View>
-                {hasAdminRights && p.userId !== user?.id && <Text style={styles.chevron}>›</Text>}
-              </TouchableOpacity>
-            ))}
+                </TouchableOpacity>
+              );
+            })}
           </View>
         </View>
 
@@ -519,7 +550,13 @@ const styles = StyleSheet.create({
   memberInfo: { flex: 1 },
   memberName: { fontSize: 16, fontWeight: "600", color: "#1a1a1a" },
   memberEmail: { fontSize: 12, color: "#999", marginTop: 1 },
-  memberRoleBadge: { fontSize: 11, fontWeight: "700", color: "#8A38F5", marginTop: 2 },
+  youTag: { fontSize: 13, fontWeight: "400", color: "#999" },
+  rolePill: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 8, paddingVertical: 2,
+    borderRadius: 10, marginTop: 3,
+  },
+  rolePillText: { fontSize: 11, fontWeight: "700" },
   chevron: { fontSize: 20, color: "#ccc", paddingLeft: 10 },
   inviteBtn: { fontSize: 13, fontWeight: "700", color: "#500088", paddingHorizontal: 8 },
   leaveBtn: {

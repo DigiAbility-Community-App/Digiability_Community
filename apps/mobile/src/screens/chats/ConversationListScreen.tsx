@@ -11,6 +11,7 @@ import {
   ActionSheetIOS,
   Platform,
   Alert,
+  Keyboard,
 } from "react-native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useNavigation } from "@react-navigation/native";
@@ -36,6 +37,8 @@ import AppFooter from "../../components/layout/AppFooter";
 type Props = {
   navigation?: any;
   isTab?: boolean;
+  /** When true, hides filter pills and shows only DIRECT (1:1) conversations */
+  directOnly?: boolean;
 };
 
 // ── Demo Data ──────────────────────────────────────────────
@@ -59,7 +62,7 @@ interface Conversation {
   memberCount?: number;
 }
 
-const ConversationListScreen = ({ navigation: propNavigation, isTab = false }: Props) => {
+const ConversationListScreen = ({ navigation: propNavigation, isTab = false, directOnly = false }: Props) => {
   const localNavigation = useNavigation<any>();
   const navigation = propNavigation || localNavigation;
   const user = useAuthStore((s) => s.user);
@@ -71,6 +74,7 @@ const ConversationListScreen = ({ navigation: propNavigation, isTab = false }: P
   const [searchQuery, setSearchQuery] = useState("");
   const [activeFilter, setActiveFilter] = useState<"All" | "Direct" | "Groups" | "Care Circles">("All");
   const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   // Map real data to UI props
   const uiConversations: Conversation[] = storeConversations.map(c => {
@@ -116,6 +120,7 @@ const ConversationListScreen = ({ navigation: propNavigation, isTab = false }: P
         setPendingInvites(invitesData);
       } catch (err) {
         console.error("Failed to fetch conversations/invites", err);
+        setLoadError("Failed to load conversations. Pull down to retry.");
       } finally {
         setIsLoading(false);
       }
@@ -124,6 +129,9 @@ const ConversationListScreen = ({ navigation: propNavigation, isTab = false }: P
   }, []);
 
   const filteredConversations = uiConversations.filter((conv) => {
+    // When used as the Chats tab in Community, show only DMs
+    if (directOnly && conv.type !== "DIRECT") return false;
+
     const matchesSearch = conv.name
       .toLowerCase()
       .includes(searchQuery.toLowerCase());
@@ -139,6 +147,7 @@ const ConversationListScreen = ({ navigation: propNavigation, isTab = false }: P
 
   const handleConversationPress = useCallback(
     (conv: Conversation) => {
+      Keyboard.dismiss(); // M12: dismiss search keyboard before navigating
       if (isTab) {
         if (conv.type === "DIRECT") {
           navigation.navigate("Chats", {
@@ -348,8 +357,8 @@ const ConversationListScreen = ({ navigation: propNavigation, isTab = false }: P
         </View>
       </View>
 
-      {/* ── Filter Tabs ──────────────────────────────────── */}
-      <View style={[styles.filterContainer, isTab && { backgroundColor: "#FAF8FF" }]}>
+      {/* ── Filter Tabs — hidden when directOnly (Chats tab shows DMs only) */}
+      {!directOnly && <View style={[styles.filterContainer, isTab && { backgroundColor: "#FAF8FF" }]}>
         {(["All", "Direct", "Care Circles", "Groups"] as const).map((filter) => (
           <TouchableOpacity
             key={filter}
@@ -371,7 +380,7 @@ const ConversationListScreen = ({ navigation: propNavigation, isTab = false }: P
             </Text>
           </TouchableOpacity>
         ))}
-      </View>
+      </View>}
 
       {/* ── Conversation List ────────────────────────────── */}
       <FlatList
@@ -402,6 +411,24 @@ const ConversationListScreen = ({ navigation: propNavigation, isTab = false }: P
       </TouchableOpacity>
     </View>
   );
+
+  if (loadError && storeConversations.length === 0) {
+    return (
+      <View style={{ flex: 1, justifyContent: "center", alignItems: "center", padding: 24 }}>
+        <Text style={{ fontSize: 16, color: "#6B7280", textAlign: "center", marginBottom: 16 }}>{loadError}</Text>
+        <TouchableOpacity
+          style={{ backgroundColor: "#500088", paddingHorizontal: 24, paddingVertical: 12, borderRadius: 12 }}
+          onPress={() => {
+            setLoadError(null);
+            setIsLoading(true);
+            chatService.getConversations().then(convData => setConversations(convData)).catch(e => setLoadError("Failed to load. Please try again.")).finally(() => setIsLoading(false));
+          }}
+        >
+          <Text style={{ color: "#fff", fontWeight: "700" }}>Retry</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
 
   if (isTab) {
     return renderBody();

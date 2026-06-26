@@ -179,7 +179,7 @@ const AccessibilityScreen = ({ navigation }: Props) => {
                 language: "English",
                 pushNotif,
                 emailNotif,
-                // smsNotif intentionally omitted — its UI toggle is not yet implemented
+                smsNotif,
             });
         } catch {
             Alert.alert(

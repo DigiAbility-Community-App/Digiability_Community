@@ -5,6 +5,10 @@ import AuthLayout from '@/layouts/AuthLayout';
 import Login from '@/features/auth/Login';
 import Register from '@/features/auth/Register';
 import VerifyEmail from '@/features/auth/VerifyEmail';
+import OnboardingLayout from '@/layouts/OnboardingLayout';
+import Accessibility from '@/features/onboarding/Accessibility';
+import RoleSelection from '@/features/onboarding/RoleSelection';
+import ProfileCompletion from '@/features/onboarding/ProfileCompletion';
 
 import ChatsLayout from '@/features/chats/ChatsLayout';
 import ChatView from '@/features/chats/ChatView';
@@ -58,12 +62,22 @@ const App = () => {
           <Route path="verify-email" element={<VerifyEmail />} />
         </Route>
 
+        {/* Onboarding Layout (Authenticated but incomplete) */}
+        <Route path="/onboarding" element={<OnboardingLayout />}>
+          <Route path="accessibility" element={<Accessibility />} />
+          <Route path="role" element={<RoleSelection />} />
+          <Route path="profile" element={<ProfileCompletion />} />
+        </Route>
+
         {/* Main App Layout (Authenticated) */}
         <Route path="/app" element={<MainLayout />}>
           <Route path="chats" element={<ChatsLayout />}>
             <Route path=":conversationId" element={<ChatView />} />
           </Route>
           <Route path="groups" element={<ChatsLayout />}>
+            <Route path=":conversationId" element={<ChatView />} />
+          </Route>
+          <Route path="care-circles" element={<ChatsLayout />}>
             <Route path=":conversationId" element={<ChatView />} />
           </Route>
           <Route path="mentors" element={<MentorsPage />} />

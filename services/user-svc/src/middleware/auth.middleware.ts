@@ -34,7 +34,11 @@ export function authenticate(
     return;
   }
 
-  const token = authHeader.split(" ")[1];
+  const token = authHeader.split(" ")[1]?.trim();
+  if (!token) {
+    res.status(401).json({ success: false, message: "Authentication required. Please log in." });
+    return;
+  }
 
   try {
     const payload = verifyAccessToken(token);

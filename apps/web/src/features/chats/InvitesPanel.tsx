@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { X, Check, XCircle } from 'lucide-react';
-import { useChatStore, GroupInvite } from '../../store/chatStore';
+import { useChatStore, type GroupInvite } from '../../store/chatStore';
 import { chatService } from '../../services/chatService';
 import { useNavigate } from 'react-router-dom';
 import './InvitesPanel.css';

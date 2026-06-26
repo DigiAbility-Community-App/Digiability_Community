@@ -58,6 +58,8 @@ function getFallbackRoute(
   user: ReturnType<typeof useAuthStore.getState>['user']
 ): keyof MainStackParamList {
   if (!user) return 'MainTabs';
+  // New user — email not verified yet
+  if (!user.isEmailVerified) return 'VerifyEmail';
   // New user — no role chosen yet: start the full onboarding from Accessibility
   if (!user.roles || user.roles.length === 0) return 'Accessibility';
   // Has role but profile not complete: skip back to Profile
@@ -66,6 +68,10 @@ function getFallbackRoute(
   // only if preferences haven't been set, keeping the common path flash-free.
   return 'MainTabs';
 }
+
+// M13: Cache accessibility check result per userId so the async check
+// doesn't re-run on every MainNavigator mount during the session.
+const accessibilityCache = new Map<string, boolean>();
 
 const MainNavigator = () => {
   const user = useAuthStore((s) => s.user);
@@ -86,8 +92,7 @@ const MainNavigator = () => {
         return;
       }
 
-      // New user — email not verified yet (Disabled for now)
-      /*
+      // New user — email not verified yet
       if (!user.isEmailVerified) {
         if (isMounted) {
           setInitialRoute('VerifyEmail');
@@ -95,7 +100,6 @@ const MainNavigator = () => {
         }
         return;
       }
-      */
 
       // New user — no role yet: always start at Accessibility.
       // AccessibilityScreen.continueToNext() will push to RoleSelection.
@@ -117,9 +121,13 @@ const MainNavigator = () => {
         return;
       }
 
-      // Fully onboarded — check if accessibility preferences exist.
+      // Fully onboarded — check if accessibility preferences exist (cached per session).
       try {
-        const accessibilityDone = await hasCompletedAccessibility(user.id);
+        let accessibilityDone = accessibilityCache.get(user.id);
+        if (accessibilityDone === undefined) {
+          accessibilityDone = await hasCompletedAccessibility(user.id);
+          accessibilityCache.set(user.id, accessibilityDone);
+        }
         if (isMounted) {
           setInitialRoute(accessibilityDone ? 'MainTabs' : 'Accessibility');
           setIsLoading(false);

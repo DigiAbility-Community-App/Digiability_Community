@@ -58,6 +58,7 @@ const CreateGroupScreen = ({ navigation, route }: Props) => {
   const [isSearching, setIsSearching] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
+  const [allUsers, setAllUsers] = useState<UserResult[]>([]);
 
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const headerAnim = useRef(new Animated.Value(0)).current;
@@ -68,6 +69,13 @@ const CreateGroupScreen = ({ navigation, route }: Props) => {
       duration: 500,
       useNativeDriver: true,
     }).start();
+  }, []);
+
+  // Load all users immediately so they're visible without typing
+  useEffect(() => {
+    chatService.searchUsers('').then((results) => {
+      setAllUsers(results);
+    }).catch(() => {});
   }, []);
 
   // Debounced search
@@ -90,7 +98,6 @@ const CreateGroupScreen = ({ navigation, route }: Props) => {
         setHasSearched(true);
         try {
           const results = await chatService.searchUsers(text.trim());
-          // Filter out already selected members
           const selectedIds = new Set(selectedMembers.map((m) => m.user.id));
           setSearchResults(results.filter((r) => !selectedIds.has(r.id)));
         } catch (err) {
@@ -103,6 +110,13 @@ const CreateGroupScreen = ({ navigation, route }: Props) => {
     },
     [selectedMembers]
   );
+
+  // The list shown in the search results area:
+  // — when query is empty: all users (minus already selected)
+  // — when query is typed: filtered search results
+  const displayedResults = searchQuery.trim().length < 1
+    ? allUsers.filter((u) => !selectedMembers.some((m) => m.user.id === u.id))
+    : searchResults;
 
   const addMember = useCallback((member: UserResult) => {
     setSelectedMembers((prev) => {
@@ -142,10 +156,37 @@ const CreateGroupScreen = ({ navigation, route }: Props) => {
       }
 
       // Send invites to all selected members in parallel
-      const invitePromises = selectedMembers.map(m => 
+      const invitePromises = selectedMembers.map(m =>
         chatService.sendInvite(conversation.id, m.user.id, m.role, `Join my ${subType === 'CARE_CIRCLE' ? 'Care Circle' : 'Group'}!`)
       );
       await Promise.allSettled(invitePromises);
+
+      // Refresh conversations in the store so GroupChatScreen and GroupInfoScreen
+      // can find this conversation with properly enriched participants (names, etc.)
+      try {
+        const convos = await chatService.getConversations();
+        useChatStore.getState().setConversations(convos);
+      } catch {
+        // If refresh fails, manually add a minimal version so screens don't break
+        const currentUser = useAuthStore.getState().user;
+        const rawMembers: any[] = conversation.members || [];
+        const mappedConv = {
+          ...conversation,
+          participants: rawMembers.map((m: any) => ({
+            userId: m.userId,
+            role: m.role,
+            lastReadSequenceNo: 0,
+            isMuted: false,
+            user: {
+              id: m.userId,
+              name: m.userId === currentUser?.id ? (currentUser?.name || 'You') : 'Unknown',
+            },
+          })),
+          unreadCount: 0,
+          updatedAt: new Date().toISOString(),
+        };
+        addConversation(mappedConv);
+      }
 
       // Navigate to the new group chat
       navigation.replace("GroupChat", {
@@ -382,8 +423,8 @@ const CreateGroupScreen = ({ navigation, route }: Props) => {
               )}
             </View>
 
-            {/* Search Results */}
-            {hasSearched && !isSearching && searchResults.length === 0 && (
+            {/* Search Results — shows all users by default, filtered when typing */}
+            {hasSearched && !isSearching && searchQuery.trim().length > 0 && displayedResults.length === 0 && (
               <View style={styles.emptyState}>
                 <Text style={styles.emptyIcon}>🔎</Text>
                 <Text style={styles.emptyText}>
@@ -395,9 +436,9 @@ const CreateGroupScreen = ({ navigation, route }: Props) => {
               </View>
             )}
 
-            {searchResults.length > 0 && (
+            {displayedResults.length > 0 && (
               <View style={styles.resultsCard}>
-                {searchResults.map((item) => (
+                {displayedResults.map((item) => (
                   <React.Fragment key={item.id}>
                     {renderSearchResult({ item })}
                   </React.Fragment>

@@ -158,10 +158,22 @@ export async function validateEmailVerificationOtp(
   if (!stored) throw new Error("No verification OTP found. Please request a new one.");
   if (stored.expiresAt < new Date()) throw new Error("OTP has expired. Please request a new one.");
 
+  // Enforce max attempt limit to prevent brute force
+  if (stored.attempts >= EMAIL_OTP_MAX_ATTEMPTS) {
+    await prisma.emailVerificationToken.delete({ where: { id: stored.id } });
+    throw new Error("Too many incorrect attempts. Please request a new verification code.");
+  }
+
   const otpHash = hashToken(rawOtp);
 
   if (otpHash !== stored.token) {
-    throw new Error("Invalid OTP.");
+    // Increment attempt counter
+    await prisma.emailVerificationToken.update({
+      where: { id: stored.id },
+      data: { attempts: { increment: 1 } },
+    });
+    const remaining = EMAIL_OTP_MAX_ATTEMPTS - stored.attempts - 1;
+    throw new Error(`Invalid OTP. ${remaining} attempt${remaining === 1 ? "" : "s"} remaining.`);
   }
 
   return stored.userId;

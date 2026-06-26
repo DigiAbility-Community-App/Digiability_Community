@@ -1,11 +1,15 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { dbPool } from "@/lib/db";
+import { requireAdminAuth } from "@/lib/auth";
 
 // GET — single group with members
 export async function GET(
-  _req: Request,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const authError = await requireAdminAuth(req);
+  if (authError) return authError;
+
   try {
     const { id } = await params;
 
@@ -13,16 +17,16 @@ export async function GET(
       dbPool.query(`
         SELECT c.*,
           COUNT(cm.id) FILTER (WHERE cm."leftAt" IS NULL) AS "memberCount"
-        FROM conversations c
-        LEFT JOIN conversation_members cm ON c.id = cm."conversationId"
+        FROM chat.conversations c
+        LEFT JOIN chat.conversation_members cm ON c.id = cm."conversationId"
         WHERE c.id = $1 AND c."deletedAt" IS NULL
         GROUP BY c.id
       `, [id]),
       dbPool.query(`
         SELECT cm.id, cm."userId", cm.role, cm."joinedAt",
                u.name, u.email
-        FROM conversation_members cm
-        JOIN users u ON cm."userId" = u.id
+        FROM chat.conversation_members cm
+        JOIN public.users u ON cm."userId" = u.id
         WHERE cm."conversationId" = $1 AND cm."leftAt" IS NULL
         ORDER BY cm."joinedAt" ASC
       `, [id]),
@@ -53,9 +57,12 @@ export async function GET(
 
 // PATCH — update name / description / settings
 export async function PATCH(
-  request: Request,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const authError = await requireAdminAuth(request);
+  if (authError) return authError;
+
   try {
     const { id } = await params;
     const body = await request.json();
@@ -80,7 +87,7 @@ export async function PATCH(
     values.push(id);
 
     await dbPool.query(
-      `UPDATE conversations SET ${updates.join(", ")} WHERE id = $${idx} AND "deletedAt" IS NULL`,
+      `UPDATE chat.conversations SET ${updates.join(", ")} WHERE id = $${idx} AND "deletedAt" IS NULL`,
       values
     );
 
@@ -93,13 +100,16 @@ export async function PATCH(
 
 // DELETE — soft delete
 export async function DELETE(
-  _req: Request,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const authError = await requireAdminAuth(req);
+  if (authError) return authError;
+
   try {
     const { id } = await params;
     await dbPool.query(
-      `UPDATE conversations SET "deletedAt" = NOW(), "updatedAt" = NOW() WHERE id = $1`,
+      `UPDATE chat.conversations SET "deletedAt" = NOW(), "updatedAt" = NOW() WHERE id = $1`,
       [id]
     );
     return NextResponse.json({ success: true });

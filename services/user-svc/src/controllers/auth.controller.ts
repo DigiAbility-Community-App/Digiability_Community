@@ -161,6 +161,8 @@ export const updateRoleHandler = asyncHandler(async (req: Request, res: Response
 // ─── POST /auth/users/batch ────────────────────────────
 // Returns minimal user info ({ id, name }) for a list of IDs.
 // Used by chat screens to resolve participant display names.
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export const batchLookupUsers = asyncHandler(async (req: Request, res: Response) => {
   const { ids } = req.body;
 
@@ -172,7 +174,17 @@ export const batchLookupUsers = asyncHandler(async (req: Request, res: Response)
     return;
   }
 
-  const users = await getUsersByIds(ids);
+  // Validate each ID is a proper UUID to prevent DB errors and enumeration abuse
+  const validIds = ids
+    .filter((id): id is string => typeof id === "string" && UUID_REGEX.test(id))
+    .slice(0, 100); // enforce cap
+
+  if (validIds.length === 0) {
+    res.status(400).json({ success: false, message: "No valid UUIDs provided" });
+    return;
+  }
+
+  const users = await getUsersByIds(validIds);
   res.status(200).json({ success: true, data: { users } });
 });
 

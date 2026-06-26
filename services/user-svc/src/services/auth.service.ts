@@ -147,20 +147,18 @@ export async function registerUser(input: RegisterInput): Promise<LoginResult> {
     dbRoles = [role as Role];
   }
 
-  const userData: any = { name, email, password: hashedPassword, roles: dbRoles, isEmailVerified: true };
+  const userData: any = { name, email, password: hashedPassword, roles: dbRoles, isEmailVerified: false };
   if (phoneNo && typeof phoneNo === 'string' && phoneNo.trim()) {
     userData.phoneNo = phoneNo.trim();
   }
 
   const user = await prisma.user.create({ data: userData });
 
-  // Email verification is disabled for now
-  /*
+  // Email verification is enabled
   const rawOtp = await createEmailVerificationOtp(user.id);
   sendVerificationOtpEmail(user.email, user.name, rawOtp).catch((err) =>
     console.error("[EmailService] Failed to send verification OTP:", err)
   );
-  */
 
   const accessToken = signAccessToken({ sub: user.id, email: user.email });
   const refreshToken = await createRefreshToken(user.id);
@@ -187,6 +185,11 @@ export async function loginUser(input: LoginInput): Promise<LoginResult> {
   // 2. Compare password
   const isMatch = await comparePassword(password, user.password);
   if (!isMatch) throw createError("Invalid email or password", 400);
+
+  // 2b. Require email verification before allowing login
+  if (!user.isEmailVerified) {
+    throw createError("Please verify your email address before logging in.", 403);
+  }
 
   // 3. Sign access token
   const accessToken = signAccessToken({ sub: user.id, email: user.email });
@@ -393,13 +396,15 @@ export async function removeDeviceToken(
 
 export async function searchUsers(query: string, excludeUserId?: string) {
   if (!query || query.trim().length < 1) return [];
+  // Bound query length to prevent excessively long DB patterns
+  const safeQuery = query.trim().slice(0, 100);
 
   const BOT_USER_ID = "00000000-0000-0000-0000-000000000001";
 
   const users = await prisma.user.findMany({
     where: {
       AND: [
-        { name: { contains: query.trim(), mode: "insensitive" } },
+        { name: { contains: safeQuery, mode: "insensitive" } },
         { id: { notIn: [excludeUserId, BOT_USER_ID].filter(Boolean) as string[] } },
         { isEmailVerified: true },
       ],

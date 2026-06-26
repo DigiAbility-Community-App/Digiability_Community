@@ -1,4 +1,5 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { requireAdminAuth } from "@/lib/auth";
 import { dbPool } from "@/lib/db";
 
 // Ensure table exists on every cold start
@@ -33,7 +34,10 @@ async function ensureTable() {
   }
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const authError = await requireAdminAuth(request);
+  if (authError) return authError;
+
   try {
     await ensureTable();
     const { rows } = await dbPool.query(

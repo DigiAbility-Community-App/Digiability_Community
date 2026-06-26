@@ -214,34 +214,39 @@ const ChatScreen = ({ navigation, route }: Props) => {
     loadMessages();
   }, [conversationId]);
 
+  const isSendingRef = React.useRef(false);
+
   const handleSend = useCallback(() => {
     if (!messageText.trim() || !user) return;
+    if (isSendingRef.current) return; // prevent double-tap
+    isSendingRef.current = true;
 
     const content = messageText.trim();
     const clientMessageId = generateUUID();
-    
-    // 1. Optimistic update
+
     const newMsg: ChatMessage = {
-      id: clientMessageId, // temporary
+      id: clientMessageId,
       clientMessageId,
       conversationId,
       senderId: user.id,
       content,
       type: "TEXT",
       status: "sent",
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
     };
-    
+
     addMessage(newMsg);
     setMessageText("");
 
-    // 2. Send via WS
     sendSocketMessage("message.send", {
       conversationId,
       content,
       type: "TEXT",
-      clientMessageId
+      clientMessageId,
     });
+
+    // Re-enable after a brief debounce
+    setTimeout(() => { isSendingRef.current = false; }, 300);
   }, [messageText, conversationId, user]);
 
   const renderStatusIcon = (status: string) => {

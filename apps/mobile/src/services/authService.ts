@@ -149,15 +149,18 @@ export async function login(input: LoginInput): Promise<AuthUser> {
 // ── Logout ─────────────────────────────────────────────────
 
 export async function logout(): Promise<void> {
-  // Drain any queued requests before clearing state
+  // H11: Clear local auth state FIRST to prevent any in-flight responses
+  // writing stale data to the store after logout.
+  useAuthStore.getState().clearAuth();
+  await SecureStore.deleteItemAsync(REFRESH_TOKEN_KEY);
+
+  // Then cancel pending requests and notify the server (best-effort)
   cancelPendingRequests();
   try {
     await apiClient.post('/api/auth/logout');
   } catch {
-    // Swallow — we still clear local state even if request fails
+    // Swallow — local state is already cleared
   }
-  useAuthStore.getState().clearAuth();
-  await SecureStore.deleteItemAsync(REFRESH_TOKEN_KEY);
 }
 
 // ── Get current user (protected) ───────────────────────────

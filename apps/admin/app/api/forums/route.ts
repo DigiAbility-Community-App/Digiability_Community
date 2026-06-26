@@ -1,7 +1,11 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { requireAdminAuth } from "@/lib/auth";
 import { dbPool } from "@/lib/db";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const authError = await requireAdminAuth(request);
+  if (authError) return authError;
+
   try {
     const [questionsResult, statsResult] = await Promise.all([
       dbPool.query(`

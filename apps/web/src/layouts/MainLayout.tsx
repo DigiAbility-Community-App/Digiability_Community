@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { MessageSquare, Users, BookOpen, Calendar, Settings, Layers, HeartHandshake, GraduationCap } from 'lucide-react';
 import clsx from 'clsx';
@@ -11,6 +11,18 @@ const MainLayout = () => {
   const navigate = useNavigate();
   const isAuthenticated = useAuthStore(s => s.isAuthenticated);
   const user = useAuthStore(s => s.user);
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsProfileOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -54,8 +66,17 @@ const MainLayout = () => {
           >
             <Layers size={22} />
           </NavLink>
-          
-          <NavLink 
+
+          <NavLink
+            to="/app/care-circles"
+            className={({ isActive }) => clsx("nav-item", { active: isActive })}
+            aria-label="Care Circles"
+            title="Care Circles"
+          >
+            <HeartHandshake size={22} />
+          </NavLink>
+
+          <NavLink
             to="/app/mentors" 
             className={({ isActive }) => clsx("nav-item", { active: isActive })}
             aria-label="Mentors"
@@ -106,23 +127,45 @@ const MainLayout = () => {
             <Settings size={22} />
           </button>
           
-          <button 
-            className="avatar-btn" 
-            aria-label="User Profile" 
-            title="Profile"
-            onClick={() => {
-              authService.logout();
-              closeSocket();
-              navigate('/login');
-            }}
-          >
-            <img 
-              src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${user?.name || 'User'}`} 
-              alt="Avatar" 
-              width="100%" 
-              height="100%" 
-            />
-          </button>
+          <div style={{ position: 'relative' }} ref={dropdownRef}>
+            <button 
+              className="avatar-btn" 
+              aria-label="User Profile" 
+              title="Profile"
+              onClick={() => setIsProfileOpen(!isProfileOpen)}
+            >
+              <img 
+                src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${user?.name || 'User'}`} 
+                alt="Avatar" 
+                width="100%" 
+                height="100%" 
+              />
+            </button>
+
+            {isProfileOpen && (
+              <div className="profile-dropdown">
+                <div className="profile-header">
+                  <span className="profile-name">{user?.name}</span>
+                  <span className="profile-email">{user?.email}</span>
+                </div>
+                <div className="profile-roles">
+                  {user?.roles?.map(r => (
+                    <span key={r} className="profile-role-badge">{r}</span>
+                  ))}
+                </div>
+                <button 
+                  className="profile-logout-btn"
+                  onClick={() => {
+                    authService.logout();
+                    closeSocket();
+                    navigate('/login');
+                  }}
+                >
+                  Logout
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </nav>
 

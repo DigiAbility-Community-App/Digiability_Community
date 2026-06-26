@@ -1,6 +1,7 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { dbPool } from "@/lib/db";
 import crypto from "crypto";
+import { requireAdminAuth } from "@/lib/auth";
 
 function parseRoles(raw: any): string[] {
   if (!raw) return [];
@@ -28,9 +29,12 @@ function durationToInterval(duration: string): string {
 }
 
 export async function GET(
-  _request: Request,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const authError = await requireAdminAuth(request);
+  if (authError) return authError;
+
   try {
     const { id } = await params;
 
@@ -115,9 +119,12 @@ export async function GET(
 }
 
 export async function PATCH(
-  request: Request,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const authError = await requireAdminAuth(request);
+  if (authError) return authError;
+
   try {
     const { id } = await params;
     const body = await request.json();
@@ -142,11 +149,13 @@ export async function PATCH(
           [uuid, id]
         );
       } else {
+        // Use parameterized cast to avoid SQL injection — interval is already
+        // validated against an allowlist in durationToInterval() above.
         await dbPool.query(
           `INSERT INTO forum_user_stats (id, "userId", "isSuspended", "suspendedUntil")
-           VALUES ($1, $2, true, NOW() + INTERVAL '${interval}')
-           ON CONFLICT ("userId") DO UPDATE SET "isSuspended" = true, "suspendedUntil" = NOW() + INTERVAL '${interval}'`,
-          [uuid, id]
+           VALUES ($1, $2, true, NOW() + ($3::interval))
+           ON CONFLICT ("userId") DO UPDATE SET "isSuspended" = true, "suspendedUntil" = NOW() + ($3::interval)`,
+          [uuid, id, interval]
         );
       }
 
@@ -178,8 +187,10 @@ export async function PATCH(
         );
       }
       if (Array.isArray(roles)) {
-        // Store roles as a Postgres text array
-        const rolesArray = roles.map((r: string) => r.toLowerCase());
+        const VALID_ROLES = ["pwd", "caregiver", "therapist", "ngo", "volunteer", "student", "mentor"];
+        const rolesArray = roles
+          .map((r: string) => String(r).toLowerCase().trim())
+          .filter((r) => VALID_ROLES.includes(r));
         await dbPool.query(
           `UPDATE users SET roles = $1 WHERE id = $2`,
           [rolesArray, id]
@@ -230,9 +241,12 @@ export async function PATCH(
 }
 
 export async function DELETE(
-  _request: Request,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const authError = await requireAdminAuth(request);
+  if (authError) return authError;
+
   try {
     const { id } = await params;
 

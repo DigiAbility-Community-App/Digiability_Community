@@ -1,4 +1,5 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { requireAdminAuth } from "@/lib/auth";
 import { dbPool } from "@/lib/db";
 
 async function ensureTable() {
@@ -30,7 +31,10 @@ async function ensureTable() {
 // ─────────────────────────────────────────────
 // GET — load settings
 // ─────────────────────────────────────────────
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const authError = await requireAdminAuth(request);
+  if (authError) return authError;
+
   try {
     await ensureTable();
 
@@ -59,7 +63,10 @@ export async function GET() {
 // ─────────────────────────────────────────────
 // POST — save settings
 // ─────────────────────────────────────────────
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
+  const authError = await requireAdminAuth(request);
+  if (authError) return authError;
+
   try {
     await ensureTable();
     const body = await request.json();

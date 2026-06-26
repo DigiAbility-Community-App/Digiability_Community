@@ -36,7 +36,7 @@ const CreateGroupModal: React.FC<Props> = ({ initialType = 'GENERAL', onClose })
   const [isCreating, setIsCreating] = useState(false);
   const searchTimeout = useRef<number | null>(null);
 
-  const addConversation = useChatStore((s) => s.addConversation);
+  const setConversations = useChatStore((s) => s.setConversations);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -96,6 +96,12 @@ const CreateGroupModal: React.FC<Props> = ({ initialType = 'GENERAL', onClose })
           chatService.sendInvite(convo.id, m.id, m.role, `Join ${groupName.trim()}!`)
         )
       );
+
+      // Refresh the store so the new group appears in the sidebar immediately
+      try {
+        const convos = await chatService.getConversations();
+        setConversations(convos);
+      } catch { /* non-fatal */ }
 
       onClose();
       navigate(`/app/${groupType === 'GENERAL' ? 'groups' : 'chats'}/${convo.id}`);

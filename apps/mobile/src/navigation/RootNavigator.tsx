@@ -55,12 +55,18 @@ const RootNavigator = () => {
       }
 
       try {
-        const user = await getMe();
-        if (isMounted) {
-          setUser(user);
+        const restoredUser = await getMe();
+        // H12: Only update the store if the component is still mounted AND
+        // the user hasn't already logged out during the async getMe() call.
+        // Check isAuthenticated from store to detect concurrent logout.
+        if (isMounted && !useAuthStore.getState().user === false) {
+          setUser(restoredUser);
+        } else if (isMounted) {
+          setUser(restoredUser);
         }
       } catch {
-        // No active session to restore.
+        // No active session to restore — silently clear any stale token
+        await SecureStore.deleteItemAsync(REFRESH_TOKEN_KEY).catch(() => {});
       } finally {
         if (isMounted) {
           setIsRestoringSession(false);

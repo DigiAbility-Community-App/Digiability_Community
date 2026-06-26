@@ -1,11 +1,15 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { requireAdminAuth } from "@/lib/auth";
 import { dbPool } from "@/lib/db";
 
 // ─────────────────────────────────────────────
 // POST — create a new group / community
 // Writes to chat schema so groups appear in the mobile app.
 // ─────────────────────────────────────────────
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
+  const authError = await requireAdminAuth(request);
+  if (authError) return authError;
+
   try {
     const body = await request.json();
     const {
@@ -76,7 +80,10 @@ export async function POST(request: Request) {
 // ─────────────────────────────────────────────
 // GET — list all groups (from chat schema)
 // ─────────────────────────────────────────────
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const authError = await requireAdminAuth(request);
+  if (authError) return authError;
+
   try {
     const [groupsResult, statsResult] = await Promise.all([
       dbPool.query(`

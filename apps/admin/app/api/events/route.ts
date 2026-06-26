@@ -1,5 +1,6 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { dbPool } from "@/lib/db";
+import { requireAdminAuth } from "@/lib/auth";
 
 async function ensureEventsTable() {
   await dbPool.query(`
@@ -29,7 +30,10 @@ async function ensureEventsTable() {
   `);
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const authError = await requireAdminAuth(request);
+  if (authError) return authError;
+
   try {
     await ensureEventsTable();
     const result = await dbPool.query(`
@@ -49,7 +53,10 @@ export async function GET() {
   }
 }
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
+  const authError = await requireAdminAuth(request);
+  if (authError) return authError;
+
   try {
     await ensureEventsTable();
     const body = await request.json();
