@@ -13,6 +13,7 @@ import {
 } from "../utils/validation.util";
 import { asyncHandler } from "../middleware/error.middleware";
 import { AuthenticatedRequest } from "../types/common.types";
+import { conversationRepository } from "../repositories/conversation.repository";
 
 export const createConversation = asyncHandler(async (req: Request, res: Response) => {
   const user = (req as AuthenticatedRequest).user;
@@ -42,6 +43,52 @@ export const createConversation = asyncHandler(async (req: Request, res: Respons
   res.status(201).json({
     success: true,
     data: conversation,
+  });
+});
+
+export const joinGroup = asyncHandler(async (req: Request, res: Response) => {
+  const user = (req as AuthenticatedRequest).user;
+  const { conversationId } = req.params;
+
+  const conversation = await conversationRepository.getById(conversationId);
+  if (!conversation || conversation.type !== "GROUP") {
+    res.status(404).json({ success: false, message: "Group not found" });
+    return;
+  }
+
+  const alreadyMember = await conversationRepository.isMember(conversationId, user.sub);
+  if (alreadyMember) {
+    res.status(200).json({ success: true, message: "Already a member" });
+    return;
+  }
+
+  await conversationRepository.addMember(conversationId, user.sub, "MEMBER");
+  res.status(200).json({ success: true, message: "Joined group successfully" });
+});
+
+export const listAllGroups = asyncHandler(async (req: Request, res: Response) => {
+  const user = (req as AuthenticatedRequest).user;
+  const subType = (req.query.subType as string) === "CARE_CIRCLE" ? "CARE_CIRCLE" : "GENERAL";
+  const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
+  const cursor = req.query.cursor as string | undefined;
+
+  const { groups, hasMore } = await conversationRepository.listAllGroups(subType, user.sub, limit, cursor);
+
+  res.status(200).json({
+    success: true,
+    data: groups.map((g) => ({
+      id: g.id,
+      name: g.name,
+      description: g.description,
+      subType: g.subType,
+      memberCount: g.members.length,
+      isMember: g.isMember,
+      lastMessageText: g.lastMessageText,
+      lastMessageAt: g.lastMessageAt,
+      createdAt: g.createdAt,
+      avatarUrl: g.avatarUrl,
+    })),
+    pagination: { hasMore, nextCursor: hasMore && groups.length > 0 ? groups[groups.length - 1].id : undefined },
   });
 });
 

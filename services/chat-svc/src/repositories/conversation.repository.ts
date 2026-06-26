@@ -72,8 +72,9 @@ class ConversationRepository {
       ? [] // creator-only conversation
       : [...new Set(memberIds.filter((id) => id !== createdBy))];
 
-    if (!isSelfConversation && uniqueMembers.length === 0) {
-      throw new Error("At least one other member is required");
+    // Only DIRECT conversations require a recipient; GROUP can start creator-only
+    if (type === "DIRECT" && !isSelfConversation && uniqueMembers.length === 0) {
+      throw new Error("At least one other member is required for a direct conversation");
     }
 
     if (type === "DIRECT") {
@@ -230,6 +231,40 @@ class ConversationRepository {
     const result = hasMore ? conversations.slice(0, limit) : conversations;
 
     return { conversations: result, hasMore };
+  }
+
+  /**
+   * List ALL community groups of a given subType (GENERAL or CARE_CIRCLE).
+   * Used for the community discovery screen — not filtered by membership.
+   */
+  async listAllGroups(
+    subType: "GENERAL" | "CARE_CIRCLE",
+    requestingUserId: string,
+    limit: number = 50,
+    cursor?: string
+  ): Promise<{ groups: (ConversationWithMembers & { isMember: boolean })[]; hasMore: boolean }> {
+    const groups = await prisma.conversation.findMany({
+      where: { type: "GROUP", subType, deletedAt: null },
+      include: {
+        members: {
+          where: { leftAt: null },
+          select: { userId: true, role: true, lastReadSequenceNo: true, isMuted: true },
+        },
+      },
+      orderBy: [
+        { lastMessageAt: { sort: "desc", nulls: "last" } },
+        { createdAt: "desc" },
+      ],
+      take: limit + 1,
+      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+    });
+
+    const hasMore = groups.length > limit;
+    const result = (hasMore ? groups.slice(0, limit) : groups).map((g) => ({
+      ...g,
+      isMember: g.members.some((m) => m.userId === requestingUserId),
+    }));
+    return { groups: result, hasMore };
   }
 
   /**

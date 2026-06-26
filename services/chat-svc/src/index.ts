@@ -31,8 +31,9 @@ import cors from "cors";
 import { env } from "./config/env";
 import { logger } from "./config/logger";
 import { disconnectRedis } from "./config/redis";
-import { connectCassandra, disconnectCassandra } from "./config/cassandra";
 import prisma from "./models/prisma.client";
+import { startMsgWorker } from "./workers/msg-svc.worker";
+import { startDeliveryWorker } from "./workers/delivery.worker";
 import { ensureConsumerGroups } from "./streams/producer";
 import { attachWebSocketGateway } from "./websocket/gateway";
 import { connectionManager } from "./websocket/connection-manager";
@@ -87,28 +88,36 @@ app.use(errorHandler);
 
 const httpServer = createServer(app);
 
+// Holds worker stop functions for graceful shutdown
+let stopMsgWorker: (() => Promise<void>) | null = null;
+let stopDeliveryWorker: (() => Promise<void>) | null = null;
+
 async function startServer(): Promise<void> {
   try {
     // 1. Connect to PostgreSQL
     await prisma.$connect();
     logger.info("PostgreSQL connected");
 
-    // 1b. Connect to Cassandra (message store)
-    await connectCassandra();
-
     // 2. Ensure Redis Stream consumer groups exist
     await ensureConsumerGroups();
     logger.info("Stream consumer groups ready");
 
     // 3. Attach WebSocket gateway to HTTP server
-    const wss = attachWebSocketGateway(httpServer);
+    attachWebSocketGateway(httpServer);
     logger.info("WebSocket gateway attached");
 
     // 4. Start Pub/Sub subscription for cross-server delivery
     await deliveryService.startSubscription();
     logger.info("Delivery service Pub/Sub subscription active");
 
-    // 5. Start HTTP + WS server
+    // 5. Start embedded workers (no separate containers needed)
+    stopMsgWorker = await startMsgWorker();
+    logger.info("Message persistence worker started");
+
+    stopDeliveryWorker = await startDeliveryWorker();
+    logger.info("Delivery routing worker started");
+
+    // 6. Start HTTP + WS server
     httpServer.listen(env.PORT, () => {
       logger.info(`🚀 chat-svc running on http://localhost:${env.PORT}`);
       logger.info(`📋 Health check: http://localhost:${env.PORT}/health`);
@@ -148,14 +157,15 @@ async function gracefulShutdown(signal: string): Promise<void> {
   // 4. Stop delivery Pub/Sub subscription
   await deliveryService.stopSubscription().catch(() => {});
 
-  // 5. Disconnect Redis
+  // 5. Stop embedded workers
+  await stopMsgWorker?.().catch(() => {});
+  await stopDeliveryWorker?.().catch(() => {});
+
+  // 6. Disconnect Redis
   await disconnectRedis().catch(() => {});
 
-  // 6. Disconnect Prisma
+  // 7. Disconnect Prisma
   await prisma.$disconnect().catch(() => {});
-
-  // 7. Disconnect Cassandra
-  await disconnectCassandra().catch(() => {});
 
   logger.info("Graceful shutdown complete");
   process.exit(0);

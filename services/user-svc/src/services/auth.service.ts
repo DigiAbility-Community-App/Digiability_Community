@@ -294,9 +294,9 @@ export async function getCurrentUser(userId: string) {
   };
 }
 
+// Must match the Prisma Role enum exactly
 const VALID_ROLES: string[] = [
-  'pwd', 'caregiver', 'educator', 'ngo_worker', 'skill_trainer',
-  'community_member', 'therapist', 'volunteer', 'student',
+  'pwd', 'caregiver', 'therapist', 'ngo', 'volunteer', 'student', 'mentor',
 ];
 
 export async function updateUserRole(userId: string, input: UpdateRoleInput) {
@@ -358,6 +358,32 @@ export async function getUsersByIds(ids: string[]) {
   });
 
   return users;
+}
+
+// ─── Device Token ─────────────────────────────────────
+// Registers an Expo push token for a user device.
+// One user can have multiple tokens (multiple devices).
+// Upserts on token to avoid duplicates.
+
+export async function registerDeviceToken(
+  userId: string,
+  token: string,
+  platform: string
+): Promise<void> {
+  await prisma.deviceToken.upsert({
+    where: { token },
+    update: { userId, platform, updatedAt: new Date() },
+    create: { userId, token, platform },
+  });
+}
+
+export async function removeDeviceToken(
+  userId: string,
+  token: string
+): Promise<void> {
+  await prisma.deviceToken.deleteMany({
+    where: { userId, token },
+  });
 }
 
 // ─── User Search ───────────────────────────────────────

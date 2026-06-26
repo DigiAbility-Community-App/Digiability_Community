@@ -74,8 +74,9 @@ class ConversationService {
       ? [] // creator-only conversation
       : [...new Set(memberIds.filter((id) => id !== creatorId))];
 
-    if (!isSelfConversation && uniqueMembers.length === 0) {
-      throw new Error("At least one other member is required");
+    // DIRECT conversations need a recipient; GROUPs can start with just the creator
+    if (type === "DIRECT" && !isSelfConversation && uniqueMembers.length === 0) {
+      throw new Error("At least one other member is required for a direct conversation");
     }
 
     const conversation = await conversationRepository.create({

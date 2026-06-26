@@ -57,7 +57,9 @@ export const createConversationSchema = z.object({
   subType: z.enum(["GENERAL", "CARE_CIRCLE"]).optional(),
   name: z.string().min(1).max(200).optional(),
   description: z.string().max(500).optional(),
-  memberIds: z.array(z.string().uuid()).min(1).max(500),
+  // GROUP creation allows empty memberIds (creator is auto-added as OWNER).
+  // DIRECT conversations require exactly 1 member (the recipient).
+  memberIds: z.array(z.string().uuid()).min(0).max(500).default([]),
   memberRoles: z.array(z.object({
     userId: z.string().uuid(),
     role: z.enum(["MEMBER", "ADMIN", "CAREGIVER", "MENTOR", "PROFESSIONAL"]),

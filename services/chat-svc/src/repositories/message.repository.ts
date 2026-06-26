@@ -1,30 +1,18 @@
 // ─────────────────────────────────────────────────────────────
-// Message Repository — Dual-Store Architecture
+// Message Repository — PostgreSQL only
 //
-// CASSANDRA: Message content storage (write-optimized, time-series)
-//   - messages table: partitioned by conversation_id
-//   - messages_by_client_id: idempotent write dedup
-//   - conversation_sequence: atomic sequence counter
+// All message content is stored in the Prisma Message model.
+// Atomic sequenceNo generation uses PostgreSQL advisory locks
+// (pg_advisory_xact_lock) so no separate sequence table is needed.
 //
-// POSTGRESQL (Prisma): Delivery state management (transactional)
-//   - MessageRecipient: per-user delivery tracking
-//   - MessageReceipt: audit log
-//   - ConversationMember: read cursors
-//
-// This split gives us:
-//   - Fast writes to Cassandra (no contention on sequence lock)
-//   - Transactional delivery guarantees via Postgres
-//   - Efficient time-range queries for message history
+// Cassandra has been removed — the Message model already has
+// every field (content, type, metadata, sequenceNo, etc.) and
+// the clientMessageId @unique constraint handles deduplication.
 // ─────────────────────────────────────────────────────────────
 
-import cassandra from "../config/cassandra";
 import prisma from "../models/prisma.client";
-import { types as cassandraTypes } from "cassandra-driver";
 import { DeliveryStatus, ReceiptType } from "../generated/client";
 import { logger } from "../config/logger";
-
-const Uuid = cassandraTypes.Uuid;
-const TimeUuid = cassandraTypes.TimeUuid;
 
 export interface PersistMessageInput {
   messageId: string;
@@ -46,20 +34,36 @@ export interface PersistedMessage {
   content: string;
   type: string;
   createdAt: Date;
-  isNew: boolean; // true if this was a new insert, false if deduplicated
+  isNew: boolean;
 }
 
 class MessageRepository {
-  // ─── Cassandra: Message Persistence ────────────────────
+
+  // ─── Atomic sequence number via PostgreSQL advisory lock ───
+
+  private async getNextSequenceNo(conversationId: string): Promise<bigint> {
+    // pg_advisory_xact_lock ensures only one transaction at a time
+    // computes the next sequence for a given conversation.
+    return prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${conversationId}))`;
+      const agg = await tx.message.aggregate({
+        _max: { sequenceNo: true },
+        where: { conversationId },
+      });
+      return (agg._max.sequenceNo ?? BigInt(0)) + BigInt(1);
+    });
+  }
+
+  // ─── Message Persistence ───────────────────────────────────
 
   /**
-   * Persist a message with idempotency via client_message_id dedup.
-   *
-   * 1. Check messages_by_client_id for dedup
-   * 2. Get next sequence number (Redis INCR or Cassandra LWT)
-   * 3. Write to messages + messages_by_client_id
-   * 4. Create recipient rows in Postgres
-   * 5. Update conversation last message preview in Postgres
+   * Persist a message idempotently using clientMessageId @unique.
+   * Steps:
+   *  1. Dedup check — return existing if already persisted
+   *  2. Atomic sequence number
+   *  3. Upsert Message row (content + all fields in one place)
+   *  4. Create MessageRecipient rows
+   *  5. Update conversation last message preview
    */
   async persistMessage(input: PersistMessageInput): Promise<PersistedMessage> {
     const {
@@ -73,90 +77,37 @@ class MessageRepository {
       createdAt,
     } = input;
 
-    // ── Step 1: Dedup check via Cassandra ──
-    const existing = await cassandra.execute(
-      "SELECT message_id, conversation_id, sender_id, sequence_no, client_message_id, content, type, created_at FROM messages_by_client_id WHERE client_message_id = ?",
-      [clientMessageId],
-      { prepare: true }
-    );
+    const msgCreatedAt = new Date(createdAt);
 
-    if (existing.rowLength > 0) {
-      const row = existing.first();
-      logger.debug("Duplicate message detected — skipping insert", {
-        messageId,
-        clientMessageId,
-        conversationId,
-      });
+    // ── Step 1: Dedup check ──
+    const existing = await prisma.message.findUnique({
+      where: { clientMessageId },
+      select: {
+        id: true, conversationId: true, senderId: true,
+        sequenceNo: true, clientMessageId: true,
+        content: true, type: true, createdAt: true,
+      },
+    });
+
+    if (existing) {
+      logger.debug("Duplicate message — skipping insert", { messageId, clientMessageId });
       return {
-        id: row.message_id.toString(),
-        conversationId: row.conversation_id.toString(),
-        senderId: row.sender_id.toString(),
-        sequenceNo: BigInt(row.sequence_no.toString()),
-        clientMessageId: row.client_message_id,
-        content: row.content,
-        type: row.type,
-        createdAt: row.created_at,
+        id: existing.id,
+        conversationId: existing.conversationId,
+        senderId: existing.senderId,
+        sequenceNo: existing.sequenceNo,
+        clientMessageId: existing.clientMessageId,
+        content: existing.content,
+        type: existing.type,
+        createdAt: existing.createdAt,
         isNew: false,
       };
     }
 
-    // ── Step 2: Get next sequence number ──
-    // Use Cassandra LWT (lightweight transaction) for atomic counter
+    // ── Step 2: Atomic sequence number ──
     const nextSequenceNo = await this.getNextSequenceNo(conversationId);
 
-    const msgCreatedAt = new Date(createdAt);
-    const convUuid = Uuid.fromString(conversationId);
-    const msgUuid = Uuid.fromString(messageId);
-    const senderUuid = Uuid.fromString(senderId);
-
-    // ── Step 3: Write to Cassandra (messages + dedup table) ──
-    const batch = [
-      {
-        query: `INSERT INTO messages (conversation_id, message_id, sequence_no, sender_id, client_message_id, content, type, status, metadata, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        params: [
-          convUuid,
-          msgUuid,
-          nextSequenceNo,
-          senderUuid,
-          clientMessageId,
-          content,
-          type,
-          "PERSISTED",
-          metadata || null,
-          msgCreatedAt,
-          msgCreatedAt,
-        ],
-      },
-      {
-        query: `INSERT INTO messages_by_client_id (client_message_id, conversation_id, message_id, sequence_no, sender_id, content, type, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        params: [
-          clientMessageId,
-          convUuid,
-          msgUuid,
-          nextSequenceNo,
-          senderUuid,
-          content,
-          type,
-          msgCreatedAt,
-        ],
-      },
-    ];
-
-    await cassandra.batch(batch, { prepare: true });
-
-    // ── Step 4: Create Postgres Message stub (FK anchor) + recipient rows ──
-    const members = await prisma.conversationMember.findMany({
-      where: { conversationId, leftAt: null },
-      select: { userId: true },
-    });
-
-    const recipientUserIds = members
-      .map((m) => m.userId)
-      .filter((id) => id !== senderId);
-
-    // Create the stub message row in Postgres (for FK references)
+    // ── Step 3: Upsert Message (all content stored in PostgreSQL) ──
     await prisma.message.upsert({
       where: { id: messageId },
       update: {},
@@ -169,12 +120,22 @@ class MessageRepository {
         clientMessageId,
         content,
         type: type as any,
+        status: "PERSISTED" as any,
+        metadata: metadata ?? null,
       },
     });
 
-    if (recipientUserIds.length > 0) {
+    // ── Step 4: Create recipient rows ──
+    const members = await prisma.conversationMember.findMany({
+      where: { conversationId, leftAt: null },
+      select: { userId: true },
+    });
+
+    const recipientIds = members.map((m) => m.userId).filter((id) => id !== senderId);
+
+    if (recipientIds.length > 0) {
       await prisma.messageRecipient.createMany({
-        data: recipientUserIds.map((userId) => ({
+        data: recipientIds.map((userId) => ({
           messageId,
           userId,
           status: "PENDING" as DeliveryStatus,
@@ -183,7 +144,7 @@ class MessageRepository {
       });
     }
 
-    // ── Step 5: Update conversation's last message preview ──
+    // ── Step 5: Update conversation last message preview ──
     await prisma.conversation.update({
       where: { id: conversationId },
       data: {
@@ -193,10 +154,8 @@ class MessageRepository {
       },
     });
 
-    logger.info("Message persisted to Cassandra", {
-      messageId,
-      clientMessageId,
-      conversationId,
+    logger.info("Message persisted to PostgreSQL", {
+      messageId, clientMessageId, conversationId,
       sequenceNo: nextSequenceNo.toString(),
     });
 
@@ -204,7 +163,7 @@ class MessageRepository {
       id: messageId,
       conversationId,
       senderId,
-      sequenceNo: BigInt(nextSequenceNo),
+      sequenceNo: nextSequenceNo,
       clientMessageId,
       content,
       type,
@@ -213,154 +172,47 @@ class MessageRepository {
     };
   }
 
-  /**
-   * Atomic sequence number generation using Cassandra LWT.
-   */
-  private async getNextSequenceNo(conversationId: string): Promise<number> {
-    const convUuid = Uuid.fromString(conversationId);
-
-    // Try to read the current sequence number
-    const result = await cassandra.execute(
-      "SELECT last_sequence_no FROM conversation_sequence WHERE conversation_id = ?",
-      [convUuid],
-      { prepare: true }
-    );
-
-    if (result.rowLength === 0) {
-      // First message in this conversation — initialize with LWT
-      const insertResult = await cassandra.execute(
-        "INSERT INTO conversation_sequence (conversation_id, last_sequence_no) VALUES (?, 1) IF NOT EXISTS",
-        [convUuid],
-        { prepare: true }
-      );
-      const applied = insertResult.first()["[applied]"];
-      if (applied) return 1;
-      // Someone else initialized it — read again
-      const reread = await cassandra.execute(
-        "SELECT last_sequence_no FROM conversation_sequence WHERE conversation_id = ?",
-        [convUuid],
-        { prepare: true }
-      );
-      const current = Number(reread.first().last_sequence_no.toString());
-      // Now increment
-      return this.incrementSequence(convUuid, current);
-    }
-
-    const current = Number(result.first().last_sequence_no.toString());
-    return this.incrementSequence(convUuid, current);
-  }
+  // ─── Message History ───────────────────────────────────────
 
   /**
-   * Increment sequence with CAS (compare-and-swap) for safety.
-   */
-  private async incrementSequence(
-    convUuid: cassandraTypes.Uuid,
-    current: number
-  ): Promise<number> {
-    const next = current + 1;
-    const casResult = await cassandra.execute(
-      "UPDATE conversation_sequence SET last_sequence_no = ? WHERE conversation_id = ? IF last_sequence_no = ?",
-      [next, convUuid, current],
-      { prepare: true }
-    );
-    const applied = casResult.first()["[applied]"];
-    if (applied) return next;
-
-    // CAS failed — retry with fresh read (rare contention case)
-    logger.warn("Sequence CAS conflict — retrying", {
-      conversationId: convUuid.toString(),
-    });
-    const reread = await cassandra.execute(
-      "SELECT last_sequence_no FROM conversation_sequence WHERE conversation_id = ?",
-      [convUuid],
-      { prepare: true }
-    );
-    const newCurrent = Number(reread.first().last_sequence_no.toString());
-    return this.incrementSequence(convUuid, newCurrent);
-  }
-
-  // ─── Cassandra: Message History ────────────────────────
-
-  /**
-   * Get messages for a conversation, ordered by time descending.
-   * Cursor-based pagination using created_at timestamp.
+   * Get messages for a conversation, ordered newest first.
+   * Cursor-based pagination via beforeTimestamp.
    */
   async getHistory(
     conversationId: string,
     limit: number = 50,
     beforeTimestamp?: Date
-  ): Promise<
-    Array<{
-      id: string;
-      conversationId: string;
-      senderId: string;
-      clientMessageId: string;
-      content: string;
-      type: string;
-      metadata: string | null;
-      sequenceNo: bigint;
-      status: string;
-      editedAt: Date | null;
-      deletedAt: Date | null;
-      createdAt: Date;
-      recipients: Array<{
-        userId: string;
-        status: string;
-        deliveredAt: Date | null;
-        readAt: Date | null;
-      }>;
-    }>
-  > {
-    const convUuid = Uuid.fromString(conversationId);
+  ) {
+    const rows = await prisma.message.findMany({
+      where: {
+        conversationId,
+        deletedAt: null,
+        ...(beforeTimestamp ? { createdAt: { lt: beforeTimestamp } } : {}),
+      },
+      orderBy: { createdAt: "desc" },
+      take: limit,
+      include: {
+        recipients: {
+          select: { userId: true, status: true, deliveredAt: true, readAt: true },
+        },
+      },
+    });
 
-    let query: string;
-    let params: any[];
-
-    if (beforeTimestamp) {
-      query =
-        "SELECT * FROM messages WHERE conversation_id = ? AND created_at < ? ORDER BY created_at DESC LIMIT ?";
-      params = [convUuid, beforeTimestamp, limit];
-    } else {
-      query =
-        "SELECT * FROM messages WHERE conversation_id = ? ORDER BY created_at DESC LIMIT ?";
-      params = [convUuid, limit];
-    }
-
-    const result = await cassandra.execute(query, params, { prepare: true });
-
-    // For each message, fetch recipient status from Postgres
-    const messages = await Promise.all(
-      result.rows.map(async (row) => {
-        const msgId = row.message_id.toString();
-        const recipients = await prisma.messageRecipient.findMany({
-          where: { messageId: msgId },
-          select: {
-            userId: true,
-            status: true,
-            deliveredAt: true,
-            readAt: true,
-          },
-        });
-
-        return {
-          id: msgId,
-          clientMessageId: row.client_message_id,
-          conversationId: row.conversation_id.toString(),
-          senderId: row.sender_id.toString(),
-          content: row.content,
-          type: row.type,
-          metadata: row.metadata || null,
-          sequenceNo: BigInt(row.sequence_no.toString()),
-          status: row.status,
-          editedAt: row.edited_at || null,
-          deletedAt: row.deleted_at || null,
-          createdAt: row.created_at,
-          recipients,
-        };
-      })
-    );
-
-    return messages;
+    return rows.map((row) => ({
+      id: row.id,
+      clientMessageId: row.clientMessageId,
+      conversationId: row.conversationId,
+      senderId: row.senderId,
+      content: row.content,
+      type: row.type,
+      metadata: row.metadata ?? null,
+      sequenceNo: row.sequenceNo,
+      status: row.status,
+      editedAt: row.editedAt ?? null,
+      deletedAt: row.deletedAt ?? null,
+      createdAt: row.createdAt,
+      recipients: row.recipients,
+    }));
   }
 
   /**
@@ -371,53 +223,32 @@ class MessageRepository {
     conversationId: string,
     afterSequenceNo: bigint,
     limit: number = 100
-  ): Promise<
-    Array<{
-      id: string;
-      conversationId: string;
-      senderId: string;
-      clientMessageId: string;
-      content: string;
-      type: string;
-      metadata: string | null;
-      sequenceNo: bigint;
-      deletedAt: Date | null;
-      createdAt: Date;
-    }>
-  > {
-    const convUuid = Uuid.fromString(conversationId);
+  ) {
+    const rows = await prisma.message.findMany({
+      where: {
+        conversationId,
+        sequenceNo: { gt: afterSequenceNo },
+      },
+      orderBy: { sequenceNo: "asc" },
+      take: limit,
+    });
 
-    // Cassandra doesn't support filtering by non-clustering columns easily
-    // So fetch recent messages and filter by sequence number
-    const result = await cassandra.execute(
-      "SELECT * FROM messages WHERE conversation_id = ? ORDER BY created_at DESC LIMIT ?",
-      [convUuid, limit * 2], // fetch extra to account for filtering
-      { prepare: true }
-    );
-
-    return result.rows
-      .filter((row) => BigInt(row.sequence_no.toString()) > afterSequenceNo)
-      .slice(0, limit)
-      .reverse() // Return in ascending order
-      .map((row) => ({
-        id: row.message_id.toString(),
-        clientMessageId: row.client_message_id,
-        conversationId: row.conversation_id.toString(),
-        senderId: row.sender_id.toString(),
-        content: row.content,
-        type: row.type,
-        metadata: row.metadata || null,
-        sequenceNo: BigInt(row.sequence_no.toString()),
-        deletedAt: row.deleted_at || null,
-        createdAt: row.created_at,
-      }));
+    return rows.map((row) => ({
+      id: row.id,
+      clientMessageId: row.clientMessageId,
+      conversationId: row.conversationId,
+      senderId: row.senderId,
+      content: row.content,
+      type: row.type,
+      metadata: row.metadata ?? null,
+      sequenceNo: row.sequenceNo,
+      deletedAt: row.deletedAt ?? null,
+      createdAt: row.createdAt,
+    }));
   }
 
-  // ─── PostgreSQL: Delivery State ────────────────────────
+  // ─── Delivery State (PostgreSQL) ──────────────────────────
 
-  /**
-   * Mark a message as delivered for a specific user.
-   */
   async markDelivered(
     messageId: string,
     userId: string
@@ -431,49 +262,32 @@ class MessageRepository {
     });
 
     if (!recipient) return null;
-    if (
-      recipient.status === "DELIVERED" ||
-      recipient.status === "READ"
-    ) {
+    if (recipient.status === "DELIVERED" || recipient.status === "READ") {
       return recipient.message;
     }
 
     await prisma.messageRecipient.update({
       where: { messageId_userId: { messageId, userId } },
-      data: {
-        status: "DELIVERED",
-        deliveredAt: new Date(),
-      },
+      data: { status: "DELIVERED", deliveredAt: new Date() },
     });
 
     return recipient.message;
   }
 
-  /**
-   * Mark a message as read for a specific user.
-   */
   async markRead(
     messageId: string,
     userId: string
-  ): Promise<{
-    senderId: string;
-    conversationId: string;
-    sequenceNo: bigint;
-  } | null> {
+  ): Promise<{ senderId: string; conversationId: string; sequenceNo: bigint } | null> {
     const recipient = await prisma.messageRecipient.findUnique({
       where: { messageId_userId: { messageId, userId } },
       select: {
         status: true,
-        message: {
-          select: { senderId: true, conversationId: true, sequenceNo: true },
-        },
+        message: { select: { senderId: true, conversationId: true, sequenceNo: true } },
       },
     });
 
     if (!recipient) return null;
-    if (recipient.status === "READ") {
-      return recipient.message;
-    }
+    if (recipient.status === "READ") return recipient.message;
 
     const now = new Date();
     await prisma.messageRecipient.update({
@@ -488,27 +302,17 @@ class MessageRepository {
     return recipient.message;
   }
 
-  /**
-   * Update the read cursor for a user in a conversation.
-   */
   async updateReadCursor(
     conversationId: string,
     userId: string,
     sequenceNo: bigint
   ): Promise<void> {
     await prisma.conversationMember.update({
-      where: {
-        conversationId_userId: { conversationId, userId },
-      },
-      data: {
-        lastReadSequenceNo: sequenceNo,
-      },
+      where: { conversationId_userId: { conversationId, userId } },
+      data: { lastReadSequenceNo: sequenceNo },
     });
   }
 
-  /**
-   * Create an immutable receipt audit entry.
-   */
   async createReceipt(
     messageId: string,
     userId: string,
@@ -516,22 +320,11 @@ class MessageRepository {
     deviceId?: string
   ): Promise<void> {
     await prisma.messageReceipt.create({
-      data: {
-        messageId,
-        userId,
-        type: type as ReceiptType,
-        deviceId,
-      },
+      data: { messageId, userId, type: type as ReceiptType, deviceId },
     });
   }
 
-  /**
-   * Check if a user is a member of a conversation.
-   */
-  async isUserInConversation(
-    conversationId: string,
-    userId: string
-  ): Promise<boolean> {
+  async isUserInConversation(conversationId: string, userId: string): Promise<boolean> {
     const member = await prisma.conversationMember.findUnique({
       where: { conversationId_userId: { conversationId, userId } },
       select: { leftAt: true },
@@ -539,44 +332,18 @@ class MessageRepository {
     return member !== null && member.leftAt === null;
   }
 
-  /**
-   * Get all pending (undelivered) messages for a user.
-   */
-  async getPendingMessages(
-    userId: string,
-    limit: number = 200
-  ): Promise<
-    Array<{
-      messageId: string;
-      message: {
-        id: string;
-        conversationId: string;
-        senderId: string;
-        clientMessageId: string;
-        content: string;
-        type: string;
-        metadata: string | null;
-        sequenceNo: bigint;
-        createdAt: Date;
-      };
-    }>
-  > {
-    // Get pending message IDs from Postgres
-    const pendingRecipients = await prisma.messageRecipient.findMany({
-      where: {
-        userId,
-        status: "PENDING",
-      },
+  // ─── Pending Messages (reconnect sync) ────────────────────
+
+  async getPendingMessages(userId: string, limit: number = 200) {
+    const pending = await prisma.messageRecipient.findMany({
+      where: { userId, status: "PENDING" },
       select: {
         messageId: true,
         message: {
           select: {
-            id: true,
-            conversationId: true,
-            senderId: true,
-            clientMessageId: true,
-            sequenceNo: true,
-            createdAt: true,
+            id: true, conversationId: true, senderId: true,
+            clientMessageId: true, content: true, type: true,
+            metadata: true, sequenceNo: true, createdAt: true,
           },
         },
       },
@@ -584,71 +351,30 @@ class MessageRepository {
       take: limit,
     });
 
-    // Fetch full message content from Cassandra
-    const results = await Promise.all(
-      pendingRecipients.map(async (pr) => {
-        const cassandraMsg = await cassandra.execute(
-          "SELECT content, type, metadata FROM messages_by_client_id WHERE client_message_id = ?",
-          [pr.messageId], // try by message ID in dedup table
-          { prepare: true }
-        );
-
-        // Fallback: fetch from main messages table using conversationId + message details from Postgres
-        let content = "";
-        let type = "TEXT";
-        let metadata: string | null = null;
-
-        if (cassandraMsg.rowLength > 0) {
-          const row = cassandraMsg.first();
-          content = row.content;
-          type = row.type;
-          metadata = row.metadata || null;
-        }
-
-        return {
-          messageId: pr.messageId,
-          message: {
-            id: pr.message.id,
-            clientMessageId: pr.message.clientMessageId,
-            conversationId: pr.message.conversationId,
-            senderId: pr.message.senderId,
-            content,
-            type,
-            metadata,
-            sequenceNo: pr.message.sequenceNo,
-            createdAt: pr.message.createdAt,
-          },
-        };
-      })
-    );
-
-    return results;
+    return pending.map((pr) => ({
+      messageId: pr.messageId,
+      message: {
+        id: pr.message.id,
+        clientMessageId: pr.message.clientMessageId,
+        conversationId: pr.message.conversationId,
+        senderId: pr.message.senderId,
+        content: pr.message.content,
+        type: pr.message.type,
+        metadata: pr.message.metadata ?? null,
+        sequenceNo: pr.message.sequenceNo,
+        createdAt: pr.message.createdAt,
+      },
+    }));
   }
 
-  /**
-   * Mark a batch of messages as delivered for a user.
-   */
-  async markBatchDelivered(
-    messageIds: string[],
-    userId: string
-  ): Promise<number> {
+  async markBatchDelivered(messageIds: string[], userId: string): Promise<number> {
     const result = await prisma.messageRecipient.updateMany({
-      where: {
-        messageId: { in: messageIds },
-        userId,
-        status: "PENDING",
-      },
-      data: {
-        status: "DELIVERED",
-        deliveredAt: new Date(),
-      },
+      where: { messageId: { in: messageIds }, userId, status: "PENDING" },
+      data: { status: "DELIVERED", deliveredAt: new Date() },
     });
     return result.count;
   }
 
-  /**
-   * Get member IDs for a conversation (for delivery fan-out).
-   */
   async getConversationMemberIds(conversationId: string): Promise<string[]> {
     const members = await prisma.conversationMember.findMany({
       where: { conversationId, leftAt: null },
@@ -659,87 +385,41 @@ class MessageRepository {
 
   // ─── Message Deletion ─────────────────────────────────────
 
-  /**
-   * Soft-delete a message (Delete for Everyone).
-   * Sets deletedAt in both Cassandra and Postgres.
-   */
   async softDeleteMessage(messageId: string, conversationId: string): Promise<void> {
-    const now = new Date();
-    const convUuid = Uuid.fromString(conversationId);
-    const msgUuid = Uuid.fromString(messageId);
-
-    // Update Cassandra: set deleted_at and status
-    await cassandra.execute(
-      `UPDATE messages SET deleted_at = ?, status = ?, updated_at = ? WHERE conversation_id = ? AND message_id = ?`,
-      [now, "DELETED", now, convUuid, msgUuid],
-      { prepare: true }
-    );
-
-    // Update Postgres stub
     await prisma.message.update({
       where: { id: messageId },
-      data: { deletedAt: now },
+      data: { deletedAt: new Date(), status: "DELETED" as any },
     });
-
-    logger.info("Message soft-deleted (for everyone)", { messageId, conversationId });
+    logger.info("Message soft-deleted", { messageId, conversationId });
   }
 
-  /**
-   * Get the original message from Cassandra (for permission checks during delete).
-   */
   async getMessageById(
     messageId: string,
-    conversationId: string
+    _conversationId: string
   ): Promise<{ senderId: string; createdAt: Date; status: string } | null> {
-    const convUuid = Uuid.fromString(conversationId);
-    const msgUuid = Uuid.fromString(messageId);
-
-    const result = await cassandra.execute(
-      "SELECT sender_id, created_at, status FROM messages WHERE conversation_id = ? AND message_id = ?",
-      [convUuid, msgUuid],
-      { prepare: true }
-    );
-
-    if (result.rowLength === 0) return null;
-    const row = result.first();
-    return {
-      senderId: row.sender_id.toString(),
-      createdAt: row.created_at,
-      status: row.status,
-    };
+    const msg = await prisma.message.findUnique({
+      where: { id: messageId },
+      select: { senderId: true, createdAt: true, status: true },
+    });
+    if (!msg) return null;
+    return { senderId: msg.senderId, createdAt: msg.createdAt, status: msg.status };
   }
 
-  /**
-   * Hide a message for a specific user (Delete for Me).
-   * Only affects the requesting user's view; other users still see it.
-   */
   async hideMessageForUser(userId: string, messageId: string): Promise<void> {
     await prisma.hiddenMessage.upsert({
-      where: {
-        userId_messageId: { userId, messageId },
-      },
+      where: { userId_messageId: { userId, messageId } },
       update: {},
       create: { userId, messageId },
     });
-
     logger.info("Message hidden for user", { userId, messageId });
   }
 
-  /**
-   * Batch check which messages are hidden for a user.
-   * Used to filter messages during history fetch.
-   */
   async getHiddenMessageIds(userId: string, messageIds: string[]): Promise<Set<string>> {
     if (messageIds.length === 0) return new Set();
-
     const hidden = await prisma.hiddenMessage.findMany({
-      where: {
-        userId,
-        messageId: { in: messageIds },
-      },
+      where: { userId, messageId: { in: messageIds } },
       select: { messageId: true },
     });
-
     return new Set(hidden.map((h) => h.messageId));
   }
 }

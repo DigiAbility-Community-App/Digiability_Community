@@ -1,9 +1,33 @@
 import { Request, Response } from 'express';
+import https from 'https';
+import http from 'http';
 import prisma from '../models/prisma.client';
 import { QuestionStatus, VoteType } from '../generated/client';
 import { cleanProfanity, hasProfanity } from '../utils/profanity';
 import { calculateCosineSimilarity, generateThreadSummary } from '../services/ai.service';
 import { broadcastForumEvent, sendNotificationToUser } from '../websocket/socket';
+
+const NOTIF_SVC_URL = process.env.NOTIF_SVC_URL ?? 'http://localhost:4003';
+
+function sendPushNotification(
+  userId: string,
+  title: string,
+  body: string,
+  data: Record<string, string> = {}
+): void {
+  const payload = JSON.stringify({ userId, title, body, data });
+  const url = new URL(`${NOTIF_SVC_URL}/internal/notify`);
+  const lib = url.protocol === 'https:' ? https : http;
+  const req = lib.request(
+    { hostname: url.hostname, port: url.port || (url.protocol === 'https:' ? 443 : 80),
+      path: url.pathname, method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) } },
+    () => {}
+  );
+  req.on('error', (err) => console.warn('[forum-svc] Push notify error:', err.message));
+  req.write(payload);
+  req.end();
+}
 
 const ALLOWED_CATEGORIES = [
   'Healthcare',
@@ -439,7 +463,7 @@ export const createAnswer = async (req: Request, res: Response): Promise<void> =
       // 3. Award rep to answerer (+2 points)
       await adjustUserReputation(authorId, 2, tx);
 
-      // 4. Send notification to the question author
+      // 4. Send in-app notification to the question author
       if (question.authorId !== authorId) {
         await createNotification(
           question.authorId,
@@ -453,6 +477,16 @@ export const createAnswer = async (req: Request, res: Response): Promise<void> =
 
       return ans;
     });
+
+    // 5. Send push notification to the question author (fire-and-forget)
+    if (question.authorId !== authorId) {
+      sendPushNotification(
+        question.authorId,
+        'New Answer on your post',
+        `Your question "${question.title}" received a new answer.`,
+        { type: 'forum_answer', questionId: question.id }
+      );
+    }
 
     broadcastForumEvent('answer_created', mapAnswerRoles(answer));
     res.status(201).json({ success: true, data: mapAnswerRoles(answer) });

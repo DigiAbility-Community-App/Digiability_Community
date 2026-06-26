@@ -7,6 +7,8 @@ import { authenticate } from "../middleware/auth.middleware";
 import {
   createConversation,
   listConversations,
+  listAllGroups,
+  joinGroup,
   getConversation,
   addMember,
   removeMember,
@@ -29,6 +31,13 @@ router.post("/", createConversation);
 
 // GET /api/conversations — List user's conversations
 router.get("/", listConversations);
+
+// GET /api/conversations/groups — All community groups (discovery, no membership required)
+// MUST be before /:conversationId to avoid route shadowing
+router.get("/groups", listAllGroups);
+
+// POST /api/conversations/:conversationId/join — Self-join an open group
+router.post("/:conversationId/join", joinGroup);
 
 // POST /api/conversations/init-bot — Initialize bot
 router.post("/init-bot", initBot);

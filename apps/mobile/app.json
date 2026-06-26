@@ -30,8 +30,11 @@
       "package": "com.digiability.community",
       "permissions": [
         "ACCESS_COARSE_LOCATION",
-        "ACCESS_FINE_LOCATION"
-      ]
+        "ACCESS_FINE_LOCATION",
+        "RECEIVE_BOOT_COMPLETED",
+        "VIBRATE"
+      ],
+      "googleServicesFile": "./google-services.json"
     },
     "web": {
       "favicon": "./assets/logo.png"
@@ -43,6 +46,15 @@
         "expo-location",
         {
           "locationWhenInUsePermission": "Allow Digiability Community to access your location to automatically fetch your city, state, and district during profile setup."
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/logo.png",
+          "color": "#500088",
+          "sounds": [],
+          "mode": "production"
         }
       ]
     ]

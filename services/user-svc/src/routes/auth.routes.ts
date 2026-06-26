@@ -13,6 +13,8 @@ import {
   updateRoleHandler,
   batchLookupUsers,
   searchUsersHandler,
+  registerDeviceTokenHandler,
+  removeDeviceTokenHandler,
 } from "../controllers/auth.controller";
 import { authenticate } from "../middleware/auth.middleware";
 import { validate } from "../middleware/validate.middleware";
@@ -49,5 +51,7 @@ router.patch("/role",             authenticate, validate(UpdateRoleSchema), upda
 router.post("/users/batch",       authenticate,                    batchLookupUsers);
 router.get("/users/search",        authenticate,                    searchUsersHandler);
 router.delete("/delete-account",  authenticate,                    deleteAccountHandler);
+router.post("/device-token",      authenticate,                    registerDeviceTokenHandler);
+router.delete("/device-token",    authenticate,                    removeDeviceTokenHandler);
 
 export default router;
