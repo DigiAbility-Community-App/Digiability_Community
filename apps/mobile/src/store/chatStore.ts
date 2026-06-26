@@ -30,6 +30,7 @@ export interface Conversation {
   editGroupInfo?: 'ADMINS_ONLY' | 'ALL_MEMBERS';
   addMembers?: 'ADMINS_ONLY' | 'ALL_MEMBERS';
   sendMessages?: 'ADMINS_ONLY' | 'ALL_MEMBERS';
+  approveNewMembers?: boolean;
   participants: ConversationParticipant[];
   lastMessage?: ChatMessage;
   lastMessageText?: string;
@@ -78,6 +79,7 @@ interface ChatState {
   
   setMessages: (conversationId: string, messages: ChatMessage[]) => void;
   addMessage: (message: ChatMessage) => void;
+  removeMessage: (conversationId: string, messageId: string) => void;
   confirmMessage: (clientMessageId: string, serverMessageId: string, status?: 'sent' | 'delivered' | 'read') => void;
   updateMessageStatus: (messageIds: string[], status: 'delivered' | 'read') => void;
 
@@ -185,6 +187,14 @@ export const useChatStore = create<ChatState>((set) => ({
         conversations: updatedConversations
       };
     }),
+
+  removeMessage: (conversationId, messageId) =>
+    set((state) => ({
+      messages: {
+        ...state.messages,
+        [conversationId]: (state.messages[conversationId] || []).filter(m => m.id !== messageId && m.clientMessageId !== messageId),
+      },
+    })),
 
   confirmMessage: (clientMessageId, serverMessageId, status) =>
     set((state) => {

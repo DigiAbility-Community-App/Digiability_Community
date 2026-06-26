@@ -16,6 +16,8 @@ import {
   initBot,
   transferOwnership,
   approveJoinRequest,
+  muteConversation,
+  pinConversation,
 } from "../controllers/conversation.controller";
 import { listGroupInvites } from "../controllers/invite.controller";
 
@@ -59,5 +61,11 @@ router.post("/:conversationId/transfer-ownership", transferOwnership);
 
 // POST /api/conversations/join-requests/:inviteId/approve — Approve/reject join request
 router.post("/join-requests/:inviteId/approve", approveJoinRequest);
+
+// PATCH /api/conversations/:conversationId/mute — Mute/unmute conversation for current user
+router.patch("/:conversationId/mute", muteConversation);
+
+// PATCH /api/conversations/:conversationId/pin — Pin/unpin conversation for current user
+router.patch("/:conversationId/pin", pinConversation);
 
 export default router;

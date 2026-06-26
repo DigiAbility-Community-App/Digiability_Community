@@ -223,6 +223,42 @@ export const transferOwnership = asyncHandler(async (req: Request, res: Response
   });
 });
 
+export const muteConversation = asyncHandler(async (req: Request, res: Response) => {
+  const user = (req as AuthenticatedRequest).user;
+  const { conversationId } = req.params;
+  const { muted } = req.body;
+
+  if (typeof muted !== "boolean") {
+    res.status(400).json({ success: false, message: "muted (boolean) is required" });
+    return;
+  }
+
+  await conversationService.muteConversation(conversationId, user.sub, muted);
+
+  res.status(200).json({
+    success: true,
+    message: muted ? "Conversation muted" : "Conversation unmuted",
+  });
+});
+
+export const pinConversation = asyncHandler(async (req: Request, res: Response) => {
+  const user = (req as AuthenticatedRequest).user;
+  const { conversationId } = req.params;
+  const { pinned } = req.body;
+
+  if (typeof pinned !== "boolean") {
+    res.status(400).json({ success: false, message: "pinned (boolean) is required" });
+    return;
+  }
+
+  await conversationService.pinConversation(conversationId, user.sub, pinned);
+
+  res.status(200).json({
+    success: true,
+    message: pinned ? "Conversation pinned" : "Conversation unpinned",
+  });
+});
+
 export const approveJoinRequest = asyncHandler(async (req: Request, res: Response) => {
   const user = (req as AuthenticatedRequest).user;
   const { inviteId } = req.params;

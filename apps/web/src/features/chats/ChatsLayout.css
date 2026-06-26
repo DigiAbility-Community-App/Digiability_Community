@@ -52,6 +52,27 @@
   color: var(--color-primary);
 }
 
+.chats-invite-btn {
+  position: relative;
+}
+
+.invite-count-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  background-color: var(--color-primary);
+  color: white;
+  font-size: 10px;
+  font-weight: bold;
+  height: 16px;
+  min-width: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
 .chats-search {
   padding: 16px 24px;
 }
