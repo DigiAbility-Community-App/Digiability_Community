@@ -22,7 +22,7 @@ const GroupsTab = () => {
     setError("");
     try {
       const data = await chatService.fetchAllGroups("GENERAL");
-      setGroups(data);
+      setGroups(data.filter((g, i, arr) => arr.findIndex((x) => x.id === g.id) === i));
     } catch (e) {
       setError("Could not load groups. Pull down to retry.");
     } finally {

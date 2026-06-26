@@ -66,7 +66,14 @@ const ConversationListScreen = ({ navigation: propNavigation, isTab = false, dir
   const localNavigation = useNavigation<any>();
   const navigation = propNavigation || localNavigation;
   const user = useAuthStore((s) => s.user);
-  const storeConversations = useChatStore((s) => Object.values(s.conversations));
+  const storeConversations = useChatStore((s) => {
+    const seen = new Set<string>();
+    return Object.values(s.conversations).filter((c) => {
+      if (!c.id || seen.has(c.id)) return false;
+      seen.add(c.id);
+      return true;
+    });
+  });
   const setConversations = useChatStore((s) => s.setConversations);
   const pendingInvites = useChatStore((s) => s.pendingInvites);
   const setPendingInvites = useChatStore((s) => s.setPendingInvites);
@@ -128,7 +135,9 @@ const ConversationListScreen = ({ navigation: propNavigation, isTab = false, dir
     loadData();
   }, []);
 
-  const filteredConversations = uiConversations.filter((conv) => {
+  const filteredConversations = uiConversations
+    .filter((conv, index, arr) => arr.findIndex((c) => c.id === conv.id) === index)
+    .filter((conv) => {
     // When used as the Chats tab in Community, show only DMs
     if (directOnly && conv.type !== "DIRECT") return false;
 

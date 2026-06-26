@@ -23,7 +23,7 @@ const CareCirclesTab = () => {
     setError("");
     try {
       const data = await chatService.fetchAllGroups("CARE_CIRCLE");
-      setCircles(data);
+      setCircles(data.filter((g, i, arr) => arr.findIndex((x) => x.id === g.id) === i));
     } catch {
       setError("Could not load Care Circles. Pull down to retry.");
     } finally {
