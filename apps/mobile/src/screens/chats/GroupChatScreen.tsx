@@ -12,7 +12,7 @@ import {
   Keyboard,
 } from "react-native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import { RouteProp } from "@react-navigation/native";
+import { RouteProp, useFocusEffect } from "@react-navigation/native";
 import { ChatsStackParamList } from "@navigation/ChatsStack";
 import { useAuthStore } from "@store/authStore";
 import { useChatStore, ChatMessage } from "@store/chatStore";
@@ -127,13 +127,25 @@ const GroupChatScreen = ({ navigation, route }: Props) => {
   const nameMap = memberNameMap();
   const colorMap = memberColorMap();
 
+  // Refresh conversation data every time this screen comes into focus so
+  // member count and participant list always reflect the latest state.
+  // This fixes the stale count bug where the refresh was skipped when
+  // at least one participant was already in the store.
+  useFocusEffect(
+    useCallback(() => {
+      chatService.getConversations().then((convos) => {
+        useChatStore.getState().setConversations(convos);
+      }).catch(console.error);
+    }, [conversationId])
+  );
+
   // Load message history and ensure conversation is in the store
   useEffect(() => {
     const loadMessages = async () => {
       try {
-        // If conversation isn't in store yet (e.g. just created), refresh the list first
+        // Always ensure conversation is in the store before loading messages
         const storeConv = useChatStore.getState().conversations[conversationId];
-        if (!storeConv || !storeConv.participants?.length) {
+        if (!storeConv) {
           const convos = await chatService.getConversations();
           useChatStore.getState().setConversations(convos);
         }
