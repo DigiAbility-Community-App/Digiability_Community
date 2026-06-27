@@ -67,7 +67,7 @@ const ForumsPage = () => {
     <div className="forums-container">
       <div className="search-section">
         <div className="search-bar">
-          <Search size={18} color="#6B7280" style={{ marginRight: 8 }} />
+          <Search size={18} color="var(--text-secondary)" style={{ marginRight: 8 }} />
           <input
             className="search-input"
             placeholder="Search questions... (Press Enter)"

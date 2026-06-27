@@ -24,12 +24,12 @@ const SPECIALTY_COLORS: Record<string, { bg: string; text: string }> = {
   hearing:    { bg: "#FEF3C7", text: "#92400E" },
   physical:   { bg: "#ECFDF5", text: "#065F46" },
   cognitive:  { bg: "#FFF1F2", text: "#9F1239" },
-  multiple:   { bg: "#F3E8FF", text: "#6B21A8" },
+  multiple:   { bg: "#F3E8FF", text: "var(--color-primary)" },
 };
 
 const getSpecialtyColor = (specialty: string) => {
   const key = specialty.toLowerCase().trim();
-  return SPECIALTY_COLORS[key] || { bg: "#F1F5F9", text: "#475569" };
+  return SPECIALTY_COLORS[key] || { bg: "var(--bg-base)", text: "var(--text-secondary)" };
 };
 
 const MentorsPage = () => {
@@ -67,8 +67,8 @@ const MentorsPage = () => {
   };
 
   const MatchBadge = ({ percentage }: { percentage: number }) => {
-    const color = percentage >= 70 ? "#059669" : percentage >= 40 ? "#D97706" : "#6B7280";
-    const bgColor = percentage >= 70 ? "#ECFDF5" : percentage >= 40 ? "#FFFBEB" : "#F3F4F6";
+    const color = percentage >= 70 ? "#059669" : percentage >= 40 ? "#D97706" : "var(--text-secondary)";
+    const bgColor = percentage >= 70 ? "#ECFDF5" : percentage >= 40 ? "#FFFBEB" : "var(--bg-surface-hover)";
     return (
       <span className="match-badge" style={{ backgroundColor: bgColor, color }}>
         {percentage}% match
@@ -84,7 +84,7 @@ const MentorsPage = () => {
           <Star
             key={i}
             size={14}
-            color={i <= Math.round(rating) ? "#F59E0B" : "#D1D5DB"}
+            color={i <= Math.round(rating) ? "#F59E0B" : "var(--border-color)"}
             fill={i <= Math.round(rating) ? "#F59E0B" : "transparent"}
           />
         ))}

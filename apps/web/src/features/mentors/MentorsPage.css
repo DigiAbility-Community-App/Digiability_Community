@@ -1,6 +1,6 @@
 .mentors-container {
   flex: 1;
-  background-color: var(--color-bg);
+  background-color: var(--bg-base);
   padding: 32px 40px;
   overflow-y: auto;
 }
@@ -12,12 +12,12 @@
 .mentors-header h2 {
   font-size: 1.5rem;
   font-weight: 700;
-  color: var(--color-text);
+  color: var(--text-primary);
   margin: 0;
 }
 
 .mentors-header p {
-  color: var(--color-subtext);
+  color: var(--text-secondary);
   margin: 4px 0 0;
   font-size: 0.95rem;
 }
@@ -29,7 +29,7 @@
 }
 
 .mentor-card {
-  background: #ffffff;
+  background: var(--bg-surface);
   border-radius: var(--radius-lg);
   padding: 24px;
   box-shadow: 0 4px 12px rgba(80, 0, 136, 0.04);
@@ -63,7 +63,7 @@
 .avatar-text {
   font-size: 1.2rem;
   font-weight: 700;
-  color: var(--color-primary-dark);
+  color: var(--color-primary-hover);
 }
 
 .header-info {
@@ -79,7 +79,7 @@
 .mentor-name {
   font-size: 1.1rem;
   font-weight: 700;
-  color: var(--color-text);
+  color: var(--text-primary);
   margin: 0 0 4px 0;
 }
 
@@ -93,7 +93,7 @@
 .location-row {
   display: flex;
   align-items: center;
-  color: var(--color-subtext);
+  color: var(--text-secondary);
   font-size: 0.85rem;
 }
 
@@ -103,7 +103,7 @@
 
 .bio {
   font-size: 0.9rem;
-  color: var(--color-subtext);
+  color: var(--text-secondary);
   line-height: 1.5;
   margin-bottom: 16px;
   display: -webkit-box;
@@ -130,7 +130,7 @@
   padding: 4px 10px;
   border-radius: var(--radius-sm);
   background-color: #F8FAFC;
-  border: 1px solid #E2E8F0;
+  border: 1px solid var(--border-color);
   font-size: 0.75rem;
   color: #64748B;
   font-weight: 500;
@@ -139,7 +139,7 @@
 .card-footer {
   margin-top: auto;
   padding-top: 16px;
-  border-top: 1px solid #F1F5F9;
+  border-top: 1px solid var(--bg-base);
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -154,13 +154,13 @@
 .rating-text {
   font-weight: 700;
   font-size: 0.9rem;
-  color: var(--color-text);
+  color: var(--text-primary);
   margin-left: 4px;
 }
 
 .review-count {
   font-size: 0.8rem;
-  color: var(--color-subtext);
+  color: var(--text-secondary);
 }
 
 .connect-btn {
@@ -179,7 +179,7 @@
 }
 
 .connect-btn:hover:not(:disabled) {
-  background-color: var(--color-primary-dark);
+  background-color: var(--color-primary-hover);
 }
 
 .connect-btn:disabled {
@@ -211,11 +211,11 @@
 .center-container h3 {
   font-size: 1.5rem;
   margin: 0 0 8px 0;
-  color: var(--color-text);
+  color: var(--text-primary);
 }
 
 .center-container p {
-  color: var(--color-subtext);
+  color: var(--text-secondary);
   margin: 0 0 4px 0;
 }
 

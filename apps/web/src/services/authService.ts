@@ -1,18 +1,47 @@
 import apiClient from './apiClient';
 import { useAuthStore, type User } from '../store/authStore';
 
+const ROLE_MAP_TO_BACKEND: Record<string, string> = {
+  pwd: 'pwd',
+  caregiver: 'caregiver',
+  educator: 'therapist',
+  ngo_worker: 'ngo',
+  skill_trainer: 'volunteer',
+  community_member: 'student',
+};
+
+const ROLE_MAP_TO_FRONTEND: Record<string, string> = {
+  pwd: 'pwd',
+  caregiver: 'caregiver',
+  therapist: 'educator',
+  ngo: 'ngo_worker',
+  volunteer: 'skill_trainer',
+  student: 'community_member',
+};
+
+function mapUserToFrontend(user: any): any {
+  if (!user) return user;
+  const roles = user.roles ? user.roles.map((r: string) => ROLE_MAP_TO_FRONTEND[r] ?? r) : [];
+  return {
+    ...user,
+    role: roles[0] || (user.role ? (ROLE_MAP_TO_FRONTEND[user.role] ?? user.role) : null),
+    roles: roles,
+  };
+}
+
 export const authService = {
   login: async (email: string, password: string) => {
     const response = await apiClient.post('/api/auth/login', { email, password });
     
     if (response.data.success) {
       const { accessToken, user } = response.data.data;
+      const mappedUser = mapUserToFrontend(user);
       const store = useAuthStore.getState();
       
       store.setAccessToken(accessToken);
-      store.setUser(user);
+      store.setUser(mappedUser);
       
-      return user as User;
+      return mappedUser as User;
     }
     throw new Error(response.data.message || 'Login failed');
   },
@@ -22,21 +51,32 @@ export const authService = {
 
     if (response.data.success) {
       const { accessToken, user } = response.data.data;
+      const mappedUser = mapUserToFrontend(user);
       const store = useAuthStore.getState();
 
       store.setAccessToken(accessToken);
-      store.setUser(user);
+      store.setUser(mappedUser);
 
-      return user as User;
+      return mappedUser as User;
     }
     throw new Error(response.data.message || 'Registration failed');
   },
 
   getMe: async (): Promise<User> => {
     const response = await apiClient.get('/api/auth/me');
-    // Server returns { success: true, data: { user: {...} } }
     const data = response.data.data;
-    return data.user || data;
+    return mapUserToFrontend(data.user || data);
+  },
+
+  updateRoles: async (roles: string[], options: { updateStore?: boolean } = { updateStore: true }) => {
+    const backendRoles = roles.map(r => ROLE_MAP_TO_BACKEND[r] ?? r);
+    const response = await apiClient.patch('/api/auth/role', { roles: backendRoles });
+    const user = mapUserToFrontend(response.data.data);
+    
+    if (options.updateStore) {
+      useAuthStore.getState().setUser(user);
+    }
+    return user;
   },
 
   logout: async () => {

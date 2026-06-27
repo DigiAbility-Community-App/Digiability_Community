@@ -140,7 +140,7 @@ const ServicesPage = () => {
               </div>
               <div className="meta-item">
                 <Star size={14} color="#F59E0B" fill="#F59E0B" />
-                <span style={{ color: '#1A1B20', fontWeight: 600 }}>{service.rating}</span>
+                <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{service.rating}</span>
                 <span>({service.reviews} reviews)</span>
               </div>
             </div>
