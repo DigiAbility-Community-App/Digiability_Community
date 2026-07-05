@@ -61,3 +61,17 @@ docker/volumes/
 # ── Test coverage ─────────────────────────────────────────────
 coverage/
 .nyc_output/
+
+# ── TypeScript build info ─────────────────────────────────────
+*.tsbuildinfo
+
+# ── AI / Agent config ────────────────────────────────────────
+.gemini/
+.agents/
+
+# ── Temporary / one-off scripts ──────────────────────────────
+*.command
+replace_invalid_vars.py
+
+# ── Misc ─────────────────────────────────────────────────────
+*.pdf

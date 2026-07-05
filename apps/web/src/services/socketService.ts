@@ -104,6 +104,7 @@ const handleSocketEvent = (message: any) => {
         senderId: payload.senderId,
         content: payload.content,
         type: payload.type || 'TEXT',
+        metadata: payload.metadata,
         status: 'delivered',
         createdAt: payload.createdAt,
       });
@@ -132,6 +133,12 @@ const handleSocketEvent = (message: any) => {
       }
       break;
 
+    case 'group.deleted':
+      if (payload.conversationId) {
+        store.removeConversation(payload.conversationId);
+      }
+      break;
+
     case 'presence.update':
       store.updatePresence(payload.userId, payload.status, payload.lastSeen || new Date().toISOString());
       break;
@@ -156,6 +163,7 @@ const handleSocketEvent = (message: any) => {
             senderId: msg.senderId,
             content: msg.content,
             type: msg.type || 'TEXT',
+            metadata: msg.metadata,
             status: 'delivered',
             createdAt: msg.createdAt,
           });

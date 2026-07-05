@@ -7,6 +7,7 @@ export interface ChatMessage {
   senderId: string;
   content: string;
   type: string;
+  metadata?: string; // JSON string: { altText?, durationMs?, mimeType?, ... }
   status: 'sending' | 'sent' | 'delivered' | 'read' | 'failed';
   createdAt: string;
 }
@@ -72,6 +73,7 @@ interface ChatState {
   setConversations: (conversations: Conversation[]) => void;
   addConversation: (conversation: Conversation) => void;
   updateConversation: (conversationId: string, updates: Partial<Conversation>) => void;
+  removeConversation: (conversationId: string) => void;
   
   setPendingInvites: (invites: GroupInvite[]) => void;
   addPendingInvite: (invite: GroupInvite) => void;
@@ -128,6 +130,16 @@ export const useChatStore = create<ChatState>((set) => ({
           [id]: { ...conv, ...updates },
         },
       };
+    }),
+
+  removeConversation: (id) =>
+    set((state) => {
+      if (!state.conversations[id]) return state;
+      const conversations = { ...state.conversations };
+      delete conversations[id];
+      const messages = { ...state.messages };
+      delete messages[id];
+      return { conversations, messages };
     }),
 
   setPendingInvites: (invites) => set({ pendingInvites: invites }),

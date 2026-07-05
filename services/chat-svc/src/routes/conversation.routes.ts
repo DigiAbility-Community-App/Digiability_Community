@@ -20,6 +20,7 @@ import {
   approveJoinRequest,
   muteConversation,
   pinConversation,
+  deleteGroup,
 } from "../controllers/conversation.controller";
 import { listGroupInvites } from "../controllers/invite.controller";
 
@@ -52,6 +53,9 @@ router.get("/:conversationId/invites", listGroupInvites);
 
 // PATCH /api/conversations/:conversationId — Update group info (name, description)
 router.patch("/:conversationId", updateGroupInfo);
+
+// DELETE /api/conversations/:conversationId — Delete a group (owner only)
+router.delete("/:conversationId", deleteGroup);
 
 // PATCH /api/conversations/:conversationId/settings — Update group permission settings
 router.patch("/:conversationId/settings", updateGroupSettings);

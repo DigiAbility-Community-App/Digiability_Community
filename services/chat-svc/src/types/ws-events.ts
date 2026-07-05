@@ -41,6 +41,7 @@ export const WS_EVENTS = {
   MEMBER_ROLE_UPDATED: "member.role.updated",
   GROUP_SETTINGS_UPDATED: "group.settings.updated",
   GROUP_INFO_UPDATED: "group.info.updated",
+  GROUP_DELETED: "group.deleted",
 } as const;
 
 export type WsEventName = (typeof WS_EVENTS)[keyof typeof WS_EVENTS];

@@ -302,13 +302,29 @@ class MessageRepository {
     return recipient.message;
   }
 
+  /** Look up a message's sequence number by id (null if it doesn't exist). */
+  async getMessageSequenceNo(messageId: string): Promise<bigint | null> {
+    const m = await prisma.message.findUnique({
+      where: { id: messageId },
+      select: { sequenceNo: true },
+    });
+    return m?.sequenceNo ?? null;
+  }
+
   async updateReadCursor(
     conversationId: string,
     userId: string,
     sequenceNo: bigint
   ): Promise<void> {
-    await prisma.conversationMember.update({
-      where: { conversationId_userId: { conversationId, userId } },
+    // Forward-only: never move the cursor backwards (out-of-order reads) and
+    // no-op if the member row is missing. updateMany avoids throwing on a
+    // non-existent row.
+    await prisma.conversationMember.updateMany({
+      where: {
+        conversationId,
+        userId,
+        lastReadSequenceNo: { lt: sequenceNo },
+      },
       data: { lastReadSequenceNo: sequenceNo },
     });
   }

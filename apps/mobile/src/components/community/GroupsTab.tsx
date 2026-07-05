@@ -3,7 +3,7 @@ import {
   View, Text, StyleSheet, TouchableOpacity,
   FlatList, ActivityIndicator, RefreshControl, Alert, Platform,
 } from "react-native";
-import { Users, Plus, ChevronRight, UserPlus, LogIn } from "lucide-react-native";
+import { Users, Plus, ChevronRight, UserPlus, LogIn, TriangleAlert } from "lucide-react-native";
 import { useNavigation } from "@react-navigation/native";
 import { chatService, CommunityGroup } from "../../services/chatService";
 import { useTheme } from "../../theme/ThemeContext";
@@ -145,7 +145,7 @@ const GroupsTab = () => {
         }
         ListEmptyComponent={
           <View style={styles.emptyCard}>
-            <View style={styles.iconBox}><Text style={{ fontSize: 40 }}>⚠️</Text></View>
+            <View style={styles.iconBox}><TriangleAlert size={40} color="#E0A800" strokeWidth={1.9} /></View>
             <Text style={[styles.emptyTitle, { color: colors.text }]}>Couldn't Load Groups</Text>
             <Text style={[styles.emptySubtitle, { color: colors.subtext }]}>{error}</Text>
           </View>

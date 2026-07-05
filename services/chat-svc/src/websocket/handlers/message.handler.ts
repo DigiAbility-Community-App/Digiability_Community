@@ -24,6 +24,7 @@ import { generateMessageId } from "../../utils/id.util";
 import { publishMessageCreated } from "../../streams/producer";
 import { connectionManager } from "../connection-manager";
 import { conversationRepository } from "../../repositories/conversation.repository";
+import { moderationRepository } from "../../repositories/moderation.repository";
 import {
   WS_EVENTS,
   WS_ERROR_CODES,
@@ -88,6 +89,24 @@ export async function handleMessageSend(
           sequenceNo: 0,
           status: "rejected",
           reason: "Only admins can send messages in this group",
+          timestamp: Date.now(),
+        }, requestId);
+        return;
+      }
+    }
+
+    // ── 2c. Block gate (DMs only) ──────────────────────────────
+    // If either party has blocked the other, reject the message.
+    if (conversation && conversation.type === "DIRECT") {
+      const memberIds = await conversationRepository.getMemberIds(conversationId);
+      const otherId = memberIds.find((id) => id !== userId);
+      if (otherId && (await moderationRepository.isBlockedEitherWay(userId, otherId))) {
+        sendAck(ws, {
+          clientMessageId,
+          messageId: "",
+          sequenceNo: 0,
+          status: "rejected",
+          reason: "You can't message this person",
           timestamp: Date.now(),
         }, requestId);
         return;

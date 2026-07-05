@@ -15,6 +15,7 @@ import { ChatsStackParamList } from "@navigation/ChatsStack";
 
 import ScreenWrapper from "../../components/layout/ScreenWrapper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { ArrowLeft, User, MessageCircle, Phone, Video, FileText, Ban, Flag } from "lucide-react-native";
 import {
   submitReport,
   REPORT_REASON_LABELS,
@@ -76,7 +77,7 @@ const UserProfileScreen = ({ navigation, route }: Props) => {
           style={styles.backBtn}
           onPress={() => navigation.goBack()}
         >
-          <Text style={styles.backText}>←</Text>
+          <ArrowLeft size={24} color="#fff" strokeWidth={2.2} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Profile</Text>
         <View style={{ width: 36 }} />
@@ -86,7 +87,7 @@ const UserProfileScreen = ({ navigation, route }: Props) => {
         {/* ── Avatar Card ──────────────────────────────────── */}
         <View style={styles.profileCard}>
           <View style={styles.avatarLarge}>
-            <Text style={styles.avatarLargeEmoji}>👩‍⚕️</Text>
+            <User size={44} color="#8A38F5" strokeWidth={1.9} />
           </View>
           <Text style={styles.profileName}>{userName}</Text>
           <Text style={styles.profileRole}>Therapist • Physiotherapy</Text>
@@ -99,15 +100,15 @@ const UserProfileScreen = ({ navigation, route }: Props) => {
           {/* Quick Actions */}
           <View style={styles.actions}>
             <TouchableOpacity style={styles.actionBtn}>
-              <Text style={styles.actionIcon}>💬</Text>
+              <MessageCircle size={22} color="#8A38F5" strokeWidth={2} style={styles.actionIcon} />
               <Text style={styles.actionLabel}>Message</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.actionBtn}>
-              <Text style={styles.actionIcon}>📞</Text>
+              <Phone size={22} color="#8A38F5" strokeWidth={2} style={styles.actionIcon} />
               <Text style={styles.actionLabel}>Call</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.actionBtn}>
-              <Text style={styles.actionIcon}>🎥</Text>
+              <Video size={22} color="#8A38F5" strokeWidth={2} style={styles.actionIcon} />
               <Text style={styles.actionLabel}>Video</Text>
             </TouchableOpacity>
           </View>
@@ -151,7 +152,7 @@ const UserProfileScreen = ({ navigation, route }: Props) => {
           <View style={styles.mediaGrid}>
             {[1, 2, 3, 4].map((i) => (
               <View key={i} style={styles.mediaThumbnail}>
-                <Text style={styles.mediaPlaceholder}>📄</Text>
+                <FileText size={26} color="#B9A9D6" strokeWidth={1.8} />
               </View>
             ))}
           </View>
@@ -159,8 +160,9 @@ const UserProfileScreen = ({ navigation, route }: Props) => {
 
         {/* ── Danger Zone ──────────────────────────────────── */}
         <View style={styles.dangerSection}>
-          <TouchableOpacity style={styles.dangerBtn}>
-            <Text style={styles.dangerText}>🚫 Block User</Text>
+          <TouchableOpacity style={[styles.dangerBtn, { flexDirection: "row", gap: 8 }]}>
+            <Ban size={17} color="#E53E3E" strokeWidth={2} />
+            <Text style={styles.dangerText}>Block User</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.dangerBtn}
@@ -173,7 +175,10 @@ const UserProfileScreen = ({ navigation, route }: Props) => {
             {submittingReport ? (
               <ActivityIndicator color="#E53E3E" />
             ) : (
-              <Text style={styles.dangerText}>⚠️ Report User</Text>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                <Flag size={17} color="#E53E3E" strokeWidth={2} />
+                <Text style={styles.dangerText}>Report User</Text>
+              </View>
             )}
           </TouchableOpacity>
         </View>

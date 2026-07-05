@@ -12,6 +12,10 @@ import {
   Platform
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
+import {
+  Globe, Stethoscope, ScrollText, Accessibility, GraduationCap, Briefcase,
+  Brain, Scale, Laptop, HeartHandshake, Users,
+} from "lucide-react-native";
 import { Search, Plus } from "lucide-react-native";
 import { useForumStore, ForumQuestion } from "../../store/forumStore";
 import { ForumQuestionCard } from "../shared/ForumQuestionCard";
@@ -19,17 +23,17 @@ import { ForumSkeletonCard } from "../shared/ForumSkeletonCard";
 import { EmptyState } from "../shared/EmptyState";
 
 const CATEGORIES = [
-  { id: "all", name: "All", emoji: "🌐" },
-  { id: "Healthcare", name: "Healthcare", emoji: "🏥" },
-  { id: "Government Schemes", name: "Schemes", emoji: "📜" },
-  { id: "Accessibility", name: "Accessibility", emoji: "♿" },
-  { id: "Education", name: "Education", emoji: "🎓" },
-  { id: "Jobs", name: "Jobs", emoji: "💼" },
-  { id: "Mental Health", name: "Mental Health", emoji: "🧠" },
-  { id: "Legal Help", name: "Legal Help", emoji: "⚖️" },
-  { id: "Assistive Technology", name: "Assistive Tech", emoji: "💻" },
-  { id: "Caregiver Support", name: "Caregiver", emoji: "🤝" },
-  { id: "Community", name: "Community", emoji: "👥" }
+  { id: "all", name: "All", Icon: Globe },
+  { id: "Healthcare", name: "Healthcare", Icon: Stethoscope },
+  { id: "Government Schemes", name: "Schemes", Icon: ScrollText },
+  { id: "Accessibility", name: "Accessibility", Icon: Accessibility },
+  { id: "Education", name: "Education", Icon: GraduationCap },
+  { id: "Jobs", name: "Jobs", Icon: Briefcase },
+  { id: "Mental Health", name: "Mental Health", Icon: Brain },
+  { id: "Legal Help", name: "Legal Help", Icon: Scale },
+  { id: "Assistive Technology", name: "Assistive Tech", Icon: Laptop },
+  { id: "Caregiver Support", name: "Caregiver", Icon: HeartHandshake },
+  { id: "Community", name: "Community", Icon: Users }
 ];
 
 const ForumsTab = () => {
@@ -115,11 +119,12 @@ const ForumsTab = () => {
             return (
               <TouchableOpacity
                 key={cat.id}
-                style={[styles.categoryBtn, active && styles.activeCategoryBtn]}
+                style={[styles.categoryBtn, active && styles.activeCategoryBtn, { flexDirection: "row", alignItems: "center", gap: 6 }]}
                 onPress={() => handleCategorySelect(cat.id)}
               >
-                <Text style={styles.categoryBtnText}>
-                  {cat.emoji} {cat.name}
+                <cat.Icon size={14} strokeWidth={2} color={active ? "#500088" : "#6B6475"} />
+                <Text style={[styles.categoryBtnText, active && { color: "#500088", fontWeight: "700" }]}>
+                  {cat.name}
                 </Text>
               </TouchableOpacity>
             );

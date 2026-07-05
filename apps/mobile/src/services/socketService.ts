@@ -134,6 +134,7 @@ const handleSocketEvent = (message: any) => {
         senderId: payload.senderId,
         content: payload.content,
         type: payload.type || 'TEXT',
+        metadata: payload.metadata,
         status: 'delivered' as const,
         createdAt: payload.createdAt,
       };
@@ -172,6 +173,16 @@ const handleSocketEvent = (message: any) => {
       store.updateTyping(payload.conversationId, payload.userId, payload.isTyping);
       break;
 
+    // Backend broadcasts these two events (no isTyping flag). The old
+    // 'typing.update' case above never fires with the real backend.
+    case 'typing.start.broadcast':
+      store.updateTyping(payload.conversationId, payload.userId, true);
+      break;
+
+    case 'typing.stop.broadcast':
+      store.updateTyping(payload.conversationId, payload.userId, false);
+      break;
+
     case 'sync.complete':
     case 'sync.response':
       // Sync contains missed messages for a conversation
@@ -185,6 +196,7 @@ const handleSocketEvent = (message: any) => {
             senderId: msg.senderId,
             content: msg.content,
             type: msg.type || 'TEXT',
+            metadata: msg.metadata,
             status: 'delivered' as const,
             createdAt: msg.createdAt,
           };
@@ -258,6 +270,13 @@ const handleSocketEvent = (message: any) => {
       console.log('[WS-EVENT] message.deleted:', payload);
       if (payload.conversationId && payload.messageId) {
         store.removeMessage(payload.conversationId, payload.messageId);
+      }
+      break;
+
+    case 'group.deleted':
+      console.log('[WS-EVENT] group.deleted:', payload);
+      if (payload.conversationId) {
+        store.removeConversation(payload.conversationId);
       }
       break;
 

@@ -3,7 +3,7 @@ import {
   View, Text, StyleSheet, TouchableOpacity,
   FlatList, ActivityIndicator, RefreshControl, Alert, Platform,
 } from "react-native";
-import { HeartHandshake, Plus, ChevronRight, LogIn } from "lucide-react-native";
+import { HeartHandshake, Plus, ChevronRight, LogIn, Accessibility, TriangleAlert } from "lucide-react-native";
 import { useNavigation } from "@react-navigation/native";
 import { chatService, CommunityGroup } from "../../services/chatService";
 import { useTheme } from "../../theme/ThemeContext";
@@ -89,7 +89,7 @@ const CareCirclesTab = () => {
         accessibilityLabel={`Care Circle: ${item.name}, ${item.memberCount} members${item.isMember ? ", you are a member" : ", tap to join"}`}
       >
         <View style={styles.avatar}>
-          <Text style={styles.avatarEmoji}>🦽</Text>
+          <Accessibility size={26} color="#8A38F5" strokeWidth={2} />
         </View>
 
         <View style={styles.info}>
@@ -136,7 +136,7 @@ const CareCirclesTab = () => {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadCircles(true); }} tintColor="#500088" />}
         ListEmptyComponent={
           <View style={styles.emptyCard}>
-            <View style={styles.iconBox}><Text style={{ fontSize: 40 }}>⚠️</Text></View>
+            <View style={styles.iconBox}><TriangleAlert size={40} color="#E0A800" strokeWidth={1.9} /></View>
             <Text style={[styles.emptyTitle, { color: colors.text }]}>Couldn't Load Care Circles</Text>
             <Text style={[styles.emptySubtitle, { color: colors.subtext }]}>{error}</Text>
           </View>

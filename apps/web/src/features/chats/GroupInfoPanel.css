@@ -212,6 +212,9 @@
   padding: 4px 10px;
   border-radius: var(--radius-sm);
   transition: background-color 0.2s;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .gip-add-btn:hover {
@@ -433,4 +436,182 @@
 
 .gip-leave-btn:hover {
   background-color: #fef2f2;
+}
+
+.gip-delete-btn {
+  width: 100%;
+  padding: 12px;
+  border: none;
+  border-radius: var(--radius-md);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+  background-color: #dc2626;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  margin-top: 8px;
+}
+
+.gip-delete-btn:hover {
+  background-color: #b91c1c;
+}
+
+/* Name row with edit icon */
+.gip-name-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.gip-edit-icon {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 15px;
+  padding: 2px 4px;
+  border-radius: 6px;
+  transition: background-color 0.2s;
+}
+
+.gip-edit-icon:hover {
+  background-color: var(--color-primary-subtle);
+}
+
+/* Edit form */
+.gip-edit-form {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.gip-edit-name {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  font-size: 16px;
+  font-weight: 600;
+  text-align: center;
+  color: var(--text-primary);
+  box-sizing: border-box;
+}
+
+.gip-edit-desc {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  color: var(--text-primary);
+  resize: none;
+  font-family: inherit;
+  box-sizing: border-box;
+}
+
+.gip-edit-name:focus,
+.gip-edit-desc:focus {
+  outline: none;
+  border-color: var(--color-primary);
+}
+
+.gip-edit-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+}
+
+.gip-edit-cancel,
+.gip-edit-save {
+  padding: 7px 18px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+}
+
+.gip-edit-cancel {
+  background-color: var(--bg-base);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
+}
+
+.gip-edit-save {
+  background-color: var(--color-primary);
+  color: #fff;
+}
+
+.gip-edit-save:disabled,
+.gip-edit-cancel:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Join requests */
+.gip-request-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border-color-light);
+}
+
+.gip-request-row:last-child {
+  border-bottom: none;
+}
+
+.gip-request-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.gip-request-approve,
+.gip-request-reject {
+  font-size: 12px;
+  font-weight: 700;
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  border: none;
+}
+
+.gip-request-approve {
+  background-color: var(--color-primary);
+  color: #fff;
+}
+
+.gip-request-reject {
+  background-color: var(--bg-base);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
+}
+
+.gip-request-approve:disabled,
+.gip-request-reject:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Mute button */
+.gip-mute-btn {
+  margin-top: 14px;
+  padding: 8px 14px;
+  border: none;
+  border-radius: var(--radius-md);
+  background-color: var(--color-primary-subtle);
+  color: var(--color-primary);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.2s;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.gip-mute-btn:hover {
+  opacity: 0.85;
 }

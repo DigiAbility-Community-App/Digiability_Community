@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import {
   Search, ChevronDown, X, Shield, Trash2,
   RefreshCw, AlertTriangle, Users, MessageSquare, CheckCircle2,
-  MoreHorizontal, Star, ChevronRight, Ban,
+  MoreHorizontal, Star, ChevronRight, Ban, Calendar, User, Send,
 } from "lucide-react";
 
 // ─────────────────────────────────────────────
@@ -266,7 +266,7 @@ export default function CommunityPage() {
         </div>
         <button className="h-9 px-3 rounded-lg border border-gray-200 text-xs font-semibold text-[#4B4355] flex items-center gap-1.5">All Status <ChevronDown className="w-3 h-3" /></button>
         <button className="h-9 px-3 rounded-lg border border-gray-200 text-xs font-semibold text-[#4B4355] flex items-center gap-1.5">Content Type <ChevronDown className="w-3 h-3" /></button>
-        <button className="h-9 px-3 rounded-lg border border-gray-200 text-xs font-semibold text-[#4B4355] flex items-center gap-1.5">📅 Date Range</button>
+        <button className="h-9 px-3 rounded-lg border border-gray-200 text-xs font-semibold text-[#4B4355] flex items-center gap-1.5"><Calendar className="w-3.5 h-3.5" /> Date Range</button>
       </div>
 
       {/* CONTENT */}
@@ -472,8 +472,8 @@ export default function CommunityPage() {
               {/* FILTERS */}
               <div className="flex items-center gap-3 mb-5">
                 <button className="h-8 px-3 rounded-lg border border-gray-200 text-xs font-semibold text-[#4B4355] flex items-center gap-1.5">Category: All Milestones <ChevronDown className="w-3 h-3" /></button>
-                <button className="h-8 px-3 rounded-lg border border-gray-200 text-xs font-semibold text-[#4B4355] flex items-center gap-1.5">Date: This Month 📅</button>
-                <button className="h-8 px-3 rounded-lg border border-gray-200 text-xs font-semibold text-[#4B4355] flex items-center gap-1.5">Author: All Roles 👤</button>
+                <button className="h-8 px-3 rounded-lg border border-gray-200 text-xs font-semibold text-[#4B4355] flex items-center gap-1.5"><Calendar className="w-3.5 h-3.5" /> Date: This Month</button>
+                <button className="h-8 px-3 rounded-lg border border-gray-200 text-xs font-semibold text-[#4B4355] flex items-center gap-1.5"><User className="w-3.5 h-3.5" /> Author: All Roles</button>
                 <button className="ml-auto text-xs font-bold text-[#7004DC] hover:underline">Clear all filters</button>
               </div>
 
@@ -577,7 +577,7 @@ export default function CommunityPage() {
                     <p className="text-sm text-[#4B4355] leading-5">{selectedQuestion.question.description}</p>
                   )}
                   <div className="flex items-center gap-4 text-xs text-[#7D7387]">
-                    <span>👤 {selectedQuestion.question.authorName}</span>
+                    <span className="inline-flex items-center gap-1"><User className="w-3.5 h-3.5" /> {selectedQuestion.question.authorName}</span>
                     <span>👁 {selectedQuestion.question.views} views</span>
                     <span>🕐 {selectedQuestion.question.createdAt}</span>
                   </div>
@@ -641,7 +641,7 @@ export default function CommunityPage() {
                       disabled={!replyText.trim() || replyPosting}
                       className="w-full h-11 rounded-xl bg-[#7004DC] hover:bg-[#5c03b7] disabled:bg-violet-200 text-white font-bold text-sm transition flex items-center justify-center gap-2"
                     >
-                      {replyPosting ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <>➤ Post Reply</>}
+                      {replyPosting ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <><Send className="w-4 h-4" /> Post Reply</>}
                     </button>
                   </div>
                 )}
@@ -673,7 +673,7 @@ export default function CommunityPage() {
                 <div className="w-8 h-8 rounded-full bg-[#EDDCFF] flex items-center justify-center text-[#7004DC] text-xs font-bold">{selectedReport.reporterName?.[0]}</div>
                 <div>
                   <p className="text-sm font-bold text-[#1A1C1C]">{selectedReport.reporterName}</p>
-                  <p className="text-xs text-green-600 font-semibold">✓ Trustworthy</p>
+                  <p className="text-xs text-green-600 font-semibold" style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><CheckCircle2 className="w-3.5 h-3.5" /> Trustworthy</p>
                 </div>
               </div>
               <span className={`inline-block px-3 py-1 rounded-full text-[10px] font-bold uppercase ${selectedReport.reason.toLowerCase().includes("spam") ? "bg-orange-100 text-orange-700" : "bg-red-100 text-red-700"}`}>
@@ -690,13 +690,13 @@ export default function CommunityPage() {
                   <button onClick={() => handleReportAction("delete_post", selectedReport)} className="h-11 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-sm transition flex items-center justify-center gap-2"><Trash2 className="w-4 h-4" /> Remove</button>
                 </div>
                 <button className="w-full h-11 rounded-xl bg-[#D2A500] hover:bg-[#b89300] text-[#4F3D00] font-bold text-sm transition flex items-center justify-center gap-2">
-                  ⚠ Warn User
+                  <AlertTriangle className="w-4 h-4" /> Warn User
                 </button>
                 <button onClick={() => handleReportAction("dismiss", selectedReport)} className="w-full h-11 rounded-xl border border-gray-200 text-[#4B4355] font-bold text-sm hover:bg-gray-50 transition">
                   No Action Required
                 </button>
                 <button className="w-full h-11 rounded-xl bg-[#1A1C1C] hover:bg-black text-white font-bold text-sm transition flex items-center justify-center gap-2">
-                  🚫 Ban User Account
+                  <Ban className="w-4 h-4" /> Ban User Account
                 </button>
               </div>
               <div className="bg-violet-50 rounded-xl p-4 border border-violet-100">
@@ -825,7 +825,7 @@ export default function CommunityPage() {
               <div className="flex gap-3 pt-2 border-t border-gray-100">
                 <button onClick={() => setMessageGroup(null)} className="flex-1 h-12 rounded-xl border border-gray-200 text-[#4B4355] font-semibold text-sm hover:bg-gray-50">Cancel</button>
                 <button onClick={() => setMessageGroup(null)} disabled={!msgSubject.trim() || !msgBody.trim()} className="flex-1 h-12 rounded-xl bg-[#7004DC] hover:bg-[#5c03b7] disabled:bg-violet-200 text-white font-bold text-sm transition flex items-center justify-center gap-2">
-                  ➤ Send Message
+                  <Send className="w-4 h-4" /> Send Message
                 </button>
               </div>
             </div>

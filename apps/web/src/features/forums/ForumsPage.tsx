@@ -1,20 +1,22 @@
 import { useState, useEffect, useCallback } from "react";
-import { Search, Plus, MessageSquare, Eye, Clock } from "lucide-react";
+import { Search, Plus, MessageSquare, Eye, Clock,
+  Globe, Stethoscope, ScrollText, Accessibility, GraduationCap, Briefcase,
+  Brain, Scale, Laptop, HeartHandshake, Users } from "lucide-react";
 import { apiClient } from "../../services/apiClient";
 import "./ForumsPage.css";
 
 const CATEGORIES = [
-  { id: "all", name: "All", emoji: "🌐" },
-  { id: "Healthcare", name: "Healthcare", emoji: "🏥" },
-  { id: "Government Schemes", name: "Schemes", emoji: "📜" },
-  { id: "Accessibility", name: "Accessibility", emoji: "♿" },
-  { id: "Education", name: "Education", emoji: "🎓" },
-  { id: "Jobs", name: "Jobs", emoji: "💼" },
-  { id: "Mental Health", name: "Mental Health", emoji: "🧠" },
-  { id: "Legal Help", name: "Legal Help", emoji: "⚖️" },
-  { id: "Assistive Technology", name: "Assistive Tech", emoji: "💻" },
-  { id: "Caregiver Support", name: "Caregiver", emoji: "🤝" },
-  { id: "Community", name: "Community", emoji: "👥" }
+  { id: "all", name: "All", Icon: Globe },
+  { id: "Healthcare", name: "Healthcare", Icon: Stethoscope },
+  { id: "Government Schemes", name: "Schemes", Icon: ScrollText },
+  { id: "Accessibility", name: "Accessibility", Icon: Accessibility },
+  { id: "Education", name: "Education", Icon: GraduationCap },
+  { id: "Jobs", name: "Jobs", Icon: Briefcase },
+  { id: "Mental Health", name: "Mental Health", Icon: Brain },
+  { id: "Legal Help", name: "Legal Help", Icon: Scale },
+  { id: "Assistive Technology", name: "Assistive Tech", Icon: Laptop },
+  { id: "Caregiver Support", name: "Caregiver", Icon: HeartHandshake },
+  { id: "Community", name: "Community", Icon: Users }
 ];
 
 const ForumsPage = () => {
@@ -83,8 +85,9 @@ const ForumsPage = () => {
               key={cat.id}
               className={`category-btn ${category === cat.id ? 'active-category-btn' : ''}`}
               onClick={() => setCategory(cat.id)}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
             >
-              {cat.emoji} {cat.name}
+              <cat.Icon size={15} /> {cat.name}
             </button>
           ))}
         </div>

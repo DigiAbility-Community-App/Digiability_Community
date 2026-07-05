@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { dbPool } from "@/lib/db";
 import crypto from "crypto";
 import { requireAdminAuth } from "@/lib/auth";
+import { writeAudit } from "@/lib/audit";
 
 function parseRoles(raw: any): string[] {
   if (!raw) return [];
@@ -159,17 +160,8 @@ export async function PATCH(
         );
       }
 
-      // Log the suspension action with reason and message (best-effort)
-      if (reason || message) {
-        await dbPool.query(
-          `INSERT INTO admin_audit_log ("userId", action, reason, message, "createdAt")
-           VALUES ($1, 'suspend', $2, $3, NOW())
-           ON CONFLICT DO NOTHING`,
-          [id, reason || null, message || null]
-        ).catch(() => {
-          // audit_log table may not exist yet — silently ignore
-        });
-      }
+      // Record the suspension in the audit log (table is created on demand).
+      await writeAudit({ userId: id, action: "suspend", reason, message });
     } else if (action === "unsuspend") {
       await dbPool.query(
         `UPDATE forum_user_stats SET "isSuspended" = false, "suspendedUntil" = NULL WHERE "userId" = $1`,
@@ -272,6 +264,8 @@ export async function DELETE(
        WHERE "userId" = $1`,
       [id]
     );
+
+    await writeAudit({ userId: id, action: "delete_user", reason: "admin deletion (soft-delete + PII scrub)" });
 
     return NextResponse.json({ success: true });
   } catch (error) {

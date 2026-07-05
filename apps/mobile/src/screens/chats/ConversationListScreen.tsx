@@ -22,6 +22,7 @@ import { chatService } from "@services/chatService";
 import ScreenWrapper from "../../components/layout/ScreenWrapper";
 import AppHeader from "../../components/layout/AppHeader";
 import AppFooter from "../../components/layout/AppFooter";
+import { Mail, SquarePen, Search, Users, Accessibility, User, Bot, X, MessageCircle } from "lucide-react-native";
 
 // ─────────────────────────────────────────────────────────
 // Conversation List Screen
@@ -105,9 +106,11 @@ const ConversationListScreen = ({ navigation: propNavigation, isTab = false, dir
       type: c.type,
       subType: c.subType,
       name: displayName,
-      avatar: c.type === "GROUP" 
-        ? (c.subType === "CARE_CIRCLE" ? "🦽" : "👥") 
-        : (displayName === "DigiBot" ? "🤖" : "👤"),
+      // Left blank for regular DMs so the chat header renders the themed User
+      // icon fallback; DigiBot keeps its robot mark.
+      avatar: c.type === "GROUP"
+        ? ""
+        : (displayName === "DigiBot" ? "🤖" : ""),
       lastMessage: lastMsgText,
       time: c.updatedAt ? new Date(c.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "",
       unread: c.unreadCount || 0,
@@ -152,7 +155,8 @@ const ConversationListScreen = ({ navigation: propNavigation, isTab = false, dir
     return matchesSearch && matchesFilter;
   });
 
-  const totalUnread = uiConversations.reduce((sum, c) => sum + c.unread, 0);
+  // Count how many conversations have unread messages (not total message count).
+  const unreadChats = uiConversations.filter((c) => c.unread > 0).length;
 
   const handleConversationPress = useCallback(
     (conv: Conversation) => {
@@ -248,7 +252,13 @@ const ConversationListScreen = ({ navigation: propNavigation, isTab = false, dir
             item.type === "GROUP" && styles.groupAvatar,
           ]}
         >
-          <Text style={styles.avatarEmoji}>{item.avatar}</Text>
+          {item.type === "GROUP"
+            ? (item.subType === "CARE_CIRCLE"
+                ? <Accessibility size={24} color="#8A38F5" strokeWidth={2} />
+                : <Users size={24} color="#8A38F5" strokeWidth={2} />)
+            : (item.name === "DigiBot"
+                ? <Bot size={24} color="#8A38F5" strokeWidth={2} />
+                : <User size={24} color="#8A38F5" strokeWidth={2} />)}
         </View>
         {item.isOnline && item.type === "DIRECT" && (
           <View style={styles.onlineDot} />
@@ -305,7 +315,7 @@ const ConversationListScreen = ({ navigation: propNavigation, isTab = false, dir
                 accessibilityLabel="Pending Invites"
                 activeOpacity={0.7}
               >
-                <Text style={styles.newChatIcon}>✉️</Text>
+                <Mail size={22} color="#fff" strokeWidth={2} />
                 {pendingInvites.length > 0 && (
                   <View style={styles.inviteBadge}>
                     <Text style={styles.inviteBadgeText}>{pendingInvites.length}</Text>
@@ -320,7 +330,7 @@ const ConversationListScreen = ({ navigation: propNavigation, isTab = false, dir
                 accessibilityLabel="New Chat"
                 activeOpacity={0.7}
               >
-                <Text style={styles.newChatIcon}>✏️</Text>
+                <SquarePen size={22} color="#fff" strokeWidth={2} />
               </TouchableOpacity>
             </View>
           }
@@ -333,19 +343,19 @@ const ConversationListScreen = ({ navigation: propNavigation, isTab = false, dir
           ? { backgroundColor: "#FFFFFF", borderBottomWidth: 1, borderBottomColor: "#EEEDF4", paddingTop: 14 } 
           : { backgroundColor: "#8A38F5" }
       ]}>
-        {totalUnread > 0 && (
+        {unreadChats > 0 && (
           <Text style={[
             styles.headerSubtitleBody,
             isTab ? { color: "#500088", marginBottom: 8 } : { color: "rgba(255,255,255,0.85)" }
           ]}>
-            {totalUnread} unread message{totalUnread !== 1 ? "s" : ""}
+            {unreadChats} unread chat{unreadChats !== 1 ? "s" : ""}
           </Text>
         )}
         <View style={[
           styles.searchContainer,
           isTab ? { backgroundColor: "#F4F3FA" } : { backgroundColor: "rgba(255,255,255,0.15)" }
         ]}>
-          <Text style={styles.searchIcon}>🔍</Text>
+          <Search size={16} color={isTab ? "#9A93A8" : "rgba(255,255,255,0.7)"} strokeWidth={2} style={styles.searchIcon} />
           <TextInput
             style={[
               styles.searchInput,
@@ -360,7 +370,7 @@ const ConversationListScreen = ({ navigation: propNavigation, isTab = false, dir
           />
           {searchQuery.length > 0 && (
             <TouchableOpacity onPress={() => setSearchQuery("")}>
-              <Text style={isTab ? { color: "#6B7280", fontSize: 16 } : styles.clearSearch}>✕</Text>
+              <X size={16} color={isTab ? "#6B7280" : "rgba(255,255,255,0.85)"} strokeWidth={2.4} />
             </TouchableOpacity>
           )}
         </View>
@@ -400,7 +410,7 @@ const ConversationListScreen = ({ navigation: propNavigation, isTab = false, dir
         showsVerticalScrollIndicator={false}
         ListEmptyComponent={
           <View style={styles.emptyState}>
-            <Text style={styles.emptyEmoji}>💬</Text>
+            <View style={styles.emptyEmoji}><MessageCircle size={44} color="#B9A9D6" strokeWidth={1.75} /></View>
             <Text style={styles.emptyTitle}>No conversations</Text>
             <Text style={styles.emptySubtitle}>
               Start chatting with your care circle
@@ -415,7 +425,7 @@ const ConversationListScreen = ({ navigation: propNavigation, isTab = false, dir
         onPress={handleNewAction}
         activeOpacity={0.85}
       >
-        <Text style={styles.fabIcon}>✏️</Text>
+        <SquarePen size={17} color="#fff" strokeWidth={2.2} style={styles.fabIcon} />
         <Text style={styles.fabLabel}>New Chat</Text>
       </TouchableOpacity>
     </View>
@@ -456,7 +466,7 @@ const ConversationListScreen = ({ navigation: propNavigation, isTab = false, dir
               accessibilityLabel="Pending Invites"
               activeOpacity={0.7}
             >
-              <Text style={styles.newChatIcon}>✉️</Text>
+              <Mail size={22} color="#fff" strokeWidth={2} />
               {pendingInvites.length > 0 && (
                 <View style={styles.inviteBadge}>
                   <Text style={styles.inviteBadgeText}>{pendingInvites.length}</Text>
@@ -471,7 +481,7 @@ const ConversationListScreen = ({ navigation: propNavigation, isTab = false, dir
               accessibilityLabel="New Chat"
               activeOpacity={0.7}
             >
-              <Text style={styles.newChatIcon}>✏️</Text>
+              <SquarePen size={22} color="#fff" strokeWidth={2} />
             </TouchableOpacity>
           </View>
         }

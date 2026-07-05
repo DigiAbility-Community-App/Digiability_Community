@@ -123,11 +123,20 @@ class MessageService {
           lastRead,
           1000
         );
-        const actualUnread = allUnread.filter(m => m.senderId !== userId);
-        
+        // Count only messages the user can actually see: not their own, not
+        // soft-deleted (deleted for everyone), and not hidden by them
+        // (delete-for-me). Otherwise a deleted/hidden message leaves a phantom
+        // unread that the badge shows but the user can never open away.
+        const candidates = allUnread.filter(m => m.senderId !== userId && !m.deletedAt);
+        const hiddenIds = await messageRepository.getHiddenMessageIds(
+          userId,
+          candidates.map(m => m.id)
+        );
+        const actualUnread = candidates.filter(m => !hiddenIds.has(m.id));
+
         // Deduplicate by messageId in case of multiple sequence numbers for same message
         const uniqueUnread = new Set(actualUnread.map(m => m.id));
-        
+
         if (uniqueUnread.size > 0) {
           counts.push({
             conversationId: conv.id,

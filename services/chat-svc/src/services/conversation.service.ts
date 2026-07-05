@@ -383,6 +383,33 @@ class ConversationService {
     });
   }
 
+  /**
+   * Delete a group (soft-delete). Only the OWNER may delete.
+   * Broadcasts GROUP_DELETED to all members before removing.
+   */
+  async deleteGroup(conversationId: string, requesterId: string): Promise<void> {
+    const conversation = await conversationRepository.getById(conversationId);
+    if (!conversation) throw new Error("Conversation not found");
+    if (conversation.type !== "GROUP") throw new Error("Only groups can be deleted");
+
+    const requesterRole = await conversationRepository.getMemberRole(conversationId, requesterId);
+    if (requesterRole !== "OWNER") {
+      throw new Error("Only the group owner can delete this group");
+    }
+
+    // Capture member IDs BEFORE deletion so we can notify everyone
+    const memberIds = await conversationRepository.getMemberIds(conversationId);
+
+    await conversationRepository.softDeleteConversation(conversationId);
+
+    const envelope = { event: WS_EVENTS.GROUP_DELETED, data: { conversationId }, timestamp: Date.now() };
+    for (const memberId of memberIds) {
+      connectionManager.sendToUser(memberId, envelope);
+    }
+
+    logger.info("Group deleted", { conversationId, deletedBy: requesterId });
+  }
+
   async muteConversation(conversationId: string, userId: string, muted: boolean): Promise<void> {
     const isMember = await conversationRepository.isMember(conversationId, userId);
     if (!isMember) throw new Error("You are not a member of this conversation");

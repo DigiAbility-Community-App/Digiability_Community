@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { X, Search } from 'lucide-react';
+import { X, Search, Users, Accessibility, Lightbulb } from 'lucide-react';
 import { chatService } from '../../services/chatService';
 import { useChatStore } from '../../store/chatStore';
 import { useNavigate } from 'react-router-dom';
@@ -137,13 +137,13 @@ const CreateGroupModal: React.FC<Props> = ({ initialType = 'GENERAL', onClose })
               className={`cgm-type-btn ${groupType === 'GENERAL' ? 'active' : ''}`}
               onClick={() => setGroupType('GENERAL')}
             >
-              👥 General Group
+              <Users size={16} /> General Group
             </button>
             <button
               className={`cgm-type-btn ${groupType === 'CARE_CIRCLE' ? 'active' : ''}`}
               onClick={() => setGroupType('CARE_CIRCLE')}
             >
-              🦽 Care Circle
+              <Accessibility size={16} /> Care Circle
             </button>
           </div>
 
@@ -235,7 +235,7 @@ const CreateGroupModal: React.FC<Props> = ({ initialType = 'GENERAL', onClose })
 
           {isCareCircle && (
             <div className="cgm-info-banner">
-              💡 Care Circles help you stay connected with your support network. Members will receive an invite to join.
+              <Lightbulb size={15} style={{ verticalAlign: 'text-bottom', marginRight: 6 }} />Care Circles help you stay connected with your support network. Members will receive an invite to join.
             </div>
           )}
         </div>

@@ -90,12 +90,20 @@ export async function handleMessageRead(
     // message.read implies delivered — update both states
     const result = await messageRepository.markRead(messageId, userId);
 
+    // Advance the read cursor even when markRead returns null. Group messages
+    // sent before this user joined (or their own messages) have no
+    // MessageRecipient row, so markRead is a no-op — but they still count
+    // toward unread until the cursor moves past them. Without this the badge
+    // shows a phantom unread that reopening the chat can never clear.
+    const sequenceNo = result?.sequenceNo
+      ?? await messageRepository.getMessageSequenceNo(messageId);
+    if (sequenceNo != null) {
+      await messageRepository.updateReadCursor(conversationId, userId, sequenceNo);
+    }
+
     if (result) {
       // Create audit receipt
       await messageRepository.createReceipt(messageId, userId, "READ");
-
-      // Update the user's read cursor for this conversation
-      await messageRepository.updateReadCursor(conversationId, userId, result.sequenceNo);
 
       // Broadcast receipt to sender
       // Deliberately disabled to prevent read receipts from leaking to senders, ensuring privacy.

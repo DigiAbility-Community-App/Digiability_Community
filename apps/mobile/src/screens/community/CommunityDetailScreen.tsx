@@ -1,6 +1,7 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, Dimensions } from "react-native";
 import { TabView } from "react-native-tab-view";
+import { useChatStore } from "@store/chatStore";
 import ScreenWrapper from "../../components/layout/ScreenWrapper";
 import AppHeader from "../../components/layout/AppHeader";
 import GroupsTab from "../../components/community/GroupsTab";
@@ -32,6 +33,24 @@ const CommunityDetailScreen = ({ navigation, route }: any) => {
     return 0; // default: Chats
   });
 
+  // Per-section badge = number of conversations with UNREAD messages, bucketed
+  // by section. Pending invites are intentionally NOT counted here (they were
+  // inflating the Groups badge to 1 with zero unread chats).
+  // (Forums/Mentors have no chat-store unread source yet — they stay 0.)
+  const conversations = useChatStore((s) => s.conversations);
+  const sectionUnread = useMemo(() => {
+    const counts: Record<RouteKey, number> = {
+      chats: 0, groups: 0, careCircles: 0, forums: 0, mentors: 0,
+    };
+    for (const c of Object.values(conversations)) {
+      if (!c || (c.unreadCount || 0) <= 0) continue;
+      if (c.type === "DIRECT") counts.chats++;
+      else if (c.type === "GROUP" && c.subType === "CARE_CIRCLE") counts.careCircles++;
+      else if (c.type === "GROUP") counts.groups++;
+    }
+    return counts;
+  }, [conversations]);
+
   const renderScene = ({ route: r }: { route: { key: RouteKey } }) => {
     switch (r.key) {
       case "chats":       return <ChatsTab />;
@@ -47,6 +66,7 @@ const CommunityDetailScreen = ({ navigation, route }: any) => {
     <View style={styles.tabBar}>
       {props.navigationState.routes.map((r: any, i: number) => {
         const active = index === i;
+        const count = sectionUnread[r.key as RouteKey] || 0;
         return (
           <TouchableOpacity
             key={r.key}
@@ -54,9 +74,16 @@ const CommunityDetailScreen = ({ navigation, route }: any) => {
             onPress={() => setIndex(i)}
             activeOpacity={0.8}
           >
-            <Text style={[styles.tabText, active && styles.activeTabText]}>
-              {r.title}
-            </Text>
+            <View style={styles.tabLabelRow}>
+              <Text style={[styles.tabText, active && styles.activeTabText]}>
+                {r.title}
+              </Text>
+              {count > 0 && (
+                <View style={styles.tabBadge}>
+                  <Text style={styles.tabBadgeText}>{count > 99 ? "99+" : count}</Text>
+                </View>
+              )}
+            </View>
             {active && <View style={styles.activeIndicator} />}
           </TouchableOpacity>
         );
@@ -100,6 +127,25 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     alignItems: "center",
     justifyContent: "center",
+  },
+  tabLabelRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+  },
+  tabBadge: {
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    paddingHorizontal: 5,
+    backgroundColor: "#9333EA",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  tabBadgeText: {
+    color: "#FFFFFF",
+    fontSize: 10,
+    fontWeight: "700",
   },
   tabText: {
     fontSize: 14,
