@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { X, ChevronDown, Users, Accessibility, SquarePen, Bell, BellOff, Plus } from 'lucide-react';
-import { useChatStore, type Conversation, type ConversationParticipant } from '../../store/chatStore';
+import { useChatStore } from '../../store/chatStore';
 import { useAuthStore } from '../../store/authStore';
 import { chatService } from '../../services/chatService';
 import './GroupInfoPanel.css';

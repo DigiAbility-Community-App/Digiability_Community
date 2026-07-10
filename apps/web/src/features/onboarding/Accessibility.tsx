@@ -17,7 +17,7 @@ const Accessibility = () => {
   const user = useAuthStore(s => s.user);
   
   const [preferences, setPreferences] = useState(defaultPreferences);
-  const [loading, setLoading] = useState(false);
+  const [loading] = useState(false);
 
   useEffect(() => {
     if (user?.id) {

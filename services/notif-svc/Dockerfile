@@ -12,5 +12,5 @@ RUN apk add --no-cache curl
 COPY package*.json ./
 RUN npm install --omit=dev
 COPY --from=builder /app/dist ./dist
-EXPOSE 4003
+EXPOSE 4004
 CMD ["node", "dist/index.js"]

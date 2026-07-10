@@ -21,7 +21,6 @@ import LearnPage from '@/features/learn/LearnPage';
 
 import { useAuthStore } from '@/store/authStore';
 import { authService } from '@/services/authService';
-import { REFRESH_TOKEN_KEY } from '@/services/apiClient';
 
 const App = () => {
   const [isRestoring, setIsRestoring] = useState(true);

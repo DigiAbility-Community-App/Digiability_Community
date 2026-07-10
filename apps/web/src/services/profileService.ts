@@ -299,7 +299,7 @@ export async function updateUserProfile(params: {
   basicProfile: any;
   roleDetails: any;
 }) {
-  const { userId, basicProfile, roleDetails } = params;
+  const { basicProfile, roleDetails } = params;
   
   // Parse DOB if provided in DD/MM/YYYY format
   const parsedDob = basicProfile.dob?.trim()

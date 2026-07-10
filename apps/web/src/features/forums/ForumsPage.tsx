@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback } from "react";
-import { Search, Plus, MessageSquare, Eye, Clock,
+import { Search, MessageSquare, Eye, Clock,
   Globe, Stethoscope, ScrollText, Accessibility, GraduationCap, Briefcase,
   Brain, Scale, Laptop, HeartHandshake, Users } from "lucide-react";
 import { apiClient } from "../../services/apiClient";
+import { FORUM_BASE_URL } from "../../services/forumService";
 import "./ForumsPage.css";
 
 const CATEGORIES = [
@@ -33,7 +34,7 @@ const ForumsPage = () => {
       if (searchQuery) params.search = searchQuery;
       if (category !== "all") params.category = category;
 
-      const res = await apiClient.get("/api/forum/questions", { params });
+      const res = await apiClient.get(`${FORUM_BASE_URL}/api/forum/questions`, { params });
       setQuestions(res.data.data || []);
     } catch (err) {
       console.error("Failed to fetch questions:", err);

@@ -1,7 +1,9 @@
 import axios, { type AxiosError, type InternalAxiosRequestConfig } from 'axios';
 import { useAuthStore } from '../store/authStore';
 
-const BASE_URL = 'http://localhost:4001';
+// Vite only exposes env vars prefixed with VITE_, and only at build time —
+// set these in Vercel's project env vars, not at runtime.
+export const BASE_URL = import.meta.env.VITE_USER_SVC_URL || 'http://localhost:4001';
 
 export const REFRESH_TOKEN_KEY = 'digiability_refresh_token';
 

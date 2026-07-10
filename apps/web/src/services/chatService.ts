@@ -1,6 +1,6 @@
 import apiClient from './apiClient';
 
-export const CHAT_BASE_URL = 'http://localhost:4002';
+export const CHAT_BASE_URL = import.meta.env.VITE_CHAT_SVC_URL || 'http://localhost:4002';
 
 // Resolve a media path/URL returned by the server. New uploads return a
 // host-relative path ("/uploads/x.jpg") resolved against this base; older

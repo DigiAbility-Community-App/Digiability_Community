@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
-import { MessageSquare, Users, BookOpen, Calendar, Settings, Layers, HeartHandshake, GraduationCap } from 'lucide-react';
+import { MessageSquare, Users, Calendar, Settings, Layers, HeartHandshake, GraduationCap } from 'lucide-react';
 import clsx from 'clsx';
 import { useAuthStore } from '@/store/authStore';
 import { initSocket, closeSocket } from '@/services/socketService';

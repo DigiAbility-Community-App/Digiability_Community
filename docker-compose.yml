@@ -1,16 +1,23 @@
 # ─────────────────────────────────────────────────────────────
 # Digiability Community — Docker Compose
 #
-# 4 containers only:
-#   postgres   — all persistent data (users, chat, groups)
+# Core containers:
+#   postgres   — all persistent data (users, chat, forums — split by schema)
 #   redis      — pub/sub + stream queue
-#   user-svc   — auth, users, events, profiles  (port 4001)
+#   user-svc   — auth, users, events, profiles          (port 4001)
 #   chat-svc   — chat API + WebSocket + embedded workers (port 4002)
+#   forum-svc  — forum Q&A                               (port 4003)
+#   notif-svc  — push notifications (Redis consumer)     (port 4004)
 #
-# Removed:
+# Not containerized:
+#   apps/admin, apps/web — deployed to Vercel, not run via Compose.
+#
+# Removed (see git history if reviving):
 #   cassandra          — messages now stored in PostgreSQL
 #   chat-msg-worker    — embedded inside chat-svc
 #   chat-delivery-worker — embedded inside chat-svc
+#   group-svc, services/app — unimplemented/superseded stubs, deleted.
+#     Group + Care Circle logic lives in chat-svc.
 # ─────────────────────────────────────────────────────────────
 
 services:
@@ -100,6 +107,33 @@ services:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:4001/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # ── forum-svc — Forum Q&A ────────────────────────────────────
+  # Shares the `public` schema with user-svc (see CLAUDE.md note on the
+  # mirrored-model pattern this relies on) — not its own "forum" schema.
+  forum-svc:
+    build:
+      context: ./services/forum-svc
+      dockerfile: Dockerfile
+    container_name: digiability_forum_svc
+    restart: unless-stopped
+    env_file:
+      - ./services/forum-svc/.env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-digiability}:${POSTGRES_PASSWORD:-digiability_secret}@postgres:5432/${POSTGRES_DB:-digiability_db}
+    ports:
+      - "${FORUM_SVC_PORT:-4003}:4003"
+    networks:
+      - digiability_network
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:4003/health || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 5

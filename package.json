@@ -23,7 +23,6 @@
     "chat-svc:generate": "npm run db:generate --workspace=@digiability/chat-svc",
     "chat-svc:worker:msg": "npm run worker:msg --workspace=@digiability/chat-svc",
     "chat-svc:worker:delivery": "npm run worker:delivery --workspace=@digiability/chat-svc",
-    "group-svc:dev": "npm run dev --workspace=@digiability/group-svc",
     "notif-svc:dev": "npm run dev --workspace=@digiability/notif-svc",
     "forum-svc:dev": "npm run dev --workspace=@digiability/forum-svc",
     "forum-svc:generate": "npm run db:generate --workspace=@digiability/forum-svc",
