@@ -2,6 +2,7 @@ import prisma from "../models/prisma.client";
 import { hashPassword, comparePassword } from "../utils/hash.util";
 import { signAccessToken } from "../utils/jwt.util";
 import { createError } from "../middleware/error.middleware";
+import { assertNotSuspended, isCurrentlySuspended } from "../utils/suspension.util";
 import {
   createEmailVerificationOtp,
   validateEmailVerificationOtp,
@@ -191,6 +192,9 @@ export async function loginUser(input: LoginInput): Promise<LoginResult> {
     throw createError("Please verify your email address before logging in.", 403);
   }
 
+  // 2c. Block suspended/banned accounts before issuing tokens
+  assertNotSuspended(user);
+
   // 3. Sign access token
   const accessToken = signAccessToken({ sub: user.id, email: user.email });
 
@@ -351,6 +355,9 @@ export async function getCurrentUser(userId: string) {
       profileComplete: true,
       lastSeen: true,
       isEmailVerified: true,
+      isSuspended: true,
+      suspendedUntil: true,
+      suspensionReason: true,
       createdAt: true,
       updatedAt: true,
     },
@@ -360,6 +367,7 @@ export async function getCurrentUser(userId: string) {
   return {
     ...user,
     role: user.roles[0] || null,
+    isSuspended: isCurrentlySuspended(user),
   };
 }
 

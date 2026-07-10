@@ -47,6 +47,16 @@ enum ReportStatus {
   DISMISSED
 }
 
+enum QuestionStatus {
+  SOLVED
+  UNSOLVED
+}
+
+enum VoteType {
+  UP
+  DOWN
+}
+
 // ─────────────────────────────────────────────
 // USER
 // ─────────────────────────────────────────────
@@ -61,6 +71,13 @@ model User {
   roles           Role[]    @default([])
   profileComplete Boolean   @default(false)
   deletedAt       DateTime?
+
+  // Suspension / ban state — source of truth for login/session gating.
+  // suspendedUntil == null means permanent (when isSuspended is true).
+  isSuspended      Boolean   @default(false)
+  suspendedUntil   DateTime?
+  suspensionReason String?
+
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
@@ -74,9 +91,155 @@ model User {
   deviceTokens            DeviceToken[]
   filedReports            UserReport[]    @relation("ReporterRelation")
 
+  // forum-svc-owned relations — NOT used by user-svc's own code. Declared
+  // here only so `prisma db push` sees the full physical `users` table
+  // (shared with forum-svc in the `public` schema) and doesn't reconcile away
+  // tables it doesn't recognize. Keep in sync with forum-svc's schema.prisma.
+  forumQuestions ForumQuestion[]
+  forumAnswers   ForumAnswer[]
+  forumReports   ForumReport[]
+  forumStats     ForumUserStats?
+  bookmarks      Bookmark[]
+  notifications  Notification[]
+
   @@index([email])
   @@index([deletedAt])
   @@map("users")
+}
+
+// ─────────────────────────────────────────────
+// forum-svc-owned tables (public schema) — stub mirrors.
+// user-svc never queries these directly; they exist purely so
+// `prisma db push` doesn't drop them as "extraneous" to this schema.
+// Keep field-for-field in sync with services/forum-svc/prisma/schema.prisma.
+// ─────────────────────────────────────────────
+model ForumQuestion {
+  id           String          @id @default(uuid())
+  title        String
+  description  String?
+  category     String
+  tags         ForumTag[]      @relation("QuestionTags")
+  imageUrl     String?
+  altText      String?
+  audioUrl     String?
+  views        Int             @default(0)
+  answerCount  Int             @default(0)
+  status       QuestionStatus  @default(UNSOLVED)
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  deletedAt    DateTime?
+  authorId     String
+  author       User            @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  answers      ForumAnswer[]
+  reports      ForumReport[]
+  bookmarks    Bookmark[]
+
+  @@index([title])
+  @@index([category])
+  @@index([createdAt])
+  @@index([authorId])
+  @@index([deletedAt])
+  @@map("forum_questions")
+}
+
+model ForumAnswer {
+  id          String        @id @default(uuid())
+  questionId  String
+  content     String?
+  imageUrl    String?
+  altText     String?
+  audioUrl    String?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  deletedAt   DateTime?
+  authorId    String
+  isAccepted  Boolean       @default(false)
+  upvotes     Int           @default(0)
+  downvotes   Int           @default(0)
+  author      User          @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  question    ForumQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  votes       ForumVote[]
+  reports     ForumReport[]
+
+  @@index([questionId])
+  @@index([authorId])
+  @@index([deletedAt])
+  @@map("forum_answers")
+}
+
+model ForumVote {
+  id        String   @id @default(uuid())
+  answerId  String
+  userId    String
+  type      VoteType
+  createdAt DateTime @default(now())
+  answer    ForumAnswer @relation(fields: [answerId], references: [id], onDelete: Cascade)
+
+  @@index([answerId])
+  @@index([userId])
+  @@unique([answerId, userId])
+  @@map("forum_votes")
+}
+
+model ForumTag {
+  id        String          @id @default(uuid())
+  name      String          @unique
+  questions ForumQuestion[] @relation("QuestionTags")
+
+  @@map("forum_tags")
+}
+
+model ForumReport {
+  id         String   @id @default(uuid())
+  reporterId String
+  questionId String?
+  answerId   String?
+  reason     String
+  createdAt  DateTime @default(now())
+  reporter   User @relation(fields: [reporterId], references: [id], onDelete: Cascade)
+  question   ForumQuestion? @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  answer     ForumAnswer?   @relation(fields: [answerId],   references: [id], onDelete: Cascade)
+
+  @@map("forum_reports")
+}
+
+model ForumUserStats {
+  id             String    @id @default(uuid())
+  userId         String    @unique
+  reputation     Int       @default(0)
+  isSuspended    Boolean   @default(false)
+  suspendedUntil DateTime?
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("forum_user_stats")
+}
+
+model Bookmark {
+  id         String        @id @default(uuid())
+  userId     String
+  questionId String
+  createdAt  DateTime      @default(now())
+  user       User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  question   ForumQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, questionId])
+  @@map("forum_bookmarks")
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  type      String
+  title     String
+  message   String
+  read      Boolean  @default(false)
+  relatedId String?
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([createdAt])
+  @@map("forum_notifications")
 }
 
 // ─────────────────────────────────────────────
@@ -292,5 +455,22 @@ model UserReport {
   @@index([status, createdAt(sort: Desc)])
   @@index([targetType, targetId])
   @@map("user_reports")
+}
+
+// ─────────────────────────────────────────────
+// ADMIN AUDIT LOG
+// Auto-created by apps/admin/lib/audit.ts via raw SQL (CREATE TABLE IF NOT
+// EXISTS). Declared here — no FK to User, matching the physical table — so
+// `prisma db push` doesn't treat it as extraneous and drop it.
+// ─────────────────────────────────────────────
+model AdminAuditLog {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String?
+  action    String
+  reason    String?
+  message   String?
+  createdAt DateTime @default(now())
+
+  @@map("admin_audit_log")
 }
 

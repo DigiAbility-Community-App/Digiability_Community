@@ -17,7 +17,15 @@ const ProfileCompletion = () => {
   const [username, setUsername] = useState('');
   const [dob, setDob] = useState('');
   const [phoneNo, setPhoneNo] = useState('');
-  
+
+  // Role-specific fields — required by the backend before it will mark the
+  // profile complete (see hasRequiredRoleFields in user-svc). Frontend role
+  // ids here match RoleSelection.tsx ('educator' = therapist, 'ngo_worker' = ngo).
+  const [disabilityType, setDisabilityType] = useState('');
+  const [carePersonName, setCarePersonName] = useState('');
+  const [speciality, setSpeciality] = useState('');
+  const [ngoName, setNgoName] = useState('');
+
   const [usernameStatus, setUsernameStatus] = useState<'idle' | 'checking' | 'available' | 'taken' | 'invalid'>('idle');
   const [usernameMsg, setUsernameMsg] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -71,7 +79,24 @@ const ProfileCompletion = () => {
       setError('Please provide a valid, available username');
       return;
     }
-    
+
+    if (roles.includes('pwd') && !disabilityType.trim()) {
+      setError('Please tell us your disability type.');
+      return;
+    }
+    if (roles.includes('caregiver') && !carePersonName.trim()) {
+      setError("Please tell us who you're caring for.");
+      return;
+    }
+    if (roles.includes('educator') && !speciality.trim()) {
+      setError('Please tell us your speciality.');
+      return;
+    }
+    if (roles.includes('ngo_worker') && !ngoName.trim()) {
+      setError('Please tell us your NGO name.');
+      return;
+    }
+
     const parsedDob = dob.trim() ? parseDateInput(dob.trim(), 'DMY') : undefined;
     if (dob.trim() && !parsedDob) {
       setError('Invalid date format (DD/MM/YYYY)');
@@ -82,6 +107,12 @@ const ProfileCompletion = () => {
     setError(null);
     
     try {
+      const roleDetails: Record<string, string> = {};
+      if (roles.includes('pwd')) roleDetails.disabilityType = disabilityType.trim();
+      if (roles.includes('caregiver')) roleDetails.carePersonName = carePersonName.trim();
+      if (roles.includes('educator')) roleDetails.speciality = speciality.trim();
+      if (roles.includes('ngo_worker')) roleDetails.ngoName = ngoName.trim();
+
       await submitFullOnboarding({
         userId: user.id,
         roles,
@@ -91,7 +122,7 @@ const ProfileCompletion = () => {
           dob: parsedDob,
           phoneNo: phoneNo.trim() || undefined,
         },
-        roleDetails: {} // Empty for now on web
+        roleDetails,
       });
       
       setUser({
@@ -186,7 +217,67 @@ const ProfileCompletion = () => {
           />
         </div>
 
-        <button 
+        {roles.includes('pwd') && (
+          <div className="form-group">
+            <label className="form-label">Disability Type</label>
+            <input
+              type="text"
+              className="form-input"
+              placeholder="e.g. Visual impairment, Mobility, Hearing..."
+              value={disabilityType}
+              onChange={e => setDisabilityType(e.target.value)}
+              disabled={isLoading}
+              required
+            />
+          </div>
+        )}
+
+        {roles.includes('caregiver') && (
+          <div className="form-group">
+            <label className="form-label">Who are you caring for?</label>
+            <input
+              type="text"
+              className="form-input"
+              placeholder="Name of the person you care for"
+              value={carePersonName}
+              onChange={e => setCarePersonName(e.target.value)}
+              disabled={isLoading}
+              required
+            />
+          </div>
+        )}
+
+        {roles.includes('educator') && (
+          <div className="form-group">
+            <label className="form-label">Speciality</label>
+            <input
+              type="text"
+              className="form-input"
+              placeholder="e.g. Speech therapy, Special education..."
+              value={speciality}
+              onChange={e => setSpeciality(e.target.value)}
+              disabled={isLoading}
+              required
+            />
+          </div>
+        )}
+
+        {roles.includes('ngo_worker') && (
+          <div className="form-group">
+            <label className="form-label">NGO Name</label>
+            <input
+              type="text"
+              className="form-input"
+              placeholder="Name of your organization"
+              value={ngoName}
+              onChange={e => setNgoName(e.target.value)}
+              disabled={isLoading}
+              required
+            />
+          </div>
+        )}
+
+        <button
           type="submit"
           className="btn-primary" 
           disabled={isLoading || usernameStatus === 'taken' || usernameStatus === 'invalid' || usernameStatus === 'checking'}

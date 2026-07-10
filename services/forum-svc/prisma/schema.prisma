@@ -115,6 +115,30 @@ enum Role {
   ngo
   volunteer
   student
+  mentor
+}
+
+enum ReportTargetType {
+  USER
+  MESSAGE
+  GROUP
+}
+
+enum ReportReason {
+  SPAM
+  HARASSMENT
+  HATE_SPEECH
+  INAPPROPRIATE_CONTENT
+  MISINFORMATION
+  IMPERSONATION
+  OTHER
+}
+
+enum ReportStatus {
+  PENDING
+  REVIEWED
+  ACTIONED
+  DISMISSED
 }
 
 model User {
@@ -127,6 +151,14 @@ model User {
   isEmailVerified Boolean   @default(false)
   roles           Role[]    @default([])
   profileComplete Boolean   @default(false)
+  deletedAt       DateTime?
+
+  // Suspension / ban state — owned by user-svc. Kept here only so forum-svc's
+  // `db push` doesn't drop these columns from the shared `users` table.
+  isSuspended      Boolean   @default(false)
+  suspendedUntil   DateTime?
+  suspensionReason String?
+
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
@@ -144,8 +176,115 @@ model User {
   bookmarks      Bookmark[]
   notifications  Notification[]
 
+  // user-svc-owned relations — NOT used by forum-svc's own code. Declared
+  // here only so `prisma db push` sees the full physical `users` table
+  // (shared with user-svc in the `public` schema) and doesn't reconcile away
+  // columns/tables it doesn't recognize. Keep in sync with user-svc's
+  // schema.prisma if that model's shape changes.
+  mentorProfile MentorProfile?
+  givenReviews  MentorReview[] @relation("ReviewerRelation")
+  deviceTokens  DeviceToken[]
+  filedReports  UserReport[]   @relation("ReporterRelation")
+
   @@index([email])
+  @@index([deletedAt])
   @@map("users")
+}
+
+// ─────────────────────────────────────────────
+// user-svc-owned tables (public schema) — stub mirrors.
+// forum-svc never queries these directly; they exist purely so
+// `prisma db push` doesn't drop them as "extraneous" to this schema.
+// Keep field-for-field in sync with services/user-svc/prisma/schema.prisma.
+// ─────────────────────────────────────────────
+model DeviceToken {
+  id        String   @id @default(uuid())
+  userId    String
+  token     String   @unique
+  platform  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("device_tokens")
+}
+
+model Event {
+  id                 String   @id @default(uuid())
+  title              String
+  category           String
+  location           String
+  date               String
+  time               String?
+  image              String
+  description        String
+  spots              Int      @default(50)
+  buttonType         String   @default("filled")
+  externalUrl        String
+  organizer          String   @default("DigiAbility Admin")
+  accessibility_tags String   @default("")
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@map("events")
+}
+
+model MentorProfile {
+  id                    String         @id @default(uuid())
+  userId                String         @unique
+  bio                   String?
+  skills                String[]
+  disabilitySpecialties String[]
+  isAvailable           Boolean        @default(true)
+  createdAt             DateTime       @default(now())
+  updatedAt             DateTime       @updatedAt
+
+  user                  User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reviews               MentorReview[]
+
+  @@index([isAvailable])
+  @@map("mentor_profiles")
+}
+
+model MentorReview {
+  id         String        @id @default(uuid())
+  mentorId   String
+  reviewerId String
+  rating     Int
+  comment    String?
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+
+  mentor     MentorProfile @relation(fields: [mentorId], references: [id], onDelete: Cascade)
+  reviewer   User          @relation("ReviewerRelation", fields: [reviewerId], references: [id], onDelete: Cascade)
+
+  @@unique([mentorId, reviewerId])
+  @@index([mentorId])
+  @@map("mentor_reviews")
+}
+
+model UserReport {
+  id          String           @id @default(uuid())
+  reporterId  String
+  targetType  ReportTargetType
+  targetId    String
+  reason      ReportReason
+  details     String?
+  status      ReportStatus     @default(PENDING)
+  reviewedBy  String?
+  reviewedAt  DateTime?
+  actionTaken String?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  reporter User @relation("ReporterRelation", fields: [reporterId], references: [id], onDelete: Cascade)
+
+  @@unique([reporterId, targetType, targetId])
+  @@index([status, createdAt(sort: Desc)])
+  @@index([targetType, targetId])
+  @@map("user_reports")
 }
 
 model ForumUserStats {
@@ -273,4 +412,16 @@ model PasswordResetToken {
   @@index([userId])
   @@index([token])
   @@map("password_reset_tokens")
+}
+
+// user-svc-owned table — stub mirror, see services/user-svc/prisma/schema.prisma.
+model AdminAuditLog {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String?
+  action    String
+  reason    String?
+  message   String?
+  createdAt DateTime @default(now())
+
+  @@map("admin_audit_log")
 }

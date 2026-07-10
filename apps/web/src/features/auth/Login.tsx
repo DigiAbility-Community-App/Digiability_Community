@@ -2,6 +2,20 @@ import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { AlertCircle, Eye, EyeOff } from 'lucide-react';
 import { authService } from '../../services/authService';
+import { stashBanInfo } from './AccountSuspended';
+
+interface LoginErrorShape {
+  response?: {
+    data?: {
+      message?: string;
+      banned?: boolean;
+      permanent?: boolean;
+      suspendedUntil?: string | null;
+      reason?: string | null;
+    };
+  };
+  message?: string;
+}
 
 const Login = () => {
   const navigate = useNavigate();
@@ -28,8 +42,19 @@ const Login = () => {
       } else {
         navigate('/app/chats');
       }
-    } catch (err: any) {
-      setError(err.message || 'Invalid credentials. Please try again.');
+    } catch (err: unknown) {
+      const apiError = err as LoginErrorShape;
+      const data = apiError.response?.data;
+      if (data?.banned) {
+        stashBanInfo({
+          permanent: !!data.permanent,
+          suspendedUntil: data.suspendedUntil ?? null,
+          reason: data.reason ?? null,
+        });
+        navigate('/account-suspended');
+        return;
+      }
+      setError(data?.message || 'Invalid credentials. Please try again.');
     } finally {
       setIsLoading(false);
     }

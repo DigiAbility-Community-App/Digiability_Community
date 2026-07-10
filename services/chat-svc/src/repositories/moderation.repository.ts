@@ -41,14 +41,48 @@ class ModerationRepository {
     return !!row;
   }
 
+  /** Looks up a message's content + sequence for snapshotting into a report. */
+  async getMessageSnapshot(messageId: string) {
+    return prisma.message.findUnique({
+      where: { id: messageId },
+      select: { content: true, sequenceNo: true },
+    });
+  }
+
   async createReport(data: {
     reporterId: string;
     reportedUserId: string;
     conversationId?: string;
     messageId?: string;
+    messageContent?: string;
+    messageSequence?: bigint;
     reason: string;
   }) {
     return prisma.report.create({ data });
+  }
+
+  /**
+   * A small window of messages around a given sequence number, for admins
+   * reviewing a specific report to see the surrounding conversation. Returns
+   * an empty array if the conversation/messages no longer exist.
+   */
+  async getSurroundingMessages(conversationId: string, sequenceNo: bigint, radius = 5) {
+    return prisma.message.findMany({
+      where: {
+        conversationId,
+        sequenceNo: { gte: sequenceNo - BigInt(radius), lte: sequenceNo + BigInt(radius) },
+      },
+      orderBy: { sequenceNo: "asc" },
+      select: {
+        id: true,
+        senderId: true,
+        content: true,
+        type: true,
+        sequenceNo: true,
+        createdAt: true,
+        deletedAt: true,
+      },
+    });
   }
 }
 

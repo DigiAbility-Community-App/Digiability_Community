@@ -14,10 +14,16 @@ function durationToInterval(duration: string): string | null {
   return map[duration] ?? null; // null → permanent
 }
 
-// Suspend a user via forum_user_stats (shared by warn-with-suspend and ban).
-async function suspendUser(userId: string, interval: string | null) {
+// Suspend a user. `users` is the source of truth read by user-svc's
+// login/auth gate; forum_user_stats is kept in sync for forum-svc's own
+// (forum-scoped) posting checks.
+async function suspendUser(userId: string, interval: string | null, reason?: string | null) {
   const uuid = crypto.randomUUID();
   if (interval === null) {
+    await dbPool.query(
+      `UPDATE users SET "isSuspended" = true, "suspendedUntil" = NULL, "suspensionReason" = $2 WHERE id = $1`,
+      [userId, reason ?? null]
+    );
     await dbPool.query(
       `INSERT INTO forum_user_stats (id, "userId", "isSuspended", "suspendedUntil")
        VALUES ($1, $2, true, NULL)
@@ -25,6 +31,10 @@ async function suspendUser(userId: string, interval: string | null) {
       [uuid, userId]
     );
   } else {
+    await dbPool.query(
+      `UPDATE users SET "isSuspended" = true, "suspendedUntil" = NOW() + ($2::interval), "suspensionReason" = $3 WHERE id = $1`,
+      [userId, interval, reason ?? null]
+    );
     await dbPool.query(
       `INSERT INTO forum_user_stats (id, "userId", "isSuspended", "suspendedUntil")
        VALUES ($1, $2, true, NOW() + ($3::interval))
@@ -73,21 +83,21 @@ export async function GET(request: NextRequest) {
       `),
       dbPool.query(`
         SELECT
-          fus.id,
-          fus."isSuspended",
-          fus."suspendedUntil",
+          u.id,
+          u."isSuspended",
+          u."suspendedUntil",
+          u."suspensionReason",
           u.name,
           u.email,
           u.id as "userId"
-        FROM forum_user_stats fus
-        JOIN users u ON fus."userId" = u.id
-        WHERE fus."isSuspended" = true
+        FROM users u
+        WHERE u."isSuspended" = true
       `),
       dbPool.query(`
         SELECT
           (SELECT COUNT(*) FROM forum_reports) as "totalReports",
           (SELECT COUNT(*) FROM forum_questions WHERE "deletedAt" IS NOT NULL) as "deletedPosts",
-          (SELECT COUNT(*) FROM forum_user_stats WHERE "isSuspended" = true) as "suspendedUsers",
+          (SELECT COUNT(*) FROM users WHERE "isSuspended" = true) as "suspendedUsers",
           (SELECT COUNT(*) FROM forum_reports WHERE "createdAt" >= NOW() - INTERVAL '24 hours') as "reportsToday"
         FROM (SELECT 1) as t
       `),
@@ -105,6 +115,8 @@ export async function GET(request: NextRequest) {
           r."reportedUserId",
           r."messageId",
           r."conversationId",
+          r."messageContent",
+          r."messageSequence",
           reporter.name as "reporterName",
           reporter.email as "reporterEmail",
           reported.name as "authorName",
@@ -141,7 +153,7 @@ export async function GET(request: NextRequest) {
       questionId: null,
       answerId: null,
       questionTitle: null,
-      answerContent: "Reported chat message",
+      answerContent: r.messageContent || "Reported chat message (content unavailable)",
       reporterName: r.reporterName || "Unknown",
       reporterEmail: r.reporterEmail || "",
       authorId: r.reportedUserId,
@@ -149,6 +161,7 @@ export async function GET(request: NextRequest) {
       authorEmail: r.authorEmail || "",
       messageId: r.messageId,
       conversationId: r.conversationId,
+      messageSequence: r.messageSequence ? String(r.messageSequence) : null,
       type: "chat" as const,
       source: "chat" as const,
     }));
@@ -203,6 +216,10 @@ export async function POST(request: NextRequest) {
       await writeAudit({ action: "delete_post", reason: `question ${questionId}` });
     } else if (action === "unsuspend" && userId) {
       await dbPool.query(
+        `UPDATE users SET "isSuspended" = false, "suspendedUntil" = NULL, "suspensionReason" = NULL WHERE id = $1`,
+        [userId]
+      );
+      await dbPool.query(
         `UPDATE forum_user_stats SET "isSuspended" = false, "suspendedUntil" = NULL WHERE "userId" = $1`,
         [userId]
       );
@@ -210,26 +227,18 @@ export async function POST(request: NextRequest) {
     } else if (action === "warn" && userId) {
       // Notify the offending user; optionally trigger a 7-day suspension.
       const title = `Warning: ${category || "Community Guidelines"}`;
-      await notifyUser(
-        userId,
-        "MODERATION_WARNING",
-        title,
-        message || "Your content was flagged for violating community guidelines."
-      );
+      const warnMessage = message || "Your content was flagged for violating community guidelines.";
+      await notifyUser(userId, "MODERATION_WARNING", title, warnMessage);
       if (body.triggerSuspend) {
-        await suspendUser(userId, "7 days");
+        await suspendUser(userId, "7 days", warnMessage);
       }
       await writeAudit({ userId, action: "warn", reason: category, message });
     } else if (action === "ban" && userId) {
       // Suspend the offending user (permanent unless a duration is given).
       const interval = duration ? durationToInterval(duration) : null;
-      await suspendUser(userId, interval);
-      await notifyUser(
-        userId,
-        "MODERATION_BAN",
-        "Your account has been suspended",
-        message || reason || "Your account has been suspended for violating community guidelines."
-      );
+      const banMessage = message || reason || "Your account has been suspended for violating community guidelines.";
+      await suspendUser(userId, interval, banMessage);
+      await notifyUser(userId, "MODERATION_BAN", "Your account has been suspended", banMessage);
       await writeAudit({ userId, action: "ban", reason, message });
     } else {
       return NextResponse.json(

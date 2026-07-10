@@ -285,7 +285,7 @@
   border: 1px solid var(--color-primary-subtle);
   border-radius: 8px;
   padding: 2px 4px;
-  background-color: white;
+  background-color: var(--bg-surface);
   cursor: pointer;
 }
 

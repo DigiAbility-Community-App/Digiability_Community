@@ -1,3 +1,12 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* This app has a single, fixed light design (no dark: variants anywhere) —
+ * declare that explicitly so browsers don't render native form controls
+ * (select dropdowns, checkboxes, scrollbars) in dark mode for OS-dark-mode
+ * users, which would clash with the hardcoded light colors here and make
+ * some native control text unreadable. */
+:root {
+  color-scheme: light;
+}

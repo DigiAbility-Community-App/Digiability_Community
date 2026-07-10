@@ -8,15 +8,23 @@ import { Request, Response, NextFunction } from "express";
 export interface AppError extends Error {
   statusCode?: number;
   isOperational?: boolean;
+  data?: Record<string, unknown>;
 }
 
 /**
  * Create a structured operational error (safe to expose to client).
+ * `data` is merged into the JSON error response — used for machine-readable
+ * fields like ban state that clients need beyond a human-readable message.
  */
-export function createError(message: string, statusCode = 500): AppError {
+export function createError(
+  message: string,
+  statusCode = 500,
+  data?: Record<string, unknown>
+): AppError {
   const err: AppError = new Error(message);
   err.statusCode = statusCode;
   err.isOperational = true;
+  if (data) err.data = data;
   return err;
 }
 
@@ -45,6 +53,7 @@ export function errorHandler(
     message: err.isOperational
       ? err.message
       : "An unexpected error occurred. Please try again later.",
+    ...(err.isOperational && err.data ? err.data : {}),
     ...(isProduction ? {} : { stack: err.stack }),
   });
 }

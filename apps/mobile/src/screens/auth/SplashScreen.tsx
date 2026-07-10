@@ -21,6 +21,8 @@ const { width, height } = Dimensions.get('window');
 
 const SplashScreen = ({ navigation }: Props) => {
   const user = useAuthStore((s) => s.user);
+  const pendingBanInfo = useAuthStore((s) => s.pendingBanInfo);
+  const clearPendingBanInfo = useAuthStore((s) => s.clearPendingBanInfo);
 
   const dot1Anim = useRef(new Animated.Value(1)).current;
   const dot2Anim = useRef(new Animated.Value(0.6)).current;
@@ -54,11 +56,17 @@ const SplashScreen = ({ navigation }: Props) => {
   // Navigation
   useEffect(() => {
     const timer = setTimeout(() => {
-      navigation.replace('Welcome');
+      if (pendingBanInfo) {
+        const info = pendingBanInfo;
+        clearPendingBanInfo();
+        navigation.replace('AccountSuspended', info);
+      } else {
+        navigation.replace('Welcome');
+      }
     }, 2500);
 
     return () => clearTimeout(timer);
-  }, [navigation]);
+  }, [navigation, pendingBanInfo, clearPendingBanInfo]);
 
   return (
     <LinearGradient

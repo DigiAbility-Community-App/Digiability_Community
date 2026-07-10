@@ -88,12 +88,36 @@ export function cancelPendingRequests() {
   isRefreshing = false;
 }
 
+interface BanResponseBody {
+  banned?: boolean;
+  permanent?: boolean;
+  suspendedUntil?: string | null;
+  reason?: string | null;
+}
+
 apiClient.interceptors.response.use(
   (response) => response,
   async (error: AxiosError) => {
     const originalRequest = error.config as InternalAxiosRequestConfig & {
       _retry?: boolean;
     };
+
+    // A banned/suspended account gets a 403 with `banned: true` from every
+    // service's auth check (user-svc, chat-svc, forum-svc). Force logout and
+    // stash the ban info so the auth stack can show the suspended screen —
+    // this catches a ban that lands mid-session, not just at login.
+    const body = error.response?.data as BanResponseBody | undefined;
+    if (error.response?.status === 403 && body?.banned) {
+      useAuthStore.getState().setPendingBanInfo({
+        permanent: !!body.permanent,
+        suspendedUntil: body.suspendedUntil ?? null,
+        reason: body.reason ?? null,
+      });
+      cancelPendingRequests();
+      useAuthStore.getState().clearAuth();
+      await SecureStore.deleteItemAsync(REFRESH_TOKEN_KEY);
+      return Promise.reject(error);
+    }
 
     // Only attempt refresh for 401 errors that haven't already been retried
     // and are NOT on the refresh/login endpoints themselves

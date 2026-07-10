@@ -317,6 +317,11 @@ model Report {
   reportedUserId String
   conversationId String?
   messageId      String?
+  // Immutable snapshot of the reported message at report time — content and
+  // sequence survive even if the message is later edited/deleted, so the
+  // evidence an admin reviews can't disappear out from under the report.
+  messageContent  String?
+  messageSequence BigInt?
   reason         String
   status         String   @default("OPEN") // OPEN | REVIEWED | ACTIONED | DISMISSED
   createdAt      DateTime @default(now())

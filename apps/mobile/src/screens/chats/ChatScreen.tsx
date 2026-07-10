@@ -357,6 +357,9 @@ const ChatScreen = ({ navigation, route }: Props) => {
   const [messageMenu, setMessageMenu] = useState<ChatMessage | null>(null);
   const [headerMenuOpen, setHeaderMenuOpen] = useState(false);
   const [reportReasonOpen, setReportReasonOpen] = useState(false);
+  // Set when reporting a specific message (long-press → "Report message"),
+  // so the report carries messageId context instead of just the user.
+  const [reportTargetMessageId, setReportTargetMessageId] = useState<string | null>(null);
   const [confirmState, setConfirmState] = useState<{
     title: string;
     message?: string;
@@ -370,8 +373,9 @@ const ChatScreen = ({ navigation, route }: Props) => {
   const submitReport = useCallback(
     (reason: string) => {
       if (!peerId) return;
+      const messageId = reportTargetMessageId ?? undefined;
       chatService
-        .reportUser({ reportedUserId: peerId, conversationId, reason })
+        .reportUser({ reportedUserId: peerId, conversationId, messageId, reason })
         .then(() =>
           setConfirmState({
             title: "Report submitted",
@@ -391,9 +395,10 @@ const ChatScreen = ({ navigation, route }: Props) => {
             hideCancel: true,
             onConfirm: () => {},
           })
-        );
+        )
+        .finally(() => setReportTargetMessageId(null));
     },
-    [peerId, conversationId]
+    [peerId, conversationId, reportTargetMessageId]
   );
 
   const askBlock = useCallback(() => {
@@ -473,6 +478,17 @@ const ChatScreen = ({ navigation, route }: Props) => {
     const opts: ActionSheetOption[] = [];
     if (item.type === "TEXT" && item.content?.trim()) {
       opts.push({ label: "Read aloud", icon: Volume2, onPress: () => Speech.speak(item.content) });
+    }
+    if (!isMine) {
+      opts.push({
+        label: "Report message",
+        icon: Flag,
+        destructive: true,
+        onPress: () => {
+          setReportTargetMessageId(item.id);
+          setReportReasonOpen(true);
+        },
+      });
     }
     opts.push({ label: "Delete for me", icon: Trash2, destructive: true, onPress: () => askDelete(item, "me") });
     if (isMine) {
@@ -802,7 +818,10 @@ const ChatScreen = ({ navigation, route }: Props) => {
           label: r,
           onPress: () => submitReport(r),
         }))}
-        onClose={() => setReportReasonOpen(false)}
+        onClose={() => {
+          setReportReasonOpen(false);
+          setReportTargetMessageId(null);
+        }}
       />
 
       {/* Confirm / info dialog */}

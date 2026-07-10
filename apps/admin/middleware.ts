@@ -8,7 +8,11 @@ export async function middleware(request: NextRequest) {
   
   const secret = process.env.JWT_SECRET;
   if (!secret) {
-    // JWT_SECRET is not set — deny all access to force proper configuration
+    // JWT_SECRET is not set — deny all access to force proper configuration.
+    // Never redirect /login to itself, or every request 307-loops forever.
+    if (pathname === "/login") {
+      return NextResponse.next();
+    }
     const loginUrl = new URL("/login", request.url);
     return NextResponse.redirect(loginUrl);
   }

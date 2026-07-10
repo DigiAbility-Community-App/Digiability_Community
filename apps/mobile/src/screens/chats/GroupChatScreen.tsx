@@ -32,6 +32,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   Check, CheckCheck, Plus, Mic, Send, Square,
   ArrowLeft, Settings, Trash2, Volume2, Users, Accessibility, Heart, HeartHandshake,
+  Flag, CircleCheck, TriangleAlert,
 } from "lucide-react-native";
 
 // ─────────────────────────────────────────────────────────
@@ -369,8 +370,44 @@ const GroupChatScreen = ({ navigation, route }: Props) => {
     icon?: React.ComponentType<{ size?: number; color?: string; strokeWidth?: number }>;
     confirmLabel: string;
     destructive?: boolean;
+    hideCancel?: boolean;
     onConfirm: () => void;
   } | null>(null);
+
+  // Reporting a specific message — captures messageId + sender so the admin
+  // moderation queue gets full context, not just a bare user-level report.
+  const [reportTarget, setReportTarget] = useState<ChatMessage | null>(null);
+  const submitMessageReport = (reason: string) => {
+    if (!reportTarget) return;
+    chatService
+      .reportUser({
+        reportedUserId: reportTarget.senderId,
+        conversationId,
+        messageId: reportTarget.id,
+        reason,
+      })
+      .then(() =>
+        setConfirmState({
+          title: "Report submitted",
+          message: "Thank you. Our team will review this.",
+          icon: CircleCheck,
+          confirmLabel: "Done",
+          hideCancel: true,
+          onConfirm: () => {},
+        })
+      )
+      .catch(() =>
+        setConfirmState({
+          title: "Couldn't submit",
+          message: "Something went wrong. Please try again.",
+          icon: TriangleAlert,
+          confirmLabel: "OK",
+          hideCancel: true,
+          onConfirm: () => {},
+        })
+      )
+      .finally(() => setReportTarget(null));
+  };
 
   const askDelete = (messageId: string, deleteFor: "me" | "everyone") => {
     setConfirmState({
@@ -397,6 +434,14 @@ const GroupChatScreen = ({ navigation, route }: Props) => {
     const opts: ActionSheetOption[] = [];
     if (item.type === "TEXT" && item.content?.trim()) {
       opts.push({ label: "Read aloud", icon: Volume2, onPress: () => Speech.speak(item.content) });
+    }
+    if (!isMine) {
+      opts.push({
+        label: "Report message",
+        icon: Flag,
+        destructive: true,
+        onPress: () => setReportTarget(item),
+      });
     }
     opts.push({ label: "Delete for me", icon: Trash2, destructive: true, onPress: () => askDelete(item.id, "me") });
     if (canDeleteForEveryone) {
@@ -765,8 +810,21 @@ const GroupChatScreen = ({ navigation, route }: Props) => {
         icon={confirmState?.icon}
         confirmLabel={confirmState?.confirmLabel}
         destructive={confirmState?.destructive}
+        hideCancel={confirmState?.hideCancel}
         onConfirm={() => confirmState?.onConfirm()}
         onCancel={() => setConfirmState(null)}
+      />
+
+      {/* Report reason picker */}
+      <ActionSheet
+        visible={!!reportTarget}
+        title="Report reason"
+        message="Why are you reporting this message?"
+        options={["Spam", "Harassment", "Inappropriate content", "Other"].map((r) => ({
+          label: r,
+          onPress: () => submitMessageReport(r),
+        }))}
+        onClose={() => setReportTarget(null)}
       />
     </ScreenWrapper>
   );

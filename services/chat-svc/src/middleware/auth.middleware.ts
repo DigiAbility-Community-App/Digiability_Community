@@ -7,6 +7,7 @@
 import { Request, Response, NextFunction } from "express";
 import { verifyAccessToken } from "../utils/jwt.util";
 import { AuthenticatedUser } from "../types/common.types";
+import { checkSuspended } from "../utils/suspension.util";
 
 // Extend Express Request to include authenticated user
 declare global {
@@ -17,11 +18,11 @@ declare global {
   }
 }
 
-export function authenticate(
+export async function authenticate(
   req: Request,
   res: Response,
   next: NextFunction
-): void {
+): Promise<void> {
   const authHeader = req.headers.authorization;
 
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
@@ -34,10 +35,9 @@ export function authenticate(
 
   const token = authHeader.split(" ")[1];
 
+  let payload: AuthenticatedUser;
   try {
-    const payload = verifyAccessToken(token);
-    req.user = payload;
-    next();
+    payload = verifyAccessToken(token);
   } catch (err: unknown) {
     const message =
       err instanceof Error && err.message.includes("expired")
@@ -45,5 +45,30 @@ export function authenticate(
         : "Invalid or malformed token.";
 
     res.status(401).json({ success: false, message });
+    return;
   }
+
+  // Reject every request from a suspended/banned account — runs on every
+  // authenticated call, so a ban takes effect on the user's very next request.
+  // Fail open on a transient DB error so a suspension-check outage doesn't
+  // take down all of chat for every user.
+  let suspension: Awaited<ReturnType<typeof checkSuspended>> = null;
+  try {
+    suspension = await checkSuspended(payload.sub);
+  } catch (err) {
+    console.error("[auth.middleware] suspension check failed:", err);
+  }
+  if (suspension) {
+    res.status(403).json({
+      success: false,
+      message: suspension.permanent
+        ? "Your account has been permanently suspended."
+        : "Your account has been temporarily suspended.",
+      ...suspension,
+    });
+    return;
+  }
+
+  req.user = payload;
+  next();
 }

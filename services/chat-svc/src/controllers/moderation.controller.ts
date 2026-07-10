@@ -48,11 +48,26 @@ export const reportUser = asyncHandler(async (req: Request, res: Response) => {
     res.status(400).json({ success: false, message: "reportedUserId and reason are required" });
     return;
   }
+
+  // Snapshot the message content at report time so the evidence an admin
+  // reviews survives even if the message is later edited or deleted.
+  let messageContent: string | undefined;
+  let messageSequence: bigint | undefined;
+  if (messageId) {
+    const snapshot = await moderationRepository.getMessageSnapshot(messageId);
+    if (snapshot) {
+      messageContent = snapshot.content;
+      messageSequence = snapshot.sequenceNo;
+    }
+  }
+
   const report = await moderationRepository.createReport({
     reporterId: me,
     reportedUserId,
     conversationId,
     messageId,
+    messageContent,
+    messageSequence,
     reason: reason.trim(),
   });
   res.status(201).json({ success: true, data: { reportId: report.id } });

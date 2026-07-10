@@ -22,6 +22,19 @@ interface Report {
   authorName?: string | null;
   authorEmail?: string | null;
   messageId?: string | null;
+  conversationId?: string | null;
+  messageSequence?: string | null;
+}
+
+interface ContextMessage {
+  id: string;
+  senderId: string;
+  senderName: string | null;
+  content: string;
+  type: string;
+  sequenceNo: string;
+  createdAt: string;
+  deletedAt: string | null;
 }
 
 interface ModerationStats {
@@ -41,6 +54,8 @@ export default function ModerationPage() {
   // Review Workflow state
   const [showWorkflow, setShowWorkflow] = useState(false);
   const [workflowReport, setWorkflowReport] = useState<Report | null>(null);
+  const [contextMessages, setContextMessages] = useState<ContextMessage[] | null>(null);
+  const [contextLoading, setContextLoading] = useState(false);
   const [removeReason, setRemoveReason] = useState("");
   const [notifyAuthor, setNotifyAuthor] = useState(true);
   const [warnCategory, setWarnCategory] = useState("Harassment");
@@ -51,6 +66,27 @@ export default function ModerationPage() {
   const [banDuration, setBanDuration] = useState("Permanent");
   const [banEmail, setBanEmail] = useState("");
   const [banConfirm, setBanConfirm] = useState(false);
+
+  // Load surrounding conversation context whenever a chat-sourced report is
+  // opened in the review workflow, so the admin isn't deciding based on one
+  // line out of context.
+  useEffect(() => {
+    if (!showWorkflow || workflowReport?.source !== "chat" || !workflowReport.conversationId || !workflowReport.messageSequence) {
+      setContextMessages(null);
+      return;
+    }
+    let cancelled = false;
+    setContextLoading(true);
+    setContextMessages(null);
+    fetch(`/api/moderation/context?conversationId=${encodeURIComponent(workflowReport.conversationId)}&sequence=${encodeURIComponent(workflowReport.messageSequence)}`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (!cancelled && data.success) setContextMessages(data.messages);
+      })
+      .catch((e) => console.error("Failed to load report context:", e))
+      .finally(() => { if (!cancelled) setContextLoading(false); });
+    return () => { cancelled = true; };
+  }, [showWorkflow, workflowReport]);
 
   const fetchData = async () => {
     setLoading(true);
@@ -143,6 +179,46 @@ export default function ModerationPage() {
           <h1 className="text-xl font-extrabold text-[#1A1C1C]">Review Workflow</h1>
           <p className="text-sm text-[#7D7387] mt-0.5">Manage content flags and user safety measures with DigiAbility's Guardian Moderation system.</p>
         </div>
+
+        {workflowReport.source === "chat" && workflowReport.conversationId && (
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 mb-6">
+            <h3 className="text-sm font-extrabold text-[#1A1C1C] mb-3">Conversation Context</h3>
+            {contextLoading && (
+              <p className="text-sm text-[#7D7387]">Loading surrounding messages…</p>
+            )}
+            {!contextLoading && contextMessages && contextMessages.length === 0 && (
+              <p className="text-sm text-[#7D7387]">
+                No surrounding messages found — the conversation may have been deleted since this report was filed.
+              </p>
+            )}
+            {!contextLoading && contextMessages && contextMessages.length > 0 && (
+              <div className="space-y-2 max-h-72 overflow-y-auto">
+                {contextMessages.map((m) => {
+                  const isReported = m.sequenceNo === workflowReport.messageSequence;
+                  return (
+                    <div
+                      key={m.id}
+                      className={`rounded-lg p-3 text-sm ${isReported ? "bg-red-50 border border-red-200" : "bg-gray-50"}`}
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="font-semibold text-[#1A1C1C]">{m.senderName || "Unknown"}</span>
+                        <span className="text-xs text-[#9A93A8]">{new Date(m.createdAt).toLocaleString("en-GB")}</span>
+                      </div>
+                      <p className={`leading-5 ${m.deletedAt ? "italic text-[#9A93A8]" : "text-[#4B4355]"}`}>
+                        {m.deletedAt ? "(message deleted)" : m.content}
+                      </p>
+                      {isReported && (
+                        <span className="inline-block mt-1 text-[11px] font-bold text-red-600 uppercase tracking-wide">
+                          Reported message
+                        </span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
           {/* REMOVE CONTENT */}

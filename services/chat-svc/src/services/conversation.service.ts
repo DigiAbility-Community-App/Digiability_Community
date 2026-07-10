@@ -397,6 +397,23 @@ class ConversationService {
       throw new Error("Only the group owner can delete this group");
     }
 
+    await this.softDeleteAndNotify(conversationId, requesterId);
+  }
+
+  /**
+   * Admin-initiated deletion — bypasses the owner check since this is called
+   * from the moderation panel, not a group member. Same broadcast behavior
+   * as a normal deletion so members' clients react in real time either way.
+   */
+  async adminDeleteGroup(conversationId: string): Promise<void> {
+    const conversation = await conversationRepository.getById(conversationId);
+    if (!conversation) throw new Error("Conversation not found");
+    if (conversation.type !== "GROUP") throw new Error("Only groups can be deleted");
+
+    await this.softDeleteAndNotify(conversationId, "admin");
+  }
+
+  private async softDeleteAndNotify(conversationId: string, deletedBy: string): Promise<void> {
     // Capture member IDs BEFORE deletion so we can notify everyone
     const memberIds = await conversationRepository.getMemberIds(conversationId);
 
@@ -407,7 +424,7 @@ class ConversationService {
       connectionManager.sendToUser(memberId, envelope);
     }
 
-    logger.info("Group deleted", { conversationId, deletedBy: requesterId });
+    logger.info("Group deleted", { conversationId, deletedBy });
   }
 
   async muteConversation(conversationId: string, userId: string, muted: boolean): Promise<void> {

@@ -51,11 +51,11 @@ export async function GET(
           up."ngoName", up."ngoRole", up.district,
           up.speciality, up.organization, up."yearsOfExperience",
           up."supportNeeded", up."careRelation",
-          COALESCE(fus."isSuspended", false) as "isSuspended",
-          fus."suspendedUntil"
+          u."isSuspended",
+          u."suspendedUntil",
+          u."suspensionReason"
         FROM users u
         LEFT JOIN user_profiles up ON u.id = up."userId"
-        LEFT JOIN forum_user_stats fus ON u.id = fus."userId"
         WHERE u.id = $1 AND u."deletedAt" IS NULL
       `,
         [id]
@@ -84,9 +84,13 @@ export async function GET(
     const row = userResult.rows[0];
     const roles = parseRoles(row.roles);
 
+    // A suspension with a past suspendedUntil has expired — treat as not suspended.
+    const isCurrentlySuspended =
+      row.isSuspended && (row.suspendedUntil === null || new Date(row.suspendedUntil) > new Date());
+
     // Status: Suspended takes priority over Active/Inactive
     let status = "Inactive";
-    if (row.isSuspended) {
+    if (isCurrentlySuspended) {
       status = "Suspended";
     } else if (row.isEmailVerified && row.profileComplete) {
       status = "Active";
@@ -98,7 +102,7 @@ export async function GET(
         ...row,
         roles,
         status,
-        isSuspended: row.isSuspended,
+        isSuspended: isCurrentlySuspended,
         createdAt: new Date(row.createdAt).toLocaleDateString("en-GB", {
           day: "2-digit",
           month: "short",
@@ -141,7 +145,25 @@ export async function PATCH(
       const isPermanent = duration === "Permanent";
       const interval = isPermanent ? null : durationToInterval(duration || "30 days");
       const uuid = crypto.randomUUID();
+      const suspensionReason = message || reason || null;
 
+      // `users` is the source of truth read by user-svc's login/auth gate.
+      if (isPermanent) {
+        await dbPool.query(
+          `UPDATE users SET "isSuspended" = true, "suspendedUntil" = NULL, "suspensionReason" = $2 WHERE id = $1`,
+          [id, suspensionReason]
+        );
+      } else {
+        // Use parameterized cast to avoid SQL injection — interval is already
+        // validated against an allowlist in durationToInterval() above.
+        await dbPool.query(
+          `UPDATE users SET "isSuspended" = true, "suspendedUntil" = NOW() + ($2::interval), "suspensionReason" = $3 WHERE id = $1`,
+          [id, interval, suspensionReason]
+        );
+      }
+
+      // Keep forum_user_stats in sync too — forum-svc's own posting checks
+      // (if any) read from here, not from `users`.
       if (isPermanent) {
         await dbPool.query(
           `INSERT INTO forum_user_stats (id, "userId", "isSuspended", "suspendedUntil")
@@ -150,8 +172,6 @@ export async function PATCH(
           [uuid, id]
         );
       } else {
-        // Use parameterized cast to avoid SQL injection — interval is already
-        // validated against an allowlist in durationToInterval() above.
         await dbPool.query(
           `INSERT INTO forum_user_stats (id, "userId", "isSuspended", "suspendedUntil")
            VALUES ($1, $2, true, NOW() + ($3::interval))
@@ -164,9 +184,14 @@ export async function PATCH(
       await writeAudit({ userId: id, action: "suspend", reason, message });
     } else if (action === "unsuspend") {
       await dbPool.query(
+        `UPDATE users SET "isSuspended" = false, "suspendedUntil" = NULL, "suspensionReason" = NULL WHERE id = $1`,
+        [id]
+      );
+      await dbPool.query(
         `UPDATE forum_user_stats SET "isSuspended" = false, "suspendedUntil" = NULL WHERE "userId" = $1`,
         [id]
       );
+      await writeAudit({ userId: id, action: "unsuspend" });
     } else if (action === "update") {
       // Update basic profile info
       const { fullName, phoneNo, city, state, gender, roles, disabilityType, disabilitySince, supportNeeded } = body;
