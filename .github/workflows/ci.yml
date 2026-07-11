@@ -15,10 +15,10 @@ jobs:
     name: Detect changed services
     runs-on: ubuntu-latest
     outputs:
-      user_svc: ${{ steps.changes.outputs.user-svc }}
-      chat_svc: ${{ steps.changes.outputs.chat-svc }}
-      forum_svc: ${{ steps.changes.outputs.forum-svc }}
-      notif_svc: ${{ steps.changes.outputs.notif-svc }}
+      user_svc: ${{ steps.changes.outputs['user-svc'] }}
+      chat_svc: ${{ steps.changes.outputs['chat-svc'] }}
+      forum_svc: ${{ steps.changes.outputs['forum-svc'] }}
+      notif_svc: ${{ steps.changes.outputs['notif-svc'] }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
