@@ -120,8 +120,10 @@ services:
   # mirrored-model pattern this relies on) — not its own "forum" schema.
   forum-svc:
     build:
-      context: ./services/forum-svc
-      dockerfile: Dockerfile
+      # Repo root so the shared packages/moderation workspace package
+      # is inside the build context (forum-svc uses a file: dependency).
+      context: .
+      dockerfile: services/forum-svc/Dockerfile
     container_name: digiability_forum_svc
     restart: unless-stopped
     env_file:

@@ -85,7 +85,10 @@ jobs:
           password: ${{ secrets.GHCR_TOKEN }}
       - uses: docker/build-push-action@v5
         with:
-          context: ./services/chat-svc
+          # Repo root context — chat-svc's Dockerfile copies in the shared
+          # packages/moderation workspace package (file: dependency).
+          context: .
+          file: ./services/chat-svc/Dockerfile
           push: true
           tags: |
             ghcr.io/techonsy/community-chat-svc:latest
@@ -113,7 +116,10 @@ jobs:
           password: ${{ secrets.GHCR_TOKEN }}
       - uses: docker/build-push-action@v5
         with:
-          context: ./services/forum-svc
+          # Repo root context — forum-svc's Dockerfile copies in the shared
+          # packages/moderation workspace package (file: dependency).
+          context: .
+          file: ./services/forum-svc/Dockerfile
           push: true
           tags: |
             ghcr.io/techonsy/community-forum-svc:latest
