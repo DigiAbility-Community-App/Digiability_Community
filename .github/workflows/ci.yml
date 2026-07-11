@@ -34,55 +34,122 @@ jobs:
             notif-svc:
               - 'services/notif-svc/**'
 
-  build_push:
-    name: Build & Push ${{ matrix.service }}
+  build_user_svc:
+    name: Build & Push user-svc
     needs: detect_changes
-    if: github.event_name == 'push'
+    if: needs.detect_changes.outputs.user_svc == 'true'
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        include:
-          - service: user-svc
-            changed: ${{ needs.detect_changes.outputs.user_svc }}
-          - service: chat-svc
-            changed: ${{ needs.detect_changes.outputs.chat_svc }}
-          - service: forum-svc
-            changed: ${{ needs.detect_changes.outputs.forum_svc }}
-          - service: notif-svc
-            changed: ${{ needs.detect_changes.outputs.notif_svc }}
-        exclude:
-          - changed: 'false'
     permissions:
       contents: read
       packages: write
     steps:
       - uses: actions/checkout@v4
-
       - id: vars
         run: echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
-
       - uses: docker/setup-buildx-action@v3
-
       - uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ secrets.GHCR_USERNAME }}
           password: ${{ secrets.GHCR_TOKEN }}
-
       - uses: docker/build-push-action@v5
         with:
-          context: ./services/${{ matrix.service }}
+          context: ./services/user-svc
           push: true
           tags: |
-            ghcr.io/techonsy/community-${{ matrix.service }}:latest
-            ghcr.io/techonsy/community-${{ matrix.service }}:${{ steps.vars.outputs.sha_short }}
-          cache-from: type=gha,scope=${{ matrix.service }}
-          cache-to: type=gha,scope=${{ matrix.service }},mode=max
+            ghcr.io/techonsy/community-user-svc:latest
+            ghcr.io/techonsy/community-user-svc:${{ steps.vars.outputs.sha_short }}
+          cache-from: type=gha,scope=user-svc
+          cache-to: type=gha,scope=user-svc,mode=max
+
+  build_chat_svc:
+    name: Build & Push chat-svc
+    needs: detect_changes
+    if: needs.detect_changes.outputs.chat_svc == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - id: vars
+        run: echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ secrets.GHCR_USERNAME }}
+          password: ${{ secrets.GHCR_TOKEN }}
+      - uses: docker/build-push-action@v5
+        with:
+          context: ./services/chat-svc
+          push: true
+          tags: |
+            ghcr.io/techonsy/community-chat-svc:latest
+            ghcr.io/techonsy/community-chat-svc:${{ steps.vars.outputs.sha_short }}
+          cache-from: type=gha,scope=chat-svc
+          cache-to: type=gha,scope=chat-svc,mode=max
+
+  build_forum_svc:
+    name: Build & Push forum-svc
+    needs: detect_changes
+    if: needs.detect_changes.outputs.forum_svc == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - id: vars
+        run: echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ secrets.GHCR_USERNAME }}
+          password: ${{ secrets.GHCR_TOKEN }}
+      - uses: docker/build-push-action@v5
+        with:
+          context: ./services/forum-svc
+          push: true
+          tags: |
+            ghcr.io/techonsy/community-forum-svc:latest
+            ghcr.io/techonsy/community-forum-svc:${{ steps.vars.outputs.sha_short }}
+          cache-from: type=gha,scope=forum-svc
+          cache-to: type=gha,scope=forum-svc,mode=max
+
+  build_notif_svc:
+    name: Build & Push notif-svc
+    needs: detect_changes
+    if: needs.detect_changes.outputs.notif_svc == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - id: vars
+        run: echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ secrets.GHCR_USERNAME }}
+          password: ${{ secrets.GHCR_TOKEN }}
+      - uses: docker/build-push-action@v5
+        with:
+          context: ./services/notif-svc
+          push: true
+          tags: |
+            ghcr.io/techonsy/community-notif-svc:latest
+            ghcr.io/techonsy/community-notif-svc:${{ steps.vars.outputs.sha_short }}
+          cache-from: type=gha,scope=notif-svc
+          cache-to: type=gha,scope=notif-svc,mode=max
 
   deploy:
-    name: Deploy ${{ matrix.service }}
-    needs: [detect_changes, build_push]
-    if: github.ref == 'refs/heads/main'
+    name: Deploy changed services
+    needs: [detect_changes, build_user_svc, build_chat_svc, build_forum_svc, build_notif_svc]
+    if: always() && github.ref == 'refs/heads/main' && !failure()
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -95,15 +162,19 @@ jobs:
             changed: ${{ needs.detect_changes.outputs.forum_svc }}
           - service: notif-svc
             changed: ${{ needs.detect_changes.outputs.notif_svc }}
-        exclude:
-          - changed: 'false'
     steps:
-      - uses: actions/checkout@v4
+      - if: matrix.changed != 'true'
+        run: echo "Skipping ${{ matrix.service }} — not changed" && exit 0
 
-      - id: vars
+      - if: matrix.changed == 'true'
+        uses: actions/checkout@v4
+
+      - if: matrix.changed == 'true'
+        id: vars
         run: echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
 
       - name: Update GitOps manifest
+        if: matrix.changed == 'true'
         run: |
           git clone https://x-access-token:${{ secrets.GITOPS_PAT }}@github.com/techonsy/ngo-devops.git gitops
           cd gitops
@@ -117,7 +188,7 @@ jobs:
           fi
 
       - name: Run migrations
-        if: matrix.service == 'user-svc' || matrix.service == 'chat-svc'
+        if: matrix.changed == 'true' && (matrix.service == 'user-svc' || matrix.service == 'chat-svc')
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.SERVER_HOST }}
