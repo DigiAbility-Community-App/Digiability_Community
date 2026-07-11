@@ -312,6 +312,60 @@ model Notification {
 }
 
 // ─────────────────────────────────────────────
+// Raw-SQL-owned tables (public schema) — stub mirrors.
+// disability_types is seeded/queried via raw SQL (master data API);
+// admin_notification_* are created on demand by the admin panel.
+// Declared here — matching the physical DDL — so `prisma db push`
+// doesn't treat them as extraneous and drop them.
+// ─────────────────────────────────────────────
+model DisabilityType {
+  id        String   @id @default(dbgenerated("(gen_random_uuid())::text"))
+  name      String
+  code      String   @unique
+  status    String   @default("Active")
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @default(now()) @db.Timestamptz
+
+  @@map("disability_types")
+}
+
+model AdminNotificationLog {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  title     String
+  message   String
+  type      String   @default("INFO")
+  audience  String   @default("ALL")
+  sentCount Int      @default(0) @map("sent_count")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("admin_notification_logs")
+}
+
+model AdminNotificationSettings {
+  id                       String    @id @default("default")
+  emailNewUsers            Boolean?  @default(true) @map("email_new_users")
+  emailContentReports      Boolean?  @default(true) @map("email_content_reports")
+  emailFailedTransactions  Boolean?  @default(true) @map("email_failed_transactions")
+  emailSystemErrors        Boolean?  @default(true) @map("email_system_errors")
+  emailWeeklyDigest        Boolean?  @default(true) @map("email_weekly_digest")
+  pushEnabled              Boolean?  @default(true) @map("push_enabled")
+  pushModerationQueue      Boolean?  @default(true) @map("push_moderation_queue")
+  pushUserMilestones       Boolean?  @default(true) @map("push_user_milestones")
+  pushCommunityHighlights  Boolean?  @default(true) @map("push_community_highlights")
+  pushSystemMaintenance    Boolean?  @default(true) @map("push_system_maintenance")
+  smsCriticalOnly          Boolean?  @default(true) @map("sms_critical_only")
+  smsDailySummary          Boolean?  @default(true) @map("sms_daily_summary")
+  smsPromotional           Boolean?  @default(false) @map("sms_promotional")
+  phoneNumber              String?   @default("") @map("phone_number")
+  frequency                String?   @default("Real-time")
+  quietStart               String?   @default("20:00") @map("quiet_start")
+  quietEnd                 String?   @default("08:00") @map("quiet_end")
+  updatedAt                DateTime? @default(now()) @map("updated_at") @db.Timestamptz
+
+  @@map("admin_notification_settings")
+}
+
+// ─────────────────────────────────────────────
 // DEVICE TOKEN
 // Stores Expo push tokens for push notifications.
 // One user can have multiple tokens (multiple devices).
@@ -410,7 +464,10 @@ model RefreshToken {
   id        String   @id @default(uuid())
   userId    String
   tokenHash String   // stored as SHA-256 hash
-  familyId  String   // UUID shared across all rotations of one session
+  // UUID shared across all rotations of one session. createRefreshToken()
+  // always passes this explicitly; the default only backfills rows that
+  // existed before family tracking (each becomes its own single-token family).
+  familyId  String   @default(dbgenerated("(gen_random_uuid())::text"))
   expiresAt DateTime
   revoked   Boolean  @default(false)
   createdAt DateTime @default(now())
