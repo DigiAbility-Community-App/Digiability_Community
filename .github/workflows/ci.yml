@@ -37,13 +37,7 @@ jobs:
   build_push:
     name: Build & Push ${{ matrix.service }}
     needs: detect_changes
-    if: >-
-      github.event_name == 'push' && (
-        needs.detect_changes.outputs.user_svc == 'true' ||
-        needs.detect_changes.outputs.chat_svc == 'true' ||
-        needs.detect_changes.outputs.forum_svc == 'true' ||
-        needs.detect_changes.outputs.notif_svc == 'true'
-      )
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     strategy:
       matrix:
