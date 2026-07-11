@@ -1,0 +1,135 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'services/**'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'services/**'
+
+jobs:
+  detect-changes:
+    name: Detect changed services
+    runs-on: ubuntu-latest
+    outputs:
+      user-svc: ${{ steps.changes.outputs.user-svc }}
+      chat-svc: ${{ steps.changes.outputs.chat-svc }}
+      forum-svc: ${{ steps.changes.outputs.forum-svc }}
+      notif-svc: ${{ steps.changes.outputs.notif-svc }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: changes
+        with:
+          filters: |
+            user-svc:
+              - 'services/user-svc/**'
+            chat-svc:
+              - 'services/chat-svc/**'
+            forum-svc:
+              - 'services/forum-svc/**'
+            notif-svc:
+              - 'services/notif-svc/**'
+
+  build-push:
+    name: Build & Push ${{ matrix.service }}
+    needs: detect-changes
+    if: >-
+      github.event_name == 'push' && (
+        needs.detect-changes.outputs.user-svc == 'true' ||
+        needs.detect-changes.outputs.chat-svc == 'true' ||
+        needs.detect-changes.outputs.forum-svc == 'true' ||
+        needs.detect-changes.outputs.notif-svc == 'true'
+      )
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - service: user-svc
+            changed: ${{ needs.detect-changes.outputs.user-svc }}
+          - service: chat-svc
+            changed: ${{ needs.detect-changes.outputs.chat-svc }}
+          - service: forum-svc
+            changed: ${{ needs.detect-changes.outputs.forum-svc }}
+          - service: notif-svc
+            changed: ${{ needs.detect-changes.outputs.notif-svc }}
+        exclude:
+          - changed: 'false'
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: vars
+        run: echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ secrets.GHCR_USERNAME }}
+          password: ${{ secrets.GHCR_TOKEN }}
+
+      - uses: docker/build-push-action@v5
+        with:
+          context: ./services/${{ matrix.service }}
+          push: true
+          tags: |
+            ghcr.io/techonsy/community-${{ matrix.service }}:latest
+            ghcr.io/techonsy/community-${{ matrix.service }}:${{ steps.vars.outputs.sha_short }}
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,scope=${{ matrix.service }},mode=max
+
+  deploy:
+    name: Deploy ${{ matrix.service }}
+    needs: [detect-changes, build-push]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - service: user-svc
+            changed: ${{ needs.detect-changes.outputs.user-svc }}
+          - service: chat-svc
+            changed: ${{ needs.detect-changes.outputs.chat-svc }}
+          - service: forum-svc
+            changed: ${{ needs.detect-changes.outputs.forum-svc }}
+          - service: notif-svc
+            changed: ${{ needs.detect-changes.outputs.notif-svc }}
+        exclude:
+          - changed: 'false'
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: vars
+        run: echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+
+      - name: Update GitOps manifest
+        run: |
+          git clone https://x-access-token:${{ secrets.GITOPS_PAT }}@github.com/techonsy/ngo-devops.git gitops
+          cd gitops
+          sed -i "s|image: ghcr.io/.*/community-${{ matrix.service }}:.*|image: ghcr.io/techonsy/community-${{ matrix.service }}:${{ steps.vars.outputs.sha_short }}|g" communityapp/${{ matrix.service }}.yaml
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if [ -n "$(git status --porcelain)" ]; then
+            git add communityapp/${{ matrix.service }}.yaml
+            git commit -m "deploy: community-${{ matrix.service }} image ${{ steps.vars.outputs.sha_short }}"
+            git push origin main
+          fi
+
+      - name: Run migrations
+        if: matrix.service == 'user-svc' || matrix.service == 'chat-svc'
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            sleep 30
+            kubectl rollout status deployment/${{ matrix.service }} -n communityapp --timeout=120s
+            kubectl exec deployment/${{ matrix.service }} -n communityapp -- npx prisma migrate deploy
