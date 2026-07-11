@@ -19,6 +19,12 @@ import {
 import { authenticate } from "../middleware/auth.middleware";
 import { validate } from "../middleware/validate.middleware";
 import {
+  loginLimiter,
+  registerLimiter,
+  passwordResetLimiter,
+  otpLimiter,
+} from "../middleware/rateLimit.middleware";
+import {
   RegisterSchema,
   LoginSchema,
   ForgotPasswordSchema,
@@ -36,22 +42,22 @@ import {
 const router = Router();
 
 // ── Public Routes ─────────────────────────────────────
-router.post("/register",          validate(RegisterSchema),        register);
-router.post("/login",             validate(LoginSchema),           login);
-router.post("/refresh",                                            refresh);
-router.post("/logout",                                             logout);
-router.post("/verify-email",      validate(VerifyOtpSchema),       verifyEmailHandler);
-router.post("/resend-otp",        validate(ResendOtpSchema),       resendOtpHandler);
-router.post("/forgot-password",   validate(ForgotPasswordSchema),  forgotPasswordHandler);
-router.post("/reset-password",    validate(ResetPasswordSchema),   resetPasswordHandler);
+router.post("/register",       registerLimiter,      validate(RegisterSchema),       register);
+router.post("/login",          loginLimiter,          validate(LoginSchema),          login);
+router.post("/refresh",                                                                refresh);
+router.post("/logout",                                                                 logout);
+router.post("/verify-email",   otpLimiter,            validate(VerifyOtpSchema),      verifyEmailHandler);
+router.post("/resend-otp",     otpLimiter,            validate(ResendOtpSchema),      resendOtpHandler);
+router.post("/forgot-password", passwordResetLimiter, validate(ForgotPasswordSchema), forgotPasswordHandler);
+router.post("/reset-password",  passwordResetLimiter, validate(ResetPasswordSchema),  resetPasswordHandler);
 
 // ── Protected Routes (require valid access token) ─────
-router.get("/me",                 authenticate,                    me);
-router.patch("/role",             authenticate, validate(UpdateRoleSchema), updateRoleHandler);
-router.post("/users/batch",       authenticate,                    batchLookupUsers);
-router.get("/users/search",        authenticate,                    searchUsersHandler);
-router.delete("/delete-account",  authenticate,                    deleteAccountHandler);
-router.post("/device-token",      authenticate,                    registerDeviceTokenHandler);
-router.delete("/device-token",    authenticate,                    removeDeviceTokenHandler);
+router.get("/me",               authenticate,                                          me);
+router.patch("/role",           authenticate, validate(UpdateRoleSchema),             updateRoleHandler);
+router.post("/users/batch",     authenticate,                                          batchLookupUsers);
+router.get("/users/search",     authenticate,                                          searchUsersHandler);
+router.delete("/delete-account", authenticate,                                         deleteAccountHandler);
+router.post("/device-token",    authenticate,                                          registerDeviceTokenHandler);
+router.delete("/device-token",  authenticate,                                          removeDeviceTokenHandler);
 
 export default router;

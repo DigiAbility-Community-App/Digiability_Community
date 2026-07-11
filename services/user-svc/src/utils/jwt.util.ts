@@ -1,14 +1,16 @@
+import crypto from "crypto";
 import jwt, { SignOptions, JwtPayload } from "jsonwebtoken";
 
 // ─────────────────────────────────────────────────────
 // JWT Utility (RS256 — asymmetric signing)
-// Private key: signs tokens (server only)
-// Public key:  verifies tokens (can be shared with other services)
+// Private key: signs tokens (user-svc only)
+// Public key:  verifies tokens (shared with chat-svc, forum-svc)
 // ─────────────────────────────────────────────────────
 
 export interface AccessTokenPayload {
   sub: string;        // userId
   email: string;
+  jti: string;        // JWT ID — used for pre-expiry revocation via Redis blocklist
   iat?: number;
   exp?: number;
 }
@@ -16,7 +18,6 @@ export interface AccessTokenPayload {
 function getPrivateKey(): string {
   const key = process.env.JWT_PRIVATE_KEY;
   if (!key) throw new Error("JWT_PRIVATE_KEY is not set in environment");
-  // Support both literal \n and actual line breaks
   return key.replace(/\\n/g, "\n");
 }
 
@@ -28,13 +29,16 @@ function getPublicKey(): string {
 
 /**
  * Sign an access token (RS256, short-lived: 15m default).
+ * Includes a jti claim so the token can be added to the revocation blocklist
+ * before it expires (e.g. on logout or account deletion).
  */
-export function signAccessToken(payload: AccessTokenPayload): string {
+export function signAccessToken(payload: Omit<AccessTokenPayload, "jti">): string {
+  const jti = crypto.randomUUID();
   const options: SignOptions = {
     algorithm: "RS256",
     expiresIn: (process.env.JWT_EXPIRES_IN as SignOptions["expiresIn"]) ?? "15m",
   };
-  return jwt.sign(payload, getPrivateKey(), options);
+  return jwt.sign({ ...payload, jti }, getPrivateKey(), options);
 }
 
 /**
@@ -49,7 +53,8 @@ export function verifyAccessToken(token: string): AccessTokenPayload {
 }
 
 /**
- * Decode a token WITHOUT verifying (useful for debugging only — do not trust the payload).
+ * Decode a token WITHOUT verifying — for extracting the jti on logout
+ * when we need the claim even if the token is already expired.
  */
 export function decodeToken(token: string): JwtPayload | null {
   return jwt.decode(token) as JwtPayload | null;

@@ -1,6 +1,7 @@
 import "dotenv/config";
 import express from "express";
 import cors from "cors";
+import helmet from "helmet";
 import cookieParser from "cookie-parser";
 import { existsSync } from "fs";
 import prisma from "./models/prisma.client";
@@ -10,6 +11,13 @@ import eventRoutes from "./routes/event.routes";
 import mentorRoutes from "./routes/mentor.routes";
 import reportRoutes from "./routes/report.routes";
 import masterRoutes from "./routes/master.routes";
+import moderationRoutes from "./routes/moderation.routes";
+import privacyRoutes from "./routes/privacy.routes";
+import { initKeywordCache } from "./services/keyword.service";
+import { startModerationWorker } from "./workers/moderation.worker";
+import { startRetentionWorker } from "./workers/retention.worker";
+import type { Worker } from "bullmq";
+import { globalApiLimiter } from "./middleware/rateLimit.middleware";
 import { errorHandler, notFoundHandler } from "./middleware/error.middleware";
 
 // ─────────────────────────────────────────────────────
@@ -69,6 +77,20 @@ function getDatabaseHelpMessage() {
   return `Verify that PostgreSQL is reachable at ${target.host}:${target.port}/${target.database}.`;
 }
 
+// ─── Security Headers ──────────────────────────────────
+app.use(
+  helmet({
+    // This is a JSON API — no HTML served, so relax CSP to API-appropriate defaults
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'none'"],
+        frameAncestors: ["'none'"],
+      },
+    },
+    crossOriginEmbedderPolicy: false, // Not needed for API
+  })
+);
+
 // ─── Global Middleware ─────────────────────────────────
 app.use(
   cors({
@@ -85,6 +107,9 @@ app.use(express.json({ limit: "10kb" }));     // Guard against large payloads
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
+// ─── Global Rate Limiter ───────────────────────────────
+app.use(globalApiLimiter);
+
 // ─── Health Check ──────────────────────────────────────
 app.get("/health", (_req, res) => {
   res.status(200).json({
@@ -97,12 +122,14 @@ app.get("/health", (_req, res) => {
 
 // ─── API Routes ────────────────────────────────────────
 app.use("/api/auth", authRoutes);
+app.use("/api/auth/privacy", privacyRoutes);
 app.use("/api/users/profiles", profileRoutes);
 app.use("/api/users/profile", profileRoutes);
 app.use("/api/users/mentors", mentorRoutes);
 app.use("/api/events", eventRoutes);
 app.use("/api/reports", reportRoutes);
 app.use("/api/master", masterRoutes);
+app.use("/api/moderation", moderationRoutes);
 
 // ─── 404 Handler ───────────────────────────────────────
 app.use(notFoundHandler);
@@ -114,11 +141,30 @@ app.use(errorHandler);
 // Start Server
 // ─────────────────────────────────────────────────────
 
+let _moderationWorker: Worker | null = null;
+
 async function startServer() {
   try {
     // Verify DB connection on startup
     await prisma.$connect();
     console.log("✅ Database connected");
+
+    // Load banned-keyword list into Redis cache for consumers
+    await initKeywordCache().catch((err) =>
+      console.warn("⚠️  Keyword cache init failed (non-fatal):", err?.message)
+    );
+
+    // Start async AI classification worker (Tier C)
+    try {
+      _moderationWorker = startModerationWorker();
+    } catch (err) {
+      console.warn("⚠️  Moderation worker failed to start (non-fatal):", (err as Error).message);
+    }
+
+    // Start data retention enforcement worker (DPDP §8(7))
+    startRetentionWorker().catch((err) =>
+      console.warn("⚠️  Retention worker failed to start (non-fatal):", err?.message)
+    );
 
     app.listen(PORT, () => {
       console.log(`🚀 user-svc running on http://localhost:${PORT}`);
@@ -134,17 +180,14 @@ async function startServer() {
 }
 
 // ─── Graceful Shutdown ──────────────────────────────────
-process.on("SIGTERM", async () => {
-  console.log("SIGTERM received. Shutting down gracefully...");
+async function gracefulShutdown() {
+  await _moderationWorker?.close().catch(() => {});
   await prisma.$disconnect();
   process.exit(0);
-});
+}
 
-process.on("SIGINT", async () => {
-  console.log("SIGINT received. Shutting down gracefully...");
-  await prisma.$disconnect();
-  process.exit(0);
-});
+process.on("SIGTERM", () => { console.log("SIGTERM received."); gracefulShutdown(); });
+process.on("SIGINT",  () => { console.log("SIGINT received.");  gracefulShutdown(); });
 
 startServer();
 

@@ -16,6 +16,8 @@ import {
   sendVerificationOtpEmail,
   sendPasswordResetEmail,
 } from "./email.service";
+import { auditLog } from "./audit.service";
+import { recordRegistrationConsents } from "./consent.service";
 import type {
   RegisterInput,
   LoginInput,
@@ -50,6 +52,8 @@ export async function verifyEmailOtp(
 
   // 4. Delete used OTP
   await deleteEmailVerificationOtp(user.id);
+
+  auditLog("auth.email_verified", { userId: user.id, email });
 
   return { message: "Email verified successfully. You can now log in." };
 }
@@ -130,7 +134,10 @@ function toAuthUser(user: {
   };
 }
 
-export async function registerUser(input: RegisterInput): Promise<LoginResult> {
+export async function registerUser(
+  input: RegisterInput,
+  ip?: string
+): Promise<LoginResult> {
   const { name, email, password, role, roles, phoneNo } = input as any;
 
   const existing = await prisma.user.findUnique({ where: { email } });
@@ -154,6 +161,13 @@ export async function registerUser(input: RegisterInput): Promise<LoginResult> {
 
   const user = await prisma.user.create({ data: userData });
 
+  // Record mandatory DATA_PROCESSING consent at registration (DPDP §6)
+  recordRegistrationConsents(user.id, ip).catch((err) =>
+    console.error("[ConsentService] Failed to record registration consent:", err)
+  );
+
+  auditLog("auth.register", { userId: user.id, email: user.email });
+
   // Email verification is enabled
   const rawOtp = await createEmailVerificationOtp(user.id);
   sendVerificationOtpEmail(user.email, user.name, rawOtp).catch((err) =>
@@ -175,38 +189,83 @@ export async function registerUser(input: RegisterInput): Promise<LoginResult> {
   };
 }
 
+// Maximum failed attempts before temporary lockout
+const MAX_LOGIN_ATTEMPTS = 10;
+// Lockout duration in minutes
+const LOCKOUT_MINUTES = 15;
+
 export async function loginUser(input: LoginInput): Promise<LoginResult> {
   const { email, password } = input;
 
-  // 1. Find user
-  const user = await prisma.user.findUnique({ where: { email } });
+  // 1. Find user (select lockout fields)
+  const user = await prisma.user.findUnique({
+    where: { email },
+    select: {
+      id: true, name: true, email: true, password: true, phoneNo: true,
+      roles: true, profileComplete: true, isEmailVerified: true,
+      loginAttempts: true, lockedUntil: true, deletedAt: true,
+    },
+  });
   if (!user) throw createError("Invalid email or password", 400);
 
-  // 2. Compare password
-  const isMatch = await comparePassword(password, user.password);
-  if (!isMatch) throw createError("Invalid email or password", 400);
+  // 2. Reject soft-deleted accounts early (belt-and-suspenders for non-token flows)
+  if (user.deletedAt) throw createError("Invalid email or password", 400);
 
-  // 2b. Require email verification before allowing login
+  // 3. Account lockout check
+  if (user.lockedUntil && user.lockedUntil > new Date()) {
+    const remaining = Math.ceil((user.lockedUntil.getTime() - Date.now()) / 60_000);
+    throw createError(
+      `Account temporarily locked due to too many failed attempts. Try again in ${remaining} minute${remaining === 1 ? "" : "s"}.`,
+      429
+    );
+  }
+
+  // 4. Compare password
+  const isMatch = await comparePassword(password, user.password);
+  if (!isMatch) {
+    const newAttempts = user.loginAttempts + 1;
+    const shouldLock = newAttempts >= MAX_LOGIN_ATTEMPTS;
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        loginAttempts: newAttempts,
+        lockedUntil: shouldLock
+          ? new Date(Date.now() + LOCKOUT_MINUTES * 60_000)
+          : undefined,
+      },
+    });
+    if (shouldLock) {
+      auditLog("auth.account_locked", { userId: user.id, email: user.email, detail: { attempts: newAttempts } });
+      throw createError(
+        `Account locked for ${LOCKOUT_MINUTES} minutes after too many failed attempts.`,
+        429
+      );
+    }
+    auditLog("auth.login_failure", { userId: user.id, email: user.email, detail: { attempt: newAttempts } });
+    throw createError("Invalid email or password", 400);
+  }
+
+  // 5. Require email verification
   if (!user.isEmailVerified) {
     throw createError("Please verify your email address before logging in.", 403);
   }
 
-  // 3. Sign access token
-  const accessToken = signAccessToken({ sub: user.id, email: user.email });
-
-  // 4. Create refresh token
-  const refreshToken = await createRefreshToken(user.id);
-
-  // 5. Update lastSeen
+  // 6. Reset lockout counters on successful login
   await prisma.user.update({
     where: { id: user.id },
-    data: { lastSeen: new Date() },
+    data: { loginAttempts: 0, lockedUntil: null, lastSeen: new Date() },
   });
+
+  // 7. Sign access token + issue refresh token
+  const accessToken = signAccessToken({ sub: user.id, email: user.email });
+  const refreshToken = await createRefreshToken(user.id);
+
+  auditLog("auth.login_success", { userId: user.id, email: user.email });
 
   return {
     accessToken,
     refreshToken,
-    user: toAuthUser(user),
+    user: toAuthUser(user as any),
   };
 }
 
@@ -259,6 +318,8 @@ export async function resetPassword(
 
   // 4. Delete used reset token
   await deletePasswordResetToken(token);
+
+  auditLog("auth.password_reset", { userId });
 
   return { message: "Password reset successfully. Please log in with your new password." };
 }
@@ -319,18 +380,47 @@ export async function deleteAccount(userId: string): Promise<{ message: string }
 
     // 4. Remove device tokens so no further push notifications are sent
     await tx.deviceToken.deleteMany({ where: { userId } });
+
+    // 5. Scrub text content from moderation flags authored by this user (DPDP §13).
+    //    The flag record itself is kept for audit integrity; only the content snippet
+    //    and AI raw response (which may contain the original text) are cleared.
+    await tx.moderationFlag.updateMany({
+      where: { userId },
+      data: { text: null, rawResponse: null },
+    });
   });
 
-  // 5. Best-effort: notify chat-svc to remove the user from all conversations.
+  auditLog("auth.account_deleted", { userId });
+
+  // 6. Best-effort: notify chat-svc to remove the user from all conversations.
   //    Fire-and-forget — a failure here does not roll back the deletion.
   const chatSvcUrl = process.env.CHAT_SVC_URL;
   const internalSecret = process.env.INTERNAL_API_SECRET;
   if (chatSvcUrl && internalSecret) {
     fetch(`${chatSvcUrl}/api/internal/users/${userId}/memberships`, {
       method: "DELETE",
-      headers: { "x-internal-secret": internalSecret },
+      headers: {
+        "x-internal-secret": internalSecret,
+        "x-internal-ts": String(Date.now()),
+      },
     }).catch((err) => {
       console.error("[deleteAccount] chat-svc membership cleanup failed:", err);
+    });
+  }
+
+  // 7. Best-effort: notify forum-svc to anonymise the user's forum content.
+  //    Forum posts are attributed to "Deleted User" rather than removed, to
+  //    preserve discussion threads. The authorId FK still resolves (soft-deleted user row).
+  const forumSvcUrl = process.env.FORUM_SVC_URL;
+  if (forumSvcUrl && internalSecret) {
+    fetch(`${forumSvcUrl}/api/internal/users/${userId}/content`, {
+      method: "DELETE",
+      headers: {
+        "x-internal-secret": internalSecret,
+        "x-internal-ts": String(Date.now()),
+      },
+    }).catch((err) => {
+      console.error("[deleteAccount] forum-svc content anonymisation failed:", err);
     });
   }
 

@@ -47,6 +47,46 @@ enum ReportStatus {
   DISMISSED
 }
 
+enum KeywordSeverity {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum KeywordAction {
+  flag
+  block
+}
+
+enum KeywordCategory {
+  PROFANITY
+  HATE_SPEECH
+  HARASSMENT
+  SPAM
+  SELF_HARM
+  MISINFORMATION
+  OTHER
+}
+
+enum KeywordMatchType {
+  EXACT     // whole-word boundary match
+  CONTAINS  // substring match (on normalized text)
+}
+
+enum FlagStatus {
+  PENDING    // awaiting human review
+  REVIEWED   // seen by moderator, no action taken
+  ACTIONED   // content removed / user warned
+  DISMISSED  // false positive, cleared
+}
+
+// DPDP Act 2023 §6 — recorded consent type
+enum ConsentType {
+  DATA_PROCESSING    // required — core service cannot operate without this
+  PUSH_NOTIFICATIONS // optional — device-push alerts
+  MARKETING          // optional — newsletters and promotional emails
+}
+
 // ─────────────────────────────────────────────
 // USER
 // ─────────────────────────────────────────────
@@ -61,6 +101,9 @@ model User {
   roles           Role[]    @default([])
   profileComplete Boolean   @default(false)
   deletedAt       DateTime?
+  // Account lockout: incremented on each failed login, reset on success
+  loginAttempts   Int       @default(0)
+  lockedUntil     DateTime?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
@@ -73,10 +116,36 @@ model User {
   givenReviews            MentorReview[]  @relation("ReviewerRelation")
   deviceTokens            DeviceToken[]
   filedReports            UserReport[]    @relation("ReporterRelation")
+  consents                UserConsent[]
 
   @@index([email])
   @@index([deletedAt])
   @@map("users")
+}
+
+// ─────────────────────────────────────────────
+// USER CONSENT
+// DPDP Act 2023 §6 — one row per (user, consentType).
+// A new row is written on withdrawal (accepted=false) rather than
+// updating the original, so the audit trail is preserved.
+// ─────────────────────────────────────────────
+model UserConsent {
+  id          String      @id @default(uuid())
+  userId      String
+  consentType ConsentType
+  accepted    Boolean
+  version     String      // policy version date, e.g. "2024-01-01"
+  ipAddress   String?     // IP at time of consent (truncated to /24 for privacy)
+  acceptedAt  DateTime?
+  withdrawnAt DateTime?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, consentType])
+  @@index([userId])
+  @@map("user_consents")
 }
 
 // ─────────────────────────────────────────────
@@ -169,11 +238,16 @@ model EmailVerificationToken {
 
 // ─────────────────────────────────────────────
 // REFRESH TOKEN
+// familyId links all tokens in a rotation chain.
+// Tokens are marked revoked (not deleted) on rotation so
+// that reuse of an old token can be detected and the
+// entire family revoked as a theft signal.
 // ─────────────────────────────────────────────
 model RefreshToken {
   id        String   @id @default(uuid())
   userId    String
   tokenHash String   // stored as SHA-256 hash
+  familyId  String   // UUID shared across all rotations of one session
   expiresAt DateTime
   revoked   Boolean  @default(false)
   createdAt DateTime @default(now())
@@ -182,6 +256,7 @@ model RefreshToken {
 
   @@index([userId])
   @@index([tokenHash])
+  @@index([familyId])
   @@map("refresh_tokens")
 }
 
@@ -292,5 +367,77 @@ model UserReport {
   @@index([status, createdAt(sort: Desc)])
   @@index([targetType, targetId])
   @@map("user_reports")
+}
+
+// ─────────────────────────────────────────────
+// BANNED KEYWORD
+// Admin-managed list of phrases that trigger automatic
+// moderation actions. Loaded into Redis at boot and hot-
+// reloaded via pub/sub when an admin edits the list.
+// ─────────────────────────────────────────────
+model BannedKeyword {
+  id        String           @id @default(uuid())
+  phrase    String           @unique
+  severity  KeywordSeverity  @default(MEDIUM)
+  action    KeywordAction    @default(block)
+  category  KeywordCategory  @default(OTHER)
+  matchType KeywordMatchType @default(CONTAINS)
+  isActive  Boolean          @default(true)
+  createdBy String?          // admin email
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  @@index([isActive])
+  @@index([category])
+  @@map("banned_keywords")
+}
+
+// ─────────────────────────────────────────────
+// MODERATION FLAG (Tier C — async AI classification)
+// Written by the BullMQ moderation worker after an AI
+// provider scores a chat message or forum post.
+// Only written when score exceeds the flag threshold.
+// ─────────────────────────────────────────────
+model ModerationFlag {
+  id          String     @id @default(uuid())
+  contentType String     // 'chat_message' | 'forum_question' | 'forum_answer'
+  contentId   String     // messageId | questionId | answerId
+  userId      String     // content author (for ban/warn lookup)
+  text        String?    // first 500 chars of content (for review without cross-service query)
+  provider    String     // 'openai' | 'noop'
+  score       Float      // 0-1 max toxicity probability
+  categories  String[]   // detected violation categories
+  status      FlagStatus @default(PENDING)
+  reviewedBy  String?    // admin email
+  reviewedAt  DateTime?
+  rawResponse String?    // JSON snippet of API response (for debugging)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  @@unique([contentType, contentId])
+  @@index([status, createdAt(sort: Desc)])
+  @@index([userId])
+  @@map("moderation_flags")
+}
+
+// ─────────────────────────────────────────────
+// ADMIN AUDIT LOG (Tier E — human review trail)
+// Every action taken by a moderator/admin is recorded here.
+// Immutable append-only log — no updates, no deletes.
+// ─────────────────────────────────────────────
+model AdminAuditLog {
+  id         String   @id @default(uuid())
+  adminEmail String   // email of the admin who acted
+  action     String   // dismiss | remove_content | warn_user | ban_user | suspend | unsuspend | keyword_add | keyword_delete
+  targetType String   // user_report | ai_flag | forum_post | forum_answer | chat_message | user | keyword
+  targetId   String   // ID of the item that was acted on
+  reason     String?  // optional free-text justification
+  detail     String?  // JSON for extra context (e.g. ban duration)
+  createdAt  DateTime @default(now())
+
+  @@index([adminEmail])
+  @@index([targetType, createdAt(sort: Desc)])
+  @@index([createdAt(sort: Desc)])
+  @@map("admin_audit_log")
 }
 

@@ -6,6 +6,7 @@
 export interface AuthenticatedUser {
   sub: string;       // userId
   email: string;
+  jti?: string;      // JWT ID — present on tokens issued after security hardening
   iat?: number;
   exp?: number;
 }

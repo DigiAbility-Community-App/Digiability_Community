@@ -1,4 +1,5 @@
 import prisma from '../models/prisma.client';
+import { auditLog } from './audit.service';
 
 export type UserRole = 'pwd' | 'caregiver' | 'therapist' | 'ngo' | 'volunteer' | 'student';
 
@@ -39,6 +40,46 @@ export interface ProfileDetailsData {
   // Verification
   verificationStatus?: string | null;
   verificationDoc?: string | null;
+}
+
+// ─────────────────────────────────────────────
+// CHILDREN'S DATA — DPDP Act 2023 §9
+//
+// §9 prohibits processing personal data of children (< 18)
+// without verifiable parental consent, and prohibits
+// behavioural tracking/targeting of children entirely.
+//
+// [LEGAL PLACEHOLDER] A parental-consent flow and verified
+// age-gate must be implemented before the platform accepts
+// users who disclose a DOB that makes them under 18.
+// Until that flow exists, under-18 registrations are flagged
+// in the audit log but NOT blocked (blocking requires the full
+// parental-consent implementation — see DPDP Act §9).
+// ─────────────────────────────────────────────
+
+function calculateAge(dob: Date): number {
+  const today = new Date();
+  let age = today.getFullYear() - dob.getFullYear();
+  const m = today.getMonth() - dob.getMonth();
+  if (m < 0 || (m === 0 && today.getDate() < dob.getDate())) age -= 1;
+  return age;
+}
+
+export function checkMinorFlag(userId: string, dob: Date | null | undefined): void {
+  if (!dob) return;
+  const age = calculateAge(dob);
+  if (age < 18) {
+    // [LEGAL PLACEHOLDER] Block this path and trigger parental-consent flow
+    // once that feature is implemented. For now, log for compliance audit.
+    auditLog("auth.register" as any, {
+      userId,
+      detail: {
+        warning: "MINOR_DATA_COLLECTED",
+        age,
+        note: "DPDP Act §9 requires verifiable parental consent — parental-consent flow not yet implemented",
+      },
+    });
+  }
 }
 
 const getStringVal = (val: string | null | undefined): string | null | undefined => {
@@ -113,6 +154,9 @@ export const profileService = {
       });
     }
 
+    // Flag if DOB indicates a minor — DPDP Act §9 requires parental consent (not yet implemented)
+    if (dobVal) checkMinorFlag(userId, dobVal);
+
     return prisma.userProfile.upsert({
       where: { userId },
       update: updateData,
@@ -162,11 +206,14 @@ export const profileService = {
       }
     }
 
+    // Flag if care person's DOB indicates a minor — DPDP Act §9 requires parental consent
+    if (careDobVal) checkMinorFlag(userId, careDobVal);
+
     const updateData = {
       disabilityType: getStringVal(data.disabilityType),
       disabilitySince: disabilitySinceVal,
       supportNeeded: getStringVal(data.supportNeeded),
-      
+
       carePersonName: getStringVal(data.carePersonName),
       careRelation: getStringVal(data.careRelation),
       careDob: careDobVal,

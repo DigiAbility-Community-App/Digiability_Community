@@ -24,6 +24,9 @@ import { generateMessageId } from "../../utils/id.util";
 import { publishMessageCreated } from "../../streams/producer";
 import { connectionManager } from "../connection-manager";
 import { conversationRepository } from "../../repositories/conversation.repository";
+import { redis } from "../../config/redis";
+import { screenText } from "@digiability/moderation";
+import { keywordCache } from "../../moderation/keyword-cache";
 import {
   WS_EVENTS,
   WS_ERROR_CODES,
@@ -31,6 +34,11 @@ import {
   MessageAckPayload,
   MessageNewPayload,
 } from "../../types/ws-events";
+
+/** Redis key for daily blocked-message counter */
+function blockedCounterKey(): string {
+  return `mod:blocked:chat:${new Date().toISOString().slice(0, 10)}`;
+}
 
 export async function handleMessageSend(
   ws: WebSocket,
@@ -91,6 +99,44 @@ export async function handleMessageSend(
           timestamp: Date.now(),
         }, requestId);
         return;
+      }
+    }
+
+    // ── 2c. Content moderation screen ─────────────────────────
+    // Only text messages carry user-supplied content. Image/file/audio
+    // payloads are moderated asynchronously in Tier D.
+    if (type === "TEXT" || !type) {
+      const modResult = screenText(content, {
+        context: "chat",
+        keywordMatcher: keywordCache.getMatcher(),
+      });
+      if (modResult.action === "block") {
+        logger.info("Message blocked by moderation", {
+          userId,
+          conversationId,
+          reasons: modResult.reasons,
+        });
+        // Increment daily blocked-message counter (best-effort, non-blocking)
+        redis.incr(blockedCounterKey()).then(() =>
+          redis.expire(blockedCounterKey(), 30 * 24 * 3600)
+        ).catch(() => {});
+        sendAck(ws, {
+          clientMessageId,
+          messageId: "",
+          sequenceNo: 0,
+          status: "rejected",
+          reason: "Your message was blocked because it violates community guidelines.",
+          timestamp: Date.now(),
+        }, requestId);
+        return;
+      }
+      // "flag" action: log for async review (Tier C writes ModerationFlag)
+      if (modResult.action === "flag") {
+        logger.info("Message flagged for review", {
+          userId,
+          conversationId,
+          reasons: modResult.reasons,
+        });
       }
     }
 

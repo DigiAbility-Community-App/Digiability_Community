@@ -1,0 +1,110 @@
+name: CI
+
+on:
+  push:
+    branches: [main, "feat/**", "fix/**"]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ── Dependency audit ───────────────────────────────────────────────────────
+  audit:
+    name: npm audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+      - run: npm ci --ignore-scripts
+      # Fail on high/critical vulnerabilities; moderate issues create a warning
+      - run: npm audit --audit-level=high
+
+  # ── TypeScript — user-svc ─────────────────────────────────────────────────
+  typecheck-user-svc:
+    name: TypeScript (user-svc)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+      - run: npm ci --ignore-scripts
+      - working-directory: services/user-svc
+        run: npx tsc --noEmit
+
+  # ── TypeScript — chat-svc ─────────────────────────────────────────────────
+  typecheck-chat-svc:
+    name: TypeScript (chat-svc)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+      - run: npm ci --ignore-scripts
+      - working-directory: services/chat-svc
+        run: npx tsc --noEmit
+
+  # ── TypeScript — forum-svc ────────────────────────────────────────────────
+  typecheck-forum-svc:
+    name: TypeScript (forum-svc)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+      - run: npm ci --ignore-scripts
+      - working-directory: services/forum-svc
+        run: npx tsc --noEmit
+
+  # ── TypeScript — web ──────────────────────────────────────────────────────
+  typecheck-web:
+    name: TypeScript (web)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+      - run: npm ci --ignore-scripts
+      - working-directory: apps/web
+        run: npx tsc --noEmit
+
+  # ── TypeScript — mobile ───────────────────────────────────────────────────
+  typecheck-mobile:
+    name: TypeScript (mobile)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+      - run: npm ci --ignore-scripts
+      - working-directory: apps/mobile
+        run: npx tsc --noEmit
+
+  # ── Lint — web (oxlint) ───────────────────────────────────────────────────
+  lint-web:
+    name: Lint (web)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+      - run: npm ci --ignore-scripts
+      - working-directory: apps/web
+        run: npm run lint

@@ -23,6 +23,7 @@ import {
 import { authenticate } from '../middleware/auth.middleware';
 import { upload } from '../middleware/uploadMiddleware';
 import { validate } from '../middleware/validate.middleware';
+import { moderateContent } from '../middleware/moderation.middleware';
 import {
   QuestionSchema,
   AnswerSchema,
@@ -36,12 +37,14 @@ import { forumPostLimiter } from '../middleware/rateLimit.middleware';
 const router = Router();
 
 // ── Question Routes ───────────────────────────────────
+// moderateContent runs AFTER validate so req.body is typed and clean
 router.post(
   '/questions',
   authenticate,
   forumPostLimiter,
   upload.fields([{ name: 'image', maxCount: 1 }, { name: 'audio', maxCount: 1 }]),
   validate(QuestionSchema),
+  moderateContent,
   createQuestion
 );
 router.get('/questions', listQuestions);
@@ -58,6 +61,7 @@ router.post(
   forumPostLimiter,
   upload.fields([{ name: 'image', maxCount: 1 }, { name: 'audio', maxCount: 1 }]),
   validate(AnswerSchema),
+  moderateContent,
   createAnswer
 );
 router.put('/answers/:id', authenticate, validate(EditAnswerSchema), editAnswer);

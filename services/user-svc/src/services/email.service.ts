@@ -150,9 +150,10 @@ export async function sendVerificationOtpEmail(
   name: string,
   otp: string
 ): Promise<void> {
-  // Log OTP to console in development so you don't have to check email
-  if (process.env.NODE_ENV === "development") {
-    console.log(`\n[EmailService / DEV] Verification OTP for ${to}: ${otp}\n`);
+  // Debug log: only when DEBUG_AUTH=true is explicitly set — never in staging/prod.
+  // Use a local SMTP catcher (Mailpit, Mailhog) instead of reading logs for OTPs.
+  if (process.env.DEBUG_AUTH === "true") {
+    process.stdout.write(`[DEV] OTP for ${to}: ${otp}\n`);
   }
 
   await getTransporter().sendMail({
@@ -174,9 +175,9 @@ export async function sendPasswordResetEmail(
   const baseUrl = process.env.CLIENT_BASE_URL ?? "http://localhost:3000";
   const resetUrl = `${baseUrl}/reset-password?token=${rawToken}`;
 
-  // Log link to console in development so you don't have to check Mailtrap
-  if (process.env.NODE_ENV === "development") {
-    console.log(`\n[EmailService / DEV] Password Reset Link for ${to}:\n${resetUrl}\n`);
+  // Debug log: only when DEBUG_AUTH=true is explicitly set — never in staging/prod.
+  if (process.env.DEBUG_AUTH === "true") {
+    process.stdout.write(`[DEV] Reset link for ${to}: ${resetUrl}\n`);
   }
 
   await getTransporter().sendMail({
