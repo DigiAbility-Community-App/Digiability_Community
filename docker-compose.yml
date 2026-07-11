@@ -172,8 +172,10 @@ services:
   # No separate worker containers needed.
   chat-svc:
     build:
-      context: ./services/chat-svc
-      dockerfile: Dockerfile
+      # Repo root so the shared packages/moderation workspace package
+      # is inside the build context (chat-svc uses a file: dependency).
+      context: .
+      dockerfile: services/chat-svc/Dockerfile
     container_name: digiability_chat_svc
     restart: unless-stopped
     env_file:
@@ -182,6 +184,9 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-digiability}:${POSTGRES_PASSWORD:-digiability_secret}@postgres:5432/${POSTGRES_DB:-digiability_db}?schema=chat
       REDIS_URL: redis://:${REDIS_PASSWORD:-redis_secret}@redis:6379
       SERVER_ID: chat-svc-docker-01
+    volumes:
+      # Persist uploaded chat attachments (images/voice notes) across rebuilds
+      - chat_uploads:/app/services/chat-svc/uploads
     ports:
       - "${CHAT_SVC_PORT:-4002}:4002"
     networks:
@@ -204,6 +209,8 @@ services:
 volumes:
   postgres_data:
     name: digiability_postgres_data
+  chat_uploads:
+    name: digiability_chat_uploads
   redis_data:
     name: digiability_redis_data
   pgadmin_data:

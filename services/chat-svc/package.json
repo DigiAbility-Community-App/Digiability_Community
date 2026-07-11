@@ -18,7 +18,7 @@
     "db:studio": "bash scripts/studio.sh"
   },
   "dependencies": {
-    "@digiability/moderation": "^1.0.0",
+    "@digiability/moderation": "file:../../packages/moderation",
     "@prisma/client": "^5.14.0",
     "bullmq": "^5.79.1",
     "cassandra-driver": "^4.7.2",
