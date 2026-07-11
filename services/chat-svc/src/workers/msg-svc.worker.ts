@@ -13,6 +13,7 @@ import Redis from "ioredis";
 import { logger } from "../config/logger";
 import { messageRepository } from "../repositories/message.repository";
 import { publishMessagePersisted, ensureConsumerGroups } from "../streams/producer";
+import { enqueueForClassification, extractImageUrl } from "../moderation/classify-queue";
 import {
   STREAMS,
   CONSUMER_GROUPS,
@@ -137,6 +138,33 @@ async function processEntry(
       sequenceNo: persisted.sequenceNo.toString(),
       wasNew: String(persisted.isNew),
     });
+
+    // Enqueue async AI classification (Tier C + D).
+    // Fire-and-forget — classification never blocks delivery.
+    if (persisted.isNew) {
+      const msgType = event.type ?? "TEXT";
+
+      if (msgType === "TEXT") {
+        // Tier C: text classification
+        enqueueForClassification({
+          contentType: "chat_message",
+          contentId: persisted.id,
+          userId: event.senderId,
+          text: event.content,
+        });
+      } else if (msgType === "IMAGE" || msgType === "FILE" || msgType === "VIDEO") {
+        // Tier D: image/media classification — extract the URL from metadata
+        const imageUrl = extractImageUrl(event.metadata);
+        if (imageUrl) {
+          enqueueForClassification({
+            contentType: "chat_message",
+            contentId: persisted.id,
+            userId: event.senderId,
+            imageUrl,
+          });
+        }
+      }
+    }
   } catch (err) {
     logger.error("Failed to persist message — will retry", {
       messageId: event.messageId,

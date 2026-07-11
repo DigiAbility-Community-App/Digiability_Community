@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
   Platform,
   Alert,
+  Linking,
 } from "react-native";
 import { KeyboardAwareScrollView } from "react-native-keyboard-aware-scroll-view";
 
@@ -429,11 +430,35 @@ const WelcomeScreen = ({ navigation }: Props) => {
           </AccessibleButton>
         </View>
 
-        {/* FOOTER */}
+        {/* FOOTER — privacy notice required by DPDP Act 2023 §6 */}
+        {/* [LEGAL PLACEHOLDER] Replace EXPO_PUBLIC_WEB_BASE_URL with production URL before launch */}
         <AccessibleText variant="caption" style={{ marginTop: spacing.xl, textAlign: 'center', lineHeight: 22 }}>
           By continuing, you agree to our{" "}
-          <AccessibleText variant="caption" color={colors.primary} style={{ fontWeight: '700' }}>Terms</AccessibleText> &{" "}
-          <AccessibleText variant="caption" color={colors.primary} style={{ fontWeight: '700' }}>Privacy Policy</AccessibleText>
+          <Text
+            style={{ color: colors.primary, fontWeight: '700' }}
+            onPress={() =>
+              Linking.openURL(
+                `${process.env.EXPO_PUBLIC_WEB_BASE_URL ?? "http://localhost:3000"}/terms`
+              )
+            }
+            accessibilityRole="link"
+            accessibilityLabel="Terms of Service"
+          >
+            Terms
+          </Text>
+          {" "}&{" "}
+          <Text
+            style={{ color: colors.primary, fontWeight: '700' }}
+            onPress={() =>
+              Linking.openURL(
+                `${process.env.EXPO_PUBLIC_WEB_BASE_URL ?? "http://localhost:3000"}/privacy-policy`
+              )
+            }
+            accessibilityRole="link"
+            accessibilityLabel="Privacy Policy"
+          >
+            Privacy Policy
+          </Text>
         </AccessibleText>
       </KeyboardAwareScrollView>
     </ScreenWrapper>

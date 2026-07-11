@@ -1,0 +1,91 @@
+version: 2
+
+updates:
+  # ── Root workspace (shared deps, Turbo) ─────────────────────────────────
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: Asia/Kolkata
+    open-pull-requests-limit: 5
+    groups:
+      dev-tools:
+        patterns: ["turbo", "typescript", "ts-node*", "prisma", "@types/*"]
+
+  # ── user-svc ─────────────────────────────────────────────────────────────
+  - package-ecosystem: npm
+    directory: "/services/user-svc"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: Asia/Kolkata
+    open-pull-requests-limit: 5
+
+  # ── chat-svc ─────────────────────────────────────────────────────────────
+  - package-ecosystem: npm
+    directory: "/services/chat-svc"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: Asia/Kolkata
+    open-pull-requests-limit: 5
+
+  # ── forum-svc ────────────────────────────────────────────────────────────
+  - package-ecosystem: npm
+    directory: "/services/forum-svc"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: Asia/Kolkata
+    open-pull-requests-limit: 5
+
+  # ── notif-svc ────────────────────────────────────────────────────────────
+  - package-ecosystem: npm
+    directory: "/services/notif-svc"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: Asia/Kolkata
+    open-pull-requests-limit: 5
+
+  # ── web app ──────────────────────────────────────────────────────────────
+  - package-ecosystem: npm
+    directory: "/apps/web"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: Asia/Kolkata
+    open-pull-requests-limit: 5
+
+  # ── admin panel ──────────────────────────────────────────────────────────
+  - package-ecosystem: npm
+    directory: "/apps/admin"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: Asia/Kolkata
+    open-pull-requests-limit: 5
+
+  # ── mobile app ───────────────────────────────────────────────────────────
+  - package-ecosystem: npm
+    directory: "/apps/mobile"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: Asia/Kolkata
+    open-pull-requests-limit: 5
+
+  # ── GitHub Actions ───────────────────────────────────────────────────────
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: monthly

@@ -52,12 +52,24 @@ async function notifyUser(userId: string, type: string, title: string, message: 
   );
 }
 
+async function fetchBlockedStats(): Promise<{ chat: number; forum: number; total: number }> {
+  try {
+    const USER_SVC = process.env.USER_SVC_URL ?? "http://localhost:4001";
+    const res = await fetch(`${USER_SVC}/api/moderation/stats`, { cache: "no-store" });
+    if (!res.ok) return { chat: 0, forum: 0, total: 0 };
+    const json = await res.json() as { success: boolean; data?: { blockedToday?: { chat: number; forum: number; total: number } } };
+    return json.data?.blockedToday ?? { chat: 0, forum: 0, total: 0 };
+  } catch {
+    return { chat: 0, forum: 0, total: 0 };
+  }
+}
+
 export async function GET(request: NextRequest) {
   const authError = await requireAdminAuth(request);
   if (authError) return authError;
 
   try {
-    const [reportsResult, suspendedResult, statsResult] = await Promise.all([
+    const [reportsResult, suspendedResult, statsResult, blockedStats] = await Promise.all([
       dbPool.query(`
         SELECT
           fr.id,
@@ -101,6 +113,7 @@ export async function GET(request: NextRequest) {
           (SELECT COUNT(*) FROM forum_reports WHERE "createdAt" >= NOW() - INTERVAL '24 hours') as "reportsToday"
         FROM (SELECT 1) as t
       `),
+      fetchBlockedStats(),
     ]);
 
     // Chat/DM reports (from chat-svc's reports table). Guarded because the
@@ -180,7 +193,12 @@ export async function GET(request: NextRequest) {
       success: true,
       reports: allReports,
       suspendedUsers: suspendedResult.rows,
-      stats,
+      stats: {
+        ...stats,
+        blockedToday: blockedStats.total,
+        blockedChatToday: blockedStats.chat,
+        blockedForumToday: blockedStats.forum,
+      },
     });
   } catch (error) {
     console.error("Failed to fetch moderation data:", error);

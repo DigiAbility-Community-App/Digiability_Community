@@ -1,7 +1,9 @@
 import crypto from "crypto";
 import prisma from "../models/prisma.client";
 import { generateToken, hashToken } from "../utils/hash.util";
-import { signAccessToken } from "../utils/jwt.util";
+import { signAccessToken, decodeToken } from "../utils/jwt.util";
+import { revokeJti } from "../config/redis";
+import { auditLog } from "./audit.service";
 import { createError } from "../middleware/error.middleware";
 import { assertNotSuspended } from "../utils/suspension.util";
 
@@ -9,6 +11,16 @@ import { assertNotSuspended } from "../utils/suspension.util";
 // Token Service
 // Manages refresh tokens, email verification OTPs,
 // and password reset tokens.
+//
+// Refresh token security model:
+//   • Every token is hashed (SHA-256) before storage.
+//   • Tokens belong to a "family" (familyId UUID). A family
+//     is the chain of all tokens issued from one login event.
+//   • On rotation: old token is MARKED REVOKED (not deleted),
+//     new token inherits the same familyId.
+//   • If a revoked token is presented, we detect session theft:
+//     revoke the ENTIRE family so the attacker's newer token
+//     also becomes invalid.
 // ─────────────────────────────────────────────────────
 
 const REFRESH_TOKEN_EXPIRES_DAYS = parseInt(
@@ -20,22 +32,20 @@ const PASSWORD_RESET_EXPIRES_HOURS = 1;
 // ─── Refresh Tokens ────────────────────────────────────
 
 /**
- * Create a new refresh token for a user.
- * Returns the raw token (sent to client via cookie).
+ * Create a new refresh token, optionally within an existing family.
+ * Returns the raw token (sent to the client via cookie/header).
  */
-export async function createRefreshToken(userId: string): Promise<string> {
+export async function createRefreshToken(
+  userId: string,
+  familyId: string = crypto.randomUUID()
+): Promise<string> {
   const { rawToken, tokenHash } = generateToken(64);
 
   const expiresAt = new Date();
   expiresAt.setDate(expiresAt.getDate() + REFRESH_TOKEN_EXPIRES_DAYS);
 
   await prisma.refreshToken.create({
-    data: {
-      userId,
-      tokenHash,
-      expiresAt,
-      revoked: false,
-    },
+    data: { userId, tokenHash, familyId, expiresAt, revoked: false },
   });
 
   return rawToken;
@@ -43,7 +53,10 @@ export async function createRefreshToken(userId: string): Promise<string> {
 
 /**
  * Validate a raw refresh token.
- * Returns the DB record if valid, throws if invalid/expired/revoked.
+ *
+ * Reuse detection: if the token hash is found but revoked=true, it means
+ * a previously-rotated token is being replayed. This is a theft signal —
+ * revoke every token in the same family to invalidate any stolen session.
  */
 export async function validateRefreshToken(rawToken: string) {
   const tokenHash = hashToken(rawToken);
@@ -65,7 +78,21 @@ export async function validateRefreshToken(rawToken: string) {
   });
 
   if (!stored) throw createError("Invalid refresh token", 401);
-  if (stored.revoked) throw createError("Refresh token has been revoked", 401);
+
+  if (stored.revoked) {
+    // Reuse of a rotated token: revoke the entire family to invalidate
+    // any token the attacker may have obtained through the rotation chain.
+    await prisma.refreshToken.updateMany({
+      where: { familyId: stored.familyId },
+      data: { revoked: true },
+    });
+    auditLog("auth.token_reuse", {
+      userId: stored.userId,
+      detail: { familyId: stored.familyId },
+    });
+    throw createError("Refresh token reuse detected. All sessions have been revoked.", 401);
+  }
+
   if (stored.expiresAt < new Date()) throw createError("Refresh token expired", 401);
   if (!stored.user || stored.user.deletedAt !== null) {
     throw createError("Account not found or has been deleted.", 401);
@@ -79,7 +106,7 @@ export async function validateRefreshToken(rawToken: string) {
 }
 
 /**
- * Rotate a refresh token (delete old, create new).
+ * Rotate a refresh token: mark old as revoked, issue new in the same family.
  * Returns new raw refresh token + new access token.
  */
 export async function rotateRefreshToken(
@@ -87,32 +114,41 @@ export async function rotateRefreshToken(
 ): Promise<{ accessToken: string; refreshToken: string }> {
   const stored = await validateRefreshToken(rawOldToken);
 
-  // Delete the old token (prevent reuse)
-  await prisma.refreshToken.delete({ where: { id: stored.id } });
-
-  // Issue new tokens
-  const newRefreshToken = await createRefreshToken(stored.userId);
-  const accessToken = signAccessToken({
-    sub: stored.user.id,
-    email: stored.user.email,
+  // Mark old token revoked (keep it so reuse can be detected)
+  await prisma.refreshToken.update({
+    where: { id: stored.id },
+    data: { revoked: true },
   });
+
+  // Issue new token in the same family
+  const newRefreshToken = await createRefreshToken(stored.userId, stored.familyId);
+  const accessToken = signAccessToken({ sub: stored.user.id, email: stored.user.email });
 
   return { accessToken, refreshToken: newRefreshToken };
 }
 
 /**
- * Revoke a specific refresh token (logout).
+ * Revoke a specific refresh token (logout single device).
+ * Also adds the accompanying access token JTI to the Redis blocklist.
  */
-export async function revokeRefreshToken(rawToken: string): Promise<void> {
+export async function revokeRefreshToken(
+  rawToken: string,
+  accessToken?: string
+): Promise<void> {
   const tokenHash = hashToken(rawToken);
   await prisma.refreshToken.updateMany({
     where: { tokenHash },
     data: { revoked: true },
   });
+
+  // Immediately invalidate the current access token before it expires
+  if (accessToken) {
+    await addAccessTokenToBlocklist(accessToken);
+  }
 }
 
 /**
- * Revoke ALL refresh tokens for a user (logout all devices).
+ * Revoke ALL refresh tokens for a user (logout all devices, password reset, account deletion).
  */
 export async function revokeAllUserRefreshTokens(userId: string): Promise<void> {
   await prisma.refreshToken.updateMany({
@@ -121,51 +157,50 @@ export async function revokeAllUserRefreshTokens(userId: string): Promise<void> 
   });
 }
 
+/**
+ * Add a raw access token's JTI to the Redis revocation blocklist.
+ * TTL is set to the token's remaining lifetime so the key self-cleans.
+ */
+export async function addAccessTokenToBlocklist(rawAccessToken: string): Promise<void> {
+  try {
+    const payload = decodeToken(rawAccessToken);
+    if (!payload?.jti) return;
+
+    const nowSeconds = Math.floor(Date.now() / 1000);
+    const ttl = payload.exp ? payload.exp - nowSeconds : 0;
+
+    await revokeJti(payload.jti, ttl);
+  } catch {
+    // Non-fatal: if Redis is unavailable, token expires naturally in ≤15m
+  }
+}
+
 // ─── Email Verification OTPs ───────────────────────────
 
 const EMAIL_OTP_EXPIRES_MINUTES = 10;
 const EMAIL_OTP_MAX_ATTEMPTS = 5;
 
-/**
- * Generate a 6-digit OTP (cryptographically secure).
- */
 function generateOtp(): { rawOtp: string; otpHash: string } {
   const rawOtp = crypto.randomInt(100000, 999999).toString();
   const otpHash = hashToken(rawOtp);
   return { rawOtp, otpHash };
 }
 
-/**
- * Create an email verification OTP for a user.
- * Deletes any existing OTPs for this user first.
- * Returns the raw 6-digit OTP (to be sent via email).
- */
-export async function createEmailVerificationOtp(
-  userId: string
-): Promise<string> {
+export async function createEmailVerificationOtp(userId: string): Promise<string> {
   const { rawOtp, otpHash } = generateOtp();
 
   const expiresAt = new Date();
   expiresAt.setMinutes(expiresAt.getMinutes() + EMAIL_OTP_EXPIRES_MINUTES);
 
-  // Delete any existing OTPs for this user first
   await prisma.emailVerificationToken.deleteMany({ where: { userId } });
 
   await prisma.emailVerificationToken.create({
-    data: {
-      userId,
-      token: otpHash,
-      expiresAt,
-    },
+    data: { userId, token: otpHash, expiresAt },
   });
 
   return rawOtp;
 }
 
-/**
- * Validate an email verification OTP.
- * Returns the associated userId if valid.
- */
 export async function validateEmailVerificationOtp(
   userId: string,
   rawOtp: string
@@ -178,7 +213,6 @@ export async function validateEmailVerificationOtp(
   if (!stored) throw new Error("No verification OTP found. Please request a new one.");
   if (stored.expiresAt < new Date()) throw new Error("OTP has expired. Please request a new one.");
 
-  // Enforce max attempt limit to prevent brute force
   if (stored.attempts >= EMAIL_OTP_MAX_ATTEMPTS) {
     await prisma.emailVerificationToken.delete({ where: { id: stored.id } });
     throw new Error("Too many incorrect attempts. Please request a new verification code.");
@@ -187,7 +221,6 @@ export async function validateEmailVerificationOtp(
   const otpHash = hashToken(rawOtp);
 
   if (otpHash !== stored.token) {
-    // Increment attempt counter
     await prisma.emailVerificationToken.update({
       where: { id: stored.id },
       data: { attempts: { increment: 1 } },
@@ -199,32 +232,18 @@ export async function validateEmailVerificationOtp(
   return stored.userId;
 }
 
-/**
- * Delete all email verification OTPs for a user (after successful verification).
- */
-export async function deleteEmailVerificationOtp(
-  userId: string
-): Promise<void> {
-  await prisma.emailVerificationToken.deleteMany({
-    where: { userId },
-  });
+export async function deleteEmailVerificationOtp(userId: string): Promise<void> {
+  await prisma.emailVerificationToken.deleteMany({ where: { userId } });
 }
 
 // ─── Password Reset Tokens ─────────────────────────────
 
-/**
- * Create a password reset token for a user.
- * Returns the raw token (to send via email).
- */
-export async function createPasswordResetToken(
-  userId: string
-): Promise<string> {
+export async function createPasswordResetToken(userId: string): Promise<string> {
   const { rawToken, tokenHash } = generateToken(32);
 
   const expiresAt = new Date();
   expiresAt.setHours(expiresAt.getHours() + PASSWORD_RESET_EXPIRES_HOURS);
 
-  // Delete any existing reset tokens first
   await prisma.passwordResetToken.deleteMany({ where: { userId } });
 
   await prisma.passwordResetToken.create({
@@ -234,13 +253,7 @@ export async function createPasswordResetToken(
   return rawToken;
 }
 
-/**
- * Validate a password reset token.
- * Returns the associated userId if valid.
- */
-export async function validatePasswordResetToken(
-  rawToken: string
-): Promise<string> {
+export async function validatePasswordResetToken(rawToken: string): Promise<string> {
   const tokenHash = hashToken(rawToken);
 
   const stored = await prisma.passwordResetToken.findFirst({
@@ -248,20 +261,12 @@ export async function validatePasswordResetToken(
   });
 
   if (!stored) throw new Error("Invalid or expired reset link");
-  if (stored.expiresAt < new Date())
-    throw new Error("Password reset link has expired");
+  if (stored.expiresAt < new Date()) throw new Error("Password reset link has expired");
 
   return stored.userId;
 }
 
-/**
- * Delete a used password reset token.
- */
-export async function deletePasswordResetToken(
-  rawToken: string
-): Promise<void> {
+export async function deletePasswordResetToken(rawToken: string): Promise<void> {
   const tokenHash = hashToken(rawToken);
-  await prisma.passwordResetToken.deleteMany({
-    where: { token: tokenHash },
-  });
+  await prisma.passwordResetToken.deleteMany({ where: { token: tokenHash } });
 }

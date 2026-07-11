@@ -1,0 +1,13 @@
+# Keep root-context Docker builds (chat-svc) small: only package
+# sources and service code are copied by Dockerfiles anyway.
+node_modules
+**/node_modules
+**/dist
+**/.env
+**/.env.*
+!**/.env.example
+apps
+docker
+.git
+.github
+**/*.tsbuildinfo

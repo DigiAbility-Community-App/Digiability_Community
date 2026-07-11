@@ -36,7 +36,10 @@ function attachRefreshToken(res: Response, refreshToken: string) {
 
 // ─── POST /auth/register ───────────────────────────────
 export const register = asyncHandler(async (req: Request, res: Response) => {
-  const { accessToken, refreshToken, user } = await registerUser(req.body);
+  const ip =
+    req.headers["x-forwarded-for"]?.toString().split(",")[0] ||
+    req.socket.remoteAddress;
+  const { accessToken, refreshToken, user } = await registerUser(req.body, ip);
 
   attachRefreshToken(res, refreshToken);
 
@@ -99,12 +102,19 @@ export const refresh = asyncHandler(async (req: Request, res: Response) => {
 
 // ─── POST /auth/logout ─────────────────────────────────
 export const logout = asyncHandler(async (req: Request, res: Response) => {
-  const rawToken =
+  const rawRefreshToken =
     getRefreshTokenFromCookie(req.cookies) ??
     getRefreshTokenFromAuthHeader(req.headers.authorization);
 
-  if (rawToken) {
-    await revokeRefreshToken(rawToken);
+  // Extract the current access token so its JTI can be blocklisted immediately.
+  // The Authorization header here carries the access token (logout is a protected route).
+  const rawAccessToken = req.headers.authorization?.startsWith("Bearer ")
+    ? req.headers.authorization.slice(7)
+    : undefined;
+
+  if (rawRefreshToken) {
+    // revokeRefreshToken also adds the access token JTI to the Redis blocklist
+    await revokeRefreshToken(rawRefreshToken, rawAccessToken);
   }
 
   clearRefreshTokenCookie(res);

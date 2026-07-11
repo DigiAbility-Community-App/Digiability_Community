@@ -19,6 +19,8 @@ import EventsPage from '@/features/events/EventsPage';
 import ServicesPage from '@/features/services/ServicesPage';
 import LearnPage from '@/features/learn/LearnPage';
 
+import PrivacyPolicy from '@/features/legal/PrivacyPolicy';
+import TermsOfService from '@/features/legal/TermsOfService';
 import { useAuthStore } from '@/store/authStore';
 import { authService } from '@/services/authService';
 
@@ -88,6 +90,10 @@ const App = () => {
           <Route path="learn" element={<LearnPage />} />
         </Route>
         
+        {/* Legal / Privacy (public, no auth required) */}
+        <Route path="privacy-policy" element={<PrivacyPolicy />} />
+        <Route path="terms" element={<TermsOfService />} />
+
         {/* Fallback */}
         <Route path="*" element={<Navigate to="/app/chats" replace />} />
       </Routes>

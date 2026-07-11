@@ -3,8 +3,9 @@
 import { useEffect, useState } from "react";
 import {
   Shield, CheckCircle2, Trash2, AlertTriangle, UserX,
-  RefreshCw, X, ChevronDown,
+  RefreshCw, X, ChevronDown, Bot, CheckCheck, XCircle,
 } from "lucide-react";
+import { ReviewQueue } from "./ReviewQueue";
 
 interface Report {
   id: string;
@@ -42,7 +43,30 @@ interface ModerationStats {
   deletedPosts: string;
   suspendedUsers: string;
   reportsToday: string;
+  blockedToday?: number;
+  blockedChatToday?: number;
+  blockedForumToday?: number;
 }
+
+interface AiFlag {
+  id: string;
+  contentType: string;
+  contentId: string;
+  userId: string;
+  text: string | null;
+  provider: string;
+  score: number;
+  categories: string[];
+  status: string;
+  createdAt: string;
+}
+
+const FLAG_STATUS_COLORS: Record<string, string> = {
+  PENDING:   "bg-amber-100 text-amber-700",
+  REVIEWED:  "bg-blue-100 text-blue-700",
+  ACTIONED:  "bg-red-100 text-red-700",
+  DISMISSED: "bg-gray-100 text-gray-500",
+};
 
 export default function ModerationPage() {
   const [reports, setReports] = useState<Report[]>([]);
@@ -50,6 +74,11 @@ export default function ModerationPage() {
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<Report | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+
+  // AI Flags state
+  const [aiFlags, setAiFlags] = useState<AiFlag[]>([]);
+  const [flagsLoading, setFlagsLoading] = useState(false);
+  const [flagActionId, setFlagActionId] = useState<string | null>(null);
 
   // Review Workflow state
   const [showWorkflow, setShowWorkflow] = useState(false);
@@ -101,7 +130,29 @@ export default function ModerationPage() {
     finally { setLoading(false); }
   };
 
-  useEffect(() => { fetchData(); }, []);
+  const fetchFlags = async () => {
+    setFlagsLoading(true);
+    try {
+      const res = await fetch("/api/moderation/flags?status=PENDING&limit=20");
+      const data = await res.json() as { success: boolean; data?: { flags: AiFlag[] } };
+      if (data.success) setAiFlags(data.data?.flags ?? []);
+    } catch { /* non-critical */ }
+    finally { setFlagsLoading(false); }
+  };
+
+  const updateFlagStatus = async (id: string, status: string) => {
+    setFlagActionId(id);
+    try {
+      await fetch(`/api/moderation/flags/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status, reviewedBy: "admin" }),
+      });
+      await fetchFlags();
+    } finally { setFlagActionId(null); }
+  };
+
+  useEffect(() => { fetchData(); fetchFlags(); }, []);
 
   // Low-level poster used by warn/ban flows.
   const postAction = async (payload: Record<string, unknown>) => {
@@ -123,6 +174,8 @@ export default function ModerationPage() {
       if (selected?.id === report.id) setSelected(null);
     } finally { setActionLoading(null); }
   };
+
+  const [activeTab, setActiveTab] = useState<"queue" | "forum-reports" | "ai-flags">("queue");
 
   // Send a warning to the offending user (the reported content's author).
   const handleWarn = async () => {
@@ -384,7 +437,7 @@ export default function ModerationPage() {
     <div className="px-8 py-8">
 
       {/* HEADER */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-5">
         <div className="flex items-center gap-2">
           <Shield className="w-5 h-5 text-[#7004DC]" />
           <h1 className="text-xl font-extrabold text-[#7004DC]">Moderation Panel</h1>
@@ -394,7 +447,31 @@ export default function ModerationPage() {
         </button>
       </div>
 
+      {/* TAB BAR */}
+      <div className="flex gap-1 mb-6 border-b border-gray-100 pb-0">
+        {([
+          { id: "queue" as const, label: "Review Queue" },
+          { id: "forum-reports" as const, label: "Forum Reports" },
+          { id: "ai-flags" as const, label: "AI Flags" },
+        ] as const).map((tab) => (
+          <button key={tab.id} onClick={() => setActiveTab(tab.id)}
+            className={`px-4 py-2 text-sm font-semibold rounded-t-lg transition -mb-px border-b-2 ${
+              activeTab === tab.id
+                ? "border-[#7004DC] text-[#7004DC] bg-violet-50/50"
+                : "border-transparent text-[#7D7387] hover:text-[#1A1C1C]"
+            }`}>
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {/* REVIEW QUEUE TAB */}
+      {activeTab === "queue" && <ReviewQueue />}
+
+      {/* FORUM REPORTS + AI FLAGS TABS */}
+      {(activeTab === "forum-reports" || activeTab === "ai-flags") && <>
       <div className="grid grid-cols-1 xl:grid-cols-[1fr_260px] gap-6 items-start">
+        {activeTab === "ai-flags" && <div className="xl:col-span-2"><p className="text-sm text-[#7D7387] mb-4">AI-generated flags from the async moderation worker. Use the Review Queue tab for unified actions.</p></div>}
 
         {/* LEFT: QUEUE */}
         <div className="space-y-4">
@@ -473,9 +550,119 @@ export default function ModerationPage() {
                 </div>
               </div>
             ))}
+            {/* Auto-blocked messages (Tier A — screener counts) */}
+            <div className="bg-white rounded-xl border border-gray-100 shadow-sm px-4 py-3">
+              <p className="text-[10px] font-bold uppercase text-[#7D7387] mb-2 tracking-wide">Auto-blocked today</p>
+              <div className="flex gap-4">
+                <div>
+                  <p className="text-xs text-[#7D7387]">Chat</p>
+                  <p className="text-xl font-extrabold text-slate-800">{stats.blockedChatToday ?? 0}</p>
+                </div>
+                <div className="w-px bg-gray-100" />
+                <div>
+                  <p className="text-xs text-[#7D7387]">Forum</p>
+                  <p className="text-xl font-extrabold text-slate-800">{stats.blockedForumToday ?? 0}</p>
+                </div>
+                <div className="w-px bg-gray-100" />
+                <div>
+                  <p className="text-xs text-[#7D7387]">Total</p>
+                  <p className="text-xl font-extrabold text-red-600">{stats.blockedToday ?? 0}</p>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
+
+      {/* AI FLAGS SECTION */}
+      <div className="mt-8">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <Bot className="w-5 h-5 text-[#7004DC]" />
+            <h2 className="text-lg font-extrabold text-[#1A1C1C]">AI Classification Flags</h2>
+            <span className="ml-2 px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 text-xs font-bold">{aiFlags.length} pending</span>
+          </div>
+          <button onClick={fetchFlags} className="p-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 text-[#7D7387]">
+            <RefreshCw className="w-3.5 h-3.5" />
+          </button>
+        </div>
+
+        {flagsLoading ? (
+          <p className="text-sm text-[#7D7387] py-4">Loading AI flags…</p>
+        ) : aiFlags.length === 0 ? (
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm px-6 py-8 text-center text-sm text-[#7D7387]">
+            No pending AI flags. All clear.
+          </div>
+        ) : (
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-100 text-xs text-[#7D7387] font-semibold uppercase tracking-wide">
+                  <th className="text-left px-4 py-3">Content</th>
+                  <th className="text-left px-4 py-3">Type</th>
+                  <th className="text-left px-4 py-3">Score</th>
+                  <th className="text-left px-4 py-3">Categories</th>
+                  <th className="text-left px-4 py-3">Status</th>
+                  <th className="px-4 py-3">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {aiFlags.map((flag) => (
+                  <tr key={flag.id} className="border-b border-gray-50 hover:bg-gray-50">
+                    <td className="px-4 py-3 max-w-xs">
+                      <p className="text-xs text-[#4B4355] truncate">{flag.text ?? "(no preview)"}</p>
+                      <p className="text-[10px] text-[#7D7387] mt-0.5 font-mono">{flag.contentId.slice(-8)}</p>
+                    </td>
+                    <td className="px-4 py-3 text-xs text-[#4B4355]">
+                      {flag.contentType.replace(/_/g, " ")}
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={`text-sm font-bold ${flag.score >= 0.8 ? "text-red-600" : flag.score >= 0.5 ? "text-amber-600" : "text-gray-500"}`}>
+                        {(flag.score * 100).toFixed(0)}%
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex flex-wrap gap-1">
+                        {flag.categories.slice(0, 3).map((c) => (
+                          <span key={c} className="px-1.5 py-0.5 bg-red-50 text-red-600 text-[10px] rounded-full font-semibold">
+                            {c}
+                          </span>
+                        ))}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${FLAG_STATUS_COLORS[flag.status] ?? "bg-gray-100 text-gray-500"}`}>
+                        {flag.status}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2 justify-center">
+                        <button
+                          onClick={() => updateFlagStatus(flag.id, "DISMISSED")}
+                          disabled={flagActionId === flag.id}
+                          title="Dismiss (false positive)"
+                          className="text-green-500 hover:text-green-700 disabled:opacity-40"
+                        >
+                          <CheckCheck className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => updateFlagStatus(flag.id, "ACTIONED")}
+                          disabled={flagActionId === flag.id}
+                          title="Action taken (content removed)"
+                          className="text-red-500 hover:text-red-700 disabled:opacity-40"
+                        >
+                          <XCircle className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+      </>}
 
       {/* CONTENT REVIEW PANEL */}
       {selected && (

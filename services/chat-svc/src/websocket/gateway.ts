@@ -31,6 +31,7 @@ import { registryService } from "../services/registry.service";
 import { routeEvent } from "./event-router";
 import { WS_EVENTS, WS_ERROR_CODES } from "../types/ws-events";
 import type { WsEnvelope } from "../types/ws-events";
+import type { AuthenticatedUser } from "../types/common.types";
 import { checkSuspended } from "../utils/suspension.util";
 
 /**
@@ -94,20 +95,22 @@ export function attachWebSocketGateway(httpServer: HttpServer): WebSocketServer 
   wss.on("connection", async (
     ws: WebSocket,
     _request: IncomingMessage,
-    user: { sub: string; email: string },
+    user: AuthenticatedUser,
     deviceId: string
   ) => {
     const connId = generateConnId();
     const userId = user.sub;
     const now = new Date();
 
-    // Add to in-memory connection manager
+    // Add to in-memory connection manager (store jti/exp for heartbeat revocation checks)
     connectionManager.add({
       ws,
       userId,
       connId,
       deviceId,
       connectedAt: now,
+      jti: user.jti,
+      tokenExp: user.exp,
     });
 
     // Register in Redis for cross-server routing
@@ -165,16 +168,18 @@ function parsePathname(request: IncomingMessage): string {
 
 function parseToken(request: IncomingMessage): string | null {
   try {
-    const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
-    // Primary: query string token
-    const queryToken = url.searchParams.get("token");
-    if (queryToken) return queryToken;
-
-    // Fallback: Authorization header
+    // Prefer Authorization header — keeps the JWT out of server access logs and
+    // proxy logs that record request URLs. New clients should always use this.
     const authHeader = request.headers.authorization;
     if (authHeader?.startsWith("Bearer ")) {
       return authHeader.slice(7);
     }
+
+    // Fallback: query-string token for clients that cannot set headers during
+    // the WebSocket upgrade (deprecated; remove once all clients migrate).
+    const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
+    const queryToken = url.searchParams.get("token");
+    if (queryToken) return queryToken;
 
     return null;
   } catch {

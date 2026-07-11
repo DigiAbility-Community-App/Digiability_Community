@@ -1,4 +1,5 @@
 import apiClient from './apiClient';
+import { useAuthStore } from '@store/authStore';
 
 export const CHAT_BASE_URL = (process.env.EXPO_PUBLIC_API_BASE_URL || 'http://10.0.2.2:4001').replace('4001', '4002');
 
@@ -192,6 +193,12 @@ export const chatService = {
   },
 
   // Upload a chat attachment (image or voice note). Returns the public URL.
+  //
+  // Uses React Native's fetch — NOT axios — for the multipart request.
+  // axios' XHR path in RN normalises the Content-Type header without a
+  // boundary parameter, and whether the native layer repairs it is
+  // platform-dependent ("Network Error" on some devices). RN's fetch
+  // builds the multipart body + boundary natively.
   uploadMedia: async (
     file: { uri: string; name: string; type: string },
     field: "image" | "audio"
@@ -203,10 +210,17 @@ export const chatService = {
       name: file.name,
       type: file.type,
     } as any);
-    const res = await apiClient.post(`${CHAT_BASE_URL}/api/media/upload`, form, {
-      headers: { "Content-Type": "multipart/form-data" },
+    const token = useAuthStore.getState().accessToken;
+    const res = await fetch(`${CHAT_BASE_URL}/api/media/upload`, {
+      method: "POST",
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      body: form,
     });
-    return res.data.data;
+    const json = await res.json().catch(() => null);
+    if (!res.ok || !json?.success) {
+      throw new Error(json?.message || `Upload failed (HTTP ${res.status})`);
+    }
+    return json.data;
   },
 
   muteConversation: async (conversationId: string, muted: boolean) => {

@@ -9,6 +9,7 @@ import {
   ngoProfileService,
   profileService,
 } from '../services/profileService';
+import { auditLog } from '../services/audit.service';
 
 const router = Router();
 
@@ -185,11 +186,11 @@ router.post('/', validate(basicProfileSchema), async (req: Request, res: Respons
   }
 });
 
-// PUT /api/users/profile - Update basic profile
+// PUT /api/users/profile - Update basic profile (Right to Correction — DPDP §12)
 router.put('/', validate(basicProfileSchema), async (req: Request, res: Response) => {
   try {
     const userId = getUserIdFromAuthToken(req);
-    
+
     // Check username uniqueness if provided
     if (req.body.username) {
       const existingUsername = await profileService.findByUsername(req.body.username);
@@ -202,6 +203,12 @@ router.put('/', validate(basicProfileSchema), async (req: Request, res: Response
     }
 
     const profile = await profileService.upsertBasicProfile(userId, req.body);
+
+    auditLog("privacy.correction_requested", {
+      userId,
+      detail: { fields: Object.keys(req.body) },
+    });
+
     res.json({
       success: true,
       data: profile,
@@ -265,7 +272,7 @@ router.post('/details', validate(profileDetailsSchema), async (req: Request, res
   }
 });
 
-// PUT /api/users/profile/details - Update role-specific profile details
+// PUT /api/users/profile/details - Update role-specific profile details (Right to Correction — DPDP §12)
 router.put('/details', validate(profileDetailsSchema), async (req: Request, res: Response) => {
   try {
     const userId = getUserIdFromAuthToken(req);
@@ -277,6 +284,11 @@ router.put('/details', validate(profileDetailsSchema), async (req: Request, res:
     if (hasRequiredRoleFields(userRecord?.roles, req.body)) {
       await profileService.markAsComplete(userId);
     }
+
+    auditLog("privacy.correction_requested", {
+      userId,
+      detail: { fields: Object.keys(detailsData) },
+    });
 
     res.json({
       success: true,

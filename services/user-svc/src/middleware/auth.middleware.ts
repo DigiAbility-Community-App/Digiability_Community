@@ -1,12 +1,15 @@
 import { Request, Response, NextFunction } from "express";
 import { verifyAccessToken, AccessTokenPayload } from "../utils/jwt.util";
+import { isJtiRevoked } from "../config/redis";
 import prisma from "../models/prisma.client";
 import { isCurrentlySuspended } from "../utils/suspension.util";
 
 // ─────────────────────────────────────────────────────
 // Auth Middleware
-// Verifies the JWT access token from Authorization header,
-// then checks that the account has not been soft-deleted.
+// 1. Verifies the RS256 access token from Authorization header.
+// 2. Checks the JTI against the Redis revocation blocklist
+//    (populated on logout / account deletion).
+// 3. Confirms the account has not been soft-deleted.
 // ─────────────────────────────────────────────────────
 
 declare global {
@@ -17,10 +20,6 @@ declare global {
   }
 }
 
-/**
- * Protect routes — verifies Bearer token and confirms the account is active.
- * Rejects with 401 if the token is invalid, expired, or the account is deleted.
- */
 export async function authenticate(
   req: Request,
   res: Response,
@@ -54,9 +53,17 @@ export async function authenticate(
     return;
   }
 
-  // Guard against deleted accounts: a valid token for a soft-deleted user
-  // must be rejected so PII-cleared accounts cannot continue to call the API.
-  // Single indexed PK lookup — negligible overhead.
+  // Check JTI blocklist — token may have been revoked by logout/deletion
+  // even though it hasn't expired yet.
+  if (payload.jti) {
+    const revoked = await isJtiRevoked(payload.jti).catch(() => false);
+    if (revoked) {
+      res.status(401).json({ success: false, message: "Session has been revoked. Please log in again." });
+      return;
+    }
+  }
+
+  // Guard against soft-deleted accounts (single indexed PK lookup)
   const user = await prisma.user.findUnique({
     where: { id: payload.sub },
     select: {

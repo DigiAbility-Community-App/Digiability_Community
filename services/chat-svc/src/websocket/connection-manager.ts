@@ -23,6 +23,8 @@ export interface ManagedConnection {
   connId: string;
   deviceId: string;
   connectedAt: Date;
+  jti?: string;        // JWT ID — used to check revocation on heartbeat
+  tokenExp?: number;   // Token expiry (Unix seconds) — used for early eviction
 }
 
 class ConnectionManager {

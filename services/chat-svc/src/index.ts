@@ -28,6 +28,7 @@ BigInt.prototype.toJSON = function () {
 };
 import express from "express";
 import cors from "cors";
+import helmet from "helmet";
 import { env } from "./config/env";
 import { logger } from "./config/logger";
 import { disconnectRedis } from "./config/redis";
@@ -45,6 +46,7 @@ import messageRoutes from "./routes/message.routes";
 import presenceRoutes from "./routes/presence.routes";
 import inviteRoutes from "./routes/invite.routes";
 import internalRoutes from "./routes/internal.routes";
+import { keywordCache } from "./moderation/keyword-cache";
 import mediaRoutes from "./routes/media.routes";
 import moderationRoutes from "./routes/moderation.routes";
 import path from "path";
@@ -52,6 +54,16 @@ import path from "path";
 // ─── Express Application ──────────────────────────────────────
 
 const app = express();
+
+// Security headers
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      directives: { defaultSrc: ["'none'"], frameAncestors: ["'none'"] },
+    },
+    crossOriginEmbedderPolicy: false,
+  })
+);
 
 // Global Middleware
 app.use(
@@ -120,14 +132,19 @@ async function startServer(): Promise<void> {
     await deliveryService.startSubscription();
     logger.info("Delivery service Pub/Sub subscription active");
 
-    // 5. Start embedded workers (no separate containers needed)
+    // 5. Start keyword cache (hot-reloaded via Redis pub/sub on admin changes)
+    await keywordCache.init().catch((err) =>
+      logger.warn("Keyword cache init failed (non-fatal)", { error: err.message })
+    );
+
+    // 6. Start embedded workers (no separate containers needed)
     stopMsgWorker = await startMsgWorker();
     logger.info("Message persistence worker started");
 
     stopDeliveryWorker = await startDeliveryWorker();
     logger.info("Delivery routing worker started");
 
-    // 6. Start HTTP + WS server
+    // 7. Start HTTP + WS server
     httpServer.listen(env.PORT, () => {
       logger.info(`🚀 chat-svc running on http://localhost:${env.PORT}`);
       logger.info(`📋 Health check: http://localhost:${env.PORT}/health`);

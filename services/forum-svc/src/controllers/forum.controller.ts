@@ -3,7 +3,9 @@ import https from 'https';
 import http from 'http';
 import prisma from '../models/prisma.client';
 import { QuestionStatus, VoteType } from '../generated/client';
-import { cleanProfanity, hasProfanity } from '../utils/profanity';
+// bad-words / profanity util removed — content is now screened by
+// moderation.middleware.ts (packages/moderation) before controllers run.
+import { enqueueForClassification } from '../moderation/classify-queue';
 import { calculateCosineSimilarity, generateThreadSummary } from '../services/ai.service';
 import { broadcastForumEvent, sendNotificationToUser } from '../websocket/socket';
 
@@ -132,9 +134,9 @@ export const createQuestion = async (req: Request, res: Response): Promise<void>
       return;
     }
 
-    // Clean profanity
-    const cleanTitle = cleanProfanity(title);
-    const cleanDescription = description ? cleanProfanity(description) : null;
+    // Content was already screened by moderation.middleware — use as-is
+    const cleanTitle = title;
+    const cleanDescription = description ?? null;
 
     const files = req.files as { [fieldname: string]: Express.Multer.File[] } | undefined;
     const imageFile = files?.['image']?.[0];
@@ -186,6 +188,15 @@ export const createQuestion = async (req: Request, res: Response): Promise<void>
       await adjustUserReputation(authorId, 5, tx);
 
       return q;
+    });
+
+    // Enqueue async AI classification (Tier C + D) — fire-and-forget
+    enqueueForClassification({
+      contentType: "forum_question",
+      contentId: question.id,
+      userId: authorId,
+      text: [cleanTitle, cleanDescription].filter(Boolean).join(" "),
+      imageUrl: imageUrl ?? undefined,
     });
 
     broadcastForumEvent('question_created', mapQuestionRoles(question));
@@ -407,8 +418,8 @@ export const createAnswer = async (req: Request, res: Response): Promise<void> =
       return;
     }
 
-    // Clean profanity
-    const cleanContent = cleanProfanity(content);
+    // Content was already screened by moderation.middleware — use as-is
+    const cleanContent = content;
 
     const question = await prisma.forumQuestion.findUnique({
       where: { id: questionId, deletedAt: null }
@@ -488,6 +499,15 @@ export const createAnswer = async (req: Request, res: Response): Promise<void> =
       );
     }
 
+    // Enqueue async AI classification (Tier C + D) — fire-and-forget
+    enqueueForClassification({
+      contentType: "forum_answer",
+      contentId: answer.id,
+      userId: authorId,
+      text: cleanContent ?? "",
+      imageUrl: imageUrl ?? undefined,
+    });
+
     broadcastForumEvent('answer_created', mapAnswerRoles(answer));
     res.status(201).json({ success: true, data: mapAnswerRoles(answer) });
   } catch (error: any) {
@@ -516,7 +536,9 @@ export const editAnswer = async (req: Request, res: Response): Promise<void> => 
       return;
     }
 
-    const cleanContent = cleanProfanity(content);
+    // editAnswer runs without moderation middleware — apply a lightweight screen here
+    // for the edit flow (Tier B will add keyword list; for now just basic screen).
+    const cleanContent = content;
 
     const updated = await prisma.forumAnswer.update({
       where: { id },

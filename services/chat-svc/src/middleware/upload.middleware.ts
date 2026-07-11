@@ -43,6 +43,7 @@ const ALLOWED_AUDIO = [
   "audio/aac",
   "audio/ogg",
   "audio/webm",
+  "audio/x-caf", // iOS expo-av HIGH_QUALITY preset records .caf
   "application/octet-stream",
 ];
 
@@ -54,6 +55,7 @@ function extFromMime(mime: string): string {
   if (mime.includes("mp4") || mime.includes("m4a") || mime.includes("aac")) return ".m4a";
   if (mime.includes("mpeg") || mime.includes("mp3")) return ".mp3";
   if (mime.includes("wav")) return ".wav";
+  if (mime.includes("caf")) return ".caf";
   if (mime.includes("webm")) return ".webm";
   if (mime.includes("ogg")) return ".ogg";
   return "";

@@ -105,8 +105,13 @@ export function useChatMedia(conversationId: string, senderId: string | undefine
     if (durationMs < 500) return; // ignore accidental taps
     setIsUploading(true);
     try {
+      // expo-av's HIGH_QUALITY preset records .m4a on Android but .caf on
+      // iOS — name/type the part after the actual file so the stored
+      // extension matches the content.
+      const ext = uri.split(".").pop()?.toLowerCase() || "m4a";
+      const mime = ext === "caf" ? "audio/x-caf" : ext === "m4a" ? "audio/m4a" : `audio/${ext}`;
       const { url } = await chatService.uploadMedia(
-        { uri, name: `voice-${Date.now()}.m4a`, type: "audio/m4a" },
+        { uri, name: `voice-${Date.now()}.${ext}`, type: mime },
         "audio"
       );
       sendMedia("AUDIO", url, { durationMs });
