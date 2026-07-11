@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from "express";
 import { verifyAccessToken, AccessTokenPayload } from "../utils/jwt.util";
 import { isJtiRevoked } from "../config/redis";
 import prisma from "../models/prisma.client";
+import { isCurrentlySuspended } from "../utils/suspension.util";
 
 // ─────────────────────────────────────────────────────
 // Auth Middleware
@@ -65,13 +66,36 @@ export async function authenticate(
   // Guard against soft-deleted accounts (single indexed PK lookup)
   const user = await prisma.user.findUnique({
     where: { id: payload.sub },
-    select: { deletedAt: true },
+    select: {
+      deletedAt: true,
+      isSuspended: true,
+      suspendedUntil: true,
+      suspensionReason: true,
+    },
   });
 
   if (!user || user.deletedAt !== null) {
     res.status(401).json({
       success: false,
       message: "Account not found or has been deleted.",
+    });
+    return;
+  }
+
+  // Reject every request from a suspended/banned account — this runs on
+  // every authenticated call, so a ban takes effect on the user's very next
+  // request rather than waiting for their token to expire.
+  if (isCurrentlySuspended(user)) {
+    res.status(403).json({
+      success: false,
+      message:
+        user.suspendedUntil === null
+          ? "Your account has been permanently suspended."
+          : "Your account has been temporarily suspended.",
+      banned: true,
+      permanent: user.suspendedUntil === null,
+      suspendedUntil: user.suspendedUntil ? user.suspendedUntil.toISOString() : null,
+      reason: user.suspensionReason,
     });
     return;
   }

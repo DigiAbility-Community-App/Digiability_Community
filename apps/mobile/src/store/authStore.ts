@@ -30,10 +30,25 @@ export interface PendingBasicProfile {
   phoneNo?: string;
 }
 
+export interface BanInfo {
+  permanent: boolean;
+  suspendedUntil: string | null;
+  reason: string | null;
+}
+
 interface AuthState {
   accessToken: string | null;
   user: AuthUser | null;
   isAuthenticated: boolean;
+
+  // Set when a request comes back with a ban response so the app can force
+  // logout + show a proper "account suspended" screen instead of a generic
+  // error, even if the user was already mid-session. Deliberately NOT reset
+  // by clearAuth() — it's read once by the auth stack after the forced
+  // logout it triggers, then cleared explicitly.
+  pendingBanInfo: BanInfo | null;
+  setPendingBanInfo: (info: BanInfo) => void;
+  clearPendingBanInfo: () => void;
 
   // ── Onboarding pending state ──────────────────────────────
   // Data collected across screens but NOT yet written to DB.
@@ -59,9 +74,13 @@ export const useAuthStore = create<AuthState>((set) => ({
   accessToken: null,
   user: null,
   isAuthenticated: false,
+  pendingBanInfo: null,
   pendingRole: null,
   pendingRoles: [],
   pendingProfile: null,
+
+  setPendingBanInfo: (info) => set({ pendingBanInfo: info }),
+  clearPendingBanInfo: () => set({ pendingBanInfo: null }),
 
   setAuth: (accessToken, user) =>
     set({ accessToken, user, isAuthenticated: true }),

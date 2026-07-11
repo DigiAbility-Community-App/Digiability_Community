@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef } from "react";
+import React, { useState, useCallback, useRef, useEffect } from "react";
 import {
   View,
   Text,
@@ -19,6 +19,7 @@ import { useChatStore } from "@store/chatStore";
 import { chatService } from "@services/chatService";
 import ScreenWrapper from "../../components/layout/ScreenWrapper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { ArrowLeft, Users, Accessibility, SquarePen, Bell, BellOff, ChevronRight, X, Plus } from "lucide-react-native";
 
 type Props = NativeStackScreenProps<ChatsStackParamList, "GroupInfo">;
 
@@ -29,6 +30,7 @@ const GroupInfoScreen = ({ navigation, route }: Props) => {
 
   const conversation = useChatStore((s) => s.conversations[conversationId]);
   const updateConversation = useChatStore((s) => s.updateConversation);
+  const setConversations = useChatStore((s) => s.setConversations);
 
   const [isUpdatingSettings, setIsUpdatingSettings] = useState(false);
   const [showAddMember, setShowAddMember] = useState(false);
@@ -36,6 +38,12 @@ const GroupInfoScreen = ({ navigation, route }: Props) => {
   const [memberSearchResults, setMemberSearchResults] = useState<{id:string;name:string;email:string}[]>([]);
   const [isSearchingMembers, setIsSearchingMembers] = useState(false);
   const searchTimeout = useRef<NodeJS.Timeout | null>(null);
+
+  // Edit group info form
+  const [isEditingInfo, setIsEditingInfo] = useState(false);
+  const [editName, setEditName] = useState("");
+  const [editDesc, setEditDesc] = useState("");
+  const [isSavingInfo, setIsSavingInfo] = useState(false);
 
   if (!conversation) {
     return (
@@ -97,6 +105,40 @@ const GroupInfoScreen = ({ navigation, route }: Props) => {
     }
   };
 
+  // ── Join requests (admin approval) ───────────────────────────
+  const [pendingRequests, setPendingRequests] = useState<any[]>([]);
+  const [processingRequestId, setProcessingRequestId] = useState<string | null>(null);
+
+  const loadPendingRequests = useCallback(async () => {
+    if (!hasAdminRights) return;
+    try {
+      const invites = await chatService.getGroupInvites(conversationId);
+      setPendingRequests(invites.filter((i: any) => i.status === "AWAITING_APPROVAL"));
+    } catch (err) {
+      console.error("Failed to load join requests", err);
+    }
+  }, [conversationId, hasAdminRights]);
+
+  useEffect(() => {
+    loadPendingRequests();
+  }, [loadPendingRequests]);
+
+  const handleRespondToRequest = async (inviteId: string, approve: boolean) => {
+    setProcessingRequestId(inviteId);
+    try {
+      await chatService.approveJoinRequest(inviteId, approve);
+      setPendingRequests((prev) => prev.filter((r) => r.id !== inviteId));
+      if (approve) {
+        // Refresh members so the newly-approved user shows up.
+        chatService.getConversations().then((convos) => setConversations(convos)).catch(() => {});
+      }
+    } catch (err: any) {
+      Alert.alert("Error", err?.response?.data?.message || "Could not process the request.");
+    } finally {
+      setProcessingRequestId(null);
+    }
+  };
+
   // ── Leave Group ───────────────────────────────────────────────
   const handleLeaveGroup = () => {
     Alert.alert(
@@ -113,6 +155,77 @@ const GroupInfoScreen = ({ navigation, route }: Props) => {
               navigation.popToTop();
             } catch (err: any) {
               Alert.alert("Error", err?.response?.data?.message || "Failed to leave group.");
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  // ── Edit Group Info (name / description) ──────────────────────
+  const openEditInfo = () => {
+    if (!canEditInfo) {
+      Alert.alert("Permission Denied", "You don't have permission to edit group info.");
+      return;
+    }
+    setEditName(conversation.name || "");
+    setEditDesc(conversation.description || "");
+    setIsEditingInfo(true);
+  };
+
+  const handleSaveInfo = async () => {
+    const name = editName.trim();
+    if (!name) {
+      Alert.alert("Name Required", "Group name cannot be empty.");
+      return;
+    }
+    setIsSavingInfo(true);
+    const prev = { name: conversation.name, description: conversation.description };
+    updateConversation(conversationId, { name, description: editDesc.trim() });
+    try {
+      await chatService.updateGroupInfo(conversationId, { name, description: editDesc.trim() });
+      setIsEditingInfo(false);
+    } catch (err: any) {
+      updateConversation(conversationId, prev as any);
+      Alert.alert("Error", err?.response?.data?.message || "Failed to update group info.");
+    } finally {
+      setIsSavingInfo(false);
+    }
+  };
+
+  // ── Mute / Unmute ─────────────────────────────────────────────
+  const isMuted = myParticipant?.isMuted ?? false;
+  const handleToggleMute = async () => {
+    const newValue = !isMuted;
+    // Optimistic update on the participant
+    const updatedParticipants = conversation.participants.map((p) =>
+      p.userId === user?.id ? { ...p, isMuted: newValue } : p
+    );
+    updateConversation(conversationId, { participants: updatedParticipants } as any);
+    try {
+      await chatService.muteConversation(conversationId, newValue);
+    } catch {
+      updateConversation(conversationId, { participants: conversation.participants } as any);
+      Alert.alert("Error", "Failed to update mute setting.");
+    }
+  };
+
+  // ── Delete Group (owner only) ─────────────────────────────────
+  const handleDeleteGroup = () => {
+    Alert.alert(
+      "Delete Group",
+      `Permanently delete "${conversation.name}"? This removes it for all members and cannot be undone.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await chatService.deleteGroup(conversationId);
+              navigation.popToTop();
+            } catch (err: any) {
+              Alert.alert("Error", err?.response?.data?.message || "Failed to delete group.");
             }
           },
         },
@@ -315,7 +428,7 @@ const GroupInfoScreen = ({ navigation, route }: Props) => {
     <ScreenWrapper statusBarStyle="light">
       <View style={[styles.header, { paddingTop: insets.top + 10 }]}>
         <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
-          <Text style={styles.backText}>←</Text>
+          <ArrowLeft size={24} color="#fff" strokeWidth={2.2} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Group Info</Text>
       </View>
@@ -324,15 +437,66 @@ const GroupInfoScreen = ({ navigation, route }: Props) => {
         {/* Profile Card */}
         <View style={styles.profileCard}>
           <View style={styles.avatarLarge}>
-            <Text style={styles.avatarEmoji}>{isCareCircle ? "🦽" : "👥"}</Text>
+            {isCareCircle
+              ? <Accessibility size={40} color="#8A38F5" strokeWidth={1.9} />
+              : <Users size={40} color="#8A38F5" strokeWidth={1.9} />}
           </View>
-          <Text style={styles.groupNameLarge}>{conversation.name}</Text>
-          <Text style={styles.memberCountLarge}>
-            {isCareCircle ? "Care Circle" : "Group"} • {conversation.participants.length} members
-          </Text>
-          {conversation.description && (
-            <Text style={styles.groupDescription}>{conversation.description}</Text>
+
+          {isEditingInfo ? (
+            <View style={styles.editForm}>
+              <TextInput
+                style={styles.editNameInput}
+                value={editName}
+                onChangeText={setEditName}
+                placeholder="Group name"
+                placeholderTextColor="#999"
+                maxLength={100}
+                autoFocus
+              />
+              <TextInput
+                style={styles.editDescInput}
+                value={editDesc}
+                onChangeText={setEditDesc}
+                placeholder="Add a description (optional)"
+                placeholderTextColor="#999"
+                maxLength={500}
+                multiline
+              />
+              <View style={styles.editActions}>
+                <TouchableOpacity style={styles.editCancelBtn} onPress={() => setIsEditingInfo(false)} disabled={isSavingInfo}>
+                  <Text style={styles.editCancelText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.editSaveBtn} onPress={handleSaveInfo} disabled={isSavingInfo}>
+                  {isSavingInfo ? <ActivityIndicator size="small" color="#fff" /> : <Text style={styles.editSaveText}>Save</Text>}
+                </TouchableOpacity>
+              </View>
+            </View>
+          ) : (
+            <>
+              <View style={styles.nameRow}>
+                <Text style={styles.groupNameLarge}>{conversation.name}</Text>
+                {canEditInfo && (
+                  <TouchableOpacity style={styles.editIconBtn} onPress={openEditInfo}>
+                    <SquarePen size={17} color="#500088" strokeWidth={2} />
+                  </TouchableOpacity>
+                )}
+              </View>
+              <Text style={styles.memberCountLarge}>
+                {isCareCircle ? "Care Circle" : "Group"} • {conversation.participants.length} members
+              </Text>
+              {conversation.description ? (
+                <Text style={styles.groupDescription}>{conversation.description}</Text>
+              ) : null}
+            </>
           )}
+
+          {/* Mute toggle — available to all members */}
+          <TouchableOpacity style={styles.muteRow} onPress={handleToggleMute}>
+            {isMuted
+              ? <Bell size={16} color="#500088" strokeWidth={2} />
+              : <BellOff size={16} color="#500088" strokeWidth={2} />}
+            <Text style={styles.muteText}>{isMuted ? "Unmute Notifications" : "Mute Notifications"}</Text>
+          </TouchableOpacity>
         </View>
 
         {/* Group Settings Section */}
@@ -395,13 +559,54 @@ const GroupInfoScreen = ({ navigation, route }: Props) => {
           </View>
         )}
 
+        {/* Pending Join Requests (admins only) */}
+        {hasAdminRights && pendingRequests.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionLabel}>
+              Pending Requests ({pendingRequests.length})
+            </Text>
+            {pendingRequests.map((req) => (
+              <View key={req.id} style={styles.requestRow}>
+                <View style={styles.requestAvatar}>
+                  <Text style={styles.requestAvatarText}>
+                    {(req.inviteeName || "?").charAt(0).toUpperCase()}
+                  </Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.requestName} numberOfLines={1}>{req.inviteeName}</Text>
+                  <Text style={styles.requestSub}>wants to join</Text>
+                </View>
+                {processingRequestId === req.id ? (
+                  <ActivityIndicator size="small" color="#8A38F5" />
+                ) : (
+                  <View style={styles.requestActions}>
+                    <TouchableOpacity
+                      style={styles.rejectBtn}
+                      onPress={() => handleRespondToRequest(req.id, false)}
+                    >
+                      <Text style={styles.rejectBtnText}>Reject</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.approveBtn}
+                      onPress={() => handleRespondToRequest(req.id, true)}
+                    >
+                      <Text style={styles.approveBtnText}>Approve</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+              </View>
+            ))}
+          </View>
+        )}
+
         {/* Members Section */}
         <View style={styles.section}>
           <View style={styles.sectionHeaderRow}>
             <Text style={styles.sectionLabel}>Members</Text>
             {canAddMembers && (
-              <TouchableOpacity style={styles.addMemberBtn} onPress={() => setShowAddMember(!showAddMember)}>
-                <Text style={styles.addMemberText}>{showAddMember ? "✕ Close" : "+ Add Member"}</Text>
+              <TouchableOpacity style={[styles.addMemberBtn, { flexDirection: "row", alignItems: "center", gap: 4 }]} onPress={() => setShowAddMember(!showAddMember)}>
+                {showAddMember ? <X size={14} color="#500088" strokeWidth={2.4} /> : <Plus size={14} color="#500088" strokeWidth={2.4} />}
+                <Text style={styles.addMemberText}>{showAddMember ? "Close" : "Add Member"}</Text>
               </TouchableOpacity>
             )}
           </View>
@@ -461,7 +666,7 @@ const GroupInfoScreen = ({ navigation, route }: Props) => {
                     )}
                   </View>
                   {hasAdminRights && !isMe && p.role !== 'OWNER' && (
-                    <Text style={styles.chevron}>›</Text>
+                    <ChevronRight size={20} color="#ccc" strokeWidth={2} style={{ marginLeft: 10 }} />
                   )}
                 </TouchableOpacity>
               );
@@ -469,14 +674,18 @@ const GroupInfoScreen = ({ navigation, route }: Props) => {
           </View>
         </View>
 
-        {/* Leave Group — only for non-owners */}
-        {!isOwner && (
-          <View style={styles.section}>
+        {/* Leave Group — non-owners; Delete Group — owner */}
+        <View style={styles.section}>
+          {isOwner ? (
+            <TouchableOpacity style={styles.deleteBtn} onPress={handleDeleteGroup}>
+              <Text style={styles.deleteBtnText}>Delete Group</Text>
+            </TouchableOpacity>
+          ) : (
             <TouchableOpacity style={styles.leaveBtn} onPress={handleLeaveGroup}>
               <Text style={styles.leaveBtnText}>Leave Group</Text>
             </TouchableOpacity>
-          </View>
-        )}
+          )}
+        </View>
       </ScrollView>
     </ScreenWrapper>
   );
@@ -519,6 +728,29 @@ const styles = StyleSheet.create({
     fontSize: 14, fontWeight: "700", color: "#6B21A8",
     marginLeft: 16, marginBottom: 8, textTransform: "uppercase",
   },
+  requestRow: {
+    flexDirection: "row", alignItems: "center", gap: 12,
+    backgroundColor: "#fff", paddingVertical: 12, paddingHorizontal: 16,
+    borderTopWidth: 1, borderColor: "#E8E5F0",
+  },
+  requestAvatar: {
+    width: 40, height: 40, borderRadius: 20, backgroundColor: "#F3EAFF",
+    justifyContent: "center", alignItems: "center",
+  },
+  requestAvatarText: { color: "#8A38F5", fontWeight: "700", fontSize: 16 },
+  requestName: { fontSize: 15, fontWeight: "600", color: "#1a1a1a" },
+  requestSub: { fontSize: 12, color: "#888" },
+  requestActions: { flexDirection: "row", gap: 8 },
+  rejectBtn: {
+    paddingVertical: 7, paddingHorizontal: 12, borderRadius: 8,
+    borderWidth: 1, borderColor: "#e0d7f0",
+  },
+  rejectBtnText: { color: "#666", fontWeight: "600", fontSize: 13 },
+  approveBtn: {
+    paddingVertical: 7, paddingHorizontal: 14, borderRadius: 8,
+    backgroundColor: "#8A38F5",
+  },
+  approveBtnText: { color: "#fff", fontWeight: "700", fontSize: 13 },
   settingsCard: { backgroundColor: "#fff", borderTopWidth: 1, borderBottomWidth: 1, borderColor: "#E8E5F0" },
   settingRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 14, paddingHorizontal: 16 },
   settingDivider: { height: 1, backgroundColor: "#E8E5F0", marginLeft: 16 },
@@ -564,4 +796,31 @@ const styles = StyleSheet.create({
     borderRadius: 16, borderWidth: 1, borderColor: "#fca5a5", alignItems: "center",
   },
   leaveBtnText: { fontSize: 16, fontWeight: "700", color: "#dc2626" },
+  deleteBtn: {
+    marginHorizontal: 16, paddingVertical: 16, backgroundColor: "#dc2626",
+    borderRadius: 16, alignItems: "center",
+  },
+  deleteBtnText: { fontSize: 16, fontWeight: "700", color: "#fff" },
+  // Name row with edit icon
+  nameRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8 },
+  editIconBtn: { padding: 4 },
+  editIconText: { fontSize: 16 },
+  // Edit form
+  editForm: { width: "100%", paddingHorizontal: 8 },
+  editNameInput: {
+    borderWidth: 1, borderColor: "#E8E5F0", borderRadius: 12, paddingHorizontal: 14,
+    paddingVertical: 10, fontSize: 18, fontWeight: "700", color: "#1a1a1a", marginBottom: 10, textAlign: "center",
+  },
+  editDescInput: {
+    borderWidth: 1, borderColor: "#E8E5F0", borderRadius: 12, paddingHorizontal: 14,
+    paddingVertical: 10, fontSize: 14, color: "#444", minHeight: 60, textAlignVertical: "top",
+  },
+  editActions: { flexDirection: "row", justifyContent: "center", gap: 12, marginTop: 12 },
+  editCancelBtn: { paddingHorizontal: 24, paddingVertical: 10, borderRadius: 12, backgroundColor: "#F3F4F6" },
+  editCancelText: { fontSize: 14, fontWeight: "700", color: "#6B7280" },
+  editSaveBtn: { paddingHorizontal: 28, paddingVertical: 10, borderRadius: 12, backgroundColor: "#500088", minWidth: 80, alignItems: "center" },
+  editSaveText: { fontSize: 14, fontWeight: "700", color: "#fff" },
+  // Mute toggle
+  muteRow: { marginTop: 16, paddingVertical: 10, paddingHorizontal: 16, borderRadius: 12, backgroundColor: "#F3EAFF", flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8 },
+  muteText: { fontSize: 14, fontWeight: "600", color: "#500088" },
 });

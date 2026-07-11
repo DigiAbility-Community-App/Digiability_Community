@@ -359,12 +359,21 @@ class ConversationRepository {
     userId: string,
     role: MemberRole = "MEMBER"
   ): Promise<void> {
+    // Start the read cursor at the conversation's current latest sequence so a
+    // member who joins a group with history doesn't inherit all prior messages
+    // as unread. (Rejoin keeps the existing cursor via the update branch.)
+    const agg = await prisma.message.aggregate({
+      _max: { sequenceNo: true },
+      where: { conversationId },
+    });
+    const maxSeq = agg._max.sequenceNo ?? BigInt(0);
+
     await prisma.conversationMember.upsert({
       where: {
         conversationId_userId: { conversationId, userId },
       },
       update: { leftAt: null, role },
-      create: { conversationId, userId, role },
+      create: { conversationId, userId, role, lastReadSequenceNo: maxSeq },
     });
   }
 
@@ -393,6 +402,17 @@ class ConversationRepository {
         conversationId_userId: { conversationId, userId },
       },
       data: { role },
+    });
+  }
+
+  /**
+   * Soft-delete a group conversation (owner only, enforced in service).
+   * Sets deletedAt so it disappears from all listings.
+   */
+  async softDeleteConversation(conversationId: string): Promise<void> {
+    await prisma.conversation.update({
+      where: { id: conversationId },
+      data: { deletedAt: new Date() },
     });
   }
 

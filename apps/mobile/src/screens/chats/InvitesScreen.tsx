@@ -14,6 +14,7 @@ import { useAuthStore } from "@store/authStore";
 import { useChatStore, GroupInvite } from "@store/chatStore";
 import { chatService } from "@services/chatService";
 import ScreenWrapper from "../../components/layout/ScreenWrapper";
+import { ArrowLeft, Users, Accessibility, Inbox } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 type Props = {
@@ -74,7 +75,7 @@ const InvitesScreen = ({ navigation }: Props) => {
       <View style={styles.inviteCard}>
         <View style={styles.inviteHeader}>
           <View style={[styles.groupIcon, isCareCircle && styles.groupIconCare]}>
-            <Text style={styles.groupIconText}>{isCareCircle ? '🦽' : '👥'}</Text>
+            isCareCircle ? <Accessibility size={22} color="#8A38F5" strokeWidth={2} /> : <Users size={22} color="#8A38F5" strokeWidth={2} />
           </View>
           <View style={styles.inviteInfo}>
             <Text style={styles.groupName}>{item.conversation?.name || "Unknown Group"}</Text>
@@ -120,7 +121,7 @@ const InvitesScreen = ({ navigation }: Props) => {
     <ScreenWrapper statusBarStyle="light">
       <View style={[styles.header, { paddingTop: insets.top + 10 }]}>
         <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
-          <Text style={styles.backText}>←</Text>
+          <ArrowLeft size={24} color="#fff" strokeWidth={2.2} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Pending Invites</Text>
         {pendingInvites.length > 0 && (
@@ -137,7 +138,7 @@ const InvitesScreen = ({ navigation }: Props) => {
         contentContainerStyle={styles.listContent}
         ListEmptyComponent={
           <View style={styles.emptyState}>
-            <Text style={styles.emptyIcon}>📬</Text>
+            <Inbox size={40} color="#B9A9D6" strokeWidth={1.8} style={styles.emptyIcon} />
             <Text style={styles.emptyTitle}>No pending invites</Text>
             <Text style={styles.emptySubtitle}>You're all caught up!</Text>
           </View>

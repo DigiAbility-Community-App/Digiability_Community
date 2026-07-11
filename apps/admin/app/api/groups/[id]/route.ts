@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { dbPool } from "@/lib/db";
 import { requireAdminAuth } from "@/lib/auth";
+import { writeAudit } from "@/lib/audit";
 
 // GET — single group with members
 export async function GET(
@@ -108,10 +109,39 @@ export async function DELETE(
 
   try {
     const { id } = await params;
-    await dbPool.query(
-      `UPDATE chat.conversations SET "deletedAt" = NOW(), "updatedAt" = NOW() WHERE id = $1`,
-      [id]
-    );
+
+    // Go through chat-svc's internal API (not a raw SQL write) so the
+    // deletion goes through the real service layer and broadcasts a
+    // GROUP_DELETED WS event to every member in real time. Falls back to the
+    // direct DB write only if chat-svc/the internal secret isn't configured,
+    // so this doesn't hard-fail in an environment that hasn't set it up yet.
+    const chatSvcUrl = process.env.CHAT_SVC_URL;
+    const internalSecret = process.env.INTERNAL_API_SECRET;
+
+    if (chatSvcUrl && internalSecret) {
+      const res = await fetch(`${chatSvcUrl}/api/internal/conversations/${id}`, {
+        method: "DELETE",
+        headers: { "x-internal-secret": internalSecret },
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        return NextResponse.json(
+          { success: false, message: body.message || "Failed to delete group" },
+          { status: res.status }
+        );
+      }
+    } else {
+      console.warn(
+        "CHAT_SVC_URL/INTERNAL_API_SECRET not set — deleting group via direct DB write (no real-time propagation to members)."
+      );
+      await dbPool.query(
+        `UPDATE chat.conversations SET "deletedAt" = NOW(), "updatedAt" = NOW() WHERE id = $1`,
+        [id]
+      );
+    }
+
+    await writeAudit({ action: "delete_group", reason: `conversation ${id}` });
+
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("Group DELETE error:", error);

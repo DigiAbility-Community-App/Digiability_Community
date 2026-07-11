@@ -1,6 +1,6 @@
 import { useAuthStore } from '../store/authStore';
 import { useChatStore } from '../store/chatStore';
-import { chatService } from './chatService';
+import { chatService, CHAT_BASE_URL } from './chatService';
 
 let socket: WebSocket | null = null;
 let reconnectTimer: number | null = null;
@@ -9,11 +9,15 @@ let pingTimer: number | null = null;
 const RECONNECT_INTERVAL = 3000;
 const PING_INTERVAL = 15000;
 
+// Derive ws(s):// from CHAT_BASE_URL's http(s):// so a production
+// VITE_CHAT_SVC_URL (https://...) correctly upgrades to wss://, not ws://.
+const CHAT_WS_URL = CHAT_BASE_URL.replace(/^http/, 'ws');
+
 export const initSocket = () => {
   const token = useAuthStore.getState().accessToken;
   if (!token) return;
 
-  const wsUrl = `ws://localhost:4002/ws?token=${token}`;
+  const wsUrl = `${CHAT_WS_URL}/ws?token=${token}`;
 
   if (socket?.readyState === WebSocket.OPEN || socket?.readyState === WebSocket.CONNECTING) return;
 
@@ -104,6 +108,7 @@ const handleSocketEvent = (message: any) => {
         senderId: payload.senderId,
         content: payload.content,
         type: payload.type || 'TEXT',
+        metadata: payload.metadata,
         status: 'delivered',
         createdAt: payload.createdAt,
       });
@@ -132,6 +137,12 @@ const handleSocketEvent = (message: any) => {
       }
       break;
 
+    case 'group.deleted':
+      if (payload.conversationId) {
+        store.removeConversation(payload.conversationId);
+      }
+      break;
+
     case 'presence.update':
       store.updatePresence(payload.userId, payload.status, payload.lastSeen || new Date().toISOString());
       break;
@@ -156,6 +167,7 @@ const handleSocketEvent = (message: any) => {
             senderId: msg.senderId,
             content: msg.content,
             type: msg.type || 'TEXT',
+            metadata: msg.metadata,
             status: 'delivered',
             createdAt: msg.createdAt,
           });

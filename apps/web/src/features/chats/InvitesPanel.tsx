@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { X, Check, XCircle } from 'lucide-react';
+import { X, Check, XCircle, Users, Accessibility } from 'lucide-react';
 import { useChatStore, type GroupInvite } from '../../store/chatStore';
 import { chatService } from '../../services/chatService';
 import { useNavigate } from 'react-router-dom';
@@ -71,7 +71,7 @@ const InvitesPanel: React.FC<Props> = ({ onClose }) => {
 
               return (
                 <div key={invite.id} className="ip-invite-card">
-                  <div className="ip-invite-icon">{isCareCircle ? '🦽' : '👥'}</div>
+                  <div className="ip-invite-icon">{isCareCircle ? <Accessibility size={22} /> : <Users size={22} />}</div>
                   <div className="ip-invite-info">
                     <span className="ip-invite-name">{groupName}</span>
                     <span className="ip-invite-role">

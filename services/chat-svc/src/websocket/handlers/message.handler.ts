@@ -27,6 +27,7 @@ import { conversationRepository } from "../../repositories/conversation.reposito
 import { redis } from "../../config/redis";
 import { screenText } from "@digiability/moderation";
 import { keywordCache } from "../../moderation/keyword-cache";
+import { moderationRepository } from "../../repositories/moderation.repository";
 import {
   WS_EVENTS,
   WS_ERROR_CODES,
@@ -102,7 +103,25 @@ export async function handleMessageSend(
       }
     }
 
-    // ── 2c. Content moderation screen ─────────────────────────
+    // ── 2c. Block gate (DMs only) ──────────────────────────────
+    // If either party has blocked the other, reject the message.
+    if (conversation && conversation.type === "DIRECT") {
+      const memberIds = await conversationRepository.getMemberIds(conversationId);
+      const otherId = memberIds.find((id) => id !== userId);
+      if (otherId && (await moderationRepository.isBlockedEitherWay(userId, otherId))) {
+        sendAck(ws, {
+          clientMessageId,
+          messageId: "",
+          sequenceNo: 0,
+          status: "rejected",
+          reason: "You can't message this person",
+          timestamp: Date.now(),
+        }, requestId);
+        return;
+      }
+    }
+
+    // ── 2d. Content moderation screen ─────────────────────────
     // Only text messages carry user-supplied content. Image/file/audio
     // payloads are moderated asynchronously in Tier D.
     if (type === "TEXT" || !type) {

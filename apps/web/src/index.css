@@ -5,6 +5,13 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;600;700&display=swap');
 
 :root {
+  /* Tells the browser this page supports both schemes, so native form
+   * controls (select dropdowns/options, checkboxes, scrollbars) render with
+   * the matching UA palette instead of defaulting to light — without this,
+   * a dark-mode visitor gets light-colored custom text sitting on a
+   * browser-default WHITE native <select>/option background: invisible. */
+  color-scheme: light dark;
+
   /* Colors - Light Theme (Default) */
   --bg-base: #F8FAFC;
   --bg-surface: #FFFFFF;

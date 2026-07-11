@@ -1,6 +1,15 @@
 import apiClient from './apiClient';
 
-const CHAT_BASE_URL = (process.env.EXPO_PUBLIC_API_BASE_URL || 'http://10.0.2.2:4001').replace('4001', '4002');
+export const CHAT_BASE_URL = (process.env.EXPO_PUBLIC_API_BASE_URL || 'http://10.0.2.2:4001').replace('4001', '4002');
+
+// Resolve a media path/URL returned by the server. New uploads return a
+// host-relative path ("/uploads/x.jpg") which each client resolves against its
+// own chat-svc base; older absolute URLs pass through unchanged.
+export function resolveMediaUrl(pathOrUrl: string): string {
+  if (!pathOrUrl) return pathOrUrl;
+  if (/^https?:\/\//i.test(pathOrUrl)) return pathOrUrl;
+  return `${CHAT_BASE_URL}${pathOrUrl.startsWith('/') ? '' : '/'}${pathOrUrl}`;
+}
 
 export interface CommunityGroup {
   id: string;
@@ -119,6 +128,7 @@ export const chatService = {
         senderId: m.senderId,
         content: m.content,
         type: m.type || 'TEXT',
+        metadata: m.metadata,
         status: computedStatus,
         createdAt: m.createdAt,
       };
@@ -176,6 +186,39 @@ export const chatService = {
     return res.data.data;
   },
 
+  deleteGroup: async (conversationId: string) => {
+    const res = await apiClient.delete(`${CHAT_BASE_URL}/api/conversations/${conversationId}`);
+    return res.data;
+  },
+
+  // Upload a chat attachment (image or voice note). Returns the public URL.
+  uploadMedia: async (
+    file: { uri: string; name: string; type: string },
+    field: "image" | "audio"
+  ): Promise<{ url: string; kind: "IMAGE" | "AUDIO"; mimeType: string; size: number }> => {
+    const form = new FormData();
+    // React Native FormData file shape.
+    form.append(field, {
+      uri: file.uri,
+      name: file.name,
+      type: file.type,
+    } as any);
+    const res = await apiClient.post(`${CHAT_BASE_URL}/api/media/upload`, form, {
+      headers: { "Content-Type": "multipart/form-data" },
+    });
+    return res.data.data;
+  },
+
+  muteConversation: async (conversationId: string, muted: boolean) => {
+    const res = await apiClient.patch(`${CHAT_BASE_URL}/api/conversations/${conversationId}/mute`, { muted });
+    return res.data;
+  },
+
+  pinConversation: async (conversationId: string, pinned: boolean) => {
+    const res = await apiClient.patch(`${CHAT_BASE_URL}/api/conversations/${conversationId}/pin`, { pinned });
+    return res.data;
+  },
+
   updateMemberRole: async (conversationId: string, userId: string, role: string) => {
     const res = await apiClient.patch(`${CHAT_BASE_URL}/api/conversations/${conversationId}/members/${userId}/role`, { role });
     return res.data;
@@ -207,6 +250,24 @@ export const chatService = {
     return res.data;
   },
 
+  // Admin: list this group's invites (incl. AWAITING_APPROVAL join requests),
+  // with the requester's display name resolved from user-svc.
+  getGroupInvites: async (conversationId: string) => {
+    const res = await apiClient.get(`${CHAT_BASE_URL}/api/conversations/${conversationId}/invites`);
+    const invites: any[] = res.data.data || [];
+    const ids = [...new Set(invites.map((i) => i.inviteeId).filter(Boolean))];
+    let nameMap = new Map<string, string>();
+    if (ids.length > 0) {
+      try {
+        const lookup = await apiClient.post('/api/auth/users/batch', { ids });
+        for (const u of lookup.data.data.users) nameMap.set(u.id, u.name);
+      } catch {
+        // names are best-effort
+      }
+    }
+    return invites.map((i) => ({ ...i, inviteeName: nameMap.get(i.inviteeId) || 'Unknown user' }));
+  },
+
   // ─── Admin Controls ──────────────────────────
   removeMember: async (conversationId: string, userId: string) => {
     const res = await apiClient.delete(
@@ -228,6 +289,42 @@ export const chatService = {
       `${CHAT_BASE_URL}/api/conversations/join-requests/${inviteId}/approve`,
       { approve }
     );
+    return res.data;
+  },
+
+  // Presence is not pushed over WS, so fetch it on demand (e.g. when opening a chat).
+  getPresence: async (userId: string): Promise<{ status: string; lastSeen: string } | null> => {
+    try {
+      const res = await apiClient.get(`${CHAT_BASE_URL}/api/presence/${userId}`);
+      return res.data.data;
+    } catch {
+      return null;
+    }
+  },
+
+  // ─── Moderation ──────────────────────────────
+  blockUser: async (userId: string) => {
+    const res = await apiClient.post(`${CHAT_BASE_URL}/api/moderation/block`, { userId });
+    return res.data;
+  },
+
+  unblockUser: async (userId: string) => {
+    const res = await apiClient.delete(`${CHAT_BASE_URL}/api/moderation/block/${userId}`);
+    return res.data;
+  },
+
+  getBlockedIds: async (): Promise<string[]> => {
+    const res = await apiClient.get(`${CHAT_BASE_URL}/api/moderation/blocked`);
+    return res.data.data.blockedIds;
+  },
+
+  reportUser: async (payload: {
+    reportedUserId: string;
+    conversationId?: string;
+    messageId?: string;
+    reason: string;
+  }) => {
+    const res = await apiClient.post(`${CHAT_BASE_URL}/api/moderation/report`, payload);
     return res.data;
   },
 };

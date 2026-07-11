@@ -1,7 +1,9 @@
 import axios, { type AxiosError, type InternalAxiosRequestConfig } from 'axios';
 import { useAuthStore } from '../store/authStore';
 
-const BASE_URL = 'http://localhost:4001';
+// Vite only exposes env vars prefixed with VITE_, and only at build time —
+// set these in Vercel's project env vars, not at runtime.
+export const BASE_URL = import.meta.env.VITE_USER_SVC_URL || 'http://localhost:4001';
 
 export const REFRESH_TOKEN_KEY = 'digiability_refresh_token';
 
@@ -62,12 +64,40 @@ function processQueue(error: unknown, token: string | null) {
   pendingQueue = [];
 }
 
+interface BanResponseBody {
+  banned?: boolean;
+  permanent?: boolean;
+  suspendedUntil?: string | null;
+  reason?: string | null;
+}
+
 apiClient.interceptors.response.use(
   (response) => response,
   async (error: AxiosError) => {
     const originalRequest = error.config as InternalAxiosRequestConfig & {
       _retry?: boolean;
     };
+
+    // A banned/suspended account gets a 403 with `banned: true` from every
+    // service. Force logout and redirect to the suspended page — this
+    // catches a ban that lands mid-session, not just at login. (The login
+    // form itself handles the direct-login-attempt case separately, since
+    // that request never reaches an authenticated session to clear.)
+    const body = error.response?.data as BanResponseBody | undefined;
+    const isLoginRequest = originalRequest.url?.includes('/auth/login');
+    if (error.response?.status === 403 && body?.banned && !isLoginRequest) {
+      sessionStorage.setItem(
+        'digiability_ban_info',
+        JSON.stringify({
+          permanent: !!body.permanent,
+          suspendedUntil: body.suspendedUntil ?? null,
+          reason: body.reason ?? null,
+        })
+      );
+      useAuthStore.getState().clearAuth();
+      window.location.href = '/account-suspended';
+      return new Promise(() => {}); // navigation is about to tear this down
+    }
 
     const isAuthEndpoint =
       originalRequest.url?.includes('/auth/refresh') ||

@@ -2,6 +2,7 @@ import prisma from "../models/prisma.client";
 import { hashPassword, comparePassword } from "../utils/hash.util";
 import { signAccessToken } from "../utils/jwt.util";
 import { createError } from "../middleware/error.middleware";
+import { assertNotSuspended, isCurrentlySuspended } from "../utils/suspension.util";
 import {
   createEmailVerificationOtp,
   validateEmailVerificationOtp,
@@ -204,6 +205,7 @@ export async function loginUser(input: LoginInput): Promise<LoginResult> {
       id: true, name: true, email: true, password: true, phoneNo: true,
       roles: true, profileComplete: true, isEmailVerified: true,
       loginAttempts: true, lockedUntil: true, deletedAt: true,
+      isSuspended: true, suspendedUntil: true, suspensionReason: true,
     },
   });
   if (!user) throw createError("Invalid email or password", 400);
@@ -250,7 +252,10 @@ export async function loginUser(input: LoginInput): Promise<LoginResult> {
     throw createError("Please verify your email address before logging in.", 403);
   }
 
-  // 6. Reset lockout counters on successful login
+  // 6. Block suspended/banned accounts before issuing tokens
+  assertNotSuspended(user);
+
+  // 7. Reset lockout counters on successful login
   await prisma.user.update({
     where: { id: user.id },
     data: { loginAttempts: 0, lockedUntil: null, lastSeen: new Date() },
@@ -441,6 +446,9 @@ export async function getCurrentUser(userId: string) {
       profileComplete: true,
       lastSeen: true,
       isEmailVerified: true,
+      isSuspended: true,
+      suspendedUntil: true,
+      suspensionReason: true,
       createdAt: true,
       updatedAt: true,
     },
@@ -450,6 +458,7 @@ export async function getCurrentUser(userId: string) {
   return {
     ...user,
     role: user.roles[0] || null,
+    isSuspended: isCurrentlySuspended(user),
   };
 }
 

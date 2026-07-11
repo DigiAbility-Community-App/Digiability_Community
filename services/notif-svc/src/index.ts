@@ -18,7 +18,7 @@ import Expo, { ExpoPushMessage } from "expo-server-sdk";
 
 const REDIS_URL   = process.env.REDIS_URL   ?? "redis://:redis_secret@localhost:6379";
 const DATABASE_URL = process.env.DATABASE_URL ?? "";
-const PORT        = parseInt(process.env.PORT ?? "4003", 10);
+const PORT        = parseInt(process.env.PORT ?? "4004", 10);
 
 const STREAM   = "msg:notify";
 const F_STREAM = "forum:notify";

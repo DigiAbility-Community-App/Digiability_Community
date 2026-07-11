@@ -21,6 +21,7 @@ import { useAuthStore } from "@store/authStore";
 import { useChatStore } from "@store/chatStore";
 import ScreenWrapper from "../../components/layout/ScreenWrapper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { ArrowLeft, Heart, Users, X, Search, SearchX, Lightbulb, HeartHandshake } from "lucide-react-native";
 
 // ─────────────────────────────────────────────────────────
 // Create Group (Care Circle) Screen
@@ -279,7 +280,7 @@ const CreateGroupScreen = ({ navigation, route }: Props) => {
           style={styles.backBtn}
           onPress={() => navigation.goBack()}
         >
-          <Text style={styles.backText}>←</Text>
+          <ArrowLeft size={24} color="#fff" strokeWidth={2.2} />
         </TouchableOpacity>
 
         <View style={styles.headerCenter}>
@@ -302,7 +303,7 @@ const CreateGroupScreen = ({ navigation, route }: Props) => {
             <Text style={styles.sectionLabel}>{isCareCircle ? 'Circle Name' : 'Group Name'}</Text>
             <View style={styles.nameInputContainer}>
               <View style={styles.nameIconBox}>
-                <Text style={styles.nameIcon}>{isCareCircle ? '💜' : '👥'}</Text>
+                isCareCircle ? <Heart size={22} color="#8A38F5" strokeWidth={2} /> : <Users size={22} color="#8A38F5" strokeWidth={2} />
               </View>
               <TextInput
                 style={styles.nameInput}
@@ -376,7 +377,7 @@ const CreateGroupScreen = ({ navigation, route }: Props) => {
                         onPress={() => removeMember(m.user.id)}
                         hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                       >
-                        <Text style={styles.chipRemoveText}>✕</Text>
+                        <X size={12} color="#666" strokeWidth={2.5} />
                       </TouchableOpacity>
                     </View>
                     
@@ -412,7 +413,7 @@ const CreateGroupScreen = ({ navigation, route }: Props) => {
           <View style={styles.section}>
             <Text style={styles.sectionLabel}>Add Members</Text>
             <View style={styles.searchContainer}>
-              <Text style={styles.searchIcon}>🔍</Text>
+              <Search size={16} color="#9A93A8" strokeWidth={2} style={styles.searchIcon} />
               <TextInput
                 style={styles.searchInput}
                 placeholder="Search by name..."
@@ -434,7 +435,7 @@ const CreateGroupScreen = ({ navigation, route }: Props) => {
             {/* Search Results — shows all users by default, filtered when typing */}
             {hasSearched && !isSearching && searchQuery.trim().length > 0 && displayedResults.length === 0 && (
               <View style={styles.emptyState}>
-                <Text style={styles.emptyIcon}>🔎</Text>
+                <SearchX size={32} color="#B9A9D6" strokeWidth={1.8} style={styles.emptyIcon} />
                 <Text style={styles.emptyText}>
                   No members found for "{searchQuery}"
                 </Text>
@@ -458,7 +459,7 @@ const CreateGroupScreen = ({ navigation, route }: Props) => {
           {/* ── Info Banner ────────────────────────────────── */}
           {isCareCircle && (
             <View style={styles.infoBanner}>
-              <Text style={styles.infoIcon}>💡</Text>
+              <Lightbulb size={16} color="#8A38F5" strokeWidth={2} style={styles.infoIcon} />
               <Text style={styles.infoText}>
                 Care Circles help you stay connected with your support network.
                 Add caregivers, therapists, family members, or friends to create
@@ -480,7 +481,7 @@ const CreateGroupScreen = ({ navigation, route }: Props) => {
               <ActivityIndicator color="#fff" size="small" />
             ) : (
               <>
-                <Text style={styles.createBtnIcon}>🤝</Text>
+                <HeartHandshake size={18} color="#fff" strokeWidth={2} style={styles.createBtnIcon} />
                 <Text style={styles.createBtnText}>
                   {isCareCircle ? "Create Care Circle" : "Create Group"}
                 </Text>

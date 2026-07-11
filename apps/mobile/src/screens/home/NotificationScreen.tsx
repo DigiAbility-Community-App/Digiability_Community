@@ -16,6 +16,7 @@ import ScreenWrapper from "../../components/layout/ScreenWrapper";
 import AppHeader from "../../components/layout/AppHeader";
 import AppFooter from "../../components/layout/AppFooter";
 import { forumService } from "../../services/forumService";
+import { chatService } from "../../services/chatService";
 import { useChatStore } from "../../store/chatStore";
 
 // ─────────────────────────────────────────────
@@ -92,12 +93,21 @@ const NotificationsScreen = () => {
     const { colors, spacing, highContrast } = useTheme();
 
     const pendingInvites = useChatStore((s) => s.pendingInvites);
+    const setPendingInvites = useChatStore((s) => s.setPendingInvites);
 
     const [activeFilter, setActiveFilter] = useState<FilterCategory>("all");
     const [forumNotifs, setForumNotifs] = useState<UnifiedNotification[]>([]);
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
     const [error, setError] = useState("");
+
+    // Always fetch fresh invites when this screen opens — the store may be
+    // empty if the user navigated here without visiting the Chats screen first.
+    useEffect(() => {
+        chatService.getPendingInvites()
+            .then((invites) => setPendingInvites(invites))
+            .catch(console.error);
+    }, [setPendingInvites]);
 
     // ── Build invite notifications from chat store ──
     const inviteNotifs: UnifiedNotification[] = useMemo(() =>

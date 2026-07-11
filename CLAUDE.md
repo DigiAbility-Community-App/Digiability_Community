@@ -22,9 +22,7 @@ digiability-community/
 │   ├── user-svc/       Auth, users, profiles, events, mentors       :4001
 │   ├── chat-svc/       WebSocket, REST chat API, embedded workers   :4002
 │   ├── forum-svc/      Forum Q&A, Socket.io realtime                :4003
-│   ├── notif-svc/      Push notification worker (Redis consumer)    :4004
-│   ├── group-svc/      Stub — no DB schema, not in docker-compose
-│   └── app/            Stub placeholder — no implementation
+│   └── notif-svc/      Push notification worker (Redis consumer)    :4004
 ├── docker/
 │   └── postgres/init.sql   Runs once on first container boot
 ├── docker-compose.yml
@@ -32,7 +30,9 @@ digiability-community/
 └── package.json
 ```
 
-**Important stubs**: `group-svc`, `app`, `packages/types`, and `packages/utils` are scaffolded but contain minimal code. Group and Care Circle logic lives inside `chat-svc`. Services do **not** import from each other's source — they communicate over HTTP and Redis only.
+**Removed stubs**: `services/group-svc` (empty placeholder — Group/Care Circle logic lives entirely in `chat-svc`) and `services/app` (an abandoned parallel implementation, superseded by the user-svc/chat-svc/notif-svc split) were deleted — neither was wired into `docker-compose.yml`, referenced by any script, or imported anywhere. `packages/types` and `packages/utils` remain minimal stubs. Services do **not** import from each other's source — they communicate over HTTP and Redis only.
+
+**All four backend services now have Dockerfiles and are in `docker-compose.yml`**, including `forum-svc` (added — previously undeployable). `apps/admin` and `apps/web` are deployed to Vercel, not containerized.
 
 ---
 
@@ -61,6 +61,8 @@ docker compose --profile dev up -d pgadmin
 
 ### Local-only services (separate terminals)
 
+`forum-svc` now has a Dockerfile and runs via `docker compose up -d --build forum-svc` too — use the commands below only when you want hot-reload during development instead.
+
 ```bash
 cd services/forum-svc && npm run dev   # port 4003
 cd apps/web           && npm run dev   # port 3000
@@ -68,7 +70,7 @@ cd apps/admin         && npm run dev   # port 3001
 cd apps/mobile        && npx expo start
 ```
 
-`forum-svc`, `web`, `admin`, and `mobile` run locally (not in Docker) because they need hot-reload during development.
+`web`, `admin`, and `mobile` always run locally (or on Vercel/EAS) — never containerized. `forum-svc` runs locally here purely for hot-reload convenience.
 
 ### Logs
 
@@ -121,8 +123,10 @@ All services share a single PostgreSQL 16 instance (`digiability_db`) but use se
 |---|---|---|
 | `user-svc` | `public` | User, UserProfile, MentorProfile, RefreshToken, EmailVerificationToken, PasswordResetToken, DeviceToken, Event, MentorReview |
 | `chat-svc` | `chat` | Conversation, ConversationMember, Message, MessageRecipient, MessageReceipt, GroupInvite, OutboxEvent, HiddenMessage |
-| `forum-svc` | `forum` | ForumQuestion, ForumAnswer, ForumVote, ForumTag, ForumReport, ForumUserStats, Bookmark, Notification (plus local User/UserProfile mirror) |
+| `forum-svc` | `public` (shares with user-svc — see note below) | ForumQuestion, ForumAnswer, ForumVote, ForumTag, ForumReport, ForumUserStats, Bookmark, Notification, plus **stub mirrors** of user-svc's User/MentorProfile/etc. models |
 | `notif-svc` | — | No Prisma — uses raw `pg` Pool, reads `device_tokens` directly from `public` schema |
+
+**⚠️ `user-svc` and `forum-svc` share the `public` schema, and each one's `prisma db push` will silently DROP the other's tables/columns if their schemas don't fully agree.** `prisma db push` does a full declarative reconciliation of everything it can see in the target schema — any table or column present in the DB but absent from the Prisma file being pushed gets deleted, no warning beyond a data-loss prompt that's easy to `--accept-data-loss` past on autopilot. Both services' `schema.prisma` therefore declare **inert stub models** mirroring the other's tables (`MentorProfile`, `Event`, `DeviceToken`, `UserReport`, `AdminAuditLog` in forum-svc's file; `ForumQuestion`, `ForumAnswer`, etc. in user-svc's file) purely so each push sees the full picture and doesn't touch what it doesn't own. **If you add or change a model in either service that lives in `public`, mirror the exact same change into the other service's stub block, or the next `db push` on either side will drop it.** For production, prefer `prisma migrate deploy` (tracks history, only applies explicit migrations) over `db push` (full destructive diff) for exactly this reason.
 
 Each service with Prisma has its own `prisma/schema.prisma` and generates its client to `src/generated/client/` (not `node_modules`). Import as:
 ```typescript
@@ -153,13 +157,13 @@ cd services/user-svc && npm run db:seed-bot
 |---|---|---|
 | `user-svc` | 4001 | Docker |
 | `chat-svc` | 4002 | Docker |
-| `forum-svc` | 4003 | Local |
+| `forum-svc` | 4003 | Docker (or local for hot-reload) |
 | `notif-svc` | 4004 | Docker |
 | PostgreSQL | 5432 | Docker |
 | Redis | 6379 | Docker |
 | pgAdmin | 5050 | Docker (`--profile dev`) |
-| `web` | 3000 | Local |
-| `admin` | 3001 | Local |
+| `web` | 3000 | Local dev / Vercel in production |
+| `admin` | 3001 | Local dev / Vercel in production |
 
 ### How services communicate
 

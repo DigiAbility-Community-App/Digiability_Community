@@ -47,6 +47,9 @@ import presenceRoutes from "./routes/presence.routes";
 import inviteRoutes from "./routes/invite.routes";
 import internalRoutes from "./routes/internal.routes";
 import { keywordCache } from "./moderation/keyword-cache";
+import mediaRoutes from "./routes/media.routes";
+import moderationRoutes from "./routes/moderation.routes";
+import path from "path";
 
 // ─── Express Application ──────────────────────────────────────
 
@@ -93,6 +96,11 @@ app.use("/api/messages", messageRoutes);
 app.use("/api/presence", presenceRoutes);
 app.use("/api/invites", inviteRoutes);
 app.use("/api/internal", internalRoutes);
+app.use("/api/media", mediaRoutes);
+app.use("/api/moderation", moderationRoutes);
+
+// Serve uploaded chat attachments (images + voice notes).
+app.use("/uploads", express.static(path.join(__dirname, "../uploads")));
 
 // 404 + Error Handlers
 app.use(notFoundHandler);

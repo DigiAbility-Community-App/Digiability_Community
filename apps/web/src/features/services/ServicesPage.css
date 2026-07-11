@@ -1,6 +1,6 @@
 .services-container {
   flex: 1;
-  background-color: var(--color-bg);
+  background-color: var(--bg-base);
   padding: 32px 40px;
   overflow-y: auto;
 }
@@ -12,12 +12,12 @@
 .services-header h2 {
   font-size: 1.5rem;
   font-weight: 700;
-  color: var(--color-text);
+  color: var(--text-primary);
   margin: 0;
 }
 
 .services-header p {
-  color: var(--color-subtext);
+  color: var(--text-secondary);
   margin: 4px 0 0;
   font-size: 0.95rem;
 }
@@ -33,12 +33,12 @@
 .service-category-btn {
   padding: 8px 16px;
   border-radius: 20px;
-  background-color: #FFFFFF;
-  border: 1px solid var(--color-border);
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-color);
   cursor: pointer;
   white-space: nowrap;
   font-weight: 600;
-  color: var(--color-subtext);
+  color: var(--text-secondary);
   transition: all 0.2s;
   display: flex;
   align-items: center;
@@ -52,7 +52,7 @@
 .service-category-btn.active {
   background-color: var(--color-primary-subtle);
   border-color: rgba(138, 56, 245, 0.4);
-  color: var(--color-primary-dark);
+  color: var(--color-primary-hover);
 }
 
 .services-grid {
@@ -62,14 +62,14 @@
 }
 
 .service-card {
-  background: #ffffff;
+  background: var(--bg-surface);
   border-radius: var(--radius-lg);
   padding: 20px;
   box-shadow: 0 4px 12px rgba(80, 0, 136, 0.04);
   display: flex;
   flex-direction: column;
   transition: transform 0.2s, box-shadow 0.2s;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--border-color);
 }
 
 .service-card:hover {
@@ -87,7 +87,7 @@
   width: 48px;
   height: 48px;
   border-radius: 12px;
-  background-color: #F1F5F9;
+  background-color: var(--bg-base);
   display: flex;
   justify-content: center;
   align-items: center;
@@ -98,7 +98,7 @@
 .provider-info h3 {
   font-size: 1.1rem;
   font-weight: 700;
-  color: var(--color-text);
+  color: var(--text-primary);
   margin: 0 0 4px 0;
 }
 
@@ -114,7 +114,7 @@
 
 .service-desc {
   font-size: 0.9rem;
-  color: var(--color-subtext);
+  color: var(--text-secondary);
   line-height: 1.5;
   margin-bottom: 16px;
   flex: 1;
@@ -132,7 +132,7 @@
   align-items: center;
   gap: 8px;
   font-size: 0.85rem;
-  color: var(--color-subtext);
+  color: var(--text-secondary);
 }
 
 .meta-item svg {
@@ -143,13 +143,13 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  border-top: 1px solid var(--color-border);
+  border-top: 1px solid var(--border-color);
   padding-top: 16px;
 }
 
 .service-price {
   font-weight: 700;
-  color: var(--color-text);
+  color: var(--text-primary);
 }
 
 .contact-btn {
@@ -168,5 +168,5 @@
 }
 
 .contact-btn:hover {
-  background-color: var(--color-primary-dark);
+  background-color: var(--color-primary-hover);
 }

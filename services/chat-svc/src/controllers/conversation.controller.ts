@@ -172,6 +172,18 @@ export const removeMember = asyncHandler(async (req: Request, res: Response) => 
   });
 });
 
+export const deleteGroup = asyncHandler(async (req: Request, res: Response) => {
+  const user = (req as AuthenticatedRequest).user;
+  const { conversationId } = req.params;
+
+  await conversationService.deleteGroup(conversationId, user.sub);
+
+  res.status(200).json({
+    success: true,
+    message: "Group deleted successfully",
+  });
+});
+
 export const updateGroupInfo = asyncHandler(async (req: Request, res: Response) => {
   const user = (req as AuthenticatedRequest).user;
   const { conversationId } = req.params;

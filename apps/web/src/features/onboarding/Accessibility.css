@@ -1,0 +1,184 @@
+.accessibility-container {
+  display: flex;
+  flex-direction: column;
+}
+
+.accessibility-container.high-contrast {
+  background: #000;
+  color: #fff;
+}
+
+.accessibility-container.high-contrast .preference-card {
+  background: #000;
+  border-color: #fff;
+}
+
+.accessibility-container.high-contrast .onboarding-title,
+.accessibility-container.high-contrast .pref-info h3 {
+  color: #fff;
+}
+
+.onboarding-header {
+  margin-bottom: 2rem;
+}
+
+.progress-bar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.progress-step {
+  height: 8px;
+  width: 8px;
+  border-radius: 4px;
+  background-color: rgba(207, 194, 212, 0.4);
+}
+
+.progress-step.active {
+  width: 24px;
+  background-color: var(--color-primary);
+}
+
+.onboarding-title {
+  font-size: 1.75rem;
+  font-weight: 700;
+  margin-bottom: 0.5rem;
+  color: var(--text-primary);
+}
+
+.onboarding-subtitle {
+  font-size: 1rem;
+  color: var(--text-secondary);
+  margin-bottom: 2rem;
+}
+
+.onboarding-section {
+  margin-bottom: 2rem;
+}
+
+.section-label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--color-primary);
+  letter-spacing: 1.2px;
+  margin-bottom: 1rem;
+}
+
+.preference-card {
+  background: var(--bg-surface);
+  border: 1px solid rgba(0, 0, 0, 0.05);
+  border-radius: 16px;
+  padding: 1rem;
+  margin-bottom: 0.75rem;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02);
+}
+
+.preference-card.horizontal {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.pref-info h3 {
+  font-size: 1rem;
+  font-weight: 700;
+  margin: 0 0 0.25rem 0;
+  color: var(--text-primary);
+}
+
+.pref-info p {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.segment-control {
+  display: flex;
+  background: var(--bg-base);
+  border-radius: 12px;
+  padding: 4px;
+  margin-top: 1rem;
+}
+
+.segment-btn {
+  flex: 1;
+  border: none;
+  background: transparent;
+  padding: 0.5rem;
+  border-radius: 8px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.segment-btn.active {
+  background: var(--color-primary);
+  color: #FFF;
+}
+
+.accessibility-container.high-contrast .segment-control {
+  background: #000;
+  border: 1px solid #fff;
+}
+.accessibility-container.high-contrast .segment-btn.active {
+  background: #fff;
+  color: #000;
+}
+
+/* Toggle Switch Styles */
+.toggle-switch {
+  position: relative;
+  display: inline-block;
+  width: 44px;
+  height: 24px;
+}
+
+.toggle-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: #ccc;
+  transition: .4s;
+}
+
+.slider:before {
+  position: absolute;
+  content: "";
+  height: 18px;
+  width: 18px;
+  left: 3px;
+  bottom: 3px;
+  background-color: white;
+  transition: .4s;
+}
+
+input:checked + .slider {
+  background-color: var(--color-primary);
+}
+
+input:focus + .slider {
+  box-shadow: 0 0 1px var(--color-primary);
+}
+
+input:checked + .slider:before {
+  transform: translateX(20px);
+}
+
+.slider.round {
+  border-radius: 24px;
+}
+
+.slider.round:before {
+  border-radius: 50%;
+}

@@ -3,6 +3,7 @@
   "compilerOptions": {
     "target": "esnext",
     "module": "esnext",
+    "ignoreDeprecations": "5.0",
     "lib": [
       "esnext"
     ],

@@ -1,6 +1,15 @@
 import apiClient from './apiClient';
 
-const CHAT_BASE_URL = 'http://localhost:4002';
+export const CHAT_BASE_URL = import.meta.env.VITE_CHAT_SVC_URL || 'http://localhost:4002';
+
+// Resolve a media path/URL returned by the server. New uploads return a
+// host-relative path ("/uploads/x.jpg") resolved against this base; older
+// absolute URLs pass through unchanged.
+export function resolveMediaUrl(pathOrUrl: string): string {
+  if (!pathOrUrl) return pathOrUrl;
+  if (/^https?:\/\//i.test(pathOrUrl)) return pathOrUrl;
+  return `${CHAT_BASE_URL}${pathOrUrl.startsWith('/') ? '' : '/'}${pathOrUrl}`;
+}
 
 export const chatService = {
   getConversations: async () => {
@@ -69,10 +78,25 @@ export const chatService = {
         senderId: m.senderId,
         content: m.content,
         type: m.type || 'TEXT',
+        metadata: m.metadata,
         status: computedStatus,
         createdAt: m.createdAt,
       };
     });
+  },
+
+  // Upload a chat attachment (image or voice note). Returns the public URL.
+  uploadMedia: async (
+    file: Blob,
+    field: 'image' | 'audio',
+    filename: string
+  ): Promise<{ url: string; kind: 'IMAGE' | 'AUDIO'; mimeType: string; size: number }> => {
+    const form = new FormData();
+    form.append(field, file, filename);
+    const res = await apiClient.post(`${CHAT_BASE_URL}/api/media/upload`, form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return res.data.data;
   },
 
   searchUsers: async (query: string) => {
@@ -120,6 +144,11 @@ export const chatService = {
     return res.data.data;
   },
 
+  deleteGroup: async (conversationId: string) => {
+    const res = await apiClient.delete(`${CHAT_BASE_URL}/api/conversations/${conversationId}`);
+    return res.data;
+  },
+
   updateMemberRole: async (conversationId: string, userId: string, role: string) => {
     const res = await apiClient.patch(
       `${CHAT_BASE_URL}/api/conversations/${conversationId}/members/${userId}/role`,
@@ -150,6 +179,24 @@ export const chatService = {
     return res.data;
   },
 
+  // Admin: list this group's invites (incl. AWAITING_APPROVAL join requests),
+  // with the requester's display name resolved from user-svc.
+  getGroupInvites: async (conversationId: string) => {
+    const res = await apiClient.get(`${CHAT_BASE_URL}/api/conversations/${conversationId}/invites`);
+    const invites: any[] = res.data.data || [];
+    const ids = [...new Set(invites.map((i) => i.inviteeId).filter(Boolean))];
+    const nameMap = new Map<string, string>();
+    if (ids.length > 0) {
+      try {
+        const lookup = await apiClient.post('/api/auth/users/batch', { ids });
+        for (const u of lookup.data.data.users) nameMap.set(u.id, u.name);
+      } catch {
+        // names are best-effort
+      }
+    }
+    return invites.map((i) => ({ ...i, inviteeName: nameMap.get(i.inviteeId) || 'Unknown user' }));
+  },
+
   removeMember: async (conversationId: string, userId: string) => {
     const res = await apiClient.delete(
       `${CHAT_BASE_URL}/api/conversations/${conversationId}/members/${userId}`
@@ -170,6 +217,42 @@ export const chatService = {
       `${CHAT_BASE_URL}/api/conversations/join-requests/${inviteId}/approve`,
       { approve }
     );
+    return res.data;
+  },
+
+  // Presence is not pushed over WS, so fetch it on demand (e.g. when opening a chat).
+  getPresence: async (userId: string): Promise<{ status: string; lastSeen: string } | null> => {
+    try {
+      const res = await apiClient.get(`${CHAT_BASE_URL}/api/presence/${userId}`);
+      return res.data.data;
+    } catch {
+      return null;
+    }
+  },
+
+  // ─── Moderation ──────────────────────────────
+  blockUser: async (userId: string) => {
+    const res = await apiClient.post(`${CHAT_BASE_URL}/api/moderation/block`, { userId });
+    return res.data;
+  },
+
+  unblockUser: async (userId: string) => {
+    const res = await apiClient.delete(`${CHAT_BASE_URL}/api/moderation/block/${userId}`);
+    return res.data;
+  },
+
+  getBlockedIds: async (): Promise<string[]> => {
+    const res = await apiClient.get(`${CHAT_BASE_URL}/api/moderation/blocked`);
+    return res.data.data.blockedIds;
+  },
+
+  reportUser: async (payload: {
+    reportedUserId: string;
+    conversationId?: string;
+    messageId?: string;
+    reason: string;
+  }) => {
+    const res = await apiClient.post(`${CHAT_BASE_URL}/api/moderation/report`, payload);
     return res.data;
   },
 

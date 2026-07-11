@@ -15,6 +15,7 @@ import { ChatsStackParamList } from "@navigation/ChatsStack";
 import { chatService } from "@services/chatService";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import ScreenWrapper from "../../components/layout/ScreenWrapper";
+import { ArrowLeft, Search, SearchX, MessageCircle } from "lucide-react-native";
 
 type Props = NativeStackScreenProps<ChatsStackParamList, "NewChat">;
 
@@ -83,7 +84,7 @@ const NewChatScreen = ({ navigation }: Props) => {
       navigation.replace("Chat", {
         conversationId: conversation.id,
         recipientName: selectedUser.name,
-        recipientAvatar: "👤",
+        recipientAvatar: "",
       });
     } catch (err: any) {
       console.error("Failed to start chat:", err);
@@ -107,7 +108,7 @@ const NewChatScreen = ({ navigation }: Props) => {
         <Text style={styles.resultEmail}>{item.email}</Text>
       </View>
       <View style={styles.addBtnSmall}>
-        <Text style={styles.addBtnSmallText}>✉️</Text>
+        <MessageCircle size={18} color="#8A38F5" strokeWidth={2} />
       </View>
     </TouchableOpacity>
   );
@@ -116,7 +117,7 @@ const NewChatScreen = ({ navigation }: Props) => {
     <ScreenWrapper statusBarStyle="light">
       <Animated.View style={[styles.header, { paddingTop: insets.top + 8, opacity: headerAnim, transform: [{ translateY: headerAnim.interpolate({ inputRange: [0, 1], outputRange: [-20, 0] }) }] }]}>
         <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
-          <Text style={styles.backText}>←</Text>
+          <ArrowLeft size={24} color="#fff" strokeWidth={2.2} />
         </TouchableOpacity>
         <View style={styles.headerCenter}>
           <Text style={styles.headerTitle}>New Chat</Text>
@@ -127,7 +128,7 @@ const NewChatScreen = ({ navigation }: Props) => {
       <KeyboardAwareScrollView style={styles.content} keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 100, flexGrow: 1 }}>
         <View style={styles.section}>
           <View style={styles.searchContainer}>
-            <Text style={styles.searchIcon}>🔍</Text>
+            <Search size={16} color="#1a1a1a" strokeWidth={2} style={styles.searchIcon} />
             <TextInput
               style={styles.searchInput}
               placeholder="Search by name..."
@@ -142,7 +143,7 @@ const NewChatScreen = ({ navigation }: Props) => {
           
           {hasSearched && !isSearching && searchResults.length === 0 && (
             <View style={styles.emptyState}>
-              <Text style={styles.emptyIcon}>🔎</Text>
+              <SearchX size={32} color="#666" strokeWidth={1.8} style={styles.emptyIcon} />
               <Text style={styles.emptyText}>No members found for "{searchQuery}"</Text>
             </View>
           )}

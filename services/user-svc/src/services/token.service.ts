@@ -4,6 +4,8 @@ import { generateToken, hashToken } from "../utils/hash.util";
 import { signAccessToken, decodeToken } from "../utils/jwt.util";
 import { revokeJti } from "../config/redis";
 import { auditLog } from "./audit.service";
+import { createError } from "../middleware/error.middleware";
+import { assertNotSuspended } from "../utils/suspension.util";
 
 // ─────────────────────────────────────────────────────
 // Token Service
@@ -61,10 +63,21 @@ export async function validateRefreshToken(rawToken: string) {
 
   const stored = await prisma.refreshToken.findFirst({
     where: { tokenHash },
-    include: { user: { select: { id: true, email: true } } },
+    include: {
+      user: {
+        select: {
+          id: true,
+          email: true,
+          deletedAt: true,
+          isSuspended: true,
+          suspendedUntil: true,
+          suspensionReason: true,
+        },
+      },
+    },
   });
 
-  if (!stored) throw new Error("Invalid refresh token");
+  if (!stored) throw createError("Invalid refresh token", 401);
 
   if (stored.revoked) {
     // Reuse of a rotated token: revoke the entire family to invalidate
@@ -77,10 +90,17 @@ export async function validateRefreshToken(rawToken: string) {
       userId: stored.userId,
       detail: { familyId: stored.familyId },
     });
-    throw new Error("Refresh token reuse detected. All sessions have been revoked.");
+    throw createError("Refresh token reuse detected. All sessions have been revoked.", 401);
   }
 
-  if (stored.expiresAt < new Date()) throw new Error("Refresh token expired");
+  if (stored.expiresAt < new Date()) throw createError("Refresh token expired", 401);
+  if (!stored.user || stored.user.deletedAt !== null) {
+    throw createError("Account not found or has been deleted.", 401);
+  }
+
+  // A ban must survive an existing session: block token refresh too, so a
+  // suspended user is fully logged out within one access-token lifetime.
+  assertNotSuspended(stored.user);
 
   return stored;
 }

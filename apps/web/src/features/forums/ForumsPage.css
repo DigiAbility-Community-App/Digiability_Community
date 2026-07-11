@@ -1,6 +1,6 @@
 .forums-container {
   flex: 1;
-  background-color: var(--color-bg);
+  background-color: var(--bg-base);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -8,14 +8,14 @@
 
 .search-section {
   padding: 24px 40px 16px;
-  background-color: #FFFFFF;
-  border-bottom: 1px solid var(--color-border);
+  background-color: var(--bg-surface);
+  border-bottom: 1px solid var(--border-color);
 }
 
 .search-bar {
   display: flex;
   align-items: center;
-  background-color: var(--color-bg);
+  background-color: var(--bg-base);
   border-radius: var(--radius-md);
   padding: 10px 16px;
   margin-bottom: 16px;
@@ -27,7 +27,7 @@
   background: none;
   padding: 8px;
   font-size: 0.95rem;
-  color: var(--color-text);
+  color: var(--text-primary);
   outline: none;
 }
 
@@ -43,26 +43,26 @@
 }
 
 .category-scroll::-webkit-scrollbar-thumb {
-  background: #E2E8F0;
+  background: var(--border-color);
   border-radius: 4px;
 }
 
 .category-btn {
   padding: 8px 16px;
   border-radius: 20px;
-  background-color: var(--color-bg);
+  background-color: var(--bg-base);
   border: 1px solid transparent;
   cursor: pointer;
   white-space: nowrap;
   font-weight: 600;
-  color: var(--color-subtext);
+  color: var(--text-secondary);
   transition: all 0.2s;
 }
 
 .active-category-btn {
   background-color: var(--color-primary-subtle);
   border-color: rgba(138, 56, 245, 0.4);
-  color: var(--color-primary-dark);
+  color: var(--color-primary-hover);
 }
 
 .sort-row {
@@ -70,13 +70,13 @@
   justify-content: space-between;
   align-items: center;
   padding-top: 12px;
-  border-top: 1px solid var(--color-border);
+  border-top: 1px solid var(--border-color);
 }
 
 .sort-label {
   font-size: 0.75rem;
   font-weight: 800;
-  color: #9CA3AF;
+  color: var(--text-tertiary);
   letter-spacing: 0.5px;
   text-transform: uppercase;
 }
@@ -94,7 +94,7 @@
   cursor: pointer;
   font-size: 0.8rem;
   font-weight: 700;
-  color: var(--color-subtext);
+  color: var(--text-secondary);
 }
 
 .active-sort-btn {
@@ -109,7 +109,7 @@
 }
 
 .question-card {
-  background-color: #FFFFFF;
+  background-color: var(--bg-surface);
   border-radius: var(--radius-lg);
   padding: 20px;
   margin-bottom: 16px;
@@ -140,7 +140,7 @@
   height: 28px;
   border-radius: 8px;
   background-color: var(--color-primary-subtle);
-  color: var(--color-primary-dark);
+  color: var(--color-primary-hover);
   display: flex;
   justify-content: center;
   align-items: center;
@@ -151,24 +151,24 @@
 .author-name {
   font-weight: 600;
   font-size: 0.9rem;
-  color: var(--color-text);
+  color: var(--text-primary);
 }
 
 .question-time {
   font-size: 0.8rem;
-  color: var(--color-subtext);
+  color: var(--text-secondary);
 }
 
 .question-title {
   font-size: 1.15rem;
   font-weight: 700;
-  color: var(--color-text);
+  color: var(--text-primary);
   margin: 0 0 8px 0;
 }
 
 .question-desc {
   font-size: 0.95rem;
-  color: var(--color-subtext);
+  color: var(--text-secondary);
   margin: 0 0 16px 0;
   line-height: 1.5;
   display: -webkit-box;
@@ -181,13 +181,13 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  border-top: 1px solid var(--color-border);
+  border-top: 1px solid var(--border-color);
   padding-top: 12px;
 }
 
 .tag-badge {
-  background-color: #F1F5F9;
-  color: #475569;
+  background-color: var(--bg-base);
+  color: var(--text-secondary);
   padding: 4px 10px;
   border-radius: 12px;
   font-size: 0.75rem;
@@ -197,7 +197,7 @@
 .stats-row {
   display: flex;
   gap: 16px;
-  color: var(--color-subtext);
+  color: var(--text-secondary);
   font-size: 0.85rem;
 }
 

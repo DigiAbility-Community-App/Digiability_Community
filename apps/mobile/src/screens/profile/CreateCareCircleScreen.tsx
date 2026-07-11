@@ -49,7 +49,7 @@ const CreateCareCircleScreen = () => {
     if (!validate()) return;
     setLoading(true);
     try {
-      const created = await chatService.createCareCircle(name.trim(), description.trim(), []);
+      const created = await chatService.createCareCircle(name.trim(), description.trim());
       // Reset to MainTabs + open the new care circle chat so the user lands directly in it
       navigation.reset({
         index: 1,

@@ -20,9 +20,15 @@ const VerifyEmail = () => {
   useEffect(() => {
     // If already verified, redirect
     if (user?.isEmailVerified) {
-      navigate('/app/chats');
+      if (!user.roles || user.roles.length === 0) {
+        navigate('/onboarding/accessibility');
+      } else if (!user.profileComplete) {
+        navigate('/onboarding/profile');
+      } else {
+        navigate('/app/chats');
+      }
     }
-  }, [user?.isEmailVerified, navigate]);
+  }, [user, navigate]);
 
   const handleChange = (index: number, value: string) => {
     if (!/^\d*$/.test(value)) return; // only digits
@@ -75,8 +81,16 @@ const VerifyEmail = () => {
       });
       
       // Update user in store
-      setUser({ ...user, isEmailVerified: true });
-      navigate('/app/chats');
+      const updatedUser = { ...user, isEmailVerified: true };
+      setUser(updatedUser);
+      
+      if (!updatedUser.roles || updatedUser.roles.length === 0) {
+        navigate('/onboarding/accessibility');
+      } else if (!updatedUser.profileComplete) {
+        navigate('/onboarding/profile');
+      } else {
+        navigate('/app/chats');
+      }
     } catch (err: any) {
       setError(err.response?.data?.message || 'Failed to verify email. Please try again.');
     } finally {

@@ -36,6 +36,10 @@ type ApiErrorShape = {
   response?: {
     data?: {
       message?: string;
+      banned?: boolean;
+      permanent?: boolean;
+      suspendedUntil?: string | null;
+      reason?: string | null;
       errors?: Array<{
         field?: string;
         message?: string;
@@ -43,6 +47,16 @@ type ApiErrorShape = {
     };
   };
 };
+
+function getBanInfo(error: unknown) {
+  const data = (error as ApiErrorShape).response?.data;
+  if (!data?.banned) return null;
+  return {
+    permanent: !!data.permanent,
+    suspendedUntil: data.suspendedUntil ?? null,
+    reason: data.reason ?? null,
+  };
+}
 
 function getApiErrorMessage(error: unknown, fallback: string) {
   const apiError = error as ApiErrorShape;
@@ -168,7 +182,12 @@ const WelcomeScreen = ({ navigation }: Props) => {
       });
     } catch (err: unknown) {
       console.error("[LoginError]", err);
-      setError(getApiErrorMessage(err, "Login failed."));
+      const banInfo = getBanInfo(err);
+      if (banInfo) {
+        navigation.navigate("AccountSuspended", banInfo);
+      } else {
+        setError(getApiErrorMessage(err, "Login failed."));
+      }
     } finally {
       setLoading(false);
     }

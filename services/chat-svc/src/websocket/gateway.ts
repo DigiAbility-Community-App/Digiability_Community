@@ -32,6 +32,7 @@ import { routeEvent } from "./event-router";
 import { WS_EVENTS, WS_ERROR_CODES } from "../types/ws-events";
 import type { WsEnvelope } from "../types/ws-events";
 import type { AuthenticatedUser } from "../types/common.types";
+import { checkSuspended } from "../utils/suspension.util";
 
 /**
  * Attach WebSocket server to an existing HTTP server.
@@ -41,7 +42,7 @@ export function attachWebSocketGateway(httpServer: HttpServer): WebSocketServer 
   const wss = new WebSocketServer({ noServer: true });
 
   // Handle HTTP upgrade requests manually for auth
-  httpServer.on("upgrade", (request: IncomingMessage, socket, head) => {
+  httpServer.on("upgrade", async (request: IncomingMessage, socket, head) => {
     const pathname = parsePathname(request);
 
     // Only handle upgrades on /ws path
@@ -64,6 +65,21 @@ export function attachWebSocketGateway(httpServer: HttpServer): WebSocketServer 
       socket.write("HTTP/1.1 401 Unauthorized\r\nContent-Type: text/plain\r\n\r\nInvalid or expired token\n");
       socket.destroy();
       return;
+    }
+
+    // Block suspended/banned accounts from opening a new WS session. (An
+    // already-open socket from before the ban isn't force-closed here — that
+    // would need a separate broadcast — but no NEW connection is possible.)
+    try {
+      const suspension = await checkSuspended(user.sub);
+      if (suspension) {
+        socket.write("HTTP/1.1 403 Forbidden\r\nContent-Type: text/plain\r\n\r\nAccount suspended\n");
+        socket.destroy();
+        return;
+      }
+    } catch (err) {
+      logger.error("WS suspension check failed", { error: err instanceof Error ? err.message : String(err) });
+      // Fail open — don't take down chat for everyone on a transient DB error.
     }
 
     // Extract device ID (required for multi-device tracking)

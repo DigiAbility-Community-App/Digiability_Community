@@ -1,0 +1,72 @@
+.profile-completion-container {
+  display: flex;
+  flex-direction: column;
+}
+
+.username-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8rem;
+  margin-top: 6px;
+}
+
+.username-status.checking {
+  color: var(--color-primary);
+}
+
+.username-status.available {
+  color: var(--color-success);
+}
+
+.username-status.taken,
+.username-status.invalid {
+  color: var(--color-danger);
+}
+
+.form-group {
+  margin-bottom: 1.25rem;
+}
+
+.form-label {
+  display: block;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 0.5rem;
+}
+
+.form-input {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  background: var(--bg-base);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 12px;
+  font-size: 1rem;
+  color: var(--text-primary);
+  transition: all 0.2s ease;
+}
+
+.form-input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  background: var(--bg-surface);
+  box-shadow: 0 0 0 3px rgba(107, 33, 168, 0.1);
+}
+
+.form-input:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.error-message {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+  background: var(--color-danger-bg);
+  color: var(--color-danger);
+  border-radius: 12px;
+  font-size: 0.875rem;
+  font-weight: 500;
+}

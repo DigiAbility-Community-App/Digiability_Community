@@ -245,16 +245,17 @@ function hasRequiredRoleFields(roles: string[] | string | undefined | null, body
 router.post('/details', validate(profileDetailsSchema), async (req: Request, res: Response) => {
   try {
     const userId = getUserIdFromAuthToken(req);
-    const { roles: bodyRoles, ...detailsData } = req.body;
+    // `roles` may be present in the body in whatever label dialect the
+    // calling client uses (e.g. frontend "educator" vs backend "therapist")
+    // — always ignore it and read the authoritative, already-backend-mapped
+    // value from the DB instead. Trusting the client value here previously
+    // caused profileComplete to silently never get set for any role beyond
+    // pwd/caregiver (the two labels that happen to match both dialects).
+    const { roles: _bodyRoles, ...detailsData } = req.body;
     const profile = await profileService.upsertProfileDetails(userId, detailsData);
 
-    // Prefer roles passed in the request body to avoid an extra DB round-trip
-    let rolesToCheck = bodyRoles;
-    if (!rolesToCheck) {
-      const userRecord = await profileService.getUserWithProfile(userId);
-      rolesToCheck = userRecord?.roles;
-    }
-    if (hasRequiredRoleFields(rolesToCheck, req.body)) {
+    const userRecord = await profileService.getUserWithProfile(userId);
+    if (hasRequiredRoleFields(userRecord?.roles, req.body)) {
       await profileService.markAsComplete(userId);
     }
 
@@ -275,15 +276,12 @@ router.post('/details', validate(profileDetailsSchema), async (req: Request, res
 router.put('/details', validate(profileDetailsSchema), async (req: Request, res: Response) => {
   try {
     const userId = getUserIdFromAuthToken(req);
-    const { roles: bodyRoles, ...detailsData } = req.body;
+    // See the POST handler above for why bodyRoles is intentionally ignored.
+    const { roles: _bodyRoles, ...detailsData } = req.body;
     const profile = await profileService.upsertProfileDetails(userId, detailsData);
 
-    let rolesToCheck = bodyRoles;
-    if (!rolesToCheck) {
-      const userRecord = await profileService.getUserWithProfile(userId);
-      rolesToCheck = userRecord?.roles;
-    }
-    if (hasRequiredRoleFields(rolesToCheck, req.body)) {
+    const userRecord = await profileService.getUserWithProfile(userId);
+    if (hasRequiredRoleFields(userRecord?.roles, req.body)) {
       await profileService.markAsComplete(userId);
     }
 

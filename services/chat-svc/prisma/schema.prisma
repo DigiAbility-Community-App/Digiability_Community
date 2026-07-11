@@ -289,3 +289,45 @@ model HiddenMessage {
   @@map("hidden_messages")
 }
 
+// ─────────────────────────────────────────────
+// BLOCKED USER
+// blockerId has blocked blockedId. Enforced on DM send:
+// a blocked user cannot message the blocker and vice-versa.
+// ─────────────────────────────────────────────
+model BlockedUser {
+  id        String   @id @default(uuid())
+  blockerId String
+  blockedId String
+  createdAt DateTime @default(now())
+
+  @@unique([blockerId, blockedId])
+  @@index([blockerId])
+  @@index([blockedId])
+  @@map("blocked_users")
+}
+
+// ─────────────────────────────────────────────
+// REPORT
+// A user report against another user or a specific message.
+// Surfaced to admins in the moderation panel.
+// ─────────────────────────────────────────────
+model Report {
+  id             String   @id @default(uuid())
+  reporterId     String
+  reportedUserId String
+  conversationId String?
+  messageId      String?
+  // Immutable snapshot of the reported message at report time — content and
+  // sequence survive even if the message is later edited/deleted, so the
+  // evidence an admin reviews can't disappear out from under the report.
+  messageContent  String?
+  messageSequence BigInt?
+  reason         String
+  status         String   @default("OPEN") // OPEN | REVIEWED | ACTIONED | DISMISSED
+  createdAt      DateTime @default(now())
+
+  @@index([status, createdAt])
+  @@index([reportedUserId])
+  @@map("reports")
+}
+

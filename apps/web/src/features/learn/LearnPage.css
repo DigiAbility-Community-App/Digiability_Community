@@ -1,6 +1,6 @@
 .learn-container {
   flex: 1;
-  background-color: var(--color-bg);
+  background-color: var(--bg-base);
   padding: 32px 40px;
   overflow-y: auto;
 }
@@ -12,12 +12,12 @@
 .learn-header h2 {
   font-size: 1.5rem;
   font-weight: 700;
-  color: var(--color-text);
+  color: var(--text-primary);
   margin: 0;
 }
 
 .learn-header p {
-  color: var(--color-subtext);
+  color: var(--text-secondary);
   margin: 4px 0 0;
   font-size: 0.95rem;
 }
@@ -29,7 +29,7 @@
 }
 
 .course-card {
-  background: #ffffff;
+  background: var(--bg-surface);
   border-radius: var(--radius-lg);
   overflow: hidden;
   box-shadow: 0 4px 12px rgba(80, 0, 136, 0.04);
@@ -37,7 +37,7 @@
   flex-direction: column;
   transition: transform 0.2s, box-shadow 0.2s;
   cursor: pointer;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--border-color);
 }
 
 .course-card:hover {
@@ -51,7 +51,7 @@
   display: flex;
   justify-content: center;
   align-items: center;
-  color: var(--color-primary-dark);
+  color: var(--color-primary-hover);
   font-size: 3rem;
   position: relative;
 }
@@ -90,14 +90,14 @@
 .course-title {
   font-size: 1.1rem;
   font-weight: 700;
-  color: var(--color-text);
+  color: var(--text-primary);
   margin: 0 0 8px 0;
   line-height: 1.3;
 }
 
 .course-instructor {
   font-size: 0.85rem;
-  color: var(--color-subtext);
+  color: var(--text-secondary);
   margin-bottom: 16px;
 }
 
@@ -106,7 +106,7 @@
   justify-content: space-between;
   align-items: center;
   margin-top: auto;
-  border-top: 1px solid var(--color-border);
+  border-top: 1px solid var(--border-color);
   padding-top: 16px;
 }
 
@@ -115,13 +115,13 @@
   align-items: center;
   gap: 4px;
   font-size: 0.85rem;
-  color: var(--color-text);
+  color: var(--text-primary);
   font-weight: 600;
 }
 
 .start-btn {
   background-color: var(--color-primary-subtle);
-  color: var(--color-primary-dark);
+  color: var(--color-primary-hover);
   border: none;
   padding: 6px 14px;
   border-radius: var(--radius-sm);

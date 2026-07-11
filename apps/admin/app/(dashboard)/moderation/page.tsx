@@ -11,13 +11,31 @@ interface Report {
   id: string;
   reason: string;
   createdAt: string;
-  type: "question" | "answer";
+  type: "question" | "answer" | "chat";
+  source: "forum" | "chat";
   questionId: string | null;
   answerId: string | null;
   questionTitle: string | null;
   answerContent: string | null;
   reporterName: string;
   reporterEmail: string;
+  authorId?: string | null;
+  authorName?: string | null;
+  authorEmail?: string | null;
+  messageId?: string | null;
+  conversationId?: string | null;
+  messageSequence?: string | null;
+}
+
+interface ContextMessage {
+  id: string;
+  senderId: string;
+  senderName: string | null;
+  content: string;
+  type: string;
+  sequenceNo: string;
+  createdAt: string;
+  deletedAt: string | null;
 }
 
 interface ModerationStats {
@@ -65,6 +83,8 @@ export default function ModerationPage() {
   // Review Workflow state
   const [showWorkflow, setShowWorkflow] = useState(false);
   const [workflowReport, setWorkflowReport] = useState<Report | null>(null);
+  const [contextMessages, setContextMessages] = useState<ContextMessage[] | null>(null);
+  const [contextLoading, setContextLoading] = useState(false);
   const [removeReason, setRemoveReason] = useState("");
   const [notifyAuthor, setNotifyAuthor] = useState(true);
   const [warnCategory, setWarnCategory] = useState("Harassment");
@@ -75,6 +95,27 @@ export default function ModerationPage() {
   const [banDuration, setBanDuration] = useState("Permanent");
   const [banEmail, setBanEmail] = useState("");
   const [banConfirm, setBanConfirm] = useState(false);
+
+  // Load surrounding conversation context whenever a chat-sourced report is
+  // opened in the review workflow, so the admin isn't deciding based on one
+  // line out of context.
+  useEffect(() => {
+    if (!showWorkflow || workflowReport?.source !== "chat" || !workflowReport.conversationId || !workflowReport.messageSequence) {
+      setContextMessages(null);
+      return;
+    }
+    let cancelled = false;
+    setContextLoading(true);
+    setContextMessages(null);
+    fetch(`/api/moderation/context?conversationId=${encodeURIComponent(workflowReport.conversationId)}&sequence=${encodeURIComponent(workflowReport.messageSequence)}`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (!cancelled && data.success) setContextMessages(data.messages);
+      })
+      .catch((e) => console.error("Failed to load report context:", e))
+      .finally(() => { if (!cancelled) setContextLoading(false); });
+    return () => { cancelled = true; };
+  }, [showWorkflow, workflowReport]);
 
   const fetchData = async () => {
     setLoading(true);
@@ -113,20 +154,73 @@ export default function ModerationPage() {
 
   useEffect(() => { fetchData(); fetchFlags(); }, []);
 
+  // Low-level poster used by warn/ban flows.
+  const postAction = async (payload: Record<string, unknown>) => {
+    const res = await fetch("/api/moderation", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    return res.json();
+  };
+
   const handleAction = async (action: string, report: Report) => {
+    // Chat/DM reports dismiss to a different table.
+    const effectiveAction = action === "dismiss" && report.source === "chat" ? "dismiss_chat" : action;
     setActionLoading(report.id + action);
     try {
-      await fetch("/api/moderation", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action, reportId: report.id, questionId: report.questionId }),
-      });
+      await postAction({ action: effectiveAction, reportId: report.id, questionId: report.questionId });
       await fetchData();
       if (selected?.id === report.id) setSelected(null);
     } finally { setActionLoading(null); }
   };
 
   const [activeTab, setActiveTab] = useState<"queue" | "forum-reports" | "ai-flags">("queue");
+
+  // Send a warning to the offending user (the reported content's author).
+  const handleWarn = async () => {
+    if (!workflowReport?.authorId) { alert("This report has no identifiable author to warn."); return; }
+    setActionLoading("warn");
+    try {
+      const data = await postAction({
+        action: "warn",
+        userId: workflowReport.authorId,
+        category: warnCategory,
+        message: warnMessage,
+        triggerSuspend,
+      });
+      if (!data.success) throw new Error(data.message);
+      setShowWorkflow(false);
+      setSelected(null);
+      setWarnMessage("");
+      await fetchData();
+    } catch (e: any) {
+      alert(e?.message || "Failed to send warning.");
+    } finally { setActionLoading(null); }
+  };
+
+  // Ban (suspend) the offending user.
+  const handleBan = async () => {
+    if (!workflowReport?.authorId) { alert("This report has no identifiable author to ban."); return; }
+    setActionLoading("ban");
+    try {
+      const data = await postAction({
+        action: "ban",
+        userId: workflowReport.authorId,
+        reason: banReason,
+        duration: banDuration,
+        message: banEmail,
+      });
+      if (!data.success) throw new Error(data.message);
+      setShowWorkflow(false);
+      setSelected(null);
+      setBanConfirm(false);
+      setBanEmail("");
+      await fetchData();
+    } catch (e: any) {
+      alert(e?.message || "Failed to ban user.");
+    } finally { setActionLoading(null); }
+  };
 
   const urgentReports = reports.filter(r => r.reason.toLowerCase().includes("harassment") || r.reason.toLowerCase().includes("spam"));
   const pendingReports = reports.filter(r => !urgentReports.includes(r));
@@ -138,6 +232,46 @@ export default function ModerationPage() {
           <h1 className="text-xl font-extrabold text-[#1A1C1C]">Review Workflow</h1>
           <p className="text-sm text-[#7D7387] mt-0.5">Manage content flags and user safety measures with DigiAbility's Guardian Moderation system.</p>
         </div>
+
+        {workflowReport.source === "chat" && workflowReport.conversationId && (
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 mb-6">
+            <h3 className="text-sm font-extrabold text-[#1A1C1C] mb-3">Conversation Context</h3>
+            {contextLoading && (
+              <p className="text-sm text-[#7D7387]">Loading surrounding messages…</p>
+            )}
+            {!contextLoading && contextMessages && contextMessages.length === 0 && (
+              <p className="text-sm text-[#7D7387]">
+                No surrounding messages found — the conversation may have been deleted since this report was filed.
+              </p>
+            )}
+            {!contextLoading && contextMessages && contextMessages.length > 0 && (
+              <div className="space-y-2 max-h-72 overflow-y-auto">
+                {contextMessages.map((m) => {
+                  const isReported = m.sequenceNo === workflowReport.messageSequence;
+                  return (
+                    <div
+                      key={m.id}
+                      className={`rounded-lg p-3 text-sm ${isReported ? "bg-red-50 border border-red-200" : "bg-gray-50"}`}
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="font-semibold text-[#1A1C1C]">{m.senderName || "Unknown"}</span>
+                        <span className="text-xs text-[#9A93A8]">{new Date(m.createdAt).toLocaleString("en-GB")}</span>
+                      </div>
+                      <p className={`leading-5 ${m.deletedAt ? "italic text-[#9A93A8]" : "text-[#4B4355]"}`}>
+                        {m.deletedAt ? "(message deleted)" : m.content}
+                      </p>
+                      {isReported && (
+                        <span className="inline-block mt-1 text-[11px] font-bold text-red-600 uppercase tracking-wide">
+                          Reported message
+                        </span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
           {/* REMOVE CONTENT */}
@@ -170,7 +304,7 @@ export default function ModerationPage() {
             </div>
             <div className="flex gap-3">
               <button onClick={() => setShowWorkflow(false)} className="flex-1 h-11 rounded-xl border border-gray-200 text-[#4B4355] font-semibold text-sm hover:bg-gray-50">Cancel</button>
-              <button onClick={() => { handleAction("delete_post", workflowReport); setShowWorkflow(false); }} className="flex-1 h-11 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-sm transition">Remove Content</button>
+              <button onClick={() => { handleAction("delete_post", workflowReport); setShowWorkflow(false); }} disabled={!workflowReport.questionId} className="flex-1 h-11 rounded-xl bg-red-600 hover:bg-red-700 disabled:bg-red-200 disabled:cursor-not-allowed text-white font-bold text-sm transition">Remove Content</button>
             </div>
           </div>
 
@@ -178,7 +312,10 @@ export default function ModerationPage() {
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
             <div className="mb-2">
               <h3 className="text-xl font-extrabold text-[#1A1C1C]">Warn User</h3>
-              <p className="text-base font-bold text-[#7004DC]">{workflowReport.reporterName}</p>
+              <p className="text-base font-bold text-[#7004DC]">{workflowReport.authorName || "Unknown author"}</p>
+              {!workflowReport.authorId && (
+                <p className="text-xs text-red-500 mt-1">No identifiable author for this report — warning is disabled.</p>
+              )}
             </div>
             <div className="bg-violet-50 rounded-xl p-3 mb-4 border border-violet-100">
               <p className="text-sm font-bold text-[#7004DC]">This is their 2nd warning</p>
@@ -219,7 +356,13 @@ export default function ModerationPage() {
             </div>
             <div className="flex gap-3">
               <button onClick={() => setShowWorkflow(false)} className="flex-1 h-11 rounded-xl border border-gray-200 text-[#4B4355] font-semibold text-sm hover:bg-gray-50">Cancel</button>
-              <button className="flex-1 h-11 rounded-xl bg-[#D2A500] hover:bg-[#b89300] text-[#4F3D00] font-bold text-sm transition">Send Warning</button>
+              <button
+                onClick={handleWarn}
+                disabled={!workflowReport.authorId || actionLoading === "warn"}
+                className="flex-1 h-11 rounded-xl bg-[#D2A500] hover:bg-[#b89300] disabled:bg-[#e6d488] disabled:cursor-not-allowed text-[#4F3D00] font-bold text-sm transition"
+              >
+                {actionLoading === "warn" ? "Sending…" : "Send Warning"}
+              </button>
             </div>
           </div>
         </div>
@@ -229,7 +372,7 @@ export default function ModerationPage() {
           <div className="flex items-center justify-between mb-4">
             <div>
               <h3 className="text-xl font-extrabold text-red-600">Ban User Account?</h3>
-              <p className="text-sm text-[#7D7387]">Impact for: {workflowReport.reporterName}</p>
+              <p className="text-sm text-[#7D7387]">Impact for: {workflowReport.authorName || "Unknown author"}</p>
             </div>
             <div className="w-12 h-12 rounded-2xl bg-red-100 flex items-center justify-center">
               <UserX className="w-6 h-6 text-red-600" />
@@ -277,7 +420,13 @@ export default function ModerationPage() {
           </label>
           <div className="flex gap-3">
             <button onClick={() => setShowWorkflow(false)} className="flex-1 h-11 rounded-xl border border-gray-200 text-[#4B4355] font-semibold text-sm hover:bg-gray-50">Cancel</button>
-            <button disabled={!banConfirm} className="flex-1 h-11 rounded-xl bg-red-600 hover:bg-red-700 disabled:bg-red-200 text-white font-bold text-sm transition">Ban User Permanently</button>
+            <button
+              onClick={handleBan}
+              disabled={!banConfirm || !workflowReport.authorId || actionLoading === "ban"}
+              className="flex-1 h-11 rounded-xl bg-red-600 hover:bg-red-700 disabled:bg-red-200 disabled:cursor-not-allowed text-white font-bold text-sm transition"
+            >
+              {actionLoading === "ban" ? "Banning…" : (banDuration === "Permanent" ? "Ban User Permanently" : `Suspend for ${banDuration}`)}
+            </button>
           </div>
         </div>
       </div>

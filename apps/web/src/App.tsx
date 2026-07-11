@@ -5,6 +5,7 @@ import AuthLayout from '@/layouts/AuthLayout';
 import Login from '@/features/auth/Login';
 import Register from '@/features/auth/Register';
 import VerifyEmail from '@/features/auth/VerifyEmail';
+import AccountSuspended from '@/features/auth/AccountSuspended';
 import OnboardingLayout from '@/layouts/OnboardingLayout';
 import Accessibility from '@/features/onboarding/Accessibility';
 import RoleSelection from '@/features/onboarding/RoleSelection';
@@ -22,7 +23,6 @@ import PrivacyPolicy from '@/features/legal/PrivacyPolicy';
 import TermsOfService from '@/features/legal/TermsOfService';
 import { useAuthStore } from '@/store/authStore';
 import { authService } from '@/services/authService';
-import { REFRESH_TOKEN_KEY } from '@/services/apiClient';
 
 const App = () => {
   const [isRestoring, setIsRestoring] = useState(true);
@@ -62,6 +62,7 @@ const App = () => {
           <Route path="login" element={<Login />} />
           <Route path="register" element={<Register />} />
           <Route path="verify-email" element={<VerifyEmail />} />
+          <Route path="account-suspended" element={<AccountSuspended />} />
         </Route>
 
         {/* Onboarding Layout (Authenticated but incomplete) */}

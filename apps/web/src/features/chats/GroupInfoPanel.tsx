@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, ChevronDown } from 'lucide-react';
-import { useChatStore, type Conversation, type ConversationParticipant } from '../../store/chatStore';
+import { X, ChevronDown, Users, Accessibility, SquarePen, Bell, BellOff, Plus } from 'lucide-react';
+import { useChatStore } from '../../store/chatStore';
 import { useAuthStore } from '../../store/authStore';
 import { chatService } from '../../services/chatService';
 import './GroupInfoPanel.css';
@@ -24,6 +24,12 @@ const GroupInfoPanel: React.FC<Props> = ({ conversationId, onClose }) => {
   const [isSearching, setIsSearching] = useState(false);
   const [showAddSearch, setShowAddSearch] = useState(false);
   const searchTimeout = useRef<number | null>(null);
+
+  // Edit group info form
+  const [isEditingInfo, setIsEditingInfo] = useState(false);
+  const [editName, setEditName] = useState('');
+  const [editDesc, setEditDesc] = useState('');
+  const [isSavingInfo, setIsSavingInfo] = useState(false);
 
   useEffect(() => {
     if (!showAddSearch || addSearch.trim().length < 1) {
@@ -87,6 +93,31 @@ const GroupInfoPanel: React.FC<Props> = ({ conversationId, onClose }) => {
     }
   };
 
+  // ── Join requests (admin approval) ───────────────────────────
+  const [pendingRequests, setPendingRequests] = useState<any[]>([]);
+  const [processingRequestId, setProcessingRequestId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!hasAdminRights) return;
+    chatService
+      .getGroupInvites(conversationId)
+      .then((invites) => setPendingRequests(invites.filter((i: any) => i.status === 'AWAITING_APPROVAL')))
+      .catch((err) => console.error('Failed to load join requests', err));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conversationId, hasAdminRights]);
+
+  const handleRespondToRequest = async (inviteId: string, approve: boolean) => {
+    setProcessingRequestId(inviteId);
+    try {
+      await chatService.approveJoinRequest(inviteId, approve);
+      setPendingRequests((prev) => prev.filter((r) => r.id !== inviteId));
+    } catch (err: any) {
+      alert(err?.response?.data?.message || 'Could not process the request.');
+    } finally {
+      setProcessingRequestId(null);
+    }
+  };
+
   const handleInvite = async (member: { id: string; name: string }) => {
     try {
       await chatService.sendInvite(conversationId, member.id, 'MEMBER', `Join ${conversation.name}!`);
@@ -146,6 +177,56 @@ const GroupInfoPanel: React.FC<Props> = ({ conversationId, onClose }) => {
     }
   };
 
+  const canEditInfo = conversation.editGroupInfo === 'ALL_MEMBERS' || hasAdminRights;
+
+  const openEditInfo = () => {
+    setEditName(conversation.name || '');
+    setEditDesc(conversation.description || '');
+    setIsEditingInfo(true);
+  };
+
+  const handleSaveInfo = async () => {
+    const name = editName.trim();
+    if (!name) { alert('Group name cannot be empty'); return; }
+    setIsSavingInfo(true);
+    const prev = { name: conversation.name, description: conversation.description };
+    updateConversation(conversationId, { name, description: editDesc.trim() });
+    try {
+      await chatService.updateGroupInfo(conversationId, { name, description: editDesc.trim() });
+      setIsEditingInfo(false);
+    } catch (err: any) {
+      updateConversation(conversationId, prev);
+      alert(err?.response?.data?.message || 'Failed to update group info');
+    } finally {
+      setIsSavingInfo(false);
+    }
+  };
+
+  const isMuted = myParticipant?.isMuted ?? false;
+  const handleToggleMute = async () => {
+    const newValue = !isMuted;
+    const updated = (conversation.participants || []).map((p) =>
+      p.userId === user?.id ? { ...p, isMuted: newValue } : p
+    );
+    updateConversation(conversationId, { participants: updated });
+    try {
+      await chatService.muteConversation(conversationId, newValue);
+    } catch {
+      updateConversation(conversationId, { participants: conversation.participants });
+      alert('Failed to update mute setting');
+    }
+  };
+
+  const handleDeleteGroup = async () => {
+    if (!window.confirm(`Permanently delete "${conversation.name}"? This removes it for all members and cannot be undone.`)) return;
+    try {
+      await chatService.deleteGroup(conversationId);
+      onClose();
+    } catch (err: any) {
+      alert(err?.response?.data?.message || 'Failed to delete group');
+    }
+  };
+
   const getInitials = (name: string) =>
     name.split(' ').map((w) => w[0]).join('').toUpperCase().slice(0, 2);
 
@@ -165,15 +246,56 @@ const GroupInfoPanel: React.FC<Props> = ({ conversationId, onClose }) => {
       <div className="gip-body">
         {/* Profile */}
         <div className="gip-profile">
-          <div className="gip-avatar">{isCareCircle ? '🦽' : '👥'}</div>
-          <h4 className="gip-name">{conversation.name}</h4>
-          <p className="gip-meta">
-            {isCareCircle ? 'Care Circle' : 'General Group'} &bull;{' '}
-            {(conversation.participants || []).length} members
-          </p>
-          {conversation.description && (
-            <p className="gip-description">{conversation.description}</p>
+          <div className="gip-avatar">{isCareCircle ? <Accessibility size={30} /> : <Users size={30} />}</div>
+
+          {isEditingInfo ? (
+            <div className="gip-edit-form">
+              <input
+                className="gip-edit-name"
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+                placeholder="Group name"
+                maxLength={100}
+                autoFocus
+              />
+              <textarea
+                className="gip-edit-desc"
+                value={editDesc}
+                onChange={(e) => setEditDesc(e.target.value)}
+                placeholder="Add a description (optional)"
+                maxLength={500}
+                rows={2}
+              />
+              <div className="gip-edit-actions">
+                <button className="gip-edit-cancel" onClick={() => setIsEditingInfo(false)} disabled={isSavingInfo}>Cancel</button>
+                <button className="gip-edit-save" onClick={handleSaveInfo} disabled={isSavingInfo}>
+                  {isSavingInfo ? 'Saving…' : 'Save'}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className="gip-name-row">
+                <h4 className="gip-name">{conversation.name}</h4>
+                {canEditInfo && (
+                  <button className="gip-edit-icon" onClick={openEditInfo} title="Edit group info"><SquarePen size={16} /></button>
+                )}
+              </div>
+              <p className="gip-meta">
+                {isCareCircle ? 'Care Circle' : 'General Group'} &bull;{' '}
+                {(conversation.participants || []).length} members
+              </p>
+              {conversation.description && (
+                <p className="gip-description">{conversation.description}</p>
+              )}
+            </>
           )}
+
+          {/* Mute toggle — all members */}
+          <button className="gip-mute-btn" onClick={handleToggleMute}>
+            {isMuted ? <Bell size={15} /> : <BellOff size={15} />}
+            {isMuted ? 'Unmute Notifications' : 'Mute Notifications'}
+          </button>
         </div>
 
         {/* Settings */}
@@ -225,13 +347,49 @@ const GroupInfoPanel: React.FC<Props> = ({ conversationId, onClose }) => {
           </section>
         )}
 
+        {/* Pending Join Requests (admins only) */}
+        {hasAdminRights && pendingRequests.length > 0 && (
+          <section className="gip-section">
+            <h5 className="gip-section-title">Pending Requests ({pendingRequests.length})</h5>
+            <div className="gip-members-list">
+              {pendingRequests.map((req) => (
+                <div key={req.id} className="gip-request-row">
+                  <div className="gip-member-avatar">
+                    {(req.inviteeName || '?').charAt(0).toUpperCase()}
+                  </div>
+                  <div className="gip-member-info">
+                    <span className="gip-member-name">{req.inviteeName}</span>
+                    <span className="gip-member-sub">wants to join</span>
+                  </div>
+                  <div className="gip-request-actions">
+                    <button
+                      className="gip-request-reject"
+                      disabled={processingRequestId === req.id}
+                      onClick={() => handleRespondToRequest(req.id, false)}
+                    >
+                      Reject
+                    </button>
+                    <button
+                      className="gip-request-approve"
+                      disabled={processingRequestId === req.id}
+                      onClick={() => handleRespondToRequest(req.id, true)}
+                    >
+                      Approve
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
         {/* Members */}
         <section className="gip-section">
           <div className="gip-section-header">
             <h5 className="gip-section-title">Members</h5>
             {canAddMembers && (
               <button className="gip-add-btn" onClick={() => setShowAddSearch(!showAddSearch)}>
-                {showAddSearch ? '✕' : '+ Add'}
+                {showAddSearch ? <X size={15} /> : <><Plus size={15} /> Add</>}
               </button>
             )}
           </div>
@@ -319,14 +477,18 @@ const GroupInfoPanel: React.FC<Props> = ({ conversationId, onClose }) => {
           </div>
         </section>
 
-        {/* Leave Group */}
-        {!isOwner && (
-          <section className="gip-section">
+        {/* Leave (non-owner) / Delete (owner) */}
+        <section className="gip-section">
+          {isOwner ? (
+            <button className="gip-delete-btn" onClick={handleDeleteGroup}>
+              Delete Group
+            </button>
+          ) : (
             <button className="gip-leave-btn" onClick={handleLeaveGroup}>
               Leave Group
             </button>
-          </section>
-        )}
+          )}
+        </section>
       </div>
     </aside>
   );

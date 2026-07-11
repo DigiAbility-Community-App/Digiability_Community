@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
+import prisma from "../models/prisma.client";
 
 export interface AccessTokenPayload {
   sub: string;        // userId
@@ -28,11 +29,11 @@ function getPublicKey(): string {
  * Protect routes — verifies Bearer token in Authorization header.
  * Sets req.user on success.
  */
-export function authenticate(
+export async function authenticate(
   req: Request,
   res: Response,
   next: NextFunction
-): void {
+): Promise<void> {
   const authHeader = req.headers.authorization;
 
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
@@ -45,13 +46,11 @@ export function authenticate(
 
   const token = authHeader.split(" ")[1];
 
+  let payload: AccessTokenPayload;
   try {
-    const payload = jwt.verify(token, getPublicKey(), {
+    payload = jwt.verify(token, getPublicKey(), {
       algorithms: ["RS256"],
     }) as AccessTokenPayload;
-
-    req.user = payload;
-    next();
   } catch (err: unknown) {
     const message =
       err instanceof Error && err.message.includes("expired")
@@ -59,5 +58,37 @@ export function authenticate(
         : "Invalid or malformed token.";
 
     res.status(401).json({ success: false, message });
+    return;
   }
+
+  // Reject every request from a suspended/banned account — runs on every
+  // authenticated call, so a ban takes effect on the user's very next request.
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: payload.sub },
+      select: { isSuspended: true, suspendedUntil: true, suspensionReason: true },
+    });
+    const isCurrentlySuspended =
+      !!user?.isSuspended && (user.suspendedUntil === null || user.suspendedUntil.getTime() > Date.now());
+    if (isCurrentlySuspended) {
+      res.status(403).json({
+        success: false,
+        message:
+          user!.suspendedUntil === null
+            ? "Your account has been permanently suspended."
+            : "Your account has been temporarily suspended.",
+        banned: true,
+        permanent: user!.suspendedUntil === null,
+        suspendedUntil: user!.suspendedUntil ? user!.suspendedUntil.toISOString() : null,
+        reason: user!.suspensionReason,
+      });
+      return;
+    }
+  } catch (err) {
+    console.error("[auth.middleware] suspension check failed:", err);
+    // Fail open on a transient DB error.
+  }
+
+  req.user = payload;
+  next();
 }
