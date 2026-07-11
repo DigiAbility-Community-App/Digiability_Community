@@ -1,110 +1,203 @@
-name: CI
+name: CI/CD
 
 on:
   push:
-    branches: [main, "feat/**", "fix/**"]
+    branches: [main]
+    paths:
+      - 'services/**'
   pull_request:
     branches: [main]
-
-concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+    paths:
+      - 'services/**'
 
 jobs:
-  # ── Dependency audit ───────────────────────────────────────────────────────
-  audit:
-    name: npm audit
+  detect_changes:
+    name: Detect changed services
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      user_svc: ${{ steps.changes.outputs['user-svc'] }}
+      chat_svc: ${{ steps.changes.outputs['chat-svc'] }}
+      forum_svc: ${{ steps.changes.outputs['forum-svc'] }}
+      notif_svc: ${{ steps.changes.outputs['notif-svc'] }}
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: dorny/paths-filter@v3
+        id: changes
         with:
-          node-version: "20"
-          cache: "npm"
-      - run: npm ci --ignore-scripts
-      # Fail on high/critical vulnerabilities; moderate issues create a warning
-      - run: npm audit --audit-level=high
+          filters: |
+            user-svc:
+              - 'services/user-svc/**'
+            chat-svc:
+              - 'services/chat-svc/**'
+            forum-svc:
+              - 'services/forum-svc/**'
+            notif-svc:
+              - 'services/notif-svc/**'
 
-  # ── TypeScript — user-svc ─────────────────────────────────────────────────
-  typecheck-user-svc:
-    name: TypeScript (user-svc)
+  build_user_svc:
+    name: Build & Push user-svc
+    needs: detect_changes
+    if: needs.detect_changes.outputs.user_svc == 'true'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - id: vars
+        run: echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
         with:
-          node-version: "20"
-          cache: "npm"
-      - run: npm ci --ignore-scripts
-      - working-directory: services/user-svc
-        run: npx tsc --noEmit
+          registry: ghcr.io
+          username: ${{ secrets.GHCR_USERNAME }}
+          password: ${{ secrets.GHCR_TOKEN }}
+      - uses: docker/build-push-action@v5
+        with:
+          context: ./services/user-svc
+          push: true
+          tags: |
+            ghcr.io/techonsy/community-user-svc:latest
+            ghcr.io/techonsy/community-user-svc:${{ steps.vars.outputs.sha_short }}
+          cache-from: type=gha,scope=user-svc
+          cache-to: type=gha,scope=user-svc,mode=max
 
-  # ── TypeScript — chat-svc ─────────────────────────────────────────────────
-  typecheck-chat-svc:
-    name: TypeScript (chat-svc)
+  build_chat_svc:
+    name: Build & Push chat-svc
+    needs: detect_changes
+    if: needs.detect_changes.outputs.chat_svc == 'true'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - id: vars
+        run: echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
         with:
-          node-version: "20"
-          cache: "npm"
-      - run: npm ci --ignore-scripts
-      - working-directory: services/chat-svc
-        run: npx tsc --noEmit
+          registry: ghcr.io
+          username: ${{ secrets.GHCR_USERNAME }}
+          password: ${{ secrets.GHCR_TOKEN }}
+      - uses: docker/build-push-action@v5
+        with:
+          context: ./services/chat-svc
+          push: true
+          tags: |
+            ghcr.io/techonsy/community-chat-svc:latest
+            ghcr.io/techonsy/community-chat-svc:${{ steps.vars.outputs.sha_short }}
+          cache-from: type=gha,scope=chat-svc
+          cache-to: type=gha,scope=chat-svc,mode=max
 
-  # ── TypeScript — forum-svc ────────────────────────────────────────────────
-  typecheck-forum-svc:
-    name: TypeScript (forum-svc)
+  build_forum_svc:
+    name: Build & Push forum-svc
+    needs: detect_changes
+    if: needs.detect_changes.outputs.forum_svc == 'true'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - id: vars
+        run: echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
         with:
-          node-version: "20"
-          cache: "npm"
-      - run: npm ci --ignore-scripts
-      - working-directory: services/forum-svc
-        run: npx tsc --noEmit
+          registry: ghcr.io
+          username: ${{ secrets.GHCR_USERNAME }}
+          password: ${{ secrets.GHCR_TOKEN }}
+      - uses: docker/build-push-action@v5
+        with:
+          context: ./services/forum-svc
+          push: true
+          tags: |
+            ghcr.io/techonsy/community-forum-svc:latest
+            ghcr.io/techonsy/community-forum-svc:${{ steps.vars.outputs.sha_short }}
+          cache-from: type=gha,scope=forum-svc
+          cache-to: type=gha,scope=forum-svc,mode=max
 
-  # ── TypeScript — web ──────────────────────────────────────────────────────
-  typecheck-web:
-    name: TypeScript (web)
+  build_notif_svc:
+    name: Build & Push notif-svc
+    needs: detect_changes
+    if: needs.detect_changes.outputs.notif_svc == 'true'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - id: vars
+        run: echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
         with:
-          node-version: "20"
-          cache: "npm"
-      - run: npm ci --ignore-scripts
-      - working-directory: apps/web
-        run: npx tsc --noEmit
+          registry: ghcr.io
+          username: ${{ secrets.GHCR_USERNAME }}
+          password: ${{ secrets.GHCR_TOKEN }}
+      - uses: docker/build-push-action@v5
+        with:
+          context: ./services/notif-svc
+          push: true
+          tags: |
+            ghcr.io/techonsy/community-notif-svc:latest
+            ghcr.io/techonsy/community-notif-svc:${{ steps.vars.outputs.sha_short }}
+          cache-from: type=gha,scope=notif-svc
+          cache-to: type=gha,scope=notif-svc,mode=max
 
-  # ── TypeScript — mobile ───────────────────────────────────────────────────
-  typecheck-mobile:
-    name: TypeScript (mobile)
+  deploy:
+    name: Deploy changed services
+    needs: [detect_changes, build_user_svc, build_chat_svc, build_forum_svc, build_notif_svc]
+    if: always() && github.ref == 'refs/heads/main' && !failure()
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - service: user-svc
+            changed: ${{ needs.detect_changes.outputs.user_svc }}
+          - service: chat-svc
+            changed: ${{ needs.detect_changes.outputs.chat_svc }}
+          - service: forum-svc
+            changed: ${{ needs.detect_changes.outputs.forum_svc }}
+          - service: notif-svc
+            changed: ${{ needs.detect_changes.outputs.notif_svc }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: "npm"
-      - run: npm ci --ignore-scripts
-      - working-directory: apps/mobile
-        run: npx tsc --noEmit
+      - if: matrix.changed != 'true'
+        run: echo "Skipping ${{ matrix.service }} — not changed" && exit 0
 
-  # ── Lint — web (oxlint) ───────────────────────────────────────────────────
-  lint-web:
-    name: Lint (web)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - if: matrix.changed == 'true'
+        uses: actions/checkout@v4
+
+      - if: matrix.changed == 'true'
+        id: vars
+        run: echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+
+      - name: Update GitOps manifest
+        if: matrix.changed == 'true'
+        run: |
+          git clone https://x-access-token:${{ secrets.GITOPS_PAT }}@github.com/techonsy/ngo-devops.git gitops
+          cd gitops
+          sed -i "s|image: ghcr.io/.*/community-${{ matrix.service }}:.*|image: ghcr.io/techonsy/community-${{ matrix.service }}:${{ steps.vars.outputs.sha_short }}|g" communityapp/${{ matrix.service }}.yaml
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if [ -n "$(git status --porcelain)" ]; then
+            git add communityapp/${{ matrix.service }}.yaml
+            git commit -m "deploy: community-${{ matrix.service }} image ${{ steps.vars.outputs.sha_short }}"
+            git push origin main
+          fi
+
+      - name: Run migrations
+        if: matrix.changed == 'true' && (matrix.service == 'user-svc' || matrix.service == 'chat-svc')
+        uses: appleboy/ssh-action@v1
         with:
-          node-version: "20"
-          cache: "npm"
-      - run: npm ci --ignore-scripts
-      - working-directory: apps/web
-        run: npm run lint
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            sleep 30
+            kubectl rollout status deployment/${{ matrix.service }} -n communityapp --timeout=120s
+            kubectl exec deployment/${{ matrix.service }} -n communityapp -- npx prisma migrate deploy
