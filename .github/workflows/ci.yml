@@ -14,9 +14,6 @@ jobs:
   detect_changes:
     name: Detect changed services
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pull-requests: read
     outputs:
       user_svc: ${{ steps.changes.outputs['user-svc'] }}
       chat_svc: ${{ steps.changes.outputs['chat-svc'] }}
@@ -190,14 +187,17 @@ jobs:
             git push origin main
           fi
 
-      - name: Run migrations
+      - name: Sync ArgoCD & run migrations
         if: matrix.changed == 'true' && (matrix.service == 'user-svc' || matrix.service == 'chat-svc')
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
+          command_timeout: 5m
           script: |
-            sleep 30
-            kubectl rollout status deployment/${{ matrix.service }} -n communityapp --timeout=120s
+            kubectl exec deployment/argocd-server -n argocd -- argocd login localhost:8080 --insecure --username admin --password ${{ secrets.ARGOCD_PASSWORD }}
+            kubectl exec deployment/argocd-server -n argocd -- argocd app sync community-app --insecure --timeout 180
+            kubectl exec deployment/argocd-server -n argocd -- argocd app wait community-app --insecure --health --timeout 180
+            kubectl rollout status deployment/${{ matrix.service }} -n communityapp --timeout=180s
             kubectl exec deployment/${{ matrix.service }} -n communityapp -- npx prisma migrate deploy
