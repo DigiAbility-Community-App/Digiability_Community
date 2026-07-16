@@ -1,6 +1,6 @@
 # Digiability Community
 
-A modern, scalable monorepo platform for community management and communication. Built with **Turborepo**, **Next.js**, **React Native (Expo)**, **Express.js**, **Prisma**, and **PostgreSQL**.
+A monorepo platform for accessible community management and communication. Built with **Turborepo**, **Next.js**, **Vite + React**, **React Native (Expo)**, **Express.js**, **Prisma**, and **PostgreSQL**.
 
 ---
 
@@ -10,7 +10,7 @@ A modern, scalable monorepo platform for community management and communication.
 - [Tech Stack](#-tech-stack)
 - [Project Structure](#-project-structure)
 - [Quick Start](#-quick-start)
-- [Services](#-services)
+- [Services & Ports](#-services--ports)
 - [Development Workflows](#-development-workflows)
 - [System Architecture](#-system-architecture)
 - [Database](#-database)
@@ -22,22 +22,23 @@ A modern, scalable monorepo platform for community management and communication.
 
 ## 🎯 Project Overview
 
-Digiability Community is a comprehensive platform featuring:
+Digiability Community is a platform for people with disabilities, caregivers, therapists, and NGOs, featuring:
 
-- **Web Admin Panel** — Dashboard for community management (Next.js)
-- **Mobile App** — Community engagement app for iOS/Android (React Native + Expo)
-- **Microservices Architecture** — Five independent backend services handling auth, chat, groups, users, and notifications
-- **Scalable Infrastructure** — Docker-containerized services with PostgreSQL & Redis
-- **Shared Libraries** — Unified type definitions and utilities across all apps
+- **Mobile App** — the primary client, iOS/Android (React Native + Expo)
+- **Web App** — browser client (Vite + React 19)
+- **Admin Panel** — community management dashboard (Next.js 15)
+- **Four backend services** — auth/users, chat, forum, and push notifications
+- **Docker-containerized infrastructure** — PostgreSQL 16 & Redis 7
 
 ### Key Features
 
-✅ **Authentication & Authorization** — JWT-based auth with email verification  
-✅ **User Management** — User profiles, roles, and permissions  
-✅ **Chat System** — Real-time messaging with WebSocket support  
-✅ **Group Management** — Create and manage community groups  
-✅ **Notifications** — Push notifications and in-app alerts  
-✅ **Admin Dashboard** — Comprehensive admin controls  
+✅ **Authentication** — JWT RS256, email OTP verification, refresh-token rotation
+✅ **Chat** — real-time DMs, Groups, and Care Circles over WebSocket
+✅ **Forum** — Q&A with answers, votes, bookmarks, and Socket.io realtime
+✅ **Mentors, Events, Profiles** — role-based community features
+✅ **Push Notifications** — Expo Push via a Redis Stream pipeline
+✅ **Admin Dashboard** — users, groups, forums, events, analytics, moderation
+✅ **Accessibility & DPDP privacy** — a11y preferences, consent tracking, data export/deletion
 
 ---
 
@@ -45,13 +46,13 @@ Digiability Community is a comprehensive platform featuring:
 
 | **Layer** | **Technologies** |
 |-----------|------------------|
-| **Web UI** | Next.js 13+, React 19, TypeScript, TailwindCSS |
-| **Mobile** | React Native, Expo, React Navigation |
-| **Backend** | Node.js, Express.js, TypeScript |
-| **Database** | PostgreSQL 16, Prisma ORM |
-| **Cache/Pub-Sub** | Redis 7 |
-| **Tooling** | Turborepo, Docker, Docker Compose |
-| **Package Manager** | npm workspaces |
+| **Web** | Vite 8, React 19, TypeScript, React Router 6 |
+| **Admin** | Next.js 15 (App Router), React, TailwindCSS |
+| **Mobile** | React Native 0.81, Expo 54, React Navigation, Zustand |
+| **Backend** | Node.js ≥18, Express.js, TypeScript (strict) |
+| **Database** | PostgreSQL 16, Prisma ORM 5 |
+| **Cache/Streams/Pub-Sub** | Redis 7 |
+| **Tooling** | Turborepo, Docker Compose, npm workspaces |
 
 ---
 
@@ -59,65 +60,31 @@ Digiability Community is a comprehensive platform featuring:
 
 ```
 digiability-community/
-├── apps/                          # Frontend applications
-│   ├── admin/                     # Admin dashboard (Next.js)
-│   │   ├── components/            # Reusable React components
-│   │   ├── app/                   # Next.js app directory
-│   │   │   ├── (auth)/           # Auth pages (login, register)
-│   │   │   └── (dashboard)/      # Dashboard pages
-│   │   └── lib/                   # Utilities (API client, auth helpers)
-│   │
-│   └── mobile/                    # Mobile app (Expo)
-│       ├── src/
-│       │   ├── screens/           # Screen components
-│       │   ├── components/        # Reusable components
-│       │   ├── navigation/        # React Navigation setup
-│       │   ├── services/          # API services
-│       │   ├── store/             # State management
-│       │   └── hooks/             # Custom React hooks
-│       └── assets/                # Images, fonts, etc.
+├── apps/
+│   ├── admin/            Next.js 15 App Router admin panel          :3001
+│   ├── mobile/           Expo 54 + React Native 0.81 mobile app
+│   └── web/              Vite 8 + React 19 web app                  :3000
 │
-├── services/                      # Backend microservices
-│   ├── app/                       # Main app orchestration service
-│   ├── user-svc/                  # Auth & User Management
-│   │   ├── src/
-│   │   │   ├── controllers/       # Request handlers
-│   │   │   ├── models/            # Data models
-│   │   │   ├── routes/            # API routes
-│   │   │   ├── services/          # Business logic
-│   │   │   ├── middleware/        # Auth, validation, etc.
-│   │   │   └── utils/             # Helper utilities
-│   │   └── prisma/                # Database schema & migrations
-│   │
-│   ├── chat-svc/                  # Chat & Messaging Service
-│   ├── group-svc/                 # Group Management Service
-│   └── notif-svc/                 # Notification Service
+├── packages/
+│   ├── api/              API client wrappers (used by admin)
+│   ├── moderation/       Shared moderation (keyword matcher)
+│   ├── types/            Shared TypeScript types (minimal stub)
+│   └── utils/            Shared utilities (minimal stub)
 │
-├── packages/                      # Shared libraries
-│   ├── api/                       # API client and endpoints
-│   ├── types/                     # TypeScript type definitions
-│   └── utils/                     # Utility functions
+├── services/
+│   ├── user-svc/         Auth, users, profiles, events, mentors     :4001
+│   ├── chat-svc/         WebSocket, REST chat API, embedded workers :4002
+│   ├── forum-svc/        Forum Q&A, Socket.io realtime              :4003
+│   └── notif-svc/        Push notification worker (Redis consumer)  :4004
 │
-├── docker/                        # Docker configuration
-│   ├── postgres/                  # PostgreSQL initialization
-│   └── pgadmin/                   # PgAdmin configuration
-│
-├── docs/                          # Documentation
-│   ├── api-reference.md           # API endpoints
-│   ├── architecture.md            # Architecture overview
-│   ├── database-schema.sql        # Database structure
-│   ├── deployment.md              # Deployment guide
-│   ├── env-guide.md               # Environment variables
-│   └── websocket-events.md        # WebSocket events
-│
-├── docker-compose.yml             # Infrastructure setup (DB, Redis, etc.)
-├── turbo.json                     # Turborepo configuration
-├── tsconfig.base.json             # Base TypeScript configuration
-├── package.json                   # Root workspace configuration
-└── README.md                      # This file
+├── docker/postgres/init.sql   Runs once on first container boot
+├── docs/                      Architecture, API, env, WebSocket docs
+├── docker-compose.yml
+├── turbo.json
+└── package.json
 ```
 
-For detailed structure, see [PROJECT_STRUCTURE.md](./PROJECT_STRUCTURE.md)
+Services do **not** import from each other's source — they communicate over HTTP and Redis only. For a detailed breakdown see [PROJECT_STRUCTURE.md](./PROJECT_STRUCTURE.md).
 
 ---
 
@@ -125,274 +92,293 @@ For detailed structure, see [PROJECT_STRUCTURE.md](./PROJECT_STRUCTURE.md)
 
 ### Prerequisites
 
-- **Node.js** >= 18.0.0
-- **npm** >= 9.0.0
-- **Docker** && **Docker Compose** (for running services)
+- **Node.js** ≥ 18.0.0
+- **npm** ≥ 9.0.0 (lockfile uses npm 11)
+- **Docker** & **Docker Compose**
 
 ### 1. Clone & Install
 
 ```bash
-# Clone the repository
-git clone https://github.com/yourusername/digiability-community.git
+git clone https://github.com/techonsy/digiability-community.git
 cd digiability-community
-
-# Install dependencies
 npm install
 ```
 
 ### 2. Configure Environment Variables
 
-Create `.env` files in root and each service:
+Every app and service ships a `.env.example`. Copy each one and fill it in:
 
 ```bash
-# Root .env (for Docker)
-POSTGRES_USER=digiability
-POSTGRES_PASSWORD=your_secure_password
-POSTGRES_DB=digiability_db
-POSTGRES_PORT=5432
-REDIS_PASSWORD=your_redis_password
-REDIS_PORT=6379
-
-# services/user-svc/.env
-NODE_ENV=development
-PORT=4001
-DATABASE_URL=postgresql://digiability:your_secure_password@localhost:5432/digiability_db?schema=public
-JWT_PRIVATE_KEY="-----BEGIN RSA PRIVATE KEY-----\n...\n-----END RSA PRIVATE KEY-----"
-JWT_PUBLIC_KEY="-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----"
-JWT_EXPIRES_IN=15m
-REFRESH_TOKEN_EXPIRES_DAYS=30
-COOKIE_SECRET=replace_with_a_strong_random_string
+cp .env.example .env                              # Docker infra (Postgres/Redis)
+cp services/user-svc/.env.example  services/user-svc/.env
+cp services/chat-svc/.env.example  services/chat-svc/.env
+cp services/forum-svc/.env.example services/forum-svc/.env
+cp services/notif-svc/.env.example services/notif-svc/.env
+cp apps/admin/.env.example apps/admin/.env.local
+cp apps/web/.env.example   apps/web/.env.local
+cp apps/mobile/.env.example apps/mobile/.env
 ```
 
-See [docs/env-guide.md](./docs/env-guide.md) for complete variables.
-
-### 3. Start Infrastructure
+Generate the RS256 key pair once — **user-svc holds the private key and is the only signer**; chat-svc and forum-svc get the *public key only*:
 
 ```bash
-# Start PostgreSQL and Redis
-npm run docker:up
-
-# View logs
-npm run docker:logs
+openssl genrsa -out private.pem 2048
+openssl rsa -in private.pem -pubout -out public.pem
+# Paste into the .env files using literal \n for line breaks
 ```
 
-### 4. Initialize Database
+See [docs/env-guide.md](./docs/env-guide.md) for the complete variable reference.
+
+### 3. Start Infrastructure & Services
 
 ```bash
-# Generate Prisma client
-npm run user-svc:generate
+# PostgreSQL 16 + Redis 7
+docker compose up -d postgres redis
 
-# Run migrations
-npm run user-svc:migrate
+# Backend services (rebuilds the image if code changed)
+docker compose up -d --build user-svc chat-svc forum-svc notif-svc
+
+# Verify
+curl http://localhost:4001/health
+curl http://localhost:4002/health
+curl http://localhost:4003/health
+curl http://localhost:4004/health
+
+# Optional dev-only pgAdmin at http://localhost:5050
+docker compose --profile dev up -d pgadmin
 ```
 
-### 5. Run Development Mode
+### 4. Initialize the Database
 
 ```bash
-# Start all services in development mode
-npm run dev
+cd services/user-svc  && npx prisma migrate deploy && npx prisma generate
+cd services/chat-svc  && npx prisma migrate deploy && npx prisma generate
+cd services/forum-svc && npx prisma generate
 
-# Or start specific service
-npm run user-svc:dev
+# Seed the DigiBot system user (once, after first DB setup)
+cd services/user-svc && npm run db:seed-bot
 ```
 
-### 6. Run Mobile App
+### 5. Run the Clients
 
 ```bash
-cd apps/mobile
-npm start
+cd apps/web    && npm run dev      # → http://localhost:3000
+cd apps/admin  && npm run dev      # → http://localhost:3001
+cd apps/mobile && npx expo start   # a = Android, i = iOS
 ```
 
-Select platform:
-- `a` for Android
-- `i` for iOS
-- `w` for Web
+`web`, `admin`, and `mobile` always run locally (or on Vercel/EAS) — they are never containerized.
+
+> **Mobile on a physical device:** `localhost` won't resolve. Set the URLs in `apps/mobile/.env` to your machine's LAN IP (`ipconfig getifaddr en0` on macOS). See [apps/mobile/README.md](./apps/mobile/README.md).
 
 ---
 
-## 🏢 Services
+## 🏢 Services & Ports
 
-### **user-svc** — Authentication & User Management
-- **Port**: 3001
-- **Database**: PostgreSQL + Prisma
-- **Features**:
-  - User registration & email verification
-  - JWT-based authentication
-  - Password reset & change
-  - User profile management
-- **API**: [POST/GET user endpoints](./docs/api-reference.md)
+| Service | Port | Runtime | Responsibility |
+|---|---|---|---|
+| `user-svc` | 4001 | Docker | Auth (signs JWTs), users, profiles, mentors, events, privacy/consent |
+| `chat-svc` | 4002 | Docker | WebSocket gateway, chat REST, embedded message + delivery workers |
+| `forum-svc` | 4003 | Docker | Forum Q&A REST + Socket.io realtime |
+| `notif-svc` | 4004 | Docker | Redis Stream consumer → Expo Push API |
+| PostgreSQL | 5432 | Docker | Shared instance, separate schemas |
+| Redis | 6379 | Docker | Streams, Pub/Sub, session registry |
+| pgAdmin | 5050 | Docker (`--profile dev`) | DB UI |
+| `web` | 3000 | Local / Vercel | Browser client |
+| `admin` | 3001 | Local / Vercel | Admin panel |
 
-### **chat-svc** — Chat & Real-time Messaging
-- **Port**: 3002
-- **Features**: Direct messaging, group chats, message history
-- **Protocol**: WebSocket for real-time events
+### How services communicate
 
-### **group-svc** — Group Management
-- **Port**: 3003
-- **Features**: Create groups, manage members, group settings
+There is **no API gateway** — clients call each service directly.
 
-### **notif-svc** — Notifications
-- **Port**: 3004
-- **Features**: Push notifications, in-app notifications, email alerts
-
-### **app** — Main Orchestration Service
-- **Port**: 3000
-- **Features**: Request routing, API gateway functionality
+- **user-svc** signs JWTs; it makes no runtime calls to other services (except an internal chat-svc call on account deletion).
+- **chat-svc / forum-svc** verify JWTs with the shared public key; they never call user-svc.
+- **forum-svc → notif-svc**: HTTP `POST /internal/notify`.
+- **chat-svc → notif-svc**: via the Redis Stream `msg:notify`.
+- **admin → user-svc / chat-svc**: a few Next.js API routes proxy with an `x-internal-secret` header; most query PostgreSQL directly.
 
 ---
 
 ## 💻 Development Workflows
 
-### Yarn Workspaces & Turborepo
-
-This project uses **npm workspaces** + **Turborepo** for efficient monorepo management.
-
 ```bash
-# Install dependencies for all workspaces
-npm install
-
-# Run build tasks in dependency order
+# From the repo root — Turborepo runs across all workspaces
 npm run build
-
-# Run linting
 npm run lint
-
-# Run tests
 npm run test
 
-# Run dev servers (cached tasks)
-npm run dev
+# Per-service dev servers (hot reload)
+npm run user-svc:dev
+npm run chat-svc:dev
+npm run forum-svc:dev
+npm run notif-svc:dev
+npm run web:dev
+
+# Docker infra
+npm run docker:up
+npm run docker:down
+npm run docker:logs
 ```
 
-### Adding a New Package
+Per-service TypeScript checks (no emit):
 
 ```bash
-# Create new package
-mkdir packages/my-package
-cd packages/my-package
-npm init -y
+cd services/chat-svc && npx tsc --noEmit
+cd apps/mobile       && npx tsc --noEmit
+cd apps/web          && npm run lint    # web uses oxlint, not ESLint
 ```
 
-### Running Workspace-Specific Commands
+### Logs
 
 ```bash
-# Run specific workspace command
-npm run dev --workspace=@digiability/user-svc
-
-# Run tests only in admin app
-npm run test --workspace=@digiability/admin
+docker logs digiability_user_svc -f
+docker logs digiability_chat_svc -f
+docker logs digiability_postgres -f
 ```
 
 ---
 
 ## 🏗 System Architecture
 
-### High-Level Architecture
-
 ```
-┌─────────────────────────────────────────────────────────┐
-│                   Client Layer                          │
-├──────────────────────┬──────────────────────────────────┤
-│  Admin Web App       │  Mobile App (Expo)              │
-│  (Next.js)          │  (React Native)                  │
-└──────────────────────┴──────────────────────────────────┘
-                    ↓
-┌─────────────────────────────────────────────────────────┐
-│            API Gateway / Load Balancer                   │
-│               (app service)                             │
-└──────────────────────┬──────────────────────────────────┘
-            ↓                    ↓
-        ┌─────────────┬──────────┬─────────────┐
-        │             │          │             │
-    user-svc     chat-svc   group-svc    notif-svc
-    (3001)       (3002)      (3003)       (3004)
-        │             │          │             │
-        └─────────────┴──────────┴─────────────┘
-                    ↓
-        ┌───────────────────────────┐
-        │   Shared Data Layer       │
-        ├───────────────────────────┤
-        │  PostgreSQL  │   Redis    │
-        └───────────────────────────┘
+┌──────────────────────────────────────────────────────────┐
+│                      Client Layer                        │
+├─────────────────┬─────────────────┬──────────────────────┤
+│  Mobile (Expo)  │  Web (Vite)     │  Admin (Next.js)     │
+└────────┬────────┴────────┬────────┴──────────┬───────────┘
+         │   direct calls — no API gateway     │
+    ┌────┴──────────┬───────────────┬──────────┴─────┐
+    │               │               │                │
+ user-svc        chat-svc       forum-svc        notif-svc
+  (4001)          (4002)         (4003)           (4004)
+    │               │               │                │
+    └───────────────┴───────┬───────┴────────────────┘
+                            │
+              ┌─────────────┴─────────────┐
+              │  PostgreSQL 16  │ Redis 7 │
+              └───────────────────────────┘
 ```
 
-### Authentication Flow
+### Message pipeline (chat)
 
-See [docs/architecture.md](./docs/architecture.md) for detailed JWT flow and security patterns.
+```
+Client WS → event-router → Redis Stream msg:created  → [ACK to sender]
+msg-svc.worker    → persist via Prisma → Stream msg:persisted
+delivery.worker   → online: Pub/Sub ws:deliver:{serverId}
+                  → offline: Stream msg:notify
+notif-svc         → device tokens → Expo Push API
+```
+
+Both workers start **automatically inside the chat-svc process** — no separate containers.
+
+### Redis roles
+
+1. **Streams** (durable pipeline): `msg:created`, `msg:persisted`, `msg:notify`, `forum:notify`, `msg:receipts`
+2. **Pub/Sub** (ephemeral cross-server WS): `ws:deliver:{serverId}`, `ws:receipt:{serverId}`, `ws:typing:{serverId}`
+3. **Session registry**: `ws:sessions:{userId}`, `ws:server:{serverId}`, `ws:presence:{userId}`
+
+See [docs/architecture.md](./docs/architecture.md) for the JWT flow and security patterns.
 
 ---
 
 ## 🗄 Database
 
-### Tools
+- **ORM**: Prisma 5 · **Database**: PostgreSQL 16 · **Migrations**: Prisma Migrate
 
-- **ORM**: Prisma 5.14.0
-- **Database**: PostgreSQL 16
-- **Migrations**: Prisma Migrate
+All services share one PostgreSQL instance but use separate **schemas**:
 
-### Common Database Commands
+| Service | Schema | Notes |
+|---|---|---|
+| `user-svc` | `public` | Signs/owns users, profiles, events, mentors, consents |
+| `chat-svc` | `chat` | Fully isolated |
+| `forum-svc` | `public` | **Shared with user-svc** — see the warning below |
+| `notif-svc` | — | No Prisma; raw `pg` Pool reading `device_tokens` |
+
+### ⚠️ Two things that will bite you
+
+**1. `user-svc` and `forum-svc` share the `public` schema.** `prisma db push` does a full declarative reconciliation — any table it can see but doesn't declare gets **dropped**. Both `schema.prisma` files therefore declare inert **stub mirror models** of the other's tables. If you add or change a model in `public`, mirror the same change into the other service's stub block, or the next push will drop it. Outside local dev, prefer `prisma migrate deploy`.
+
+**2. Migration history has drifted from `schema.prisma`.** Much of the schema was historically applied with `db push` and never captured as migrations, so a database built purely from `migrate deploy` came out incomplete (this broke chat writes, OTP, and consent in the live environment). Reconciliation migrations dated `20260711*` fix this; they are idempotent (`IF NOT EXISTS`, guarded `CREATE TYPE`) and safe to re-apply.
+
+> Note: the older migrations are **not** clean from empty (`fix_auth_restore` re-creates the `Role` type). They cannot be edited — changing an applied migration breaks `migrate deploy` via a checksum mismatch. A database bootstrapped with `db push` must therefore be **baselined once** before deploys will reach the newer migrations:
+> ```bash
+> npx prisma migrate resolve --applied <each_old_migration_name>
+> ```
+
+### Common commands
 
 ```bash
-# Create a new migration
-npm run user-svc:migrate -- --name add_new_field
+# Apply migrations (production-safe — only runs explicit migration files)
+cd services/user-svc && npx prisma migrate deploy
 
-# Push schema changes (dev only, no migration file)
-npm run user-svc:db:push
+# Create a new migration during development
+cd services/user-svc && npm run db:migrate -- --name add_new_field
 
-# Open Prisma Studio GUI
-npm run user-svc:db:studio
+# Sync schema without a migration file (LOCAL DEV ONLY — see warning above)
+cd services/user-svc && npm run db:push
 
-# Generate Prisma client
-npm run user-svc:generate
+# Prisma Studio GUI
+cd services/user-svc && npm run db:studio
+
+# Regenerate the client after editing schema.prisma
+cd services/user-svc && npm run db:generate
 ```
 
-### Schema Location
+Each Prisma service generates its client to `src/generated/client/` (not `node_modules`). Import it as:
 
-- `services/user-svc/prisma/schema.prisma` — Main schema
+```typescript
+import prisma from "./models/prisma.client";
+```
 
 ---
 
 ## 📚 API Documentation
 
-All API endpoints are documented here:
+- [API Reference](./docs/api-reference.md) · [WebSocket Events](./docs/websocket-events.md)
 
-- [API Reference](./docs/api-reference.md)
-- [WebSocket Events](./docs/websocket-events.md)
+All responses follow a consistent envelope:
 
-**Base URL**: `http://localhost:3000/api`
+```jsonc
+{ "success": true,  "data": { } }                        // success
+{ "success": false, "message": "...", "errors": [ ] }    // error (422 = validation)
+```
 
-### Example Requests
+### Example requests
 
 ```bash
-# Register user
-curl -X POST http://localhost:3001/api/auth/register \
+# Register (returns tokens; login is blocked until the email OTP is verified)
+curl -X POST http://localhost:4001/api/auth/register \
   -H "Content-Type: application/json" \
-  -d '{
-    "name": "John Doe",
-    "email": "john@example.com",
-    "password": "secure_password"
-  }'
+  -d '{"name":"John Doe","email":"john@example.com","password":"Passw0rd123","role":"pwd"}'
+
+# Verify the 6-digit OTP sent by email
+curl -X POST http://localhost:4001/api/auth/verify-email \
+  -H "Content-Type: application/json" \
+  -d '{"email":"john@example.com","otp":"123456"}'
 
 # Login
-curl -X POST http://localhost:3001/api/auth/login \
+curl -X POST http://localhost:4001/api/auth/login \
   -H "Content-Type: application/json" \
-  -d '{
-    "email": "john@example.com",
-    "password": "secure_password"
-  }'
+  -d '{"email":"john@example.com","password":"Passw0rd123"}'
 ```
+
+The access token is returned in `data.accessToken`. The **refresh token is not in the JSON body** — it is delivered via the `x-refresh-token` response header and an HTTP-only cookie.
 
 ---
 
 ## 🚀 Deployment
 
-For deployment instructions, see [docs/deployment.md](./docs/deployment.md)
+See [docs/deployment.md](./docs/deployment.md).
 
-### Deployment Targets
+| Target | Platform |
+|---|---|
+| Backend services | Docker → Kubernetes (GitOps via the `ngo-devops` repo) |
+| `web` / `admin` | Vercel |
+| `mobile` | App Store / Play Store via EAS — see [apps/mobile/README.md](./apps/mobile/README.md) |
 
-- **Frontend**: Vercel, Netlify, AWS S3 + CloudFront
-- **Mobile**: Apple App Store, Google Play Store (via Expo)
-- **Backend**: Docker (AWS ECS, GKE, Render, Railway, etc.)
+**CI/CD** (`.github/workflows/ci.yml`): pushes to `main` that touch `services/**` build and push per-service images to GHCR, update the GitOps manifest, then run `prisma migrate deploy` inside the rolled-out `user-svc` / `chat-svc` pods.
+
+Because the clients bake their API URLs in at **build time**, changing a backend URL requires rebuilding the web bundle and the mobile app — it is not a runtime setting.
 
 ---
 
@@ -403,23 +389,23 @@ For deployment instructions, see [docs/deployment.md](./docs/deployment.md)
 | [Project Structure](./PROJECT_STRUCTURE.md) | Detailed folder breakdown |
 | [Architecture](./docs/architecture.md) | System design & auth flow |
 | [API Reference](./docs/api-reference.md) | All endpoints & schemas |
-| [Database Schema](./docs/database-schema.sql) | Database structure |
 | [Environment Guide](./docs/env-guide.md) | All required env variables |
 | [WebSocket Events](./docs/websocket-events.md) | Real-time event schemas |
 | [Deployment](./docs/deployment.md) | Production deployment |
+| [Mobile / store builds](./apps/mobile/README.md) | Expo + EAS build and release |
 
 ---
 
 ## 🔒 Security
 
-- ✅ JWT-based authentication (RS256)
-- ✅ HTTP-only refresh token cookies
-- ✅ Password hashing with bcryptjs
-- ✅ Email verification required
-- ✅ CORS configured per environment
-- ✅ Environment variable isolation
-
-See [Architecture Guide](./docs/architecture.md) for security patterns.
+- ✅ JWT RS256 — only user-svc holds the private key; other services verify with the public key
+- ✅ Refresh tokens stored as SHA-256 hashes and rotated on every use
+- ✅ HTTP-only, SameSite=Strict refresh cookies (`Secure` when `NODE_ENV=production`)
+- ✅ bcrypt password hashing; email OTP verification required before login
+- ✅ Zod validation on all request bodies (422 with field-level errors)
+- ✅ Rate limiting on register / login / OTP / password-reset
+- ✅ Login lockout after repeated failures
+- ✅ `x-internal-secret` on service-to-service internal routes
 
 ---
 
@@ -427,10 +413,10 @@ See [Architecture Guide](./docs/architecture.md) for security patterns.
 
 1. Create a feature branch: `git checkout -b feature/my-feature`
 2. Make your changes
-3. Run tests: `npm run test`
-4. Lint code: `npm run lint`
-5. Commit with clear messages
-6. Push and create a Pull Request
+3. Typecheck the workspaces you touched (`npx tsc --noEmit`)
+4. Lint: `npm run lint`
+5. If you changed a Prisma schema, add a migration **and** mirror any `public`-schema change into the other service's stub models
+6. Commit with clear messages, push, and open a Pull Request
 
 ---
 
@@ -440,28 +426,5 @@ This project is proprietary and confidential.
 
 ---
 
-## 👥 Team & Support
-
-For questions or issues:
-
-- 📧 Email: [your-email@example.com](mailto:your-email@example.com)
-- 🐛 Report bugs: [GitHub Issues](https://github.com/yourusername/digiability-community/issues)
-- 📚 Wiki: [Project Wiki](https://github.com/yourusername/digiability-community/wiki)
-
----
-
-## 📊 Repository Statistics
-
-- **Monorepo Type**: Turborepo + npm workspaces
-- **Node.js**: ≥ 18.0.0
-- **Main Language**: TypeScript
-- **Frontend Frameworks**: Next.js, React, React Native
-- **Backend Framework**: Express.js
-- **Database**: PostgreSQL 16
-- **Cache**: Redis 7
-
----
-
-**Last Updated**: April 2026  
+**Last Updated**: July 2026
 **Maintained By**: Digiability Development Team
-
