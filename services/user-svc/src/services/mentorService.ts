@@ -69,8 +69,6 @@ export const mentorService = {
             id: true,
             name: true,
             roles: true,
-          },
-          include: {
             userProfile: {
               select: {
                 city: true,
@@ -78,7 +76,7 @@ export const mentorService = {
               },
             },
           },
-        } as any,
+        },
         reviews: {
           select: {
             rating: true,
