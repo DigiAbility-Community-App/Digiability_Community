@@ -1,7 +1,9 @@
 import apiClient from './apiClient';
 import { useAuthStore } from '@store/authStore';
 
-export const CHAT_BASE_URL = (process.env.EXPO_PUBLIC_API_BASE_URL || 'http://10.0.2.2:4001').replace('4001', '4002');
+export const CHAT_BASE_URL =
+  process.env.EXPO_PUBLIC_CHAT_API_URL ||
+  (process.env.EXPO_PUBLIC_API_BASE_URL || 'http://10.0.2.2:4001').replace('4001', '4002');
 
 // Resolve a media path/URL returned by the server. New uploads return a
 // host-relative path ("/uploads/x.jpg") which each client resolves against its

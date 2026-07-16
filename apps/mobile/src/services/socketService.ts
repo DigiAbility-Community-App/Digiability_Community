@@ -1,6 +1,6 @@
 import { useAuthStore } from '@store/authStore';
 import { useChatStore } from '@store/chatStore';
-import { chatService } from './chatService';
+import { chatService, CHAT_BASE_URL } from './chatService';
 
 // ─────────────────────────────────────────────────────────
 // WebSocket Client Service
@@ -20,9 +20,7 @@ export const initSocket = () => {
   const token = useAuthStore.getState().accessToken;
   if (!token) return;
 
-  const baseUrl = (process.env.EXPO_PUBLIC_API_BASE_URL ?? 'http://10.0.2.2:4001');
-  // Derive chat-svc URL from the API base URL (chat-svc is on port 4002)
-  const wsUrl = baseUrl.replace('4001', '4002').replace(/^http/, 'ws') + '/ws';
+  const wsUrl = CHAT_BASE_URL.replace(/^http/, 'ws') + '/ws';
 
   if (socket?.readyState === WebSocket.OPEN || socket?.readyState === WebSocket.CONNECTING) {
     return;
