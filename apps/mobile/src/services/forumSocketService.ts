@@ -11,9 +11,9 @@ export const forumSocketService = {
 
     if (socket?.connected) return;
 
-    const baseUrl = (
-      process.env.EXPO_PUBLIC_API_BASE_URL || 'http://10.0.2.2:4001'
-    ).replace('4001', '4003');
+    const baseUrl =
+      process.env.EXPO_PUBLIC_FORUM_API_URL ||
+      (process.env.EXPO_PUBLIC_API_BASE_URL || 'http://10.0.2.2:4001').replace('4001', '4003');
 
     console.log(`[ForumSocket] Connecting to ${baseUrl}...`);
 

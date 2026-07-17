@@ -14,6 +14,13 @@ jobs:
   detect_changes:
     name: Detect changed services
     runs-on: ubuntu-latest
+    # Required by dorny/paths-filter: on pull_request it reads the changed
+    # file list from the PR API, which this private repo denies without it.
+    # The repo default is read-only (contents/packages/metadata), so leaving
+    # this off fails every PR with "Resource not accessible by integration".
+    permissions:
+      contents: read
+      pull-requests: read
     outputs:
       user_svc: ${{ steps.changes.outputs['user-svc'] }}
       chat_svc: ${{ steps.changes.outputs['chat-svc'] }}
@@ -82,7 +89,10 @@ jobs:
           password: ${{ secrets.GHCR_TOKEN }}
       - uses: docker/build-push-action@v5
         with:
-          context: ./services/chat-svc
+          # Repo root context — chat-svc's Dockerfile copies in the shared
+          # packages/moderation workspace package (file: dependency).
+          context: .
+          file: ./services/chat-svc/Dockerfile
           push: true
           tags: |
             ghcr.io/techonsy/community-chat-svc:latest
@@ -110,7 +120,10 @@ jobs:
           password: ${{ secrets.GHCR_TOKEN }}
       - uses: docker/build-push-action@v5
         with:
-          context: ./services/forum-svc
+          # Repo root context — forum-svc's Dockerfile copies in the shared
+          # packages/moderation workspace package (file: dependency).
+          context: .
+          file: ./services/forum-svc/Dockerfile
           push: true
           tags: |
             ghcr.io/techonsy/community-forum-svc:latest

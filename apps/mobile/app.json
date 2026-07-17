@@ -17,11 +17,16 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.digiability.community",
+      "buildNumber": "1",
       "infoPlist": {
-        "NSLocationWhenInUseUsageDescription": "Allow Digiability Community to access your location to automatically fetch your city, state, and district during profile setup."
+        "NSLocationWhenInUseUsageDescription": "Allow Digiability Community to access your location to automatically fetch your city, state, and district during profile setup.",
+        "NSAppTransportSecurity": {
+          "NSAllowsArbitraryLoads": true
+        }
       }
     },
     "android": {
+      "versionCode": 1,
       "softwareKeyboardLayoutMode": "resize",
       "adaptiveIcon": {
         "foregroundImage": "./assets/logo.png",
@@ -55,6 +60,14 @@
           "color": "#500088",
           "sounds": [],
           "mode": "production"
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true
+          }
         }
       ]
     ]
