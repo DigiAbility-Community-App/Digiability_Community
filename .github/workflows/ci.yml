@@ -28,7 +28,7 @@ jobs:
       notif_svc: ${{ steps.changes.outputs['notif-svc'] }}
     steps:
       - uses: actions/checkout@v4
-      - uses: dorny/paths-filter@v3
+      - uses: dorny/paths-filter@v4
         id: changes
         with:
           filters: |
