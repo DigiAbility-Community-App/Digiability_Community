@@ -165,6 +165,12 @@ jobs:
     if: always() && github.ref == 'refs/heads/main' && !failure()
     runs-on: ubuntu-latest
     strategy:
+      # The four jobs each clone + push the GitOps repo; parallel pushes race
+      # on refs/heads/main and all but the winner are rejected ("cannot lock
+      # ref"). Serialize them, and don't let one failure cancel the rest
+      # mid-push (that leaves the manifests half-updated).
+      max-parallel: 1
+      fail-fast: false
       matrix:
         include:
           - service: user-svc
