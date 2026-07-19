@@ -19,8 +19,8 @@ export async function POST(request: Request) {
     
     // Default hashed credentials if file is empty
     let credentials: Record<string, string> = {
-      "admin@digiability.com": "$2a$10$5pY09AxX4A2OyHuhZ6fS9O4FrzpqAyknHSEdZRfD3.OAfJFyvT2oy",
-      "prathmesh@digiability.com": "$2a$10$2KT4swA30N0Y/2UYPmcto.lVjy/JC0GB5NXRrhNSAp/xJVvnnYjoG"
+      "admin@digiability.com": "$2a$10$ELUFkyL9p9CIQmHIuUHHgO7NZa//GOCPB9U9OqQ1i3Uk0EJMsm98q",
+      "prathmesh@digiability.com": "$2a$10$tyCeQlnkWqRD09jA7sjrb.ZKG5/78nzltt4e.eL8oK1dTu8tW36UK"
     };
 
     if (fs.existsSync(filePath)) {
