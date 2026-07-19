@@ -37,9 +37,10 @@
         "ACCESS_COARSE_LOCATION",
         "ACCESS_FINE_LOCATION",
         "RECEIVE_BOOT_COMPLETED",
-        "VIBRATE"
-      ],
-      "googleServicesFile": "./google-services.json"
+        "VIBRATE",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION"
+      ]
     },
     "web": {
       "favicon": "./assets/logo.png"
@@ -70,6 +71,12 @@
           }
         }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "c5b76b8b-acea-43bb-82ab-fd2ecd06e394"
+      }
+    },
+    "owner": "p7953"
   }
 }
