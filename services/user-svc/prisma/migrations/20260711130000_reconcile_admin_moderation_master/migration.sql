@@ -1,12 +1,28 @@
--- Reconcile real (non-stub) user-svc tables added on the privacy/moderation
--- branch that were never captured in a migration: master data, admin
--- notification config, moderation keywords/flags, and the admin audit log.
--- A `migrate deploy` database is missing these; some exist on the current
--- live DB via an earlier `db push`. Every statement is idempotent (guarded
--- CREATE TYPE, CREATE TABLE/INDEX IF NOT EXISTS) so it is safe either way.
+-- Reconcile real (non-stub) user-svc objects that exist in schema.prisma but
+-- were never captured in a migration: login-lockout and refresh-token-family
+-- columns, moderation enums/tables, admin notification config, master data,
+-- and the admin audit log.
+--
+-- Written against the ACTUAL live schema, which is a hybrid: migrations were
+-- applied AND `prisma db push` was run at various points, so a table may be
+-- absent, correct, OR present with an older, different shape. Guarding only
+-- with CREATE TABLE IF NOT EXISTS is therefore not enough — an existing
+-- old-shape table is silently skipped and the follow-up CREATE INDEX then
+-- fails on a column that does not exist. Each block below detects the real
+-- shape before acting, and every statement is idempotent.
 --
 -- The forum_* tables in this service's schema.prisma are inert stub mirrors
--- owned by forum-svc and are intentionally NOT created here.
+-- owned by forum-svc and are intentionally NOT touched here.
+
+-- ── users: login lockout ─────────────────────────────────────
+-- In schema.prisma but in no migration, so absent from any migrate-built
+-- database. The auth code selects these, so without them login/register 500.
+ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "lockedUntil" TIMESTAMP(3);
+ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "loginAttempts" INTEGER NOT NULL DEFAULT 0;
+
+-- ── refresh_tokens: token family (rotation/reuse detection) ──
+ALTER TABLE "refresh_tokens" ADD COLUMN IF NOT EXISTS "familyId" TEXT NOT NULL DEFAULT (gen_random_uuid())::text;
+CREATE INDEX IF NOT EXISTS "refresh_tokens_familyId_idx" ON "refresh_tokens"("familyId");
 
 -- ── Moderation enums ─────────────────────────────────────────
 DO $$ BEGIN CREATE TYPE "KeywordSeverity" AS ENUM ('LOW', 'MEDIUM', 'HIGH'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
@@ -28,6 +44,20 @@ CREATE TABLE IF NOT EXISTS "disability_types" (
 CREATE UNIQUE INDEX IF NOT EXISTS "disability_types_code_key" ON "disability_types"("code");
 
 -- ── admin_notification_logs ──────────────────────────────────
+-- May exist from an older push with a non-uuid "id". It is a log table and is
+-- empty on the live database, so reshape by dropping and recreating.
+DO $$ BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+     WHERE table_schema = current_schema()
+       AND table_name  = 'admin_notification_logs'
+       AND column_name = 'id'
+       AND data_type  <> 'uuid'
+  ) THEN
+    DROP TABLE "admin_notification_logs";
+  END IF;
+END $$;
+
 CREATE TABLE IF NOT EXISTS "admin_notification_logs" (
     "id" UUID NOT NULL DEFAULT gen_random_uuid(),
     "title" TEXT NOT NULL,
@@ -104,6 +134,22 @@ CREATE INDEX IF NOT EXISTS "moderation_flags_userId_idx" ON "moderation_flags"("
 CREATE UNIQUE INDEX IF NOT EXISTS "moderation_flags_contentType_contentId_key" ON "moderation_flags"("contentType", "contentId");
 
 -- ── admin_audit_log ──────────────────────────────────────────
+-- Exists on the live database from an older push with a different design
+-- ("message"/"userId", non-TEXT id). This is what broke the first version of
+-- this migration: CREATE TABLE IF NOT EXISTS skipped the old table, then
+-- CREATE INDEX on "adminEmail" failed because that column did not exist.
+-- The table is empty on live, so reshape by dropping and recreating.
+DO $$ BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+     WHERE table_schema = current_schema()
+       AND table_name  = 'admin_audit_log'
+       AND column_name = 'message'      -- only the superseded design has this
+  ) THEN
+    DROP TABLE "admin_audit_log";
+  END IF;
+END $$;
+
 CREATE TABLE IF NOT EXISTS "admin_audit_log" (
     "id" TEXT NOT NULL,
     "adminEmail" TEXT NOT NULL,

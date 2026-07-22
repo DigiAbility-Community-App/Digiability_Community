@@ -19,8 +19,8 @@ export async function POST(request: Request) {
     
     // Default hashed credentials if file is empty
     let credentials: Record<string, string> = {
-      "admin@digiability.com": "$2a$10$5pY09AxX4A2OyHuhZ6fS9O4FrzpqAyknHSEdZRfD3.OAfJFyvT2oy",
-      "prathmesh@digiability.com": "$2a$10$2KT4swA30N0Y/2UYPmcto.lVjy/JC0GB5NXRrhNSAp/xJVvnnYjoG"
+      "superadmin@digiability.com": "$2a$10$eBSM.BRyfK1Bw8kfP/UV4.8mGT3iE7aO/B6tODXe.0oW9XBJpLVTq",
+      "prathmesh@digiability.com": "$2a$10$tyCeQlnkWqRD09jA7sjrb.ZKG5/78nzltt4e.eL8oK1dTu8tW36UK"
     };
 
     if (fs.existsSync(filePath)) {
@@ -54,10 +54,24 @@ export async function POST(request: Request) {
       );
 
       // Set cookie for session
+      //
+      // `secure` must reflect how THIS request actually arrived, not just
+      // NODE_ENV — a Secure cookie set over a plain-HTTP connection is
+      // silently discarded by every browser (no Set-Cookie error, it just
+      // never gets stored), which made login appear to succeed while every
+      // subsequent navigation looked unauthenticated. Live currently runs
+      // over plain HTTP with no TLS termination, so NODE_ENV=production
+      // alone was wrong here. x-forwarded-proto is checked first so this
+      // still resolves to Secure automatically once a TLS-terminating
+      // proxy/ingress is added in front.
+      const isHttps =
+        request.headers.get("x-forwarded-proto") === "https" ||
+        new URL(request.url).protocol === "https:";
+
       response.cookies.set("admin-session", token, {
         path: "/",
         httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
+        secure: isHttps,
         sameSite: "strict",
         maxAge: 60 * 60 * 24, // 1 day
       });

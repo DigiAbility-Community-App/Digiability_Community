@@ -19,9 +19,11 @@ export default function App() {
 
   useEffect(() => {
     // Register for push notifications on app start
-    registerForPushNotifications().then((token) => {
-      if (token) saveDeviceToken(token);
-    });
+    registerForPushNotifications()
+      .then((token) => {
+        if (token) saveDeviceToken(token);
+      })
+      .catch((err) => console.warn('[Notifications] Registration failed:', err));
 
     // Navigate when user taps a notification
     const sub = addNotificationResponseListener((response) => {
