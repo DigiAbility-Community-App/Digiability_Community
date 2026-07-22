@@ -9,7 +9,6 @@ import {
     Platform,
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
-import * as Notifications from "expo-notifications";
 import { useAuthStore } from "../../store/authStore";
 import { useChatStore } from "../../store/chatStore";
 import { useTheme } from "../../theme/ThemeContext";
@@ -97,12 +96,6 @@ const HomeProfileScreen = () => {
             setStatsLoading(false);
         }
 
-        try {
-            const { status } = await Notifications.getPermissionsAsync();
-            setNotifStatus(status as any);
-        } catch {
-            // expo-notifications unavailable in Expo Go
-        }
     }, []);
 
     useEffect(() => { loadData(); }, [loadData]);
