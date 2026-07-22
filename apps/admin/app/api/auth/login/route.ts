@@ -54,10 +54,24 @@ export async function POST(request: Request) {
       );
 
       // Set cookie for session
+      //
+      // `secure` must reflect how THIS request actually arrived, not just
+      // NODE_ENV — a Secure cookie set over a plain-HTTP connection is
+      // silently discarded by every browser (no Set-Cookie error, it just
+      // never gets stored), which made login appear to succeed while every
+      // subsequent navigation looked unauthenticated. Live currently runs
+      // over plain HTTP with no TLS termination, so NODE_ENV=production
+      // alone was wrong here. x-forwarded-proto is checked first so this
+      // still resolves to Secure automatically once a TLS-terminating
+      // proxy/ingress is added in front.
+      const isHttps =
+        request.headers.get("x-forwarded-proto") === "https" ||
+        new URL(request.url).protocol === "https:";
+
       response.cookies.set("admin-session", token, {
         path: "/",
         httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
+        secure: isHttps,
         sameSite: "strict",
         maxAge: 60 * 60 * 24, // 1 day
       });
