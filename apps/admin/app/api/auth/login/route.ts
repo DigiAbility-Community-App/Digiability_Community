@@ -19,7 +19,7 @@ export async function POST(request: Request) {
     
     // Default hashed credentials if file is empty
     let credentials: Record<string, string> = {
-      "admin@digiability.com": "$2a$10$ELUFkyL9p9CIQmHIuUHHgO7NZa//GOCPB9U9OqQ1i3Uk0EJMsm98q",
+      "superadmin@digiability.com": "$2a$10$eBSM.BRyfK1Bw8kfP/UV4.8mGT3iE7aO/B6tODXe.0oW9XBJpLVTq",
       "prathmesh@digiability.com": "$2a$10$tyCeQlnkWqRD09jA7sjrb.ZKG5/78nzltt4e.eL8oK1dTu8tW36UK"
     };
 
