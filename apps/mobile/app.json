@@ -55,15 +55,6 @@
         }
       ],
       [
-        "expo-notifications",
-        {
-          "icon": "./assets/logo.png",
-          "color": "#500088",
-          "sounds": [],
-          "mode": "production"
-        }
-      ],
-      [
         "expo-build-properties",
         {
           "android": {
