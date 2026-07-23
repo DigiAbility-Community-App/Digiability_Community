@@ -1,7 +1,6 @@
 import React from "react";
 import {
   View,
-  Text,
   StyleSheet,
   TouchableOpacity,
   ScrollView,
@@ -12,6 +11,8 @@ import { useNavigation } from "@react-navigation/native";
 import ScreenWrapper from "../../components/layout/ScreenWrapper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AccessibleText } from "../../components/shared/AccessibleText";
+import { AccessibleButton } from "../../components/shared/AccessibleButton";
+import { useTheme, getFontScale } from "../../theme/ThemeContext";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
@@ -39,6 +40,8 @@ const FEATURES = [
 
 const CareCircleScreen = () => {
   const navigation = useNavigation<any>();
+  const { colors, highContrast, textSize } = useTheme();
+  const fs = getFontScale(textSize);
 
   const handleCreate = () => {
     navigation.navigate("CreateCareCircle");
@@ -55,7 +58,7 @@ const CareCircleScreen = () => {
     <ScreenWrapper>
       {/* HERO SECTION — extends under translucent status bar naturally */}
       <LinearGradient
-        colors={["#500088", "#6B21A8"]}
+        colors={highContrast ? ["#000000", "#000000"] : ["#500088", "#6B21A8"]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={[styles.hero, { paddingTop: useSafeAreaInsets().top }]}
@@ -72,6 +75,7 @@ const CareCircleScreen = () => {
             <View
               style={[
                 styles.tickArm,
+                { backgroundColor: colors.primary },
                 {
                   width: 14,
                   transform: [
@@ -85,6 +89,7 @@ const CareCircleScreen = () => {
             <View
               style={[
                 styles.tickArm,
+                { backgroundColor: colors.primary },
                 {
                   width: 30,
                   transform: [
@@ -98,11 +103,14 @@ const CareCircleScreen = () => {
         </View>
 
         {/* Text */}
-        <AccessibleText style={styles.heroTitle} accessibilityRole="header">
+        <AccessibleText
+          style={[styles.heroTitle, { fontSize: fs(32), lineHeight: fs(40), color: "#FFFFFF" }]}
+          accessibilityRole="header"
+        >
           Welcome to{"\n"}DigiAbility!
         </AccessibleText>
 
-        <AccessibleText style={styles.heroSubtitle}>
+        <AccessibleText style={[styles.heroSubtitle, { fontSize: fs(16), color: "rgba(255,255,255,0.8)" }]}>
           Your profile is complete
         </AccessibleText>
       </LinearGradient>
@@ -113,19 +121,22 @@ const CareCircleScreen = () => {
         contentContainerStyle={styles.cardContent}
         showsVerticalScrollIndicator={false}
       >
-        <View style={styles.card}>
+        <View style={[styles.card, { backgroundColor: colors.card }, highContrast && { borderTopWidth: 2, borderLeftWidth: 2, borderRightWidth: 2, borderColor: "#000000" }]}>
           {/* Icon */}
-          <View style={styles.iconBox}>
-            <Text style={styles.iconEmoji}>👥</Text>
+          <View style={[styles.iconBox, { backgroundColor: colors.surface }]}>
+            <AccessibleText style={styles.iconEmoji}>👥</AccessibleText>
           </View>
 
           {/* Heading */}
           <View style={styles.textBlock}>
-            <AccessibleText style={styles.cardTitle} accessibilityRole="header">
+            <AccessibleText
+              style={[styles.cardTitle, { fontSize: fs(24), color: colors.text }]}
+              accessibilityRole="header"
+            >
               Create Your Care Circle
             </AccessibleText>
 
-            <AccessibleText style={styles.cardDescription}>
+            <AccessibleText style={[styles.cardDescription, { fontSize: fs(16), lineHeight: fs(26), color: colors.subtext }]}>
               Invite trusted people — family, friends, or caregivers — to support you. Together you stay safer, informed, and connected.
             </AccessibleText>
           </View>
@@ -135,17 +146,17 @@ const CareCircleScreen = () => {
             {FEATURES.map((f) => (
               <View
                 key={f.id}
-                style={styles.featureRow}
+                style={[styles.featureRow, { backgroundColor: colors.surface }, highContrast && { borderWidth: 1, borderColor: "#000000" }]}
               >
-                <View style={styles.featureIconBg}>
-                  <Text style={styles.featureIcon}>
+                <View style={[styles.featureIconBg, { backgroundColor: highContrast ? "#FFFFFF" : "#ECFDF5" }, highContrast && { borderWidth: 1, borderColor: "#000000" }]}>
+                  <AccessibleText style={[styles.featureIcon, { color: highContrast ? "#000000" : "#059669" }]}>
                     {f.icon}
-                  </Text>
+                  </AccessibleText>
                 </View>
 
                 <View style={styles.featureText}>
-                  <AccessibleText style={styles.featureTitle}>{f.title}</AccessibleText>
-                  <AccessibleText style={styles.featureDesc}>{f.description}</AccessibleText>
+                  <AccessibleText style={[styles.featureTitle, { fontSize: fs(16), color: colors.text }]}>{f.title}</AccessibleText>
+                  <AccessibleText style={[styles.featureDesc, { fontSize: fs(14), lineHeight: fs(20), color: colors.subtext }]}>{f.description}</AccessibleText>
                 </View>
               </View>
             ))}
@@ -154,23 +165,14 @@ const CareCircleScreen = () => {
           {/* ACTIONS */}
           <View style={styles.actions}>
             {/* PRIMARY */}
-            <TouchableOpacity
-              activeOpacity={0.9}
+            <AccessibleButton
+              style={styles.primaryButton}
               onPress={handleCreate}
-              style={styles.primaryWrapper}
-              accessibilityRole="button"
               accessibilityLabel="Create Care Circle"
               accessibilityHint="Double tap to set up your care circle and invite trusted contacts"
             >
-              <LinearGradient
-                colors={["#500088", "#6B21A8"]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-                style={styles.primaryButton}
-              >
-                <AccessibleText style={styles.primaryText}>Create Care Circle</AccessibleText>
-              </LinearGradient>
-            </TouchableOpacity>
+              Create Care Circle
+            </AccessibleButton>
 
             {/* SKIP */}
             <TouchableOpacity
@@ -181,7 +183,7 @@ const CareCircleScreen = () => {
               accessibilityLabel="Maybe Later"
               accessibilityHint="Double tap to skip and go to the main app. You can create a care circle later."
             >
-              <AccessibleText style={styles.skipText}>Maybe Later</AccessibleText>
+              <AccessibleText style={[styles.skipText, { color: colors.subtext }]}>Maybe Later</AccessibleText>
             </TouchableOpacity>
           </View>
         </View>
@@ -259,16 +261,12 @@ const styles = StyleSheet.create({
 
   tickArm: {
     height: 4,
-    backgroundColor: "#500088",
     borderRadius: 2,
     marginHorizontal: 1,
   },
 
   heroTitle: {
-    fontSize: 32,
-    lineHeight: 40,
     fontWeight: "800",
-    color: "#FFFFFF",
     textAlign: "center",
     letterSpacing: -0.8,
     marginBottom: 8,
@@ -277,9 +275,7 @@ const styles = StyleSheet.create({
   },
 
   heroSubtitle: {
-    fontSize: 16,
     fontWeight: "500",
-    color: "rgba(255,255,255,0.8)",
     textAlign: "center",
 
     fontFamily: "PlusJakartaSans-Regular",
@@ -296,7 +292,6 @@ const styles = StyleSheet.create({
   },
 
   card: {
-    backgroundColor: "#FFFFFF",
     borderTopLeftRadius: 32,
     borderTopRightRadius: 32,
     paddingTop: 40,
@@ -320,7 +315,6 @@ const styles = StyleSheet.create({
     width: 80,
     height: 80,
     borderRadius: 24,
-    backgroundColor: "#F4F3FA",
     justifyContent: "center",
     alignItems: "center",
     alignSelf: "center",
@@ -338,9 +332,7 @@ const styles = StyleSheet.create({
   },
 
   cardTitle: {
-    fontSize: 24,
     fontWeight: "700",
-    color: "#1A1B20",
     letterSpacing: -0.6,
     textAlign: "center",
 
@@ -348,9 +340,6 @@ const styles = StyleSheet.create({
   },
 
   cardDescription: {
-    fontSize: 16,
-    lineHeight: 26,
-    color: "#4C4452",
     textAlign: "center",
 
     fontFamily: "PlusJakartaSans-Regular",
@@ -365,7 +354,6 @@ const styles = StyleSheet.create({
   featureRow: {
     flexDirection: "row",
     alignItems: "flex-start",
-    backgroundColor: "#F4F3FA",
     borderRadius: 24,
     padding: 16,
     gap: 16,
@@ -375,13 +363,11 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: "#ECFDF5",
     justifyContent: "center",
     alignItems: "center",
   },
 
   featureIcon: {
-    color: "#059669",
     fontSize: 16,
     fontWeight: "900",
   },
@@ -392,18 +378,12 @@ const styles = StyleSheet.create({
   },
 
   featureTitle: {
-    fontSize: 16,
     fontWeight: "700",
-    color: "#1A1B20",
 
     fontFamily: "PlusJakartaSans-Bold",
   },
 
   featureDesc: {
-    fontSize: 14,
-    lineHeight: 20,
-    color: "#4C4452",
-
     fontFamily: "PlusJakartaSans-Regular",
   },
 
@@ -412,10 +392,9 @@ const styles = StyleSheet.create({
     gap: 16,
   },
 
-  primaryWrapper: {
+  primaryButton: {
+    height: 60,
     borderRadius: 24,
-    overflow: "hidden",
-
     shadowColor: "#500088",
     shadowOpacity: 0.25,
     shadowRadius: 15,
@@ -423,22 +402,7 @@ const styles = StyleSheet.create({
       width: 0,
       height: 10,
     },
-
     elevation: 8,
-  },
-
-  primaryButton: {
-    height: 60,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-
-  primaryText: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: "#FFFFFF",
-
-    fontFamily: "PlusJakartaSans-Bold",
   },
 
   skipButton: {
@@ -450,7 +414,6 @@ const styles = StyleSheet.create({
   skipText: {
     fontSize: 16,
     fontWeight: "600",
-    color: "#7E7383",
 
     fontFamily: "PlusJakartaSans-Regular",
   },

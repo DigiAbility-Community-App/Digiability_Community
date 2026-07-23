@@ -1,7 +1,6 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useRef } from "react";
 import {
     View,
-    Text,
     StyleSheet,
     TouchableOpacity,
     ScrollView,
@@ -14,21 +13,20 @@ import {
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useFocusEffect } from "@react-navigation/native";
 import { logout } from "@services/authService";
+import { removeDeviceToken } from "@services/notificationService";
 import SafeScreen from "../../components/layout/SafeScreen";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { LinearGradient } from "expo-linear-gradient";
 
 import { MainStackParamList } from "@navigation/MainNavigator";
 import { useAuthStore } from "@store/authStore";
 import { useAccessibilityStore } from "@store/accessibilityStore";
-import { useTheme } from "../../theme/ThemeContext";
+import { getFontScale, getThemeColors } from "../../theme/ThemeContext";
 import { AccessibleText } from "../../components/shared/AccessibleText";
 import { AccessibleButton } from "../../components/shared/AccessibleButton";
 
 import {
     defaultAccessibilityPreferences,
     getAccessibilityPreferences,
-    saveAccessibilityPreferences,
     TextSize,
 } from "@services/storageService";
 
@@ -64,15 +62,12 @@ const AccessibilityScreen = ({ navigation }: Props) => {
         defaultAccessibilityPreferences.pushNotif
     );
 
-    const [emailNotif, setEmailNotif] = useState(
-        defaultAccessibilityPreferences.emailNotif
-    );
-
-    const [smsNotif, setSmsNotif] = useState(
-        defaultAccessibilityPreferences.smsNotif
-    );
-
     const [loading, setLoading] = useState(false);
+
+    // Tracks the last-persisted pushNotif value so handleContinue can tell
+    // whether the user is turning it off (and should unregister the device
+    // token) versus leaving it unchanged.
+    const lastSavedPushNotifRef = useRef(defaultAccessibilityPreferences.pushNotif);
 
     React.useEffect(() => {
         let isMounted = true;
@@ -91,8 +86,7 @@ const AccessibilityScreen = ({ navigation }: Props) => {
                 setScreenReader(savedPreferences.screenReader);
                 setReduceMotion(savedPreferences.reduceMotion);
                 setPushNotif(savedPreferences.pushNotif);
-                setEmailNotif(savedPreferences.emailNotif);
-                setSmsNotif(savedPreferences.smsNotif);
+                lastSavedPushNotifRef.current = savedPreferences.pushNotif;
             } catch {
                 // Optional during onboarding
             }
@@ -176,11 +170,16 @@ const AccessibilityScreen = ({ navigation }: Props) => {
                 highContrast,
                 screenReader,
                 reduceMotion,
-                language: "English",
                 pushNotif,
-                emailNotif,
-                smsNotif,
             });
+
+            if (lastSavedPushNotifRef.current && !pushNotif) {
+                // Unregister immediately rather than waiting for next boot.
+                removeDeviceToken().catch(() => {
+                    // Best-effort — device token cleanup shouldn't block onboarding.
+                });
+            }
+            lastSavedPushNotifRef.current = pushNotif;
         } catch {
             Alert.alert(
                 "Preferences skipped",
@@ -192,28 +191,11 @@ const AccessibilityScreen = ({ navigation }: Props) => {
         }
     };
 
-    const fs = (size: number) => {
-        switch (textSize) {
-            case "Small":
-                return Math.round(size * 0.85);
-            case "Large":
-                return Math.round(size * 1.25);
-            case "Medium":
-            default:
-                return size;
-        }
-    };
-
-    const screenColors = {
-        primary: highContrast ? "#000000" : "#500088",
-        secondary: highContrast ? "#000000" : "#6B21A8",
-        background: highContrast ? "#FFFFFF" : "#F9F8FF",
-        card: highContrast ? "#FFFFFF" : "#FFFFFF",
-        text: highContrast ? "#000000" : "#1A1B20",
-        subtext: highContrast ? "#000000" : "#4C4452",
-        border: highContrast ? "#000000" : "rgba(0,0,0,0.05)",
-        surface: highContrast ? "#FFFFFF" : "#F4F3FA",
-    };
+    // Same formulas ThemeContext.tsx uses for the live app theme — reused
+    // here (not duplicated) so this screen's preview never drifts from what
+    // the rest of the app actually renders once these preferences are saved.
+    const fs = getFontScale(textSize);
+    const screenColors = getThemeColors(highContrast);
 
     const cardBorder = {
         borderWidth: highContrast ? 2 : 1,
@@ -389,10 +371,10 @@ const AccessibilityScreen = ({ navigation }: Props) => {
                     </View>
                 </View>
 
-                {/* AUDIO */}
+                {/* NOTIFICATIONS */}
                 <View style={styles.section}>
                     <AccessibleText variant="overline" style={{ color: highContrast ? "#000000" : "#6B21A8", marginBottom: 16 }}>
-                        AUDIO
+                        NOTIFICATIONS
                     </AccessibleText>
 
                     <View style={[styles.switchCard, { backgroundColor: screenColors.card }, cardBorder]}>
@@ -418,86 +400,7 @@ const AccessibilityScreen = ({ navigation }: Props) => {
                             accessibilityHint="Toggles receiving instant push notifications"
                         />
                     </View>
-
-                    <View style={[styles.switchCard, { backgroundColor: screenColors.card }, cardBorder]}>
-                        <View style={styles.switchText}>
-                            <AccessibleText variant="title" style={{ color: screenColors.text, fontSize: fs(16) }}>
-                                Email Notifications
-                            </AccessibleText>
-
-                            <AccessibleText variant="body" style={{ color: screenColors.subtext, fontSize: fs(14), marginTop: 4 }}>
-                                Receive updates through email
-                            </AccessibleText>
-                        </View>
-
-                        <Switch
-                            value={emailNotif}
-                            onValueChange={setEmailNotif}
-                            trackColor={{
-                                false: highContrast ? "#7E7383" : "#CFC2D4",
-                                true: highContrast ? "#000000" : "#6B21A8",
-                            }}
-                            thumbColor="#FFFFFF"
-                            accessibilityLabel="Email Notifications"
-                            accessibilityHint="Toggles receiving notification updates by email"
-                        />
-                    </View>
                 </View>
-
-                {/* MOTOR */}
-                {/* <View style={styles.section}>
-                    <AccessibleText variant="overline" style={{ color: highContrast ? "#000000" : "#6B21A8", marginBottom: 16 }}>
-                        MOTOR
-                    </AccessibleText>
-
-                    <View style={[styles.switchCard, { backgroundColor: screenColors.card }, cardBorder]}>
-                        <View style={styles.switchText}>
-                            <AccessibleText variant="title" style={{ color: screenColors.text, fontSize: fs(16) }}>
-                                SMS Notifications
-                            </AccessibleText>
-
-                            <AccessibleText variant="body" style={{ color: screenColors.subtext, fontSize: fs(14), marginTop: 4 }}>
-                                Get alerts through SMS messages
-                            </AccessibleText>
-                        </View>
-
-                        <Switch
-                            value={smsNotif}
-                            onValueChange={setSmsNotif}
-                            trackColor={{
-                                false: highContrast ? "#7E7383" : "#CFC2D4",
-                                true: highContrast ? "#000000" : "#6B21A8",
-                            }}
-                            thumbColor="#FFFFFF"
-                            accessibilityLabel="SMS Notifications"
-                            accessibilityHint="Toggles receiving alerts via SMS text messages"
-                        />
-                    </View>
-
-                    <View style={[styles.switchCard, { backgroundColor: screenColors.card }, cardBorder]}>
-                        <View style={styles.switchText}>
-                            <AccessibleText variant="title" style={{ color: screenColors.text, fontSize: fs(16) }}>
-                                Reduce Gestures
-                            </AccessibleText>
-
-                            <AccessibleText variant="body" style={{ color: screenColors.subtext, fontSize: fs(14), marginTop: 4 }}>
-                                Easier interactions with simpler taps
-                            </AccessibleText>
-                        </View>
-
-                        <Switch
-                            value={reduceMotion}
-                            onValueChange={setReduceMotion}
-                            trackColor={{
-                                false: highContrast ? "#7E7383" : "#CFC2D4",
-                                true: highContrast ? "#000000" : "#6B21A8",
-                            }}
-                            thumbColor="#FFFFFF"
-                            accessibilityLabel="Reduce Gestures"
-                            accessibilityHint="Enables single-tap interactions rather than complex gestures"
-                        />
-                    </View>
-                </View>*/}
             </ScrollView>
 
             {/* FOOTER */}

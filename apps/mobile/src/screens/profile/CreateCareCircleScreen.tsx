@@ -10,18 +10,18 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from "react-native";
-import { LinearGradient } from "expo-linear-gradient";
 import { useNavigation } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import SafeScreen from "../../components/layout/SafeScreen";
 import { AccessibleText } from "../../components/shared/AccessibleText";
+import { AccessibleButton } from "../../components/shared/AccessibleButton";
 import { chatService } from "../../services/chatService";
 import { useTheme } from "../../theme/ThemeContext";
 
 const CreateCareCircleScreen = () => {
   const navigation = useNavigation<any>();
   const insets = useSafeAreaInsets();
-  const { colors, spacing } = useTheme();
+  const { colors, spacing, highContrast } = useTheme();
 
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -108,7 +108,7 @@ const CreateCareCircleScreen = () => {
           contentContainerStyle={[styles.content, { paddingHorizontal: spacing.lg, paddingBottom: 160 }]}
         >
           {/* ICON */}
-          <View style={styles.iconBox}>
+          <View style={[styles.iconBox, { backgroundColor: colors.surface }]}>
             <AccessibleText style={styles.iconEmoji}>👥</AccessibleText>
           </View>
 
@@ -137,7 +137,7 @@ const CreateCareCircleScreen = () => {
               />
             </View>
             {nameError ? (
-              <AccessibleText style={styles.errorText} accessibilityRole="alert">
+              <AccessibleText style={[styles.errorText, { color: colors.error }]} accessibilityRole="alert">
                 {nameError}
               </AccessibleText>
             ) : null}
@@ -169,8 +169,8 @@ const CreateCareCircleScreen = () => {
           </View>
 
           {/* INFO CARD */}
-          <View style={[styles.infoCard, { backgroundColor: "#F3EAFF" }]}>
-            <AccessibleText style={[styles.infoText, { color: "#6B21A8" }]}>
+          <View style={[styles.infoCard, { backgroundColor: highContrast ? colors.surface : "#F3EAFF" }, highContrast && { borderWidth: 1, borderColor: "#000000" }]}>
+            <AccessibleText style={[styles.infoText, { color: colors.secondary }]}>
               💡 After creating your circle, you can invite family members, caregivers, and professionals from the Groups section in the app.
             </AccessibleText>
           </View>
@@ -178,29 +178,15 @@ const CreateCareCircleScreen = () => {
 
         {/* FOOTER */}
         <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 24), backgroundColor: colors.background }]}>
-          <TouchableOpacity
-            activeOpacity={0.9}
+          <AccessibleButton
             onPress={handleCreate}
             disabled={loading}
-            style={styles.primaryWrapper}
-            accessibilityRole="button"
+            style={styles.primaryButton}
             accessibilityLabel="Create Care Circle"
             accessibilityHint="Double tap to create your care circle"
-            accessibilityState={{ disabled: loading }}
           >
-            <LinearGradient
-              colors={loading ? ["#9B7AB8", "#9B7AB8"] : ["#500088", "#6B21A8"]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={styles.primaryButton}
-            >
-              {loading ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <AccessibleText style={styles.primaryText}>Create Care Circle</AccessibleText>
-              )}
-            </LinearGradient>
-          </TouchableOpacity>
+            {loading ? <ActivityIndicator color={colors.white} /> : "Create Care Circle"}
+          </AccessibleButton>
 
           <TouchableOpacity
             activeOpacity={0.7}
@@ -252,7 +238,6 @@ const styles = StyleSheet.create({
     width: 80,
     height: 80,
     borderRadius: 24,
-    backgroundColor: "#F4F3FA",
     justifyContent: "center",
     alignItems: "center",
     marginBottom: 20,
@@ -294,7 +279,6 @@ const styles = StyleSheet.create({
     textAlign: "right",
   },
   errorText: {
-    color: "#DC2626",
     fontSize: 12,
     marginTop: 6,
     marginLeft: 4,
@@ -319,23 +303,13 @@ const styles = StyleSheet.create({
     paddingTop: 16,
     gap: 12,
   },
-  primaryWrapper: {
+  primaryButton: {
+    height: 56,
     borderRadius: 20,
-    overflow: "hidden",
     shadowColor: "#500088",
     shadowOpacity: 0.25,
     shadowRadius: 12,
     elevation: 6,
-  },
-  primaryButton: {
-    height: 56,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  primaryText: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: "#FFFFFF",
   },
   skipButton: {
     height: 44,

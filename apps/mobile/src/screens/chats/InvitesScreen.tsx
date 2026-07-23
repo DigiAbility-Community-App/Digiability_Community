@@ -1,7 +1,6 @@
 import React, { useState, useCallback, useEffect } from "react";
 import {
   View,
-  Text,
   StyleSheet,
   TouchableOpacity,
   FlatList,
@@ -16,6 +15,9 @@ import { chatService } from "@services/chatService";
 import ScreenWrapper from "../../components/layout/ScreenWrapper";
 import { ArrowLeft, Users, Accessibility, Inbox } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useTheme } from "../../theme/ThemeContext";
+import { AccessibleText } from "../../components/shared/AccessibleText";
+import { AccessibleButton } from "../../components/shared/AccessibleButton";
 
 type Props = {
   navigation: NativeStackNavigationProp<ChatsStackParamList, "Invites">;
@@ -23,11 +25,18 @@ type Props = {
 
 const InvitesScreen = ({ navigation }: Props) => {
   const insets = useSafeAreaInsets();
+  const { colors, highContrast } = useTheme();
   const pendingInvites = useChatStore((s) => s.pendingInvites);
   const setPendingInvites = useChatStore((s) => s.setPendingInvites);
   const removePendingInvite = useChatStore((s) => s.removePendingInvite);
   const setConversations = useChatStore((s) => s.setConversations);
   const [processingId, setProcessingId] = useState<string | null>(null);
+
+  // Standard card outline — subtle in normal mode, solid black under high
+  // contrast — for card-like containers/list rows.
+  const cardBorder = highContrast
+    ? { borderWidth: 2, borderColor: "#000000" }
+    : { borderWidth: 1, borderColor: "rgba(0,0,0,0.05)" };
 
   // Always fetch fresh invites when the screen mounts
   useEffect(() => {
@@ -72,46 +81,47 @@ const InvitesScreen = ({ navigation }: Props) => {
     const isProcessing = processingId === item.id;
 
     return (
-      <View style={styles.inviteCard}>
+      <View style={[styles.inviteCard, { backgroundColor: colors.card, shadowColor: colors.primary }, cardBorder]}>
         <View style={styles.inviteHeader}>
-          <View style={[styles.groupIcon, isCareCircle && styles.groupIconCare]}>
-            isCareCircle ? <Accessibility size={22} color="#8A38F5" strokeWidth={2} /> : <Users size={22} color="#8A38F5" strokeWidth={2} />
+          <View style={[styles.groupIcon, { backgroundColor: isCareCircle ? colors.background : colors.surface }]}>
+            {isCareCircle ? <Accessibility size={22} color={colors.primary} strokeWidth={2} /> : <Users size={22} color={colors.primary} strokeWidth={2} />}
           </View>
           <View style={styles.inviteInfo}>
-            <Text style={styles.groupName}>{item.conversation?.name || "Unknown Group"}</Text>
-            <Text style={styles.inviterText}>
-              Invited as <Text style={{ fontWeight: '700', color: '#500088' }}>
+            <AccessibleText variant="body" style={[styles.groupName, { color: colors.text }]}>{item.conversation?.name || "Unknown Group"}</AccessibleText>
+            <AccessibleText variant="caption" style={[styles.inviterText, { color: colors.subtext }]}>
+              Invited as{" "}
+              <AccessibleText variant="caption" style={{ fontWeight: '700', color: colors.primary }}>
                 {item.role.charAt(0) + item.role.slice(1).toLowerCase()}
-              </Text>
-            </Text>
+              </AccessibleText>
+            </AccessibleText>
           </View>
         </View>
 
         {item.message ? (
-          <View style={styles.messageBox}>
-            <Text style={styles.messageText}>"{item.message}"</Text>
+          <View style={[styles.messageBox, { backgroundColor: colors.surface, borderLeftColor: colors.primary }]}>
+            <AccessibleText variant="body" style={[styles.messageText, { color: colors.text }]}>"{item.message}"</AccessibleText>
           </View>
         ) : null}
 
         <View style={styles.actionRow}>
-          <TouchableOpacity
+          <AccessibleButton
+            variant="danger"
+            accessibilityLabel={`Decline invite to ${item.conversation?.name || "group"}`}
             style={[styles.btn, styles.btnDecline, isProcessing && styles.btnDisabled]}
             onPress={() => handleRespond(item, 'decline')}
             disabled={isProcessing}
           >
-            <Text style={styles.btnTextDecline}>Decline</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
+            Decline
+          </AccessibleButton>
+          <AccessibleButton
+            variant="primary"
+            accessibilityLabel={`Accept invite to ${item.conversation?.name || "group"}`}
             style={[styles.btn, styles.btnAccept, isProcessing && styles.btnDisabled]}
             onPress={() => handleRespond(item, 'accept')}
             disabled={isProcessing}
           >
-            {isProcessing ? (
-              <ActivityIndicator color="#fff" size="small" />
-            ) : (
-              <Text style={styles.btnTextAccept}>Accept</Text>
-            )}
-          </TouchableOpacity>
+            {isProcessing ? <ActivityIndicator color={colors.white} size="small" /> : "Accept"}
+          </AccessibleButton>
         </View>
       </View>
     );
@@ -119,14 +129,19 @@ const InvitesScreen = ({ navigation }: Props) => {
 
   return (
     <ScreenWrapper statusBarStyle="light">
-      <View style={[styles.header, { paddingTop: insets.top + 10 }]}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
-          <ArrowLeft size={24} color="#fff" strokeWidth={2.2} />
+      <View style={[styles.header, { paddingTop: insets.top + 10, backgroundColor: colors.primary }]}>
+        <TouchableOpacity
+          style={styles.backBtn}
+          onPress={() => navigation.goBack()}
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
+        >
+          <ArrowLeft size={24} color={colors.white} strokeWidth={2.2} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Pending Invites</Text>
+        <AccessibleText variant="title" style={[styles.headerTitle, { color: colors.white }]}>Pending Invites</AccessibleText>
         {pendingInvites.length > 0 && (
-          <View style={styles.badge}>
-            <Text style={styles.badgeText}>{pendingInvites.length}</Text>
+          <View style={[styles.badge, { backgroundColor: colors.white }]}>
+            <AccessibleText variant="caption" style={[styles.badgeText, { color: colors.primary }]}>{pendingInvites.length}</AccessibleText>
           </View>
         )}
       </View>
@@ -138,9 +153,9 @@ const InvitesScreen = ({ navigation }: Props) => {
         contentContainerStyle={styles.listContent}
         ListEmptyComponent={
           <View style={styles.emptyState}>
-            <Inbox size={40} color="#B9A9D6" strokeWidth={1.8} style={styles.emptyIcon} />
-            <Text style={styles.emptyTitle}>No pending invites</Text>
-            <Text style={styles.emptySubtitle}>You're all caught up!</Text>
+            <Inbox size={40} color={colors.subtext} strokeWidth={1.8} style={styles.emptyIcon} />
+            <AccessibleText variant="title" style={[styles.emptyTitle, { color: colors.text }]}>No pending invites</AccessibleText>
+            <AccessibleText variant="body" style={[styles.emptySubtitle, { color: colors.subtext }]}>You're all caught up!</AccessibleText>
           </View>
         }
       />
@@ -154,7 +169,6 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#500088",
     paddingHorizontal: 16,
     paddingBottom: 16,
     borderBottomLeftRadius: 20,
@@ -165,43 +179,40 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255,255,255,0.15)",
     justifyContent: "center", alignItems: "center", marginRight: 12,
   },
-  backText: { color: "#fff", fontSize: 20, fontWeight: "700" },
-  headerTitle: { color: "#fff", fontSize: 20, fontWeight: "800", flex: 1 },
+  headerTitle: { fontSize: 20, fontWeight: "800", flex: 1 },
   badge: {
-    backgroundColor: "#fff", borderRadius: 12,
+    borderRadius: 12,
     paddingHorizontal: 8, paddingVertical: 2, minWidth: 24, alignItems: "center",
   },
-  badgeText: { color: "#500088", fontSize: 12, fontWeight: "800" },
+  badgeText: { fontSize: 12, fontWeight: "800" },
   listContent: { padding: 16, paddingBottom: 100 },
   inviteCard: {
-    backgroundColor: "#fff", borderRadius: 16, padding: 16, marginBottom: 12,
-    shadowColor: "#8A38F5", shadowOpacity: 0.08,
+    borderRadius: 16, padding: 16, marginBottom: 12,
+    shadowOpacity: 0.08,
     shadowOffset: { width: 0, height: 4 }, shadowRadius: 12, elevation: 3,
   },
   inviteHeader: { flexDirection: "row", alignItems: "center", marginBottom: 12 },
   groupIcon: {
-    width: 48, height: 48, borderRadius: 14, backgroundColor: "#E8E5F0",
+    width: 48, height: 48, borderRadius: 14,
     justifyContent: "center", alignItems: "center", marginRight: 12,
   },
-  groupIconCare: { backgroundColor: "#F3EAFF" },
-  groupIconText: { fontSize: 24 },
   inviteInfo: { flex: 1 },
-  groupName: { fontSize: 16, fontWeight: "700", color: "#1a1a1a", marginBottom: 2 },
-  inviterText: { fontSize: 13, color: "#666" },
+  groupName: { fontSize: 16, fontWeight: "700", marginBottom: 2 },
+  inviterText: { fontSize: 13 },
   messageBox: {
-    backgroundColor: "#F8F9FA", padding: 12, borderRadius: 12,
-    marginBottom: 16, borderLeftWidth: 3, borderLeftColor: "#8A38F5",
+    padding: 12, borderRadius: 12,
+    marginBottom: 16, borderLeftWidth: 3,
   },
-  messageText: { fontSize: 14, color: "#444", fontStyle: "italic" },
+  messageText: { fontSize: 14, fontStyle: "italic" },
   actionRow: { flexDirection: "row", gap: 12 },
   btn: { flex: 1, height: 44, borderRadius: 12, justifyContent: "center", alignItems: "center" },
   btnDisabled: { opacity: 0.6 },
-  btnDecline: { backgroundColor: "#FEE2E2" },
-  btnAccept: { backgroundColor: "#500088" },
-  btnTextDecline: { color: "#EF4444", fontWeight: "700", fontSize: 15 },
-  btnTextAccept: { color: "#fff", fontWeight: "700", fontSize: 15 },
+  // Colors are now owned by AccessibleButton's variant ("danger" / "primary");
+  // these stay as empty composition slots for layout-only overrides.
+  btnDecline: {},
+  btnAccept: {},
   emptyState: { alignItems: "center", paddingTop: 80 },
-  emptyIcon: { fontSize: 48, marginBottom: 16 },
-  emptyTitle: { fontSize: 18, fontWeight: "700", color: "#1a1a1a", marginBottom: 8 },
-  emptySubtitle: { fontSize: 14, color: "#666" },
+  emptyIcon: { marginBottom: 16 },
+  emptyTitle: { fontSize: 18, fontWeight: "700", marginBottom: 8 },
+  emptySubtitle: { fontSize: 14 },
 });

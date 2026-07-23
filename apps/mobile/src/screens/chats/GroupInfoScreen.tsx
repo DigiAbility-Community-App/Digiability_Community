@@ -1,7 +1,6 @@
 import React, { useState, useCallback, useRef, useEffect } from "react";
 import {
   View,
-  Text,
   StyleSheet,
   TouchableOpacity,
   ScrollView,
@@ -20,6 +19,9 @@ import { chatService } from "@services/chatService";
 import ScreenWrapper from "../../components/layout/ScreenWrapper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ArrowLeft, Users, Accessibility, SquarePen, Bell, BellOff, ChevronRight, X, Plus } from "lucide-react-native";
+import { useTheme, getFontScale } from "../../theme/ThemeContext";
+import { AccessibleText } from "../../components/shared/AccessibleText";
+import { AccessibleButton } from "../../components/shared/AccessibleButton";
 
 type Props = NativeStackScreenProps<ChatsStackParamList, "GroupInfo">;
 
@@ -27,6 +29,8 @@ const GroupInfoScreen = ({ navigation, route }: Props) => {
   const { conversationId } = route.params;
   const insets = useSafeAreaInsets();
   const user = useAuthStore((s) => s.user);
+  const { colors, highContrast, textSize } = useTheme();
+  const fs = getFontScale(textSize);
 
   const conversation = useChatStore((s) => s.conversations[conversationId]);
   const updateConversation = useChatStore((s) => s.updateConversation);
@@ -45,10 +49,16 @@ const GroupInfoScreen = ({ navigation, route }: Props) => {
   const [editDesc, setEditDesc] = useState("");
   const [isSavingInfo, setIsSavingInfo] = useState(false);
 
+  // Standard card outline — subtle in normal mode, solid black under high
+  // contrast — for card-like containers/list rows across this screen.
+  const cardBorder = highContrast
+    ? { borderWidth: 2, borderColor: "#000000" }
+    : { borderWidth: 1, borderColor: "rgba(0,0,0,0.05)" };
+
   if (!conversation) {
     return (
       <ScreenWrapper>
-        <Text style={{ padding: 20, textAlign: "center" }}>Group not found</Text>
+        <AccessibleText variant="body" style={{ padding: 20, textAlign: "center" }}>Group not found</AccessibleText>
       </ScreenWrapper>
     );
   }
@@ -413,146 +423,231 @@ const GroupInfoScreen = ({ navigation, route }: Props) => {
     }
   };
 
+  // Role badges are semantically meaningful (distinct color per role), so we
+  // keep each role visually distinct rather than collapsing them into one
+  // brand color — but every pair now has an explicit high-contrast branch
+  // (white fill + solid black border + black text) instead of being frozen
+  // hex literals untouched by the contrast toggle. OWNER/ADMIN route through
+  // the theme's primary/secondary accents; CAREGIVER/MENTOR/PROFESSIONAL
+  // keep semantic green/amber/red tints consistent with their original hues.
   const getRoleBadgeStyle = (role: string) => {
     switch (role) {
-      case 'OWNER': return { backgroundColor: '#EDE9FE', color: '#6B21A8' };
-      case 'ADMIN': return { backgroundColor: '#DBEAFE', color: '#1D4ED8' };
-      case 'CAREGIVER': return { backgroundColor: '#D1FAE5', color: '#065F46' };
-      case 'MENTOR': return { backgroundColor: '#FEF3C7', color: '#92400E' };
-      case 'PROFESSIONAL': return { backgroundColor: '#FEE2E2', color: '#991B1B' };
-      default: return null;
+      case 'OWNER':
+        return {
+          backgroundColor: highContrast ? '#FFFFFF' : '#EDE9FE',
+          borderWidth: highContrast ? 1 : 0,
+          borderColor: '#000000',
+          color: colors.primary,
+        };
+      case 'ADMIN':
+        return {
+          backgroundColor: highContrast ? '#FFFFFF' : '#DBEAFE',
+          borderWidth: highContrast ? 1 : 0,
+          borderColor: '#000000',
+          color: colors.secondary,
+        };
+      case 'CAREGIVER':
+        return {
+          backgroundColor: highContrast ? '#FFFFFF' : '#D1FAE5',
+          borderWidth: highContrast ? 1 : 0,
+          borderColor: '#000000',
+          color: highContrast ? '#000000' : '#065F46',
+        };
+      case 'MENTOR':
+        return {
+          backgroundColor: highContrast ? '#FFFFFF' : '#FEF3C7',
+          borderWidth: highContrast ? 1 : 0,
+          borderColor: '#000000',
+          color: highContrast ? '#000000' : '#92400E',
+        };
+      case 'PROFESSIONAL':
+        return {
+          backgroundColor: highContrast ? '#FFFFFF' : '#FEE2E2',
+          borderWidth: highContrast ? 1 : 0,
+          borderColor: '#000000',
+          color: highContrast ? '#000000' : '#991B1B',
+        };
+      default:
+        return null;
     }
   };
 
   return (
     <ScreenWrapper statusBarStyle="light">
-      <View style={[styles.header, { paddingTop: insets.top + 10 }]}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
-          <ArrowLeft size={24} color="#fff" strokeWidth={2.2} />
+      <View style={[styles.header, { paddingTop: insets.top + 10, backgroundColor: colors.primary }]}>
+        <TouchableOpacity
+          style={styles.backBtn}
+          onPress={() => navigation.goBack()}
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
+        >
+          <ArrowLeft size={24} color={colors.white} strokeWidth={2.2} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Group Info</Text>
+        <AccessibleText variant="title" style={[styles.headerTitle, { color: colors.white }]}>Group Info</AccessibleText>
       </View>
 
-      <ScrollView style={styles.content} contentContainerStyle={{ paddingBottom: 40 }} keyboardShouldPersistTaps="handled">
+      <ScrollView style={[styles.content, { backgroundColor: colors.background }]} contentContainerStyle={{ paddingBottom: 40 }} keyboardShouldPersistTaps="handled">
         {/* Profile Card */}
-        <View style={styles.profileCard}>
-          <View style={styles.avatarLarge}>
+        <View style={[styles.profileCard, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
+          <View style={[styles.avatarLarge, { backgroundColor: colors.surface }]}>
             {isCareCircle
-              ? <Accessibility size={40} color="#8A38F5" strokeWidth={1.9} />
-              : <Users size={40} color="#8A38F5" strokeWidth={1.9} />}
+              ? <Accessibility size={40} color={colors.primary} strokeWidth={1.9} />
+              : <Users size={40} color={colors.primary} strokeWidth={1.9} />}
           </View>
 
           {isEditingInfo ? (
             <View style={styles.editForm}>
               <TextInput
-                style={styles.editNameInput}
+                style={[styles.editNameInput, { fontSize: fs(18), color: colors.text }, cardBorder]}
                 value={editName}
                 onChangeText={setEditName}
                 placeholder="Group name"
-                placeholderTextColor="#999"
+                placeholderTextColor={colors.subtext}
                 maxLength={100}
                 autoFocus
+                accessibilityLabel="Group name"
               />
               <TextInput
-                style={styles.editDescInput}
+                style={[styles.editDescInput, { color: colors.text }, cardBorder]}
                 value={editDesc}
                 onChangeText={setEditDesc}
                 placeholder="Add a description (optional)"
-                placeholderTextColor="#999"
+                placeholderTextColor={colors.subtext}
                 maxLength={500}
                 multiline
+                accessibilityLabel="Group description"
               />
               <View style={styles.editActions}>
-                <TouchableOpacity style={styles.editCancelBtn} onPress={() => setIsEditingInfo(false)} disabled={isSavingInfo}>
-                  <Text style={styles.editCancelText}>Cancel</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.editSaveBtn} onPress={handleSaveInfo} disabled={isSavingInfo}>
-                  {isSavingInfo ? <ActivityIndicator size="small" color="#fff" /> : <Text style={styles.editSaveText}>Save</Text>}
-                </TouchableOpacity>
+                <AccessibleButton
+                  variant="outline"
+                  accessibilityLabel="Cancel editing group info"
+                  style={styles.editCancelBtn}
+                  onPress={() => setIsEditingInfo(false)}
+                  disabled={isSavingInfo}
+                >
+                  Cancel
+                </AccessibleButton>
+                <AccessibleButton
+                  variant="primary"
+                  accessibilityLabel="Save group info"
+                  style={styles.editSaveBtn}
+                  onPress={handleSaveInfo}
+                  disabled={isSavingInfo}
+                >
+                  {isSavingInfo ? <ActivityIndicator size="small" color={colors.white} /> : "Save"}
+                </AccessibleButton>
               </View>
             </View>
           ) : (
             <>
               <View style={styles.nameRow}>
-                <Text style={styles.groupNameLarge}>{conversation.name}</Text>
+                <AccessibleText variant="title" style={[styles.groupNameLarge, { fontSize: fs(24), color: colors.text }]}>
+                  {conversation.name}
+                </AccessibleText>
                 {canEditInfo && (
-                  <TouchableOpacity style={styles.editIconBtn} onPress={openEditInfo}>
-                    <SquarePen size={17} color="#500088" strokeWidth={2} />
+                  <TouchableOpacity
+                    style={styles.editIconBtn}
+                    onPress={openEditInfo}
+                    accessibilityRole="button"
+                    accessibilityLabel="Edit group info"
+                  >
+                    <SquarePen size={17} color={colors.primary} strokeWidth={2} />
                   </TouchableOpacity>
                 )}
               </View>
-              <Text style={styles.memberCountLarge}>
+              <AccessibleText variant="body" style={[styles.memberCountLarge, { color: colors.subtext }]}>
                 {isCareCircle ? "Care Circle" : "Group"} • {conversation.participants.length} members
-              </Text>
+              </AccessibleText>
               {conversation.description ? (
-                <Text style={styles.groupDescription}>{conversation.description}</Text>
+                <AccessibleText variant="body" style={[styles.groupDescription, { color: colors.text }]}>
+                  {conversation.description}
+                </AccessibleText>
               ) : null}
             </>
           )}
 
           {/* Mute toggle — available to all members */}
-          <TouchableOpacity style={styles.muteRow} onPress={handleToggleMute}>
+          <TouchableOpacity
+            style={[styles.muteRow, { backgroundColor: colors.surface }]}
+            onPress={handleToggleMute}
+            accessibilityRole="button"
+            accessibilityLabel={isMuted ? "Unmute notifications" : "Mute notifications"}
+          >
             {isMuted
-              ? <Bell size={16} color="#500088" strokeWidth={2} />
-              : <BellOff size={16} color="#500088" strokeWidth={2} />}
-            <Text style={styles.muteText}>{isMuted ? "Unmute Notifications" : "Mute Notifications"}</Text>
+              ? <Bell size={16} color={colors.primary} strokeWidth={2} />
+              : <BellOff size={16} color={colors.primary} strokeWidth={2} />}
+            <AccessibleText variant="body" style={[styles.muteText, { color: colors.primary }]}>
+              {isMuted ? "Unmute Notifications" : "Mute Notifications"}
+            </AccessibleText>
           </TouchableOpacity>
         </View>
 
         {/* Group Settings Section */}
         {hasAdminRights && (
           <View style={styles.section}>
-            <Text style={styles.sectionLabel}>Group Settings</Text>
-            <View style={styles.settingsCard}>
+            <AccessibleText variant="label" style={[styles.sectionLabel, { fontSize: fs(14), color: colors.secondary }]}>Group Settings</AccessibleText>
+            <View style={[styles.settingsCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
               <View style={styles.settingRow}>
                 <View style={styles.settingInfo}>
-                  <Text style={styles.settingTitle}>Edit Group Info</Text>
-                  <Text style={styles.settingSub}>Who can change group name and description</Text>
+                  <AccessibleText variant="body" style={[styles.settingTitle, { color: colors.text }]}>Edit Group Info</AccessibleText>
+                  <AccessibleText variant="caption" style={[styles.settingSub, { color: colors.subtext }]}>Who can change group name and description</AccessibleText>
                 </View>
                 <Switch
                   value={conversation.editGroupInfo === "ALL_MEMBERS"}
                   onValueChange={() => handleToggleSetting("editGroupInfo", conversation.editGroupInfo || "ADMINS_ONLY")}
                   disabled={isUpdatingSettings}
-                  trackColor={{ true: "#8A38F5", false: "#E8E5F0" }}
+                  trackColor={{ false: highContrast ? "#7E7383" : "#CFC2D4", true: highContrast ? "#000000" : colors.primary }}
+                  thumbColor="#FFFFFF"
+                  accessibilityLabel="Edit group info permission"
+                  accessibilityHint="Toggles whether all members or only admins can edit group info"
                 />
               </View>
-              <View style={styles.settingDivider} />
+              <View style={[styles.settingDivider, { backgroundColor: colors.border }]} />
               <View style={styles.settingRow}>
                 <View style={styles.settingInfo}>
-                  <Text style={styles.settingTitle}>Add Members</Text>
-                  <Text style={styles.settingSub}>Who can invite new members</Text>
+                  <AccessibleText variant="body" style={[styles.settingTitle, { color: colors.text }]}>Add Members</AccessibleText>
+                  <AccessibleText variant="caption" style={[styles.settingSub, { color: colors.subtext }]}>Who can invite new members</AccessibleText>
                 </View>
                 <Switch
                   value={conversation.addMembers === "ALL_MEMBERS"}
                   onValueChange={() => handleToggleSetting("addMembers", conversation.addMembers || "ADMINS_ONLY")}
                   disabled={isUpdatingSettings}
-                  trackColor={{ true: "#8A38F5", false: "#E8E5F0" }}
+                  trackColor={{ false: highContrast ? "#7E7383" : "#CFC2D4", true: highContrast ? "#000000" : colors.primary }}
+                  thumbColor="#FFFFFF"
+                  accessibilityLabel="Add members permission"
+                  accessibilityHint="Toggles whether all members or only admins can add new members"
                 />
               </View>
-              <View style={styles.settingDivider} />
+              <View style={[styles.settingDivider, { backgroundColor: colors.border }]} />
               <View style={styles.settingRow}>
                 <View style={styles.settingInfo}>
-                  <Text style={styles.settingTitle}>Send Messages</Text>
-                  <Text style={styles.settingSub}>Who can send messages</Text>
+                  <AccessibleText variant="body" style={[styles.settingTitle, { color: colors.text }]}>Send Messages</AccessibleText>
+                  <AccessibleText variant="caption" style={[styles.settingSub, { color: colors.subtext }]}>Who can send messages</AccessibleText>
                 </View>
                 <Switch
                   value={conversation.sendMessages === "ALL_MEMBERS"}
                   onValueChange={() => handleToggleSetting("sendMessages", conversation.sendMessages || "ALL_MEMBERS")}
                   disabled={isUpdatingSettings}
-                  trackColor={{ true: "#8A38F5", false: "#E8E5F0" }}
+                  trackColor={{ false: highContrast ? "#7E7383" : "#CFC2D4", true: highContrast ? "#000000" : colors.primary }}
+                  thumbColor="#FFFFFF"
+                  accessibilityLabel="Send messages permission"
+                  accessibilityHint="Toggles whether all members or only admins can send messages"
                 />
               </View>
-              <View style={styles.settingDivider} />
+              <View style={[styles.settingDivider, { backgroundColor: colors.border }]} />
               <View style={styles.settingRow}>
                 <View style={styles.settingInfo}>
-                  <Text style={styles.settingTitle}>Approve New Members</Text>
-                  <Text style={styles.settingSub}>Admin approval required before joining</Text>
+                  <AccessibleText variant="body" style={[styles.settingTitle, { color: colors.text }]}>Approve New Members</AccessibleText>
+                  <AccessibleText variant="caption" style={[styles.settingSub, { color: colors.subtext }]}>Admin approval required before joining</AccessibleText>
                 </View>
                 <Switch
                   value={conversation.approveNewMembers ?? false}
                   onValueChange={handleToggleApproveMembers}
                   disabled={isUpdatingSettings}
-                  trackColor={{ true: "#8A38F5", false: "#E8E5F0" }}
+                  trackColor={{ false: highContrast ? "#7E7383" : "#CFC2D4", true: highContrast ? "#000000" : colors.primary }}
+                  thumbColor="#FFFFFF"
+                  accessibilityLabel="Approve new members permission"
+                  accessibilityHint="Toggles whether new members require admin approval before joining"
                 />
               </View>
             </View>
@@ -562,35 +657,39 @@ const GroupInfoScreen = ({ navigation, route }: Props) => {
         {/* Pending Join Requests (admins only) */}
         {hasAdminRights && pendingRequests.length > 0 && (
           <View style={styles.section}>
-            <Text style={styles.sectionLabel}>
+            <AccessibleText variant="label" style={[styles.sectionLabel, { fontSize: fs(14), color: colors.secondary }]}>
               Pending Requests ({pendingRequests.length})
-            </Text>
+            </AccessibleText>
             {pendingRequests.map((req) => (
-              <View key={req.id} style={styles.requestRow}>
-                <View style={styles.requestAvatar}>
-                  <Text style={styles.requestAvatarText}>
+              <View key={req.id} style={[styles.requestRow, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <View style={[styles.requestAvatar, { backgroundColor: colors.surface }]}>
+                  <AccessibleText variant="subtitle" style={[styles.requestAvatarText, { color: colors.primary }]}>
                     {(req.inviteeName || "?").charAt(0).toUpperCase()}
-                  </Text>
+                  </AccessibleText>
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.requestName} numberOfLines={1}>{req.inviteeName}</Text>
-                  <Text style={styles.requestSub}>wants to join</Text>
+                  <AccessibleText variant="body" style={[styles.requestName, { color: colors.text }]} numberOfLines={1}>{req.inviteeName}</AccessibleText>
+                  <AccessibleText variant="caption" style={[styles.requestSub, { color: colors.subtext }]}>wants to join</AccessibleText>
                 </View>
                 {processingRequestId === req.id ? (
-                  <ActivityIndicator size="small" color="#8A38F5" />
+                  <ActivityIndicator size="small" color={colors.primary} />
                 ) : (
                   <View style={styles.requestActions}>
                     <TouchableOpacity
-                      style={styles.rejectBtn}
+                      style={[styles.rejectBtn, { borderColor: colors.border }]}
                       onPress={() => handleRespondToRequest(req.id, false)}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Reject ${req.inviteeName}'s join request`}
                     >
-                      <Text style={styles.rejectBtnText}>Reject</Text>
+                      <AccessibleText variant="caption" style={[styles.rejectBtnText, { color: colors.subtext }]}>Reject</AccessibleText>
                     </TouchableOpacity>
                     <TouchableOpacity
-                      style={styles.approveBtn}
+                      style={[styles.approveBtn, { backgroundColor: colors.primary }]}
                       onPress={() => handleRespondToRequest(req.id, true)}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Approve ${req.inviteeName}'s join request`}
                     >
-                      <Text style={styles.approveBtnText}>Approve</Text>
+                      <AccessibleText variant="caption" style={[styles.approveBtnText, { color: colors.white }]}>Approve</AccessibleText>
                     </TouchableOpacity>
                   </View>
                 )}
@@ -602,43 +701,55 @@ const GroupInfoScreen = ({ navigation, route }: Props) => {
         {/* Members Section */}
         <View style={styles.section}>
           <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionLabel}>Members</Text>
+            <AccessibleText variant="label" style={[styles.sectionLabel, { fontSize: fs(14), color: colors.secondary }]}>Members</AccessibleText>
             {canAddMembers && (
-              <TouchableOpacity style={[styles.addMemberBtn, { flexDirection: "row", alignItems: "center", gap: 4 }]} onPress={() => setShowAddMember(!showAddMember)}>
-                {showAddMember ? <X size={14} color="#500088" strokeWidth={2.4} /> : <Plus size={14} color="#500088" strokeWidth={2.4} />}
-                <Text style={styles.addMemberText}>{showAddMember ? "Close" : "Add Member"}</Text>
+              <TouchableOpacity
+                style={[styles.addMemberBtn, { backgroundColor: colors.surface, flexDirection: "row", alignItems: "center", gap: 4 }]}
+                onPress={() => setShowAddMember(!showAddMember)}
+                accessibilityRole="button"
+                accessibilityLabel={showAddMember ? "Close add member search" : "Add member"}
+              >
+                {showAddMember ? <X size={14} color={colors.primary} strokeWidth={2.4} /> : <Plus size={14} color={colors.primary} strokeWidth={2.4} />}
+                <AccessibleText variant="caption" style={[styles.addMemberText, { color: colors.primary }]}>{showAddMember ? "Close" : "Add Member"}</AccessibleText>
               </TouchableOpacity>
             )}
           </View>
 
           {/* Inline Add Member Search */}
           {showAddMember && (
-            <View style={styles.addMemberSearch}>
+            <View style={[styles.addMemberSearch, { backgroundColor: colors.card }, cardBorder]}>
               <TextInput
-                style={styles.searchInput}
+                style={[styles.searchInput, { backgroundColor: colors.background, color: colors.text }]}
                 placeholder="Search by name..."
-                placeholderTextColor="#999"
+                placeholderTextColor={colors.subtext}
                 value={memberSearch}
                 onChangeText={handleMemberSearchChange}
                 autoFocus
+                accessibilityLabel="Search members by name"
               />
-              {isSearchingMembers && <ActivityIndicator size="small" color="#8A38F5" style={{ marginTop: 8 }} />}
+              {isSearchingMembers && <ActivityIndicator size="small" color={colors.primary} style={{ marginTop: 8 }} />}
               {memberSearchResults.map((r) => (
-                <TouchableOpacity key={r.id} style={styles.searchResultRow} onPress={() => handleInviteMember(r)}>
-                  <View style={styles.memberAvatar}>
-                    <Text style={styles.memberAvatarText}>{getInitials(r.name)}</Text>
+                <TouchableOpacity
+                  key={r.id}
+                  style={[styles.searchResultRow, { borderTopColor: colors.border }]}
+                  onPress={() => handleInviteMember(r)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Invite ${r.name}`}
+                >
+                  <View style={[styles.memberAvatar, { backgroundColor: colors.surface }]}>
+                    <AccessibleText variant="label" style={[styles.memberAvatarText, { color: colors.subtext }]}>{getInitials(r.name)}</AccessibleText>
                   </View>
                   <View style={styles.memberInfo}>
-                    <Text style={styles.memberName}>{r.name}</Text>
-                    <Text style={styles.memberEmail}>{r.email}</Text>
+                    <AccessibleText variant="body" style={[styles.memberName, { color: colors.text }]}>{r.name}</AccessibleText>
+                    <AccessibleText variant="caption" style={[styles.memberEmail, { color: colors.subtext }]}>{r.email}</AccessibleText>
                   </View>
-                  <Text style={styles.inviteBtn}>Invite</Text>
+                  <AccessibleText variant="label" style={[styles.inviteBtn, { color: colors.primary }]}>Invite</AccessibleText>
                 </TouchableOpacity>
               ))}
             </View>
           )}
 
-          <View style={styles.membersCard}>
+          <View style={[styles.membersCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
             {conversation.participants.map((p, index) => {
               const roleLabel = getRoleLabel(p.role);
               const roleBadge = getRoleBadgeStyle(p.role);
@@ -647,26 +758,32 @@ const GroupInfoScreen = ({ navigation, route }: Props) => {
               return (
                 <TouchableOpacity
                   key={p.userId}
-                  style={[styles.memberRow, index < conversation.participants.length - 1 && styles.memberBorder]}
+                  style={[
+                    styles.memberRow,
+                    index < conversation.participants.length - 1 && [styles.memberBorder, { borderBottomColor: colors.border }],
+                  ]}
                   onPress={() => handleMemberAction(p.userId, p.role, name)}
                   disabled={!hasAdminRights || isMe}
                   activeOpacity={0.7}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${name}${isMe ? " (you)" : ""}${roleLabel ? `, ${roleLabel}` : ""}`}
+                  accessibilityHint={hasAdminRights && !isMe ? "Opens member actions" : undefined}
                 >
-                  <View style={styles.memberAvatar}>
-                    <Text style={styles.memberAvatarText}>{getInitials(name)}</Text>
+                  <View style={[styles.memberAvatar, { backgroundColor: colors.surface }]}>
+                    <AccessibleText variant="label" style={[styles.memberAvatarText, { color: colors.subtext }]}>{getInitials(name)}</AccessibleText>
                   </View>
                   <View style={styles.memberInfo}>
-                    <Text style={styles.memberName}>
-                      {name}{isMe ? <Text style={styles.youTag}> (You)</Text> : null}
-                    </Text>
+                    <AccessibleText variant="body" style={[styles.memberName, { color: colors.text }]}>
+                      {name}{isMe ? <AccessibleText variant="caption" style={[styles.youTag, { color: colors.subtext }]}> (You)</AccessibleText> : null}
+                    </AccessibleText>
                     {roleLabel && roleBadge && (
-                      <View style={[styles.rolePill, { backgroundColor: roleBadge.backgroundColor }]}>
-                        <Text style={[styles.rolePillText, { color: roleBadge.color }]}>{roleLabel}</Text>
+                      <View style={[styles.rolePill, { backgroundColor: roleBadge.backgroundColor, borderWidth: roleBadge.borderWidth, borderColor: roleBadge.borderColor }]}>
+                        <AccessibleText variant="label" style={[styles.rolePillText, { color: roleBadge.color }]}>{roleLabel}</AccessibleText>
                       </View>
                     )}
                   </View>
                   {hasAdminRights && !isMe && p.role !== 'OWNER' && (
-                    <ChevronRight size={20} color="#ccc" strokeWidth={2} style={{ marginLeft: 10 }} />
+                    <ChevronRight size={20} color={colors.subtext} strokeWidth={2} style={{ marginLeft: 10 }} />
                   )}
                 </TouchableOpacity>
               );
@@ -677,13 +794,25 @@ const GroupInfoScreen = ({ navigation, route }: Props) => {
         {/* Leave Group — non-owners; Delete Group — owner */}
         <View style={styles.section}>
           {isOwner ? (
-            <TouchableOpacity style={styles.deleteBtn} onPress={handleDeleteGroup}>
-              <Text style={styles.deleteBtnText}>Delete Group</Text>
-            </TouchableOpacity>
+            <AccessibleButton
+              variant="danger"
+              accessibilityLabel="Delete group"
+              accessibilityHint={`Permanently deletes ${conversation.name} for all members`}
+              style={styles.deleteBtn}
+              onPress={handleDeleteGroup}
+            >
+              Delete Group
+            </AccessibleButton>
           ) : (
-            <TouchableOpacity style={styles.leaveBtn} onPress={handleLeaveGroup}>
-              <Text style={styles.leaveBtnText}>Leave Group</Text>
-            </TouchableOpacity>
+            <AccessibleButton
+              variant="danger"
+              accessibilityLabel="Leave group"
+              accessibilityHint={`Leaves ${conversation.name}`}
+              style={styles.leaveBtn}
+              onPress={handleLeaveGroup}
+            >
+              Leave Group
+            </AccessibleButton>
           )}
         </View>
       </ScrollView>
@@ -697,7 +826,6 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#500088",
     paddingHorizontal: 16,
     paddingBottom: 16,
     borderBottomLeftRadius: 20,
@@ -708,119 +836,110 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255,255,255,0.15)",
     justifyContent: "center", alignItems: "center", marginRight: 12,
   },
-  backText: { color: "#fff", fontSize: 20, fontWeight: "700" },
-  headerTitle: { color: "#fff", fontSize: 20, fontWeight: "800" },
-  content: { flex: 1, backgroundColor: "#F6F6F6" },
+  headerTitle: { fontSize: 20, fontWeight: "800" },
+  content: { flex: 1 },
   profileCard: {
     alignItems: "center", paddingVertical: 30, paddingHorizontal: 20,
-    backgroundColor: "#fff", borderBottomWidth: 1, borderBottomColor: "#E8E5F0", marginBottom: 20,
+    borderBottomWidth: 1, marginBottom: 20,
   },
   avatarLarge: {
-    width: 80, height: 80, borderRadius: 40, backgroundColor: "#F3EAFF",
+    width: 80, height: 80, borderRadius: 40,
     justifyContent: "center", alignItems: "center", marginBottom: 16,
   },
-  avatarEmoji: { fontSize: 40 },
-  groupNameLarge: { fontSize: 24, fontWeight: "800", color: "#1a1a1a", marginBottom: 4, textAlign: "center" },
-  memberCountLarge: { fontSize: 14, color: "#666", fontWeight: "500" },
-  groupDescription: { marginTop: 12, fontSize: 14, color: "#444", textAlign: "center", lineHeight: 20 },
+  groupNameLarge: { fontSize: 24, fontWeight: "800", marginBottom: 4, textAlign: "center" },
+  memberCountLarge: { fontSize: 14, fontWeight: "500" },
+  groupDescription: { marginTop: 12, fontSize: 14, textAlign: "center", lineHeight: 20 },
   section: { marginBottom: 24 },
   sectionLabel: {
-    fontSize: 14, fontWeight: "700", color: "#6B21A8",
+    fontSize: 14, fontWeight: "700",
     marginLeft: 16, marginBottom: 8, textTransform: "uppercase",
   },
   requestRow: {
     flexDirection: "row", alignItems: "center", gap: 12,
-    backgroundColor: "#fff", paddingVertical: 12, paddingHorizontal: 16,
-    borderTopWidth: 1, borderColor: "#E8E5F0",
+    paddingVertical: 12, paddingHorizontal: 16,
+    borderTopWidth: 1,
   },
   requestAvatar: {
-    width: 40, height: 40, borderRadius: 20, backgroundColor: "#F3EAFF",
+    width: 40, height: 40, borderRadius: 20,
     justifyContent: "center", alignItems: "center",
   },
-  requestAvatarText: { color: "#8A38F5", fontWeight: "700", fontSize: 16 },
-  requestName: { fontSize: 15, fontWeight: "600", color: "#1a1a1a" },
-  requestSub: { fontSize: 12, color: "#888" },
+  requestAvatarText: { fontWeight: "700" },
+  requestName: { fontSize: 15, fontWeight: "600" },
+  requestSub: { fontSize: 12 },
   requestActions: { flexDirection: "row", gap: 8 },
   rejectBtn: {
     paddingVertical: 7, paddingHorizontal: 12, borderRadius: 8,
-    borderWidth: 1, borderColor: "#e0d7f0",
+    borderWidth: 1,
   },
-  rejectBtnText: { color: "#666", fontWeight: "600", fontSize: 13 },
+  rejectBtnText: { fontWeight: "600", fontSize: 13 },
   approveBtn: {
     paddingVertical: 7, paddingHorizontal: 14, borderRadius: 8,
-    backgroundColor: "#8A38F5",
   },
-  approveBtnText: { color: "#fff", fontWeight: "700", fontSize: 13 },
-  settingsCard: { backgroundColor: "#fff", borderTopWidth: 1, borderBottomWidth: 1, borderColor: "#E8E5F0" },
+  approveBtnText: { fontWeight: "700", fontSize: 13 },
+  settingsCard: { borderTopWidth: 1, borderBottomWidth: 1 },
   settingRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 14, paddingHorizontal: 16 },
-  settingDivider: { height: 1, backgroundColor: "#E8E5F0", marginLeft: 16 },
+  settingDivider: { height: 1, marginLeft: 16 },
   settingInfo: { flex: 1, paddingRight: 16 },
-  settingTitle: { fontSize: 16, fontWeight: "600", color: "#1a1a1a", marginBottom: 2 },
-  settingSub: { fontSize: 13, color: "#666" },
+  settingTitle: { fontSize: 16, fontWeight: "600", marginBottom: 2 },
+  settingSub: { fontSize: 13 },
   sectionHeaderRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingRight: 16 },
-  addMemberBtn: { paddingHorizontal: 12, paddingVertical: 6, backgroundColor: "#E8E5F0", borderRadius: 12, marginBottom: 8 },
-  addMemberText: { color: "#500088", fontSize: 12, fontWeight: "700" },
+  addMemberBtn: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12, marginBottom: 8 },
+  addMemberText: { fontSize: 12, fontWeight: "700" },
   addMemberSearch: {
-    marginHorizontal: 16, marginBottom: 12, backgroundColor: "#fff",
-    borderRadius: 16, padding: 12, borderWidth: 1, borderColor: "#E8E5F0",
+    marginHorizontal: 16, marginBottom: 12,
+    borderRadius: 16, padding: 12,
   },
   searchInput: {
-    backgroundColor: "#F6F6F6", borderRadius: 12, paddingHorizontal: 12,
-    paddingVertical: 10, fontSize: 15, color: "#1a1a1a",
+    borderRadius: 12, paddingHorizontal: 12,
+    paddingVertical: 10, fontSize: 15,
   },
   searchResultRow: {
-    flexDirection: "row", alignItems: "center", paddingVertical: 10, borderTopWidth: 1, borderTopColor: "#f5f0fa",
+    flexDirection: "row", alignItems: "center", paddingVertical: 10, borderTopWidth: 1,
   },
-  membersCard: { backgroundColor: "#fff", borderTopWidth: 1, borderBottomWidth: 1, borderColor: "#E8E5F0" },
+  membersCard: { borderTopWidth: 1, borderBottomWidth: 1 },
   memberRow: { flexDirection: "row", alignItems: "center", paddingVertical: 12, paddingHorizontal: 16 },
-  memberBorder: { borderBottomWidth: 1, borderBottomColor: "#f5f0fa" },
+  memberBorder: { borderBottomWidth: 1 },
   memberAvatar: {
-    width: 40, height: 40, borderRadius: 20, backgroundColor: "#E8E5F0",
+    width: 40, height: 40, borderRadius: 20,
     justifyContent: "center", alignItems: "center", marginRight: 12,
   },
-  memberAvatarText: { fontSize: 14, fontWeight: "700", color: "#666" },
+  memberAvatarText: { fontSize: 14, fontWeight: "700" },
   memberInfo: { flex: 1 },
-  memberName: { fontSize: 16, fontWeight: "600", color: "#1a1a1a" },
-  memberEmail: { fontSize: 12, color: "#999", marginTop: 1 },
-  youTag: { fontSize: 13, fontWeight: "400", color: "#999" },
+  memberName: { fontSize: 16, fontWeight: "600" },
+  memberEmail: { fontSize: 12, marginTop: 1 },
+  youTag: { fontSize: 13, fontWeight: "400" },
   rolePill: {
     alignSelf: 'flex-start',
     paddingHorizontal: 8, paddingVertical: 2,
     borderRadius: 10, marginTop: 3,
   },
   rolePillText: { fontSize: 11, fontWeight: "700" },
-  chevron: { fontSize: 20, color: "#ccc", paddingLeft: 10 },
-  inviteBtn: { fontSize: 13, fontWeight: "700", color: "#500088", paddingHorizontal: 8 },
+  inviteBtn: { fontSize: 13, fontWeight: "700", paddingHorizontal: 8 },
   leaveBtn: {
-    marginHorizontal: 16, paddingVertical: 16, backgroundColor: "#fff",
-    borderRadius: 16, borderWidth: 1, borderColor: "#fca5a5", alignItems: "center",
-  },
-  leaveBtnText: { fontSize: 16, fontWeight: "700", color: "#dc2626" },
-  deleteBtn: {
-    marginHorizontal: 16, paddingVertical: 16, backgroundColor: "#dc2626",
+    marginHorizontal: 16, paddingVertical: 16,
     borderRadius: 16, alignItems: "center",
   },
-  deleteBtnText: { fontSize: 16, fontWeight: "700", color: "#fff" },
+  deleteBtn: {
+    marginHorizontal: 16, paddingVertical: 16,
+    borderRadius: 16, alignItems: "center",
+  },
   // Name row with edit icon
   nameRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8 },
   editIconBtn: { padding: 4 },
-  editIconText: { fontSize: 16 },
   // Edit form
   editForm: { width: "100%", paddingHorizontal: 8 },
   editNameInput: {
-    borderWidth: 1, borderColor: "#E8E5F0", borderRadius: 12, paddingHorizontal: 14,
-    paddingVertical: 10, fontSize: 18, fontWeight: "700", color: "#1a1a1a", marginBottom: 10, textAlign: "center",
+    borderRadius: 12, paddingHorizontal: 14,
+    paddingVertical: 10, fontSize: 18, fontWeight: "700", marginBottom: 10, textAlign: "center",
   },
   editDescInput: {
-    borderWidth: 1, borderColor: "#E8E5F0", borderRadius: 12, paddingHorizontal: 14,
-    paddingVertical: 10, fontSize: 14, color: "#444", minHeight: 60, textAlignVertical: "top",
+    borderRadius: 12, paddingHorizontal: 14,
+    paddingVertical: 10, fontSize: 14, minHeight: 60, textAlignVertical: "top",
   },
   editActions: { flexDirection: "row", justifyContent: "center", gap: 12, marginTop: 12 },
-  editCancelBtn: { paddingHorizontal: 24, paddingVertical: 10, borderRadius: 12, backgroundColor: "#F3F4F6" },
-  editCancelText: { fontSize: 14, fontWeight: "700", color: "#6B7280" },
-  editSaveBtn: { paddingHorizontal: 28, paddingVertical: 10, borderRadius: 12, backgroundColor: "#500088", minWidth: 80, alignItems: "center" },
-  editSaveText: { fontSize: 14, fontWeight: "700", color: "#fff" },
+  editCancelBtn: { paddingHorizontal: 24, paddingVertical: 10, borderRadius: 12 },
+  editSaveBtn: { paddingHorizontal: 28, paddingVertical: 10, borderRadius: 12, minWidth: 80, alignItems: "center" },
   // Mute toggle
-  muteRow: { marginTop: 16, paddingVertical: 10, paddingHorizontal: 16, borderRadius: 12, backgroundColor: "#F3EAFF", flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8 },
-  muteText: { fontSize: 14, fontWeight: "600", color: "#500088" },
+  muteRow: { marginTop: 16, paddingVertical: 10, paddingHorizontal: 16, borderRadius: 12, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8 },
+  muteText: { fontSize: 14, fontWeight: "600" },
 });

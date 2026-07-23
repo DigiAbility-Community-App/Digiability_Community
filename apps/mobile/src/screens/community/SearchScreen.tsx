@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from "react";
 import {
   View,
-  Text,
   StyleSheet,
   TextInput,
   TouchableOpacity,
@@ -14,6 +13,9 @@ import { ArrowLeft, Search, Filter } from "lucide-react-native";
 import { useForumStore, ForumQuestion } from "../../store/forumStore";
 import { ForumQuestionCard } from "../../components/shared/ForumQuestionCard";
 import { EmptyState } from "../../components/shared/EmptyState";
+import { useTheme } from "../../theme/ThemeContext";
+import { AccessibleText } from "../../components/shared/AccessibleText";
+import { AccessibleButton } from "../../components/shared/AccessibleButton";
 
 const CATEGORIES = [
   "Healthcare",
@@ -30,6 +32,7 @@ const CATEGORIES = [
 
 const SearchScreen = () => {
   const navigation = useNavigation<any>();
+  const { colors, highContrast } = useTheme();
   const {
     questions,
     loading,
@@ -77,80 +80,139 @@ const SearchScreen = () => {
     />
   );
 
+  const activeAccentBg = highContrast ? "#FFFFFF" : "#E2D3FD";
+  const activeAccentBorder = highContrast ? "#000000" : "#9333EA";
+
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
       {/* HEADER */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-          <ArrowLeft size={24} color="#1A1B20" />
+      <View style={[styles.header, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
+        <TouchableOpacity
+          onPress={() => navigation.goBack()}
+          style={styles.backBtn}
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
+        >
+          <ArrowLeft size={24} color={colors.text} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Advanced Search</Text>
-        <TouchableOpacity onPress={handleClearFilters}>
-          <Text style={styles.clearText}>Clear</Text>
+        <AccessibleText variant="title" style={[styles.headerTitle, { color: colors.text }]}>
+          Advanced Search
+        </AccessibleText>
+        <TouchableOpacity
+          onPress={handleClearFilters}
+          accessibilityRole="button"
+          accessibilityLabel="Clear all filters"
+        >
+          <AccessibleText variant="body" style={[styles.clearText, { color: colors.error }]}>
+            Clear
+          </AccessibleText>
         </TouchableOpacity>
       </View>
 
-      <ScrollView style={styles.filterSection} keyboardShouldPersistTaps="handled">
+      <ScrollView
+        style={[styles.filterSection, { backgroundColor: colors.card, borderBottomColor: colors.border }]}
+        keyboardShouldPersistTaps="handled"
+      >
         {/* KEYWORD INPUT */}
-        <View style={styles.searchBar}>
-          <Search size={18} color="#6B7280" style={{ marginRight: 8 }} />
+        <View style={[styles.searchBar, { backgroundColor: colors.surface }]}>
+          <Search size={18} color={colors.subtext} style={{ marginRight: 8 }} />
           <TextInput
-            style={styles.searchInput}
+            style={[styles.searchInput, { color: colors.text }]}
             placeholder="Type search terms..."
+            placeholderTextColor={colors.subtext}
             value={keyword}
             onChangeText={setKeyword}
             onSubmitEditing={handleSearch}
+            accessibilityLabel="Search keyword"
+            accessibilityHint="Type search terms and submit to filter discussions"
           />
         </View>
 
         {/* STATUS FILTER */}
-        <Text style={styles.sectionLabel}>DISCUSSION STATUS</Text>
+        <AccessibleText variant="overline" style={styles.sectionLabel}>
+          DISCUSSION STATUS
+        </AccessibleText>
         <View style={styles.statusRow}>
           <TouchableOpacity
-            style={[styles.statusBtn, selectedStatus === "SOLVED" && styles.activeStatusBtn]}
+            style={[
+              styles.statusBtn,
+              { backgroundColor: colors.surface },
+              selectedStatus === "SOLVED" && { backgroundColor: activeAccentBg, borderWidth: 1, borderColor: activeAccentBorder },
+            ]}
             onPress={() => setSelectedStatus(selectedStatus === "SOLVED" ? null : "SOLVED")}
+            accessibilityRole="button"
+            accessibilityLabel="Filter: Solved discussions"
+            accessibilityState={{ selected: selectedStatus === "SOLVED" }}
           >
-            <Text style={[styles.statusBtnText, selectedStatus === "SOLVED" && styles.activeStatusBtnText]}>
+            <AccessibleText
+              variant="caption"
+              style={[styles.statusBtnText, { color: selectedStatus === "SOLVED" ? colors.secondary : colors.text }]}
+            >
               Solved
-            </Text>
+            </AccessibleText>
           </TouchableOpacity>
-          
+
           <TouchableOpacity
-            style={[styles.statusBtn, selectedStatus === "UNSOLVED" && styles.activeStatusBtn]}
+            style={[
+              styles.statusBtn,
+              { backgroundColor: colors.surface },
+              selectedStatus === "UNSOLVED" && { backgroundColor: activeAccentBg, borderWidth: 1, borderColor: activeAccentBorder },
+            ]}
             onPress={() => setSelectedStatus(selectedStatus === "UNSOLVED" ? null : "UNSOLVED")}
+            accessibilityRole="button"
+            accessibilityLabel="Filter: Unsolved discussions"
+            accessibilityState={{ selected: selectedStatus === "UNSOLVED" }}
           >
-            <Text style={[styles.statusBtnText, selectedStatus === "UNSOLVED" && styles.activeStatusBtnText]}>
+            <AccessibleText
+              variant="caption"
+              style={[styles.statusBtnText, { color: selectedStatus === "UNSOLVED" ? colors.secondary : colors.text }]}
+            >
               Unsolved
-            </Text>
+            </AccessibleText>
           </TouchableOpacity>
         </View>
 
         {/* CATEGORY SELECTOR */}
-        <Text style={styles.sectionLabel}>CATEGORIES</Text>
+        <AccessibleText variant="overline" style={styles.sectionLabel}>
+          CATEGORIES
+        </AccessibleText>
         <View style={styles.categoriesContainer}>
           {CATEGORIES.map((cat) => {
             const active = selectedCategory === cat;
             return (
               <TouchableOpacity
                 key={cat}
-                style={[styles.catBadge, active && styles.activeCatBadge]}
+                style={[styles.catBadge, { backgroundColor: active ? colors.primary : colors.surface }]}
                 onPress={() => setSelectedCategory(active ? null : cat)}
+                accessibilityRole="button"
+                accessibilityLabel={`Filter by category: ${cat}`}
+                accessibilityState={{ selected: active }}
               >
-                <Text style={[styles.catText, active && styles.activeCatText]}>{cat}</Text>
+                <AccessibleText variant="caption" style={[styles.catText, { color: active ? "#FFFFFF" : colors.text }]}>
+                  {cat}
+                </AccessibleText>
               </TouchableOpacity>
             );
           })}
         </View>
 
         {/* SEARCH TRIGGER */}
-        <TouchableOpacity style={styles.searchBtn} onPress={handleSearch}>
-          <Text style={styles.searchBtnText}>Search Discussions</Text>
-        </TouchableOpacity>
+        <AccessibleButton
+          variant="primary"
+          accessibilityLabel="Search discussions"
+          accessibilityHint="Applies the selected keyword and filters"
+          style={styles.searchBtn}
+          onPress={handleSearch}
+        >
+          Search Discussions
+        </AccessibleButton>
       </ScrollView>
 
       {/* RESULTS LIST */}
       <View style={{ flex: 1 }}>
-        <Text style={styles.resultsHeader}>Search Results ({questions.length})</Text>
+        <AccessibleText variant="label" style={[styles.resultsHeader, { color: colors.text }]}>
+          Search Results ({questions.length})
+        </AccessibleText>
 
         <FlatList
           data={questions}
@@ -161,7 +223,7 @@ const SearchScreen = () => {
           onEndReachedThreshold={0.5}
           ListEmptyComponent={
             loading ? (
-              <ActivityIndicator size="large" color="#500088" style={{ marginTop: 24 }} />
+              <ActivityIndicator size="large" color={colors.primary} style={{ marginTop: 24 }} />
             ) : (
               <EmptyState
                 title="No Discussions Found"
@@ -173,7 +235,7 @@ const SearchScreen = () => {
             loading && questions.length > 0 ? (
               <ActivityIndicator
                 size="small"
-                color="#500088"
+                color={colors.primary}
                 style={{ marginVertical: 16 }}
               />
             ) : null
@@ -188,8 +250,7 @@ export default SearchScreen;
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
-    backgroundColor: "#FAF8FF"
+    flex: 1
   },
   header: {
     flexDirection: "row",
@@ -197,34 +258,27 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingHorizontal: 16,
     paddingVertical: 14,
-    backgroundColor: "#FFFFFF",
-    borderBottomWidth: 1,
-    borderBottomColor: "#EEEDF4"
+    borderBottomWidth: 1
   },
   backBtn: {
     padding: 8
   },
   headerTitle: {
     fontSize: 18,
-    fontWeight: "800",
-    color: "#1A1B20"
+    fontWeight: "800"
   },
   clearText: {
     fontSize: 14,
-    fontWeight: "700",
-    color: "#EF4444"
+    fontWeight: "700"
   },
   filterSection: {
-    backgroundColor: "#FFFFFF",
     padding: 16,
     borderBottomWidth: 1,
-    borderBottomColor: "#EEEDF4",
     maxHeight: 320
   },
   searchBar: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#F4F3FA",
     borderRadius: 12,
     paddingHorizontal: 12,
     height: 44,
@@ -233,13 +287,11 @@ const styles = StyleSheet.create({
   searchInput: {
     flex: 1,
     fontSize: 14,
-    color: "#1A1B20",
     fontWeight: "500"
   },
   sectionLabel: {
     fontSize: 10,
     fontWeight: "800",
-    color: "#9CA3AF",
     letterSpacing: 0.5,
     marginBottom: 8
   },
@@ -251,21 +303,11 @@ const styles = StyleSheet.create({
   statusBtn: {
     paddingHorizontal: 16,
     paddingVertical: 6,
-    borderRadius: 10,
-    backgroundColor: "#F4F3FA"
-  },
-  activeStatusBtn: {
-    backgroundColor: "#E2D3FD",
-    borderWidth: 1,
-    borderColor: "#9333EA"
+    borderRadius: 10
   },
   statusBtnText: {
     fontSize: 12,
-    fontWeight: "700",
-    color: "#4C4452"
-  },
-  activeStatusBtnText: {
-    color: "#7E22CE"
+    fontWeight: "700"
   },
   categoriesContainer: {
     flexDirection: "row",
@@ -274,40 +316,23 @@ const styles = StyleSheet.create({
     marginBottom: 16
   },
   catBadge: {
-    backgroundColor: "#F4F3FA",
     borderRadius: 8,
     paddingHorizontal: 10,
     paddingVertical: 5
   },
-  activeCatBadge: {
-    backgroundColor: "#500088"
-  },
   catText: {
     fontSize: 11,
-    fontWeight: "600",
-    color: "#4C4452"
-  },
-  activeCatText: {
-    color: "#FFFFFF"
+    fontWeight: "600"
   },
   searchBtn: {
-    backgroundColor: "#500088",
     height: 44,
     borderRadius: 12,
-    justifyContent: "center",
-    alignItems: "center",
     marginTop: 8,
     marginBottom: 12
-  },
-  searchBtnText: {
-    color: "#FFFFFF",
-    fontWeight: "700",
-    fontSize: 14
   },
   resultsHeader: {
     fontSize: 13,
     fontWeight: "800",
-    color: "#4C4452",
     paddingHorizontal: 16,
     paddingTop: 16
   },

@@ -16,7 +16,7 @@ import { AccessibleText } from "../../components/shared/AccessibleText";
 import { AccessibleButton } from "../../components/shared/AccessibleButton";
 import ScreenWrapper from "../../components/layout/ScreenWrapper";
 import AppHeader from "../../components/layout/AppHeader";
-import { deleteAccount } from "@services/authService";
+import { confirmDeleteAccount } from "../../utils/accountDeletion";
 import { forumService } from "@services/forumService";
 import { getNotificationPermissionStatus } from "@services/notificationService";
 
@@ -133,38 +133,13 @@ const HomeProfileScreen = () => {
     };
 
     const handleDeleteAccount = () => {
-        Alert.alert(
-            "Delete Account",
-            "This will permanently delete your account and remove all your personal data. This cannot be undone.",
-            [
-                { text: "Cancel", style: "cancel" },
-                {
-                    text: "Continue",
-                    style: "destructive",
-                    onPress: () =>
-                        Alert.alert(
-                            "Are you absolutely sure?",
-                            "Your profile, preferences, and account information will be erased. Your messages and forum posts will be anonymised.",
-                            [
-                                { text: "No, keep my account", style: "cancel" },
-                                {
-                                    text: "Yes, delete my account",
-                                    style: "destructive",
-                                    onPress: async () => {
-                                        setDeletingAccount(true);
-                                        try {
-                                            await deleteAccount();
-                                        } catch {
-                                            setDeletingAccount(false);
-                                            Alert.alert("Error", "Could not delete account. Please try again.");
-                                        }
-                                    },
-                                },
-                            ]
-                        ),
-                },
-            ]
-        );
+        confirmDeleteAccount({
+            onStart: () => setDeletingAccount(true),
+            onError: (message) => {
+                setDeletingAccount(false);
+                Alert.alert("Error", message);
+            },
+        });
     };
 
     // ── Derived display values ──
@@ -318,22 +293,11 @@ const HomeProfileScreen = () => {
                     <MenuItem
                         icon="🔒"
                         title="Privacy & Security"
-                        subtitle="Coming soon"
-                        onPress={() => comingSoonAlert("Privacy & Security")}
+                        subtitle="Manage consent, export, and delete your data"
+                        onPress={() => navigation.navigate("PrivacyData")}
                         colors={colors}
                         highContrast={highContrast}
                         cardBorder={cardBorder}
-                        comingSoon
-                    />
-                    <MenuItem
-                        icon="🌐"
-                        title="Language"
-                        subtitle="English"
-                        onPress={() => comingSoonAlert("Language Selection")}
-                        colors={colors}
-                        highContrast={highContrast}
-                        cardBorder={cardBorder}
-                        comingSoon
                     />
                 </View>
 
@@ -411,7 +375,7 @@ const HomeProfileScreen = () => {
                     disabled={deletingAccount}
                     accessibilityRole="button"
                     accessibilityLabel="Delete account"
-                    accessibilityHint="Permanently deletes your account and all personal data"
+                    accessibilityHint="Deactivates and anonymises your account and personal data"
                 >
                     <AccessibleText style={styles.deleteAccountText}>
                         {deletingAccount ? "Deleting account…" : "Delete account"}

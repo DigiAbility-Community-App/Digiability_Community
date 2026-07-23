@@ -1,7 +1,6 @@
 import React, { useState, useCallback, useEffect, useRef } from "react";
 import {
   View,
-  Text,
   StyleSheet,
   TextInput,
   TouchableOpacity,
@@ -22,6 +21,10 @@ import { useChatStore } from "@store/chatStore";
 import ScreenWrapper from "../../components/layout/ScreenWrapper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ArrowLeft, Heart, Users, X, Search, SearchX, Lightbulb, HeartHandshake } from "lucide-react-native";
+import { useTheme, getFontScale } from "../../theme/ThemeContext";
+import { animateIfAllowed } from "../../hooks/motionHelper";
+import { AccessibleText } from "../../components/shared/AccessibleText";
+import { AccessibleButton } from "../../components/shared/AccessibleButton";
 
 // ─────────────────────────────────────────────────────────
 // Create Group (Care Circle) Screen
@@ -46,7 +49,9 @@ const CreateGroupScreen = ({ navigation, route }: Props) => {
   const user = useAuthStore((s) => s.user);
   const addConversation = useChatStore((s) => s.addConversation);
   const insets = useSafeAreaInsets();
-  
+  const { colors, highContrast, reduceMotion, textSize } = useTheme();
+  const fs = getFontScale(textSize);
+
   const subType = route.params?.subType;
   const isCareCircle = subType === 'CARE_CIRCLE';
 
@@ -65,12 +70,12 @@ const CreateGroupScreen = ({ navigation, route }: Props) => {
   const headerAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    Animated.timing(headerAnim, {
+    animateIfAllowed(reduceMotion, headerAnim, {
       toValue: 1,
       duration: 500,
       useNativeDriver: true,
     }).start();
-  }, []);
+  }, [reduceMotion]);
 
   // Load all users immediately so they're visible without typing
   useEffect(() => {
@@ -134,7 +139,7 @@ const CreateGroupScreen = ({ navigation, route }: Props) => {
   }, []);
 
   const updateMemberRole = useCallback((memberId: string, role: string) => {
-    setSelectedMembers((prev) => 
+    setSelectedMembers((prev) =>
       prev.map(m => m.user.id === memberId ? { ...m, role } : m)
     );
   }, []);
@@ -231,29 +236,45 @@ const CreateGroupScreen = ({ navigation, route }: Props) => {
   const getMemberColor = (index: number) =>
     MEMBER_COLORS[index % MEMBER_COLORS.length];
 
+  // ── Theme-derived, high-contrast-aware card outline ─────────
+  // Keeps white cards/rows visible against a (also white, under high
+  // contrast) screen background — same convention as ChatScreen.tsx.
+  const cardBorder = highContrast
+    ? { borderWidth: 2, borderColor: "#000000" }
+    : { borderWidth: 1, borderColor: "rgba(0,0,0,0.05)" };
+
   const renderSearchResult = ({ item }: { item: UserResult }) => (
     <TouchableOpacity
-      style={styles.searchResultItem}
+      style={[styles.searchResultItem, { borderBottomColor: colors.border }]}
       onPress={() => addMember(item)}
       activeOpacity={0.7}
+      accessibilityRole="button"
+      accessibilityLabel={`Add ${item.name}`}
+      accessibilityHint="Adds this person to the group"
     >
-      <View style={styles.resultAvatar}>
-        <Text style={styles.resultAvatarText}>{getInitials(item.name)}</Text>
+      <View style={[styles.resultAvatar, { backgroundColor: colors.surface }]}>
+        <AccessibleText variant="body" style={[styles.resultAvatarText, { color: colors.secondary }]}>
+          {getInitials(item.name)}
+        </AccessibleText>
       </View>
       <View style={styles.resultInfo}>
-        <Text style={styles.resultName}>{item.name}</Text>
-        <Text style={styles.resultEmail}>{item.email}</Text>
+        <AccessibleText variant="body" style={[styles.resultName, { color: colors.text }]}>
+          {item.name}
+        </AccessibleText>
+        <AccessibleText variant="caption" style={[styles.resultEmail, { color: colors.subtext }]}>
+          {item.email}
+        </AccessibleText>
       </View>
-      <View style={styles.addBtnSmall}>
-        <Text style={styles.addBtnSmallText}>+</Text>
+      <View style={[styles.addBtnSmall, { backgroundColor: colors.primary }]}>
+        <AccessibleText variant="body" style={[styles.addBtnSmallText, { color: colors.white }]}>+</AccessibleText>
       </View>
     </TouchableOpacity>
   );
 
   const canCreate = groupName.trim().length > 0;
   const headerTitle = isCareCircle ? "New Care Circle" : "New Group";
-  const headerSubtitle = isCareCircle 
-    ? "Create a support group for your community" 
+  const headerSubtitle = isCareCircle
+    ? "Create a support group for your community"
     : "Create a general chat group";
 
   return (
@@ -263,6 +284,7 @@ const CreateGroupScreen = ({ navigation, route }: Props) => {
         style={[
           styles.header,
           {
+            backgroundColor: colors.primary,
             paddingTop: insets.top + 8,
             opacity: headerAnim,
             transform: [
@@ -279,15 +301,20 @@ const CreateGroupScreen = ({ navigation, route }: Props) => {
         <TouchableOpacity
           style={styles.backBtn}
           onPress={() => navigation.goBack()}
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
+          accessibilityHint="Returns to the previous screen"
         >
-          <ArrowLeft size={24} color="#fff" strokeWidth={2.2} />
+          <ArrowLeft size={24} color={colors.white} strokeWidth={2.2} />
         </TouchableOpacity>
 
         <View style={styles.headerCenter}>
-          <Text style={styles.headerTitle}>{headerTitle}</Text>
-          <Text style={styles.headerSubtitle}>
+          <AccessibleText variant="title" style={[styles.headerTitle, { color: colors.white }]}>
+            {headerTitle}
+          </AccessibleText>
+          <AccessibleText variant="caption" style={[styles.headerSubtitle, { color: "rgba(255,255,255,0.6)" }]}>
             {headerSubtitle}
-          </Text>
+          </AccessibleText>
         </View>
       </Animated.View>
 
@@ -300,35 +327,41 @@ const CreateGroupScreen = ({ navigation, route }: Props) => {
       >
           {/* ── Group Name ─────────────────────────────────── */}
           <View style={styles.section}>
-            <Text style={styles.sectionLabel}>{isCareCircle ? 'Circle Name' : 'Group Name'}</Text>
-            <View style={styles.nameInputContainer}>
-              <View style={styles.nameIconBox}>
-                isCareCircle ? <Heart size={22} color="#8A38F5" strokeWidth={2} /> : <Users size={22} color="#8A38F5" strokeWidth={2} />
+            <AccessibleText variant="overline" style={[styles.sectionLabel, { color: colors.secondary, fontSize: fs(14) }]}>
+              {isCareCircle ? 'Circle Name' : 'Group Name'}
+            </AccessibleText>
+            <View style={[styles.nameInputContainer, { backgroundColor: colors.card, shadowColor: colors.primary }, cardBorder]}>
+              <View style={[styles.nameIconBox, { backgroundColor: colors.background }]}>
+                {isCareCircle ? <Heart size={22} color={colors.primary} strokeWidth={2} /> : <Users size={22} color={colors.primary} strokeWidth={2} />}
               </View>
               <TextInput
-                style={styles.nameInput}
+                style={[styles.nameInput, { color: colors.text }]}
                 placeholder={isCareCircle ? "e.g. Mobility Support Group" : "e.g. Weekend Plan"}
-                placeholderTextColor="#999"
+                placeholderTextColor={colors.subtext}
                 value={groupName}
                 onChangeText={setGroupName}
                 maxLength={100}
                 autoCapitalize="words"
+                accessibilityLabel={isCareCircle ? "Circle name" : "Group name"}
               />
             </View>
           </View>
 
           {/* ── Description ─────────────────────────────────── */}
           <View style={styles.section}>
-            <Text style={styles.sectionLabel}>Description (Optional)</Text>
-            <View style={[styles.nameInputContainer, { paddingVertical: 10 }]}>
+            <AccessibleText variant="overline" style={[styles.sectionLabel, { color: colors.secondary, fontSize: fs(14) }]}>
+              Description (Optional)
+            </AccessibleText>
+            <View style={[styles.nameInputContainer, { paddingVertical: 10, backgroundColor: colors.card, shadowColor: colors.primary }, cardBorder]}>
               <TextInput
-                style={[styles.nameInput, { height: 60, textAlignVertical: 'top' }]}
+                style={[styles.nameInput, { height: 60, textAlignVertical: 'top', color: colors.text }]}
                 placeholder="What is this group for?"
-                placeholderTextColor="#999"
+                placeholderTextColor={colors.subtext}
                 value={description}
                 onChangeText={setDescription}
                 maxLength={500}
                 multiline
+                accessibilityLabel="Group description"
               />
             </View>
           </View>
@@ -336,9 +369,9 @@ const CreateGroupScreen = ({ navigation, route }: Props) => {
           {/* ── Selected Members ───────────────────────────── */}
           {selectedMembers.length > 0 && (
             <View style={styles.section}>
-              <Text style={styles.sectionLabel}>
+              <AccessibleText variant="overline" style={[styles.sectionLabel, { color: colors.secondary, fontSize: fs(14) }]}>
                 Members ({selectedMembers.length})
-              </Text>
+              </AccessibleText>
               <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}
@@ -359,11 +392,12 @@ const CreateGroupScreen = ({ navigation, route }: Props) => {
                           { backgroundColor: getMemberColor(index) },
                         ]}
                       >
-                        <Text style={styles.chipAvatarText}>
+                        <AccessibleText variant="body" style={[styles.chipAvatarText, { color: colors.white }]}>
                           {getInitials(m.user.name)}
-                        </Text>
+                        </AccessibleText>
                       </View>
-                      <Text
+                      <AccessibleText
+                        variant="body"
                         style={[
                           styles.chipName,
                           { color: getMemberColor(index) },
@@ -371,20 +405,22 @@ const CreateGroupScreen = ({ navigation, route }: Props) => {
                         numberOfLines={1}
                       >
                         {m.user.name.split(" ")[0]}
-                      </Text>
+                      </AccessibleText>
                       <TouchableOpacity
                         style={styles.chipRemove}
                         onPress={() => removeMember(m.user.id)}
                         hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Remove ${m.user.name} from group`}
                       >
-                        <X size={12} color="#666" strokeWidth={2.5} />
+                        <X size={12} color={colors.subtext} strokeWidth={2.5} />
                       </TouchableOpacity>
                     </View>
-                    
+
                     {/* Role Selector for Care Circles */}
                     {isCareCircle && (
                       <TouchableOpacity
-                        style={styles.roleSelector}
+                        style={[styles.roleSelector, { backgroundColor: colors.surface }]}
                         onPress={() => {
                           const roles = ['MEMBER', 'CAREGIVER', 'MENTOR', 'PROFESSIONAL'];
                           if (Platform.OS === 'ios') {
@@ -399,8 +435,13 @@ const CreateGroupScreen = ({ navigation, route }: Props) => {
                             ]);
                           }
                         }}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Change role for ${m.user.name}, currently ${m.role}`}
+                        accessibilityHint="Opens a menu to choose Member, Caregiver, Mentor, or Professional"
                       >
-                        <Text style={styles.roleText}>{m.role}</Text>
+                        <AccessibleText variant="overline" style={[styles.roleText, { color: colors.secondary }]}>
+                          {m.role}
+                        </AccessibleText>
                       </TouchableOpacity>
                     )}
                   </View>
@@ -411,22 +452,25 @@ const CreateGroupScreen = ({ navigation, route }: Props) => {
 
           {/* ── Search Members ─────────────────────────────── */}
           <View style={styles.section}>
-            <Text style={styles.sectionLabel}>Add Members</Text>
-            <View style={styles.searchContainer}>
-              <Search size={16} color="#9A93A8" strokeWidth={2} style={styles.searchIcon} />
+            <AccessibleText variant="overline" style={[styles.sectionLabel, { color: colors.secondary, fontSize: fs(14) }]}>
+              Add Members
+            </AccessibleText>
+            <View style={[styles.searchContainer, { backgroundColor: colors.card, shadowColor: colors.primary }, cardBorder]}>
+              <Search size={16} color={colors.subtext} strokeWidth={2} style={styles.searchIcon} />
               <TextInput
-                style={styles.searchInput}
+                style={[styles.searchInput, { color: colors.text }]}
                 placeholder="Search by name..."
-                placeholderTextColor="#999"
+                placeholderTextColor={colors.subtext}
                 value={searchQuery}
                 onChangeText={handleSearchChange}
                 autoCapitalize="none"
                 returnKeyType="search"
+                accessibilityLabel="Search members by name"
               />
               {isSearching && (
                 <ActivityIndicator
                   size="small"
-                  color="#8A38F5"
+                  color={colors.primary}
                   style={styles.searchSpinner}
                 />
               )}
@@ -435,18 +479,18 @@ const CreateGroupScreen = ({ navigation, route }: Props) => {
             {/* Search Results — shows all users by default, filtered when typing */}
             {hasSearched && !isSearching && searchQuery.trim().length > 0 && displayedResults.length === 0 && (
               <View style={styles.emptyState}>
-                <SearchX size={32} color="#B9A9D6" strokeWidth={1.8} style={styles.emptyIcon} />
-                <Text style={styles.emptyText}>
+                <SearchX size={32} color={colors.subtext} strokeWidth={1.8} style={styles.emptyIcon} />
+                <AccessibleText variant="body" style={[styles.emptyText, { color: colors.subtext }]}>
                   No members found for "{searchQuery}"
-                </Text>
-                <Text style={styles.emptyHint}>
+                </AccessibleText>
+                <AccessibleText variant="caption" style={[styles.emptyHint, { color: colors.subtext }]}>
                   Try a different name or check the spelling
-                </Text>
+                </AccessibleText>
               </View>
             )}
 
             {displayedResults.length > 0 && (
-              <View style={styles.resultsCard}>
+              <View style={[styles.resultsCard, { backgroundColor: colors.card, shadowColor: colors.primary }, cardBorder]}>
                 {displayedResults.map((item) => (
                   <React.Fragment key={item.id}>
                     {renderSearchResult({ item })}
@@ -458,36 +502,37 @@ const CreateGroupScreen = ({ navigation, route }: Props) => {
 
           {/* ── Info Banner ────────────────────────────────── */}
           {isCareCircle && (
-            <View style={styles.infoBanner}>
-              <Lightbulb size={16} color="#8A38F5" strokeWidth={2} style={styles.infoIcon} />
-              <Text style={styles.infoText}>
+            <View style={[styles.infoBanner, { backgroundColor: colors.surface }]}>
+              <Lightbulb size={16} color={colors.primary} strokeWidth={2} style={styles.infoIcon} />
+              <AccessibleText variant="body" style={[styles.infoText, { color: colors.secondary }]}>
                 Care Circles help you stay connected with your support network.
                 Add caregivers, therapists, family members, or friends to create
                 a shared space for coordination and support. Members will receive an invite to join.
-              </Text>
+              </AccessibleText>
             </View>
           )}
 
 
         {/* ── Create Button (Fixed Bottom) ──────────────── */}
-        <View style={styles.bottomBar}>
-          <TouchableOpacity
-            style={[styles.createBtn, !canCreate && styles.createBtnDisabled]}
+        <View style={[styles.bottomBar, { backgroundColor: colors.background, borderTopColor: colors.border }]}>
+          <AccessibleButton
+            variant="primary"
             onPress={handleCreate}
             disabled={!canCreate || isCreating}
-            activeOpacity={0.8}
+            accessibilityLabel={isCareCircle ? "Create Care Circle" : "Create Group"}
+            accessibilityHint={!canCreate ? "Enter a name to enable this button" : undefined}
           >
             {isCreating ? (
-              <ActivityIndicator color="#fff" size="small" />
+              <ActivityIndicator color={colors.white} size="small" />
             ) : (
               <>
-                <HeartHandshake size={18} color="#fff" strokeWidth={2} style={styles.createBtnIcon} />
-                <Text style={styles.createBtnText}>
+                <HeartHandshake size={18} color={colors.white} strokeWidth={2} style={styles.createBtnIcon} />
+                <AccessibleText variant="button" style={{ color: colors.white }}>
                   {isCareCircle ? "Create Care Circle" : "Create Group"}
-                </Text>
+                </AccessibleText>
               </>
             )}
-          </TouchableOpacity>
+          </AccessibleButton>
         </View>
       </KeyboardAwareScrollView>
     </ScreenWrapper>
@@ -497,14 +542,8 @@ const CreateGroupScreen = ({ navigation, route }: Props) => {
 export default CreateGroupScreen;
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#F3EAFF",
-  },
-
   // ── Header ──────────────────────────────────────────────
   header: {
-    backgroundColor: "#500088",
     paddingHorizontal: 16,
     paddingTop: 8,
     paddingBottom: 20,
@@ -522,23 +561,13 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginRight: 14,
   },
-  backText: {
-    color: "#fff",
-    fontSize: 22,
-    fontWeight: "700",
-  },
   headerCenter: {
     flex: 1,
   },
   headerTitle: {
-    color: "#fff",
-    fontSize: 20,
-    fontWeight: "800",
     letterSpacing: 0.3,
   },
   headerSubtitle: {
-    color: "rgba(255,255,255,0.6)",
-    fontSize: 13,
     marginTop: 2,
   },
 
@@ -553,9 +582,6 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   sectionLabel: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: "#6B21A8",
     marginBottom: 8,
     letterSpacing: 0.3,
     textTransform: "uppercase",
@@ -565,10 +591,8 @@ const styles = StyleSheet.create({
   nameInputContainer: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#fff",
     borderRadius: 16,
     paddingRight: 16,
-    shadowColor: "#8A38F5",
     shadowOpacity: 0.08,
     shadowOffset: { width: 0, height: 4 },
     shadowRadius: 12,
@@ -578,18 +602,13 @@ const styles = StyleSheet.create({
     width: 52,
     height: 52,
     borderRadius: 16,
-    backgroundColor: "#F3EAFF",
     justifyContent: "center",
     alignItems: "center",
     margin: 4,
   },
-  nameIcon: {
-    fontSize: 22,
-  },
   nameInput: {
     flex: 1,
     fontSize: 16,
-    color: "#1a1a1a",
     paddingVertical: 14,
     paddingHorizontal: 12,
     fontWeight: "500",
@@ -622,7 +641,6 @@ const styles = StyleSheet.create({
   },
   chipAvatarText: {
     fontSize: 11,
-    color: "#fff",
     fontWeight: "700",
   },
   chipName: {
@@ -639,21 +657,14 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-  chipRemoveText: {
-    fontSize: 10,
-    color: "#666",
-    fontWeight: "700",
-  },
   roleSelector: {
     marginTop: 6,
     paddingHorizontal: 8,
     paddingVertical: 4,
-    backgroundColor: '#EDE9FE',
     borderRadius: 12,
   },
   roleText: {
     fontSize: 10,
-    color: '#6B21A8',
     fontWeight: '700',
   },
 
@@ -661,23 +672,19 @@ const styles = StyleSheet.create({
   searchContainer: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#fff",
     borderRadius: 16,
     paddingHorizontal: 14,
-    shadowColor: "#8A38F5",
     shadowOpacity: 0.06,
     shadowOffset: { width: 0, height: 2 },
     shadowRadius: 8,
     elevation: 2,
   },
   searchIcon: {
-    fontSize: 16,
     marginRight: 10,
   },
   searchInput: {
     flex: 1,
     fontSize: 15,
-    color: "#1a1a1a",
     paddingVertical: 14,
   },
   searchSpinner: {
@@ -686,11 +693,9 @@ const styles = StyleSheet.create({
 
   // ── Search Results ──────────────────────────────────────
   resultsCard: {
-    backgroundColor: "#fff",
     borderRadius: 16,
     marginTop: 10,
     overflow: "hidden",
-    shadowColor: "#8A38F5",
     shadowOpacity: 0.06,
     shadowOffset: { width: 0, height: 2 },
     shadowRadius: 8,
@@ -702,45 +707,35 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: "#f5f0fa",
   },
   resultAvatar: {
     width: 42,
     height: 42,
     borderRadius: 14,
-    backgroundColor: "#EDE9FE",
     justifyContent: "center",
     alignItems: "center",
     marginRight: 12,
   },
   resultAvatarText: {
-    fontSize: 15,
     fontWeight: "700",
-    color: "#6B21A8",
   },
   resultInfo: {
     flex: 1,
   },
   resultName: {
-    fontSize: 15,
     fontWeight: "600",
-    color: "#1a1a1a",
   },
   resultEmail: {
-    fontSize: 12,
-    color: "#999",
     marginTop: 1,
   },
   addBtnSmall: {
     width: 32,
     height: 32,
     borderRadius: 12,
-    backgroundColor: "#8A38F5",
     justifyContent: "center",
     alignItems: "center",
   },
   addBtnSmallText: {
-    color: "#fff",
     fontSize: 18,
     fontWeight: "700",
     marginTop: -1,
@@ -753,18 +748,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
   },
   emptyIcon: {
-    fontSize: 32,
     marginBottom: 8,
   },
   emptyText: {
-    fontSize: 14,
-    color: "#666",
     fontWeight: "500",
     textAlign: "center",
   },
   emptyHint: {
-    fontSize: 12,
-    color: "#aaa",
     marginTop: 4,
     textAlign: "center",
   },
@@ -772,21 +762,17 @@ const styles = StyleSheet.create({
   // ── Info Banner ─────────────────────────────────────────
   infoBanner: {
     flexDirection: "row",
-    backgroundColor: "#EDE9FE",
     marginHorizontal: 16,
     borderRadius: 16,
     padding: 14,
     marginBottom: 20,
   },
   infoIcon: {
-    fontSize: 16,
     marginRight: 10,
     marginTop: 2,
   },
   infoText: {
     flex: 1,
-    fontSize: 13,
-    color: "#6B21A8",
     lineHeight: 19,
   },
 
@@ -794,36 +780,9 @@ const styles = StyleSheet.create({
   bottomBar: {
     paddingHorizontal: 16,
     paddingVertical: 12,
-    backgroundColor: "#F3EAFF",
     borderTopWidth: 1,
-    borderTopColor: "#EDE9FE",
-  },
-  createBtn: {
-    flexDirection: "row",
-    justifyContent: "center",
-    alignItems: "center",
-    backgroundColor: "#500088",
-    paddingVertical: 16,
-    borderRadius: 18,
-    shadowColor: "#500088",
-    shadowOpacity: 0.3,
-    shadowOffset: { width: 0, height: 6 },
-    shadowRadius: 16,
-    elevation: 5,
-  },
-  createBtnDisabled: {
-    backgroundColor: "#C4A8D8",
-    shadowOpacity: 0,
-    elevation: 0,
   },
   createBtnIcon: {
-    fontSize: 18,
     marginRight: 8,
-  },
-  createBtnText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "700",
-    letterSpacing: 0.3,
   },
 });

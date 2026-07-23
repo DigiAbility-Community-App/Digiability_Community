@@ -94,38 +94,41 @@ export const LearnScreen = () => {
         </AccessibleText>
 
         {MOCK_COURSES.map(course => (
-          <TouchableOpacity 
-            key={course.id} 
-            style={[styles.courseCard, { backgroundColor: colors.card }]}
+          <TouchableOpacity
+            key={course.id}
+            style={[styles.courseCard, { backgroundColor: colors.card }, highContrast && { borderWidth: 2, borderColor: "#000000" }]}
             activeOpacity={0.9}
             onPress={() => Alert.alert("Start Course", `Starting course: ${course.title}`)}
+            accessibilityRole="button"
+            accessibilityLabel={course.title}
+            accessibilityHint={`Starts the course ${course.title} by ${course.instructor}`}
           >
-            <View style={styles.courseImage}>
+            <View style={[styles.courseImage, { backgroundColor: highContrast ? colors.surface : "#F3E8FF" }]}>
               <AccessibleText style={{ fontSize: 48 }}>{course.emoji}</AccessibleText>
               <View style={styles.courseDuration}>
-                <Clock size={12} color="#fff" />
-                <AccessibleText style={{ color: "#fff", fontSize: 11, fontWeight: "600", marginLeft: 4 }}>
+                <Clock size={12} color={colors.white} />
+                <AccessibleText style={{ color: colors.white, fontSize: 11, fontWeight: "600", marginLeft: 4 }}>
                   {course.duration}
                 </AccessibleText>
               </View>
             </View>
-            
+
             <View style={styles.courseContent}>
-              <AccessibleText style={{ color: "#500088", fontSize: 11, fontWeight: "700", textTransform: "uppercase", marginBottom: 6 }}>
+              <AccessibleText style={{ color: colors.primary, fontSize: 11, fontWeight: "700", textTransform: "uppercase", marginBottom: 6 }}>
                 {course.level}
               </AccessibleText>
-              
+
               <AccessibleText variant="title" style={{ fontSize: 16, marginBottom: 4, lineHeight: 22 }}>
                 {course.title}
               </AccessibleText>
-              
+
               <AccessibleText style={{ color: colors.subtext, fontSize: 13, marginBottom: 14 }}>
                 by {course.instructor}
               </AccessibleText>
-              
-              <View style={styles.courseMeta}>
+
+              <View style={[styles.courseMeta, { borderTopColor: colors.border }]}>
                 <View style={styles.ratingRow}>
-                  <Star size={14} color="#F59E0B" fill="#F59E0B" />
+                  <Star size={14} color={highContrast ? colors.text : "#F59E0B"} fill={highContrast ? colors.text : "#F59E0B"} />
                   <AccessibleText style={{ color: colors.text, fontSize: 13, fontWeight: "600", marginLeft: 4 }}>
                     {course.rating}
                   </AccessibleText>
@@ -133,10 +136,10 @@ export const LearnScreen = () => {
                     ({course.reviews})
                   </AccessibleText>
                 </View>
-                
-                <View style={styles.startBtn}>
-                  <Play size={12} color="#500088" fill="#500088" />
-                  <AccessibleText style={{ color: "#500088", fontSize: 12, fontWeight: "700", marginLeft: 4 }}>
+
+                <View style={[styles.startBtn, { backgroundColor: highContrast ? colors.surface : "#F3E8FF" }, highContrast && { borderWidth: 1, borderColor: "#000000" }]}>
+                  <Play size={12} color={colors.primary} fill={colors.primary} />
+                  <AccessibleText style={{ color: colors.primary, fontSize: 12, fontWeight: "700", marginLeft: 4 }}>
                     Start
                   </AccessibleText>
                 </View>
@@ -168,7 +171,6 @@ const styles = StyleSheet.create({
   },
   courseImage: {
     height: 120,
-    backgroundColor: "#F3E8FF",
     justifyContent: "center",
     alignItems: "center",
     position: "relative",
@@ -192,7 +194,6 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
     borderTopWidth: 1,
-    borderTopColor: "#F1F5F9",
     paddingTop: 14,
   },
   ratingRow: {
@@ -202,7 +203,6 @@ const styles = StyleSheet.create({
   startBtn: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#F3E8FF",
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 8,

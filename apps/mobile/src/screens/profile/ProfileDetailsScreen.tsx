@@ -13,7 +13,6 @@ import React, { useState, useCallback, useEffect } from "react";
 
 import {
   View,
-  Text,
   StyleSheet,
   TouchableOpacity,
   ScrollView,
@@ -27,7 +26,6 @@ import {
 
 import SafeScreen from "../../components/layout/SafeScreen";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { LinearGradient } from "expo-linear-gradient";
 
 import {
   useNavigation,
@@ -42,6 +40,9 @@ import {
   parseDateInput,
 } from "@services/profileService";
 import apiClient from "@services/apiClient";
+import { useTheme } from "../../theme/ThemeContext";
+import { AccessibleText } from "../../components/shared/AccessibleText";
+import { AccessibleButton } from "../../components/shared/AccessibleButton";
 
 // ─────────────────────────────────────────────────────────
 // CONSTANTS
@@ -75,32 +76,14 @@ const MIN_YEAR = 1900;
 // ─────────────────────────────────────────────────────────
 
 const ProfileDetailsScreen = () => {
-  const navigation =
-    useNavigation<any>();
+  const navigation = useNavigation<any>();
+  const { colors, highContrast } = useTheme();
 
-  const user = useAuthStore(
-    (s) => s.user
-  );
-
-  const setUser =
-    useAuthStore(
-      (s) => s.setUser
-    );
-
-  const clearPending =
-    useAuthStore(
-      (s) => s.clearPending
-    );
-
-  const pendingRoles =
-    useAuthStore(
-      (s) => s.pendingRoles
-    );
-
-  const pendingProfile =
-    useAuthStore(
-      (s) => s.pendingProfile
-    );
+  const user = useAuthStore((s) => s.user);
+  const setUser = useAuthStore((s) => s.setUser);
+  const clearPending = useAuthStore((s) => s.clearPending);
+  const pendingRoles = useAuthStore((s) => s.pendingRoles);
+  const pendingProfile = useAuthStore((s) => s.pendingProfile);
 
   const insets = useSafeAreaInsets();
 
@@ -112,70 +95,33 @@ const ProfileDetailsScreen = () => {
 
   // ───────────────── PwD ─────────────────
 
-  const [
-    selectedDisability,
-    setSelectedDisability,
-  ] = useState("Hearing");
-
-  const [
-    disabilitySince,
-    setDisabilitySince,
-  ] = useState("");
-
-  const [
-    selectedSupport,
-    setSelectedSupport,
-  ] = useState("Communication");
+  const [selectedDisability, setSelectedDisability] = useState("Hearing");
+  const [disabilitySince, setDisabilitySince] = useState("");
+  const [selectedSupport, setSelectedSupport] = useState("Communication");
 
   // ───────────────── Caregiver ─────────────────
 
-  const [personName, setPersonName] =
-    useState("");
-
-  const [relation, setRelation] =
-    useState("");
-
-  const [careeDob, setCareeDob] =
-    useState("");
-
-  const [
-    careDisability,
-    setCareDisability,
-  ] = useState("");
+  const [personName, setPersonName] = useState("");
+  const [relation, setRelation] = useState("");
+  const [careeDob, setCareeDob] = useState("");
+  const [careDisability, setCareDisability] = useState("");
 
   // ───────────────── Educator ─────────────────
 
-  const [speciality, setSpeciality] =
-    useState("");
-
-  const [organization, setOrganization] =
-    useState("");
-
-  const [experience, setExperience] =
-    useState("");
+  const [speciality, setSpeciality] = useState("");
+  const [organization, setOrganization] = useState("");
+  const [experience, setExperience] = useState("");
 
   // ───────────────── NGO ─────────────────
 
-  const [ngoName, setNgoName] =
-    useState("");
-
-  const [ngoRole, setNgoRole] =
-    useState("");
-
-  const [district, setDistrict] =
-    useState("");
+  const [ngoName, setNgoName] = useState("");
+  const [ngoRole, setNgoRole] = useState("");
+  const [district, setDistrict] = useState("");
 
   // ───────────────── COMMON ─────────────────
 
-  const [loading, setLoading] =
-    useState(false);
-
-  const [
-    fieldErrors,
-    setFieldErrors,
-  ] = useState<
-    Record<string, string>
-  >({});
+  const [loading, setLoading] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
   // ───────────────── Disability Types (from API) ─────────────────
 
@@ -195,10 +141,7 @@ const ProfileDetailsScreen = () => {
         "Exit Onboarding?",
         "Are you sure you want to go back to the signup/login screen? This will sign you out.",
         [
-          {
-            text: "Cancel",
-            style: "cancel",
-          },
+          { text: "Cancel", style: "cancel" },
           {
             text: "Exit",
             style: "destructive",
@@ -222,14 +165,8 @@ const ProfileDetailsScreen = () => {
         return true;
       };
 
-      const subscription =
-        BackHandler.addEventListener(
-          "hardwareBackPress",
-          onBackPress
-        );
-
-      return () =>
-        subscription.remove();
+      const subscription = BackHandler.addEventListener("hardwareBackPress", onBackPress);
+      return () => subscription.remove();
     }, [handleBack])
   );
 
@@ -260,10 +197,7 @@ const ProfileDetailsScreen = () => {
   // ───────────────── VALIDATION ─────────────────
 
   const validateFields = () => {
-    const newErrors: Record<
-      string,
-      string
-    > = {};
+    const newErrors: Record<string, string> = {};
 
     // PwD
     if (roles.includes("pwd")) {
@@ -272,376 +206,295 @@ const ProfileDetailsScreen = () => {
     }
 
     // Caregiver
-    if (
-      roles.includes("caregiver")
-    ) {
-      if (
-        !personName.trim()
-      ) {
-        newErrors.personName =
-          "Person name is required";
+    if (roles.includes("caregiver")) {
+      if (!personName.trim()) {
+        newErrors.personName = "Person name is required";
       }
 
-      if (
-        careeDob.trim()
-      ) {
-        const parsed =
-          parseDateInput(
-            careeDob.trim(),
-            "DMY"
-          );
-
+      if (careeDob.trim()) {
+        const parsed = parseDateInput(careeDob.trim(), "DMY");
         if (!parsed) {
-          newErrors.careeDob =
-            "Invalid date";
+          newErrors.careeDob = "Invalid date";
         }
       }
     }
 
     // Educator
-    if (
-      roles.includes("educator")
-    ) {
-      if (
-        !speciality.trim()
-      ) {
-        newErrors.speciality =
-          "Speciality required";
+    if (roles.includes("educator")) {
+      if (!speciality.trim()) {
+        newErrors.speciality = "Speciality required";
       }
     }
 
     // NGO
-    if (
-      roles.includes("ngo_worker")
-    ) {
+    if (roles.includes("ngo_worker")) {
       if (!ngoName.trim()) {
-        newErrors.ngoName =
-          "NGO name required";
+        newErrors.ngoName = "NGO name required";
       }
     }
 
-    setFieldErrors(
-      newErrors
-    );
-
-    return (
-      Object.keys(newErrors)
-        .length === 0
-    );
+    setFieldErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
   };
 
   // ───────────────── PAYLOAD ─────────────────
 
-  const buildRolePayload =
-    () => {
-      const payload: any = {};
+  const buildRolePayload = () => {
+    const payload: any = {};
 
-      if (roles.includes("pwd")) {
-        payload.disabilityType = selectedDisability;
-        payload.disabilitySince = disabilitySince.trim()
-          ? parseInt(disabilitySince.trim(), 10)
-          : undefined;
-        payload.supportNeeded = selectedSupport;
-      }
+    if (roles.includes("pwd")) {
+      payload.disabilityType = selectedDisability;
+      payload.disabilitySince = disabilitySince.trim()
+        ? parseInt(disabilitySince.trim(), 10)
+        : undefined;
+      payload.supportNeeded = selectedSupport;
+    }
 
-      if (roles.includes("caregiver")) {
-        payload.carePersonName = personName.trim();
-        payload.careRelation = relation.trim();
-        payload.careDob = careeDob.trim()
-          ? parseDateInput(careeDob.trim(), "DMY")
-          : undefined;
-        payload.careDisabilityType = careDisability.trim();
-      }
+    if (roles.includes("caregiver")) {
+      payload.carePersonName = personName.trim();
+      payload.careRelation = relation.trim();
+      payload.careDob = careeDob.trim()
+        ? parseDateInput(careeDob.trim(), "DMY")
+        : undefined;
+      payload.careDisabilityType = careDisability.trim();
+    }
 
-      if (roles.includes("educator")) {
-        payload.speciality = speciality.trim();
-        payload.organization = organization.trim();
-        payload.yearsOfExperience = experience.trim()
-          ? parseInt(experience.trim(), 10)
-          : undefined;
-      }
+    if (roles.includes("educator")) {
+      payload.speciality = speciality.trim();
+      payload.organization = organization.trim();
+      payload.yearsOfExperience = experience.trim()
+        ? parseInt(experience.trim(), 10)
+        : undefined;
+    }
 
-      if (roles.includes("ngo_worker")) {
-        payload.ngoName = ngoName.trim();
-        payload.ngoRole = ngoRole.trim();
-        payload.district = district.trim();
-      }
+    if (roles.includes("ngo_worker")) {
+      payload.ngoName = ngoName.trim();
+      payload.ngoRole = ngoRole.trim();
+      payload.district = district.trim();
+    }
 
-      return payload;
-    };
+    return payload;
+  };
 
   // ───────────────── SUBMIT ─────────────────
 
-  const handleComplete =
-    async () => {
-      if (!user?.id) return;
+  const handleComplete = async () => {
+    if (!user?.id) return;
+    if (!validateFields()) return;
 
-      if (!validateFields())
-        return;
+    setLoading(true);
 
-      setLoading(true);
+    try {
+      await submitFullOnboarding({
+        userId: user.id,
+        roles,
+        basicProfile: pendingProfile ?? {},
+        roleDetails: buildRolePayload(),
+      });
 
-      try {
-        await submitFullOnboarding(
-          {
-            userId: user.id,
+      setUser({
+        ...user,
+        fullName: pendingProfile?.fullName ?? user.fullName,
+        username: pendingProfile?.username ?? user.username,
+        role: roles[0] ?? null,
+        roles,
+        profileComplete: true,
+      });
 
-            roles,
+      clearPending();
 
-            basicProfile:
-              pendingProfile ??
-              {},
-
-            roleDetails:
-              buildRolePayload(),
-          }
-        );
-
-        setUser({
-          ...user,
-          fullName: pendingProfile?.fullName ?? user.fullName,
-          username: pendingProfile?.username ?? user.username,
-          role: roles[0] ?? null,
-          roles,
-          profileComplete: true,
-        });
-
-        clearPending();
-
-        navigation.reset({
-          index: 0,
-          routes: [{ name: "CareCircle" }],
-        });
-      } catch (error) {
-        Alert.alert(
-          "Error",
-          "Unable to complete onboarding"
-        );
-      } finally {
-        setLoading(false);
-      }
-    };
+      navigation.reset({
+        index: 0,
+        routes: [{ name: "CareCircle" }],
+      });
+    } catch (error) {
+      Alert.alert("Error", "Unable to complete onboarding");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // ───────────────── ROLE CHECK ─────────────────
 
   const hasRoleSection = roles.some(r =>
-    [
-      "pwd",
-      "caregiver",
-      "educator",
-      "ngo_worker",
-    ].includes(r)
+    ["pwd", "caregiver", "educator", "ngo_worker"].includes(r)
+  );
+
+  const cardBorder = highContrast
+    ? { borderWidth: 2, borderColor: "#000000" }
+    : { borderWidth: 1, borderColor: "rgba(0,0,0,0.05)" };
+
+  const fieldBorder = (hasError?: boolean) => {
+    if (hasError) return { borderWidth: 1, borderColor: colors.error };
+    return highContrast ? { borderWidth: 2, borderColor: "#000000" } : {};
+  };
+
+  // ───────────────── DISABILITY DROPDOWN (shared render, used twice) ─────────────────
+
+  const renderDisabilityDropdown = (
+    value: string,
+    open: boolean,
+    setOpen: (v: boolean) => void,
+    search: string,
+    setSearch: (v: string) => void,
+    onSelect: (v: string) => void,
+    label: string
+  ) => (
+    <>
+      <TouchableOpacity
+        style={[styles.dropdownTrigger, { backgroundColor: colors.surface }, highContrast && { borderWidth: 2, borderColor: "#000000" }]}
+        activeOpacity={0.8}
+        onPress={() => {
+          setOpen(!open);
+          setSearch("");
+        }}
+        accessibilityRole="button"
+        accessibilityLabel={label}
+        accessibilityHint={`Currently ${value || "not set"}. Double tap to choose a disability type`}
+        accessibilityState={{ expanded: open }}
+      >
+        <AccessibleText style={[styles.dropdownValue, { color: value ? colors.text : colors.subtext }]}>
+          {value || "Select disability type"}
+        </AccessibleText>
+        <AccessibleText style={[styles.dropdownArrow, { color: colors.subtext }]}>{open ? "▲" : "▼"}</AccessibleText>
+      </TouchableOpacity>
+
+      {open && (
+        <View style={[styles.dropdownPanel, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          <View style={[styles.dropdownSearch, { borderBottomColor: colors.border }]}>
+            <AccessibleText style={styles.searchIcon}>🔍</AccessibleText>
+            <TextInput
+              style={[styles.searchInput, { color: colors.text }]}
+              placeholder="Search..."
+              placeholderTextColor={colors.subtext}
+              value={search}
+              onChangeText={setSearch}
+              autoFocus
+              accessibilityLabel="Search disability types"
+            />
+          </View>
+          <ScrollView style={styles.dropdownList} nestedScrollEnabled keyboardShouldPersistTaps="handled">
+            {disabilityOptions
+              .filter((o) => o.toLowerCase().includes(search.toLowerCase()))
+              .map((item) => {
+                const selected = value === item;
+                return (
+                  <TouchableOpacity
+                    key={item}
+                    style={[
+                      styles.dropdownOption,
+                      { borderBottomColor: colors.border },
+                      selected && { backgroundColor: highContrast ? "#000000" : "rgba(80,0,136,0.06)" },
+                    ]}
+                    onPress={() => {
+                      onSelect(item);
+                      setOpen(false);
+                      setSearch("");
+                    }}
+                    accessibilityRole="radio"
+                    accessibilityState={{ checked: selected }}
+                    accessibilityLabel={item}
+                  >
+                    <AccessibleText
+                      style={[
+                        styles.dropdownOptionText,
+                        { color: selected ? colors.primary : colors.text },
+                        selected && highContrast && { color: "#FFFFFF", fontWeight: "700" },
+                      ]}
+                    >
+                      {item}
+                    </AccessibleText>
+                    {selected && (
+                      <AccessibleText style={[styles.checkmark, { color: highContrast ? "#FFFFFF" : colors.primary }]}>✓</AccessibleText>
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+            {disabilityOptions.filter((o) => o.toLowerCase().includes(search.toLowerCase())).length === 0 && (
+              <AccessibleText style={[styles.noResults, { color: colors.subtext }]}>No results</AccessibleText>
+            )}
+          </ScrollView>
+        </View>
+      )}
+    </>
   );
 
   // ───────────────── UI ─────────────────
 
   return (
-    <SafeScreen
-      bottom={false}
-      statusBarStyle="dark"
-      style={styles.container}
-    >
+    <SafeScreen bottom={false} statusBarStyle="dark" style={[styles.container, { backgroundColor: colors.background }]}>
 
       {/* BACKGROUND */}
-      <View
-        style={styles.topBlob}
-      />
-
-      <View
-        style={styles.bottomBlob}
-      />
+      <View style={styles.topBlob} />
+      <View style={styles.bottomBlob} />
 
       {/* HEADER */}
-      <View
-        style={styles.topHeader}
-      >
+      <View style={styles.topHeader}>
         <TouchableOpacity
-          style={
-            styles.backButton
-          }
+          style={[styles.backButton, highContrast && { borderWidth: 2, borderColor: "#000000" }]}
           onPress={handleBack}
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
+          accessibilityHint="Returns to the previous screen"
         >
-          <Text
-            style={
-              styles.backArrow
-            }
-          >
-            ←
-          </Text>
+          <AccessibleText style={[styles.backArrow, { color: colors.secondary }]}>←</AccessibleText>
         </TouchableOpacity>
 
-        <View
-          style={
-            styles.progressWrapper
-          }
-        >
-          <View
-            style={
-              styles.inactiveProgress
-            }
-          />
-
-          <View
-            style={
-              styles.inactiveProgress
-            }
-          />
-
-          <View
-            style={
-              styles.inactiveProgress
-            }
-          />
-
-          <View
-            style={
-              styles.activeProgress
-            }
-          />
+        <View style={styles.progressWrapper}>
+          <View style={[styles.inactiveProgress, highContrast && { backgroundColor: "#000000" }]} />
+          <View style={[styles.inactiveProgress, highContrast && { backgroundColor: "#000000" }]} />
+          <View style={[styles.inactiveProgress, highContrast && { backgroundColor: "#000000" }]} />
+          <View style={[styles.activeProgress, { backgroundColor: colors.secondary }]} />
         </View>
       </View>
 
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior={
-          Platform.OS === "ios"
-            ? "padding"
-            : "height"
-        }
-        keyboardVerticalOffset={
-          Platform.OS === "ios" ? 20 : 0
-        }
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 20 : 0}
       >
         {/* BODY */}
-        <ScrollView
-          showsVerticalScrollIndicator={
-            false
-          }
-          contentContainerStyle={
-            styles.scrollContent
-          }
-        >
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
           {/* HERO */}
-          <View
-            style={
-              styles.heroSection
-            }
-          >
-            <Text
-              style={
-                styles.heroTitle
-              }
-            >
-              A little more
-              about you
-            </Text>
-
-            <Text
-              style={
-                styles.heroSubtitle
-              }
-            >
-              Help us personalize
-              your experience
-            </Text>
+          <View style={styles.heroSection}>
+            <AccessibleText variant="heroTitle" style={[styles.heroTitle, { color: colors.text }]}>
+              A little more about you
+            </AccessibleText>
+            <AccessibleText variant="subtitle" style={[styles.heroSubtitle, { color: colors.subtext }]}>
+              Help us personalize your experience
+            </AccessibleText>
           </View>
 
           {/* ───────── PwD ───────── */}
           {roles.includes("pwd") && (
-            <View
-              style={
-                styles.sectionCard
-              }
-            >
-              <View
-                style={
-                  styles.sectionHeader
-                }
-              >
-                <Text
-                  style={
-                    styles.sectionTitle
-                  }
-                >
+            <View style={[styles.sectionCard, { backgroundColor: colors.card }, cardBorder]}>
+              <View style={styles.sectionHeader}>
+                <AccessibleText variant="title" style={[styles.sectionTitle, { color: colors.primary }]}>
                   My Disability
-                </Text>
-
-                <View
-                  style={
-                    styles.badge
-                  }
-                >
-                  <Text
-                    style={
-                      styles.badgeText
-                    }
-                  >
-                    OPTIONAL
-                  </Text>
+                </AccessibleText>
+                <View style={[styles.badge, { backgroundColor: highContrast ? "#FFFFFF" : "rgba(80,0,136,0.1)" }, highContrast && { borderWidth: 1, borderColor: "#000000" }]}>
+                  <AccessibleText style={[styles.badgeText, { color: colors.primary }]}>OPTIONAL</AccessibleText>
                 </View>
               </View>
 
-              <Text style={styles.label}>Disability Type</Text>
+              <AccessibleText variant="label" style={[styles.label, { color: colors.subtext }]}>Disability Type</AccessibleText>
 
-              <TouchableOpacity
-                style={styles.dropdownTrigger}
-                activeOpacity={0.8}
-                onPress={() => {
-                  setDisabilityDropdownOpen(!disabilityDropdownOpen);
-                  setDisabilitySearch("");
-                }}
-              >
-                <Text style={selectedDisability ? styles.dropdownValue : styles.dropdownPlaceholder}>
-                  {selectedDisability || "Select disability type"}
-                </Text>
-                <Text style={styles.dropdownArrow}>{disabilityDropdownOpen ? "▲" : "▼"}</Text>
-              </TouchableOpacity>
-
-              {disabilityDropdownOpen && (
-                <View style={styles.dropdownPanel}>
-                  <View style={styles.dropdownSearch}>
-                    <Text style={styles.searchIcon}>🔍</Text>
-                    <TextInput
-                      style={styles.searchInput}
-                      placeholder="Search..."
-                      placeholderTextColor="rgba(126,115,131,0.6)"
-                      value={disabilitySearch}
-                      onChangeText={setDisabilitySearch}
-                      autoFocus
-                    />
-                  </View>
-                  <ScrollView style={styles.dropdownList} nestedScrollEnabled keyboardShouldPersistTaps="handled">
-                    {disabilityOptions
-                      .filter((o) => o.toLowerCase().includes(disabilitySearch.toLowerCase()))
-                      .map((item) => (
-                        <TouchableOpacity
-                          key={item}
-                          style={[styles.dropdownOption, selectedDisability === item && styles.dropdownOptionSelected]}
-                          onPress={() => {
-                            setSelectedDisability(item);
-                            setDisabilityDropdownOpen(false);
-                            setDisabilitySearch("");
-                          }}
-                        >
-                          <Text style={[styles.dropdownOptionText, selectedDisability === item && styles.dropdownOptionTextSelected]}>
-                            {item}
-                          </Text>
-                          {selectedDisability === item && <Text style={styles.checkmark}>✓</Text>}
-                        </TouchableOpacity>
-                      ))}
-                    {disabilityOptions.filter((o) => o.toLowerCase().includes(disabilitySearch.toLowerCase())).length === 0 && (
-                      <Text style={styles.noResults}>No results</Text>
-                    )}
-                  </ScrollView>
-                </View>
+              {renderDisabilityDropdown(
+                selectedDisability,
+                disabilityDropdownOpen,
+                setDisabilityDropdownOpen,
+                disabilitySearch,
+                setDisabilitySearch,
+                setSelectedDisability,
+                "Disability type"
               )}
 
-              <Text style={[styles.label, { marginTop: 20 }]}>Disability Since</Text>
+              <AccessibleText variant="label" style={[styles.label, { color: colors.subtext, marginTop: 20 }]}>Disability Since</AccessibleText>
 
               <TextInput
                 placeholder="e.g. 2003"
-                placeholderTextColor="rgba(126,115,131,0.6)"
-                style={[styles.input, fieldErrors.disabilitySince ? styles.inputError : null]}
+                placeholderTextColor={colors.subtext}
+                style={[styles.input, { backgroundColor: colors.surface, color: colors.text }, fieldBorder(!!fieldErrors.disabilitySince)]}
                 value={disabilitySince}
                 onChangeText={(v) => {
                   if (/^\d{0,4}$/.test(v)) {
@@ -653,476 +506,227 @@ const ProfileDetailsScreen = () => {
                 }}
                 keyboardType="number-pad"
                 maxLength={4}
+                accessibilityLabel="Disability since year"
+                accessibilityHint="4-digit year"
               />
               {fieldErrors.disabilitySince && (
-                <Text style={styles.errorText}>{fieldErrors.disabilitySince}</Text>
+                <AccessibleText style={[styles.errorText, { color: colors.error }]} accessibilityRole="alert">
+                  {fieldErrors.disabilitySince}
+                </AccessibleText>
               )}
 
-              <Text
-                style={[
-                  styles.label,
-                  {
-                    marginTop: 20,
-                  },
-                ]}
-              >
-                Support Needed
-              </Text>
+              <AccessibleText variant="label" style={[styles.label, { color: colors.subtext, marginTop: 20 }]}>Support Needed</AccessibleText>
 
-              <View
-                style={
-                  styles.chipsContainer
-                }
-              >
-                {supportOptions.map(
-                  (item) => {
-                    const selected =
-                      selectedSupport ===
-                      item;
-
-                    return (
-                      <TouchableOpacity
-                        key={item}
-                        style={[
-                          styles.chip,
-
-                          selected &&
-                          styles.selectedChip,
-                        ]}
-                        onPress={() =>
-                          setSelectedSupport(
-                            item
-                          )
-                        }
+              <View style={styles.chipsContainer}>
+                {supportOptions.map((item) => {
+                  const selected = selectedSupport === item;
+                  return (
+                    <TouchableOpacity
+                      key={item}
+                      style={[
+                        styles.chip,
+                        { backgroundColor: colors.surface },
+                        selected && { backgroundColor: highContrast ? "#000000" : colors.primary },
+                      ]}
+                      onPress={() => setSelectedSupport(item)}
+                      accessibilityRole="radio"
+                      accessibilityState={{ checked: selected }}
+                      accessibilityLabel={item}
+                    >
+                      <AccessibleText
+                        style={[styles.chipText, { color: colors.subtext }, selected && { color: "#FFFFFF" }]}
                       >
-                        <Text
-                          style={[
-                            styles.chipText,
-
-                            selected &&
-                            styles.selectedChipText,
-                          ]}
-                        >
-                          {item}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  }
-                )}
+                        {item}
+                      </AccessibleText>
+                    </TouchableOpacity>
+                  );
+                })}
               </View>
             </View>
           )}
 
           {/* ───────── CAREGIVER ───────── */}
           {roles.includes("caregiver") && (
-            <View
-              style={
-                styles.sectionCard
-              }
-            >
-              <View
-                style={
-                  styles.sectionHeader
-                }
-              >
-                <Text
-                  style={
-                    styles.sectionTitle
-                  }
-                >
+            <View style={[styles.sectionCard, { backgroundColor: colors.card }, cardBorder]}>
+              <View style={styles.sectionHeader}>
+                <AccessibleText variant="title" style={[styles.sectionTitle, { color: colors.primary }]}>
                   Person I Care For
-                </Text>
+                </AccessibleText>
               </View>
 
-              <Text
-                style={
-                  styles.label
-                }
-              >
-                Person Name
-              </Text>
-
+              <AccessibleText variant="label" style={[styles.label, { color: colors.subtext }]}>Person Name</AccessibleText>
               <TextInput
                 placeholder="Enter full name"
-                placeholderTextColor="rgba(126,115,131,0.6)"
-                style={
-                  styles.input
-                }
+                placeholderTextColor={colors.subtext}
+                style={[styles.input, { backgroundColor: colors.surface, color: colors.text }, fieldBorder(!!fieldErrors.personName)]}
                 value={personName}
-                onChangeText={
-                  setPersonName
-                }
+                onChangeText={setPersonName}
+                accessibilityLabel="Person name"
               />
+              {fieldErrors.personName && (
+                <AccessibleText style={[styles.errorText, { color: colors.error }]} accessibilityRole="alert">
+                  {fieldErrors.personName}
+                </AccessibleText>
+              )}
 
-              <View
-                style={styles.row}
-              >
-                <View
-                  style={
-                    styles.halfField
-                  }
-                >
-                  <Text
-                    style={
-                      styles.label
-                    }
-                  >
-                    Relation
-                  </Text>
-
+              <View style={styles.row}>
+                <View style={styles.halfField}>
+                  <AccessibleText variant="label" style={[styles.label, { color: colors.subtext }]}>Relation</AccessibleText>
                   <TextInput
                     placeholder="Relation"
-                    placeholderTextColor="rgba(126,115,131,0.6)"
-                    style={
-                      styles.input
-                    }
-                    value={
-                      relation
-                    }
-                    onChangeText={
-                      setRelation
-                    }
+                    placeholderTextColor={colors.subtext}
+                    style={[styles.input, { backgroundColor: colors.surface, color: colors.text }, fieldBorder()]}
+                    value={relation}
+                    onChangeText={setRelation}
+                    accessibilityLabel="Relation to the person you care for"
                   />
                 </View>
 
-                <View
-                  style={
-                    styles.halfField
-                  }
-                >
-                  <Text
-                    style={
-                      styles.label
-                    }
-                  >
-                    DOB
-                  </Text>
-
+                <View style={styles.halfField}>
+                  <AccessibleText variant="label" style={[styles.label, { color: colors.subtext }]}>DOB</AccessibleText>
                   <TextInput
                     placeholder="DD/MM/YYYY"
-                    placeholderTextColor="rgba(126,115,131,0.6)"
-                    style={
-                      styles.input
-                    }
-                    value={
-                      careeDob
-                    }
-                    onChangeText={
-                      setCareeDob
-                    }
+                    placeholderTextColor={colors.subtext}
+                    style={[styles.input, { backgroundColor: colors.surface, color: colors.text }, fieldBorder(!!fieldErrors.careeDob)]}
+                    value={careeDob}
+                    onChangeText={setCareeDob}
+                    accessibilityLabel="Date of birth"
+                    accessibilityHint="Format: day, month, year"
                   />
                 </View>
               </View>
-
-              <Text style={[styles.label, { marginTop: 18 }]}>Disability Type</Text>
-
-              <TouchableOpacity
-                style={styles.dropdownTrigger}
-                activeOpacity={0.8}
-                onPress={() => {
-                  setCareDropdownOpen(!careDropdownOpen);
-                  setCareSearch("");
-                }}
-              >
-                <Text style={careDisability ? styles.dropdownValue : styles.dropdownPlaceholder}>
-                  {careDisability || "Select disability type"}
-                </Text>
-                <Text style={styles.dropdownArrow}>{careDropdownOpen ? "▲" : "▼"}</Text>
-              </TouchableOpacity>
-
-              {careDropdownOpen && (
-                <View style={styles.dropdownPanel}>
-                  <View style={styles.dropdownSearch}>
-                    <Text style={styles.searchIcon}>🔍</Text>
-                    <TextInput
-                      style={styles.searchInput}
-                      placeholder="Search..."
-                      placeholderTextColor="rgba(126,115,131,0.6)"
-                      value={careSearch}
-                      onChangeText={setCareSearch}
-                      autoFocus
-                    />
-                  </View>
-                  <ScrollView style={styles.dropdownList} nestedScrollEnabled keyboardShouldPersistTaps="handled">
-                    {disabilityOptions
-                      .filter((o) => o.toLowerCase().includes(careSearch.toLowerCase()))
-                      .map((item) => (
-                        <TouchableOpacity
-                          key={item}
-                          style={[styles.dropdownOption, careDisability === item && styles.dropdownOptionSelected]}
-                          onPress={() => {
-                            setCareDisability(item);
-                            setCareDropdownOpen(false);
-                            setCareSearch("");
-                          }}
-                        >
-                          <Text style={[styles.dropdownOptionText, careDisability === item && styles.dropdownOptionTextSelected]}>
-                            {item}
-                          </Text>
-                          {careDisability === item && <Text style={styles.checkmark}>✓</Text>}
-                        </TouchableOpacity>
-                      ))}
-                    {disabilityOptions.filter((o) => o.toLowerCase().includes(careSearch.toLowerCase())).length === 0 && (
-                      <Text style={styles.noResults}>No results</Text>
-                    )}
-                  </ScrollView>
-                </View>
+              {fieldErrors.careeDob && (
+                <AccessibleText style={[styles.errorText, { color: colors.error }]} accessibilityRole="alert">
+                  {fieldErrors.careeDob}
+                </AccessibleText>
               )}
 
+              <AccessibleText variant="label" style={[styles.label, { color: colors.subtext, marginTop: 18 }]}>Disability Type</AccessibleText>
+
+              {renderDisabilityDropdown(
+                careDisability,
+                careDropdownOpen,
+                setCareDropdownOpen,
+                careSearch,
+                setCareSearch,
+                setCareDisability,
+                "Disability type"
+              )}
             </View>
           )}
 
           {/* ───────── EDUCATOR ───────── */}
           {roles.includes("educator") && (
-            <View
-              style={
-                styles.sectionCard
-              }
-            >
-              <View
-                style={
-                  styles.sectionHeader
-                }
-              >
-                <Text
-                  style={
-                    styles.sectionTitle
-                  }
-                >
+            <View style={[styles.sectionCard, { backgroundColor: colors.card }, cardBorder]}>
+              <View style={styles.sectionHeader}>
+                <AccessibleText variant="title" style={[styles.sectionTitle, { color: colors.primary }]}>
                   Professional Info
-                </Text>
+                </AccessibleText>
               </View>
 
-              <Text
-                style={
-                  styles.label
-                }
-              >
-                Specialty
-              </Text>
-
+              <AccessibleText variant="label" style={[styles.label, { color: colors.subtext }]}>Specialty</AccessibleText>
               <TextInput
                 placeholder="Speciality"
-                placeholderTextColor="rgba(126,115,131,0.6)"
-                style={
-                  styles.input
-                }
-                value={
-                  speciality
-                }
-                onChangeText={
-                  setSpeciality
-                }
+                placeholderTextColor={colors.subtext}
+                style={[styles.input, { backgroundColor: colors.surface, color: colors.text }, fieldBorder(!!fieldErrors.speciality)]}
+                value={speciality}
+                onChangeText={setSpeciality}
+                accessibilityLabel="Speciality"
               />
+              {fieldErrors.speciality && (
+                <AccessibleText style={[styles.errorText, { color: colors.error }]} accessibilityRole="alert">
+                  {fieldErrors.speciality}
+                </AccessibleText>
+              )}
 
-              <Text
-                style={[
-                  styles.label,
-                  {
-                    marginTop: 18,
-                  },
-                ]}
-              >
-                Organization
-              </Text>
-
+              <AccessibleText variant="label" style={[styles.label, { color: colors.subtext, marginTop: 18 }]}>Organization</AccessibleText>
               <TextInput
                 placeholder="Company or School"
-                placeholderTextColor="rgba(126,115,131,0.6)"
-                style={
-                  styles.input
-                }
-                value={
-                  organization
-                }
-                onChangeText={
-                  setOrganization
-                }
+                placeholderTextColor={colors.subtext}
+                style={[styles.input, { backgroundColor: colors.surface, color: colors.text }, fieldBorder()]}
+                value={organization}
+                onChangeText={setOrganization}
+                accessibilityLabel="Organization"
               />
 
-              <Text
-                style={[
-                  styles.label,
-                  {
-                    marginTop: 18,
-                  },
-                ]}
-              >
-                Experience
-              </Text>
-
+              <AccessibleText variant="label" style={[styles.label, { color: colors.subtext, marginTop: 18 }]}>Experience</AccessibleText>
               <TextInput
                 placeholder="Years"
-                placeholderTextColor="rgba(126,115,131,0.6)"
-                style={
-                  styles.input
-                }
-                value={
-                  experience
-                }
-                onChangeText={
-                  setExperience
-                }
+                placeholderTextColor={colors.subtext}
+                style={[styles.input, { backgroundColor: colors.surface, color: colors.text }, fieldBorder()]}
+                value={experience}
+                onChangeText={setExperience}
                 keyboardType="number-pad"
+                accessibilityLabel="Years of experience"
               />
             </View>
           )}
 
           {/* ───────── NGO ───────── */}
           {roles.includes("ngo_worker") && (
-            <View
-              style={
-                styles.sectionCard
-              }
-            >
-              <View
-                style={
-                  styles.sectionHeader
-                }
-              >
-                <Text
-                  style={
-                    styles.sectionTitle
-                  }
-                >
+            <View style={[styles.sectionCard, { backgroundColor: colors.card }, cardBorder]}>
+              <View style={styles.sectionHeader}>
+                <AccessibleText variant="title" style={[styles.sectionTitle, { color: colors.primary }]}>
                   NGO Info
-                </Text>
+                </AccessibleText>
               </View>
 
-              <Text
-                style={
-                  styles.label
-                }
-              >
-                Organization Name
-              </Text>
-
+              <AccessibleText variant="label" style={[styles.label, { color: colors.subtext }]}>Organization Name</AccessibleText>
               <TextInput
                 placeholder="NGO Name"
-                placeholderTextColor="rgba(126,115,131,0.6)"
-                style={
-                  styles.input
-                }
+                placeholderTextColor={colors.subtext}
+                style={[styles.input, { backgroundColor: colors.surface, color: colors.text }, fieldBorder(!!fieldErrors.ngoName)]}
                 value={ngoName}
-                onChangeText={
-                  setNgoName
-                }
+                onChangeText={setNgoName}
+                accessibilityLabel="NGO name"
               />
+              {fieldErrors.ngoName && (
+                <AccessibleText style={[styles.errorText, { color: colors.error }]} accessibilityRole="alert">
+                  {fieldErrors.ngoName}
+                </AccessibleText>
+              )}
 
-              <Text
-                style={[
-                  styles.label,
-                  {
-                    marginTop: 18,
-                  },
-                ]}
-              >
-                Your Role
-              </Text>
-
+              <AccessibleText variant="label" style={[styles.label, { color: colors.subtext, marginTop: 18 }]}>Your Role</AccessibleText>
               <TextInput
                 placeholder="Designation"
-                placeholderTextColor="rgba(126,115,131,0.6)"
-                style={
-                  styles.input
-                }
+                placeholderTextColor={colors.subtext}
+                style={[styles.input, { backgroundColor: colors.surface, color: colors.text }, fieldBorder()]}
                 value={ngoRole}
-                onChangeText={
-                  setNgoRole
-                }
+                onChangeText={setNgoRole}
+                accessibilityLabel="Your role at the NGO"
               />
 
-              <Text
-                style={[
-                  styles.label,
-                  {
-                    marginTop: 18,
-                  },
-                ]}
-              >
-                District
-              </Text>
-
+              <AccessibleText variant="label" style={[styles.label, { color: colors.subtext, marginTop: 18 }]}>District</AccessibleText>
               <TextInput
                 placeholder="District"
-                placeholderTextColor="rgba(126,115,131,0.6)"
-                style={
-                  styles.input
-                }
-                value={
-                  district
-                }
-                onChangeText={
-                  setDistrict
-                }
+                placeholderTextColor={colors.subtext}
+                style={[styles.input, { backgroundColor: colors.surface, color: colors.text }, fieldBorder()]}
+                value={district}
+                onChangeText={setDistrict}
+                accessibilityLabel="District"
               />
             </View>
           )}
 
           {/* ───────── BASIC ROLES ───────── */}
           {!hasRoleSection && (
-            <View
-              style={
-                styles.sectionCard
-              }
-            >
-              <View
-                style={
-                  styles.sectionHeader
-                }
-              >
-                <Text
-                  style={
-                    styles.sectionTitle
-                  }
-                >
+            <View style={[styles.sectionCard, { backgroundColor: colors.card }, cardBorder]}>
+              <View style={styles.sectionHeader}>
+                <AccessibleText variant="title" style={[styles.sectionTitle, { color: colors.primary }]}>
                   You're all set!
-                </Text>
-
-                <View
-                  style={
-                    styles.badge
-                  }
-                >
-                  <Text
-                    style={
-                      styles.badgeText
-                    }
-                  >
-                    BASIC PROFILE
-                  </Text>
+                </AccessibleText>
+                <View style={[styles.badge, { backgroundColor: highContrast ? "#FFFFFF" : "rgba(80,0,136,0.1)" }, highContrast && { borderWidth: 1, borderColor: "#000000" }]}>
+                  <AccessibleText style={[styles.badgeText, { color: colors.primary }]}>BASIC PROFILE</AccessibleText>
                 </View>
               </View>
 
-              <Text
-                style={
-                  styles.fallbackText
-                }
-              >
-                You only need
-                basic details to
-                continue using the
-                platform.
-              </Text>
+              <AccessibleText variant="body" style={[styles.fallbackText, { color: colors.subtext }]}>
+                You only need basic details to continue using the platform.
+              </AccessibleText>
 
-              <View
-                style={
-                  styles.infoCard
-                }
-              >
-                <Text
-                  style={
-                    styles.infoTitle
-                  }
-                >
-                  Selected Role
-                </Text>
-
-                <Text
-                  style={
-                    styles.infoValue
-                  }
-                >
+              <View style={[styles.infoCard, { backgroundColor: colors.surface }]}>
+                <AccessibleText style={[styles.infoTitle, { color: colors.subtext }]}>Selected Role</AccessibleText>
+                <AccessibleText style={[styles.infoValue, { color: colors.text }]}>
                   {roles.map(r => ({
                     pwd: 'Person with Disability',
                     caregiver: 'Caregiver',
@@ -1134,7 +738,7 @@ const ProfileDetailsScreen = () => {
                     volunteer: 'Volunteer',
                     student: 'Student',
                   } as Record<string, string>)[r] ?? r).join(", ")}
-                </Text>
+                </AccessibleText>
               </View>
             </View>
           )}
@@ -1142,48 +746,22 @@ const ProfileDetailsScreen = () => {
 
         {/* FOOTER */}
         <View style={[styles.footer, { bottom: Math.max(insets.bottom, 24) }]}>
-          <TouchableOpacity
-            activeOpacity={0.9}
-            onPress={
-              handleComplete
-            }
+          <AccessibleButton
+            style={styles.button}
+            onPress={handleComplete}
             disabled={loading}
-            style={
-              styles.buttonWrapper
-            }
+            accessibilityLabel="Complete Profile"
+            accessibilityHint="Saves your profile details and continues to the next step"
           >
-            <LinearGradient
-              colors={[
-                "#500088",
-                "#6B21A8",
-              ]}
-              style={
-                styles.button
-              }
-            >
-              {loading ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <>
-                  <Text
-                    style={
-                      styles.buttonText
-                    }
-                  >
-                    Complete Profile
-                  </Text>
-
-                  <Text
-                    style={
-                      styles.buttonArrow
-                    }
-                  >
-                    →
-                  </Text>
-                </>
-              )}
-            </LinearGradient>
-          </TouchableOpacity>
+            {loading ? (
+              <ActivityIndicator color={colors.white} />
+            ) : (
+              <>
+                <AccessibleText style={styles.buttonText}>Complete Profile</AccessibleText>
+                <AccessibleText style={styles.buttonArrow}>→</AccessibleText>
+              </>
+            )}
+          </AccessibleButton>
         </View>
       </KeyboardAvoidingView>
     </SafeScreen>
@@ -1196,375 +774,291 @@ export default ProfileDetailsScreen;
 // STYLES
 // ─────────────────────────────────────────────────────────
 
-const styles =
-  StyleSheet.create({
-    container: {
-      flex: 1,
-      backgroundColor:
-        "#FAF8FF",
-    },
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
 
-    topBlob: {
-      position: "absolute",
-      width: 256,
-      height: 256,
-      borderRadius: 999,
-      backgroundColor:
-        "rgba(80,0,136,0.05)",
-      right: -96,
-      top: -96,
-    },
+  topBlob: {
+    position: "absolute",
+    width: 256,
+    height: 256,
+    borderRadius: 999,
+    backgroundColor: "rgba(80,0,136,0.05)",
+    right: -96,
+    top: -96,
+  },
 
-    bottomBlob: {
-      position: "absolute",
-      width: 256,
-      height: 256,
-      borderRadius: 999,
-      backgroundColor:
-        "rgba(133,83,0,0.05)",
-      left: -96,
-      bottom: 200,
-    },
+  bottomBlob: {
+    position: "absolute",
+    width: 256,
+    height: 256,
+    borderRadius: 999,
+    backgroundColor: "rgba(133,83,0,0.05)",
+    left: -96,
+    bottom: 200,
+  },
 
-    topHeader: {
-      height: 64,
-      paddingHorizontal: 24,
-      flexDirection: "row",
-      justifyContent:
-        "space-between",
-      alignItems: "center",
-    },
+  topHeader: {
+    height: 64,
+    paddingHorizontal: 24,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
 
-    backButton: {
-      width: 36,
-      height: 36,
-      borderRadius: 18,
-      justifyContent:
-        "center",
-      alignItems: "center",
-      backgroundColor:
-        "rgba(80,0,136,0.08)",
-    },
+  backButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "rgba(80,0,136,0.08)",
+  },
 
-    backArrow: {
-      fontSize: 18,
-      color: "#581C87",
-      fontWeight: "700",
-    },
+  backArrow: {
+    fontSize: 18,
+    fontWeight: "700",
+  },
 
-    progressWrapper: {
-      flexDirection: "row",
-      gap: 8,
-    },
+  progressWrapper: {
+    flexDirection: "row",
+    gap: 8,
+  },
 
-    inactiveProgress: {
-      width: 8,
-      height: 8,
-      borderRadius: 999,
-      backgroundColor:
-        "rgba(207,194,212,0.5)",
-    },
+  inactiveProgress: {
+    width: 8,
+    height: 8,
+    borderRadius: 999,
+    backgroundColor: "rgba(207,194,212,0.5)",
+  },
 
-    activeProgress: {
-      width: 24,
-      height: 8,
-      borderRadius: 999,
-      backgroundColor:
-        "#6B21A8",
-    },
+  activeProgress: {
+    width: 24,
+    height: 8,
+    borderRadius: 999,
+  },
 
-    scrollContent: {
-      paddingHorizontal: 20,
-      paddingBottom: 140,
-      gap: 20,
-    },
+  scrollContent: {
+    paddingHorizontal: 20,
+    paddingBottom: 140,
+    gap: 20,
+  },
 
-    heroSection: {
-      marginBottom: 4,
-    },
+  heroSection: {
+    marginBottom: 4,
+  },
 
-    heroTitle: {
-      fontSize: 30,
-      fontWeight: "700",
-      color: "#232222",
-      marginBottom: 6,
-    },
+  heroTitle: {
+    fontSize: 30,
+    marginBottom: 6,
+  },
 
-    heroSubtitle: {
-      fontSize: 15,
-      color: "#636363",
-    },
+  heroSubtitle: {
+    fontSize: 15,
+  },
 
-    sectionCard: {
-      backgroundColor:
-        "#FFFFFF",
-      borderRadius: 20,
-      padding: 20,
-      shadowColor:
-        "#500088",
-      shadowOpacity: 0.06,
-      shadowRadius: 8,
-      elevation: 3,
-    },
+  sectionCard: {
+    borderRadius: 20,
+    padding: 20,
+    shadowColor: "#500088",
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 3,
+  },
 
-    sectionHeader: {
-      flexDirection: "row",
-      justifyContent:
-        "space-between",
-      alignItems: "center",
-      marginBottom: 20,
-    },
+  sectionHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 20,
+  },
 
-    sectionTitle: {
-      fontSize: 18,
-      fontWeight: "700",
-      color: "#500088",
-    },
+  sectionTitle: {
+    fontSize: 18,
+  },
 
-    badge: {
-      backgroundColor:
-        "rgba(80,0,136,0.1)",
-      paddingHorizontal: 12,
-      paddingVertical: 4,
-      borderRadius: 999,
-    },
+  badge: {
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 999,
+  },
 
-    badgeText: {
-      color: "#500088",
-      fontSize: 10,
-      fontWeight: "900",
-      letterSpacing: 1,
-    },
+  badgeText: {
+    fontSize: 10,
+    fontWeight: "900",
+    letterSpacing: 1,
+  },
 
-    label: {
-      fontSize: 11,
-      fontWeight: "700",
-      letterSpacing: 0.6,
-      textTransform:
-        "uppercase",
-      color: "#4C4452",
-      marginBottom: 10,
-    },
+  label: {
+    fontSize: 11,
+    fontWeight: "700",
+    letterSpacing: 0.6,
+    textTransform: "uppercase",
+    marginBottom: 10,
+  },
 
-    input: {
-      height: 52,
-      backgroundColor:
-        "#F4F3FA",
-      borderRadius: 14,
-      paddingHorizontal: 16,
-      fontSize: 15,
-      color: "#1A1B20",
-    },
+  input: {
+    height: 52,
+    borderRadius: 14,
+    paddingHorizontal: 16,
+    fontSize: 15,
+  },
 
-    chipsContainer: {
-      flexDirection: "row",
-      flexWrap: "wrap",
-      gap: 8,
-    },
+  chipsContainer: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
 
-    chip: {
-      backgroundColor:
-        "#F4F3FA",
-      paddingHorizontal: 16,
-      paddingVertical: 10,
-      borderRadius: 12,
-    },
+  chip: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 12,
+  },
 
-    selectedChip: {
-      backgroundColor:
-        "#500088",
-    },
+  chipText: {
+    fontSize: 14,
+  },
 
-    chipText: {
-      color: "#4C4452",
-      fontSize: 14,
-    },
+  row: {
+    flexDirection: "row",
+    gap: 12,
+  },
 
-    selectedChipText: {
-      color: "#FFFFFF",
-    },
+  halfField: {
+    flex: 1,
+  },
 
-    row: {
-      flexDirection: "row",
-      gap: 12,
-    },
+  footer: {
+    position: "absolute",
+    bottom: 24,
+    left: 20,
+    right: 20,
+  },
 
-    halfField: {
-      flex: 1,
-    },
+  button: {
+    height: 58,
+    borderRadius: 18,
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    gap: 10,
+  },
 
-    footer: {
-      position: "absolute",
-      bottom: 24,
-      left: 20,
-      right: 20,
-    },
+  buttonText: {
+    color: "#FFFFFF",
+    fontSize: 16,
+    fontWeight: "700",
+  },
 
-    buttonWrapper: {
-      borderRadius: 18,
-      overflow: "hidden",
-    },
+  buttonArrow: {
+    color: "#FFFFFF",
+    fontSize: 18,
+    fontWeight: "700",
+  },
 
-    button: {
-      height: 58,
-      flexDirection: "row",
-      justifyContent:
-        "center",
-      alignItems: "center",
-      gap: 10,
-    },
+  fallbackText: {
+    fontSize: 15,
+    lineHeight: 24,
+    marginBottom: 20,
+  },
 
-    buttonText: {
-      color: "#FFFFFF",
-      fontSize: 16,
-      fontWeight: "700",
-    },
+  infoCard: {
+    borderRadius: 16,
+    padding: 16,
+  },
 
-    buttonArrow: {
-      color: "#FFFFFF",
-      fontSize: 18,
-      fontWeight: "700",
-    },
+  infoTitle: {
+    fontSize: 11,
+    fontWeight: "700",
+    textTransform: "uppercase",
+    marginBottom: 6,
+  },
 
-    fallbackText: {
-      fontSize: 15,
-      color: "#4C4452",
-      lineHeight: 24,
-      marginBottom: 20,
-    },
+  infoValue: {
+    fontSize: 16,
+    fontWeight: "600",
+  },
 
-    infoCard: {
-      backgroundColor:
-        "#F4F3FA",
-      borderRadius: 16,
-      padding: 16,
-    },
+  errorText: {
+    fontSize: 12,
+    marginTop: 4,
+    marginBottom: 8,
+    marginLeft: 4,
+  },
 
-    infoTitle: {
-      fontSize: 11,
-      fontWeight: "700",
-      color: "#7E7383",
-      textTransform:
-        "uppercase",
-      marginBottom: 6,
-    },
+  dropdownTrigger: {
+    height: 52,
+    borderRadius: 14,
+    paddingHorizontal: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
 
-    infoValue: {
-      fontSize: 16,
-      fontWeight: "600",
-      color: "#1A1B20",
-    },
+  dropdownValue: {
+    flex: 1,
+    fontSize: 15,
+    fontWeight: "500",
+  },
 
-    inputError: {
-      borderWidth: 1,
-      borderColor: "#DC2626",
-    },
+  dropdownArrow: {
+    fontSize: 11,
+    marginLeft: 8,
+  },
 
-    errorText: {
-      color: "#DC2626",
-      fontSize: 12,
-      marginTop: 4,
-      marginBottom: 8,
-      marginLeft: 4,
-    },
+  dropdownPanel: {
+    marginTop: 6,
+    borderRadius: 14,
+    overflow: "hidden",
+    borderWidth: 1,
+    marginBottom: 4,
+  },
 
-    dropdownTrigger: {
-      height: 52,
-      backgroundColor: "#F4F3FA",
-      borderRadius: 14,
-      paddingHorizontal: 16,
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent: "space-between",
-    },
+  dropdownSearch: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+  },
 
-    dropdownValue: {
-      flex: 1,
-      fontSize: 15,
-      color: "#1A1B20",
-      fontWeight: "500",
-    },
+  searchIcon: {
+    fontSize: 14,
+    marginRight: 8,
+  },
 
-    dropdownPlaceholder: {
-      flex: 1,
-      fontSize: 15,
-      color: "rgba(126,115,131,0.6)",
-    },
+  searchInput: {
+    flex: 1,
+    fontSize: 14,
+  },
 
-    dropdownArrow: {
-      fontSize: 11,
-      color: "#7E7383",
-      marginLeft: 8,
-    },
+  dropdownList: {
+    maxHeight: 200,
+  },
 
-    dropdownPanel: {
-      marginTop: 6,
-      backgroundColor: "#F4F3FA",
-      borderRadius: 14,
-      overflow: "hidden",
-      borderWidth: 1,
-      borderColor: "#E5E0F0",
-      marginBottom: 4,
-    },
+  dropdownOption: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 13,
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+  },
 
-    dropdownSearch: {
-      flexDirection: "row",
-      alignItems: "center",
-      paddingHorizontal: 14,
-      paddingVertical: 10,
-      borderBottomWidth: 1,
-      borderBottomColor: "#E5E0F0",
-    },
+  dropdownOptionText: {
+    flex: 1,
+    fontSize: 14,
+  },
 
-    searchIcon: {
-      fontSize: 14,
-      marginRight: 8,
-    },
+  checkmark: {
+    fontSize: 14,
+    fontWeight: "700",
+  },
 
-    searchInput: {
-      flex: 1,
-      fontSize: 14,
-      color: "#1A1B20",
-    },
-
-    dropdownList: {
-      maxHeight: 200,
-    },
-
-    dropdownOption: {
-      flexDirection: "row",
-      alignItems: "center",
-      paddingVertical: 13,
-      paddingHorizontal: 16,
-      borderBottomWidth: 1,
-      borderBottomColor: "rgba(229,224,240,0.5)",
-    },
-
-    dropdownOptionSelected: {
-      backgroundColor: "rgba(80,0,136,0.06)",
-    },
-
-    dropdownOptionText: {
-      flex: 1,
-      fontSize: 14,
-      color: "#1A1B20",
-    },
-
-    dropdownOptionTextSelected: {
-      color: "#500088",
-      fontWeight: "700",
-    },
-
-    checkmark: {
-      fontSize: 14,
-      color: "#500088",
-      fontWeight: "700",
-    },
-
-    noResults: {
-      padding: 16,
-      textAlign: "center",
-      color: "#7E7383",
-      fontSize: 13,
-    },
-  });
+  noResults: {
+    padding: 16,
+    textAlign: "center",
+    fontSize: 13,
+  },
+});

@@ -1,14 +1,23 @@
 import React, { useEffect, useRef } from 'react';
 import { View, StyleSheet, Animated, ViewStyle } from 'react-native';
+import { useTheme } from '../../theme/ThemeContext';
 
 interface ForumSkeletonCardProps {
   style?: ViewStyle;
 }
 
 export const ForumSkeletonCard: React.FC<ForumSkeletonCardProps> = ({ style }) => {
+  const { reduceMotion } = useTheme();
   const shimmerActive = useRef(new Animated.Value(0.3)).current;
 
+  // Shimmer pulse — skipped when Reduce Motion is on; placeholders just
+  // render at a static mid-opacity instead of pulsing indefinitely.
   useEffect(() => {
+    if (reduceMotion) {
+      shimmerActive.setValue(0.5);
+      return;
+    }
+
     const shimmerAnimation = Animated.loop(
       Animated.sequence([
         Animated.timing(shimmerActive, {
@@ -25,7 +34,7 @@ export const ForumSkeletonCard: React.FC<ForumSkeletonCardProps> = ({ style }) =
     );
     shimmerAnimation.start();
     return () => shimmerAnimation.stop();
-  }, [shimmerActive]);
+  }, [shimmerActive, reduceMotion]);
 
   return (
     <View

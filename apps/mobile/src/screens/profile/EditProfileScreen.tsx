@@ -11,7 +11,6 @@ import React, {
 
 import {
     View,
-    Text,
     StyleSheet,
     TouchableOpacity,
     ScrollView,
@@ -25,8 +24,6 @@ import SafeScreen from "../../components/layout/SafeScreen";
 import AppHeader from "../../components/layout/AppHeader";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { LinearGradient } from "expo-linear-gradient";
-
 import {
     useNavigation,
 } from "@react-navigation/native";
@@ -37,6 +34,10 @@ import {
     getUserProfile,
     updateUserProfile,
 } from "@services/profileService";
+
+import { useTheme, getFontScale } from "../../theme/ThemeContext";
+import { AccessibleText } from "../../components/shared/AccessibleText";
+import { AccessibleButton } from "../../components/shared/AccessibleButton";
 
 // ─────────────────────────────────────────────────────────────
 // CONSTANTS
@@ -65,6 +66,9 @@ const EditProfileScreen = () => {
     const navigation =
         useNavigation<any>();
 
+    const { colors, highContrast, textSize } = useTheme();
+    const fs = getFontScale(textSize);
+
     const user = useAuthStore(
         (s) => s.user
     );
@@ -75,6 +79,17 @@ const EditProfileScreen = () => {
         );
 
     const insets = useSafeAreaInsets();
+
+    // Hairline border in the default state (near-invisible), a solid
+    // 2px black border under High Contrast — same convention used for
+    // "card" surfaces across the app (see ProfileScreen/ProfileDetailsScreen).
+    const cardBorder = highContrast
+        ? { borderWidth: 2, borderColor: "#000000" as const }
+        : { borderWidth: 1, borderColor: "rgba(0,0,0,0.05)" as const };
+
+    const placeholderColor = highContrast
+        ? "#000000"
+        : "rgba(126,115,131,0.6)";
 
     // ───────────────── BASIC ─────────────────
 
@@ -398,13 +413,14 @@ const EditProfileScreen = () => {
         return (
             <SafeScreen
                 statusBarStyle="dark"
-                style={
-                    styles.loaderContainer
-                }
+                style={[
+                    styles.loaderContainer,
+                    { backgroundColor: colors.background },
+                ]}
             >
                 <ActivityIndicator
                     size="large"
-                    color="#500088"
+                    color={colors.primary}
                 />
             </SafeScreen>
         );
@@ -436,125 +452,131 @@ const EditProfileScreen = () => {
                     }
                 >
                     <View
-                        style={styles.avatar}
+                        style={[styles.avatar, { backgroundColor: colors.primary }]}
                     >
-                        <Text
-                            style={
-                                styles.avatarText
-                            }
+                        <AccessibleText
+                            style={[styles.avatarText, { fontSize: fs(28), color: colors.white }]}
                         >
                             {fullName?.charAt(
                                 0
                             ) || "U"}
-                        </Text>
+                        </AccessibleText>
                     </View>
 
                     <View>
-                        <Text
-                            style={
-                                styles.bannerName
-                            }
+                        <AccessibleText
+                            style={[styles.bannerName, { fontSize: fs(22), color: colors.text }]}
                         >
                             {fullName ||
                                 "Your Profile"}
-                        </Text>
+                        </AccessibleText>
 
-                        <Text
-                            style={
-                                styles.bannerRole
-                            }
+                        <AccessibleText
+                            variant="body"
+                            style={[styles.bannerRole, { color: colors.subtext }]}
                         >
                             {role}
-                        </Text>
+                        </AccessibleText>
                     </View>
                 </View>
 
                 {/* BASIC INFO */}
-                <View style={styles.card}>
-                    <Text
-                        style={
-                            styles.sectionTitle
-                        }
+                <View style={[styles.card, { backgroundColor: colors.card }, cardBorder]}>
+                    <AccessibleText
+                        style={[styles.sectionTitle, { fontSize: fs(18), color: colors.primary }]}
                     >
                         Basic Information
-                    </Text>
+                    </AccessibleText>
 
                     <TextInput
                         placeholder="Full Name"
-                        style={styles.input}
+                        placeholderTextColor={placeholderColor}
+                        style={[styles.input, { backgroundColor: colors.surface, color: colors.text }, cardBorder]}
                         value={fullName}
                         onChangeText={
                             setFullName
                         }
+                        accessibilityLabel="Full Name"
                     />
 
                     <TextInput
                         placeholder="Username"
-                        style={styles.input}
+                        placeholderTextColor={placeholderColor}
+                        style={[styles.input, { backgroundColor: colors.surface, color: colors.text }, cardBorder]}
                         value={username}
                         onChangeText={
                             setUsername
                         }
+                        autoCapitalize="none"
+                        accessibilityLabel="Username"
                     />
 
                     <TextInput
                         placeholder="DOB"
-                        style={styles.input}
+                        placeholderTextColor={placeholderColor}
+                        style={[styles.input, { backgroundColor: colors.surface, color: colors.text }, cardBorder]}
                         value={dob}
                         onChangeText={
                             setDob
                         }
+                        accessibilityLabel="Date of birth"
                     />
 
                     <TextInput
                         placeholder="Gender"
-                        style={styles.input}
+                        placeholderTextColor={placeholderColor}
+                        style={[styles.input, { backgroundColor: colors.surface, color: colors.text }, cardBorder]}
                         value={gender}
                         onChangeText={
                             setGender
                         }
+                        accessibilityLabel="Gender"
                     />
 
                     <TextInput
                         placeholder="City"
-                        style={styles.input}
+                        placeholderTextColor={placeholderColor}
+                        style={[styles.input, { backgroundColor: colors.surface, color: colors.text }, cardBorder]}
                         value={city}
                         onChangeText={
                             setCity
                         }
+                        accessibilityLabel="City"
                     />
 
                     <TextInput
                         placeholder="State"
-                        style={styles.input}
+                        placeholderTextColor={placeholderColor}
+                        style={[styles.input, { backgroundColor: colors.surface, color: colors.text }, cardBorder]}
                         value={state}
                         onChangeText={
                             setState
                         }
+                        accessibilityLabel="State"
                     />
 
                     <TextInput
                         placeholder="Phone Number"
-                        style={styles.input}
+                        placeholderTextColor={placeholderColor}
+                        style={[styles.input, { backgroundColor: colors.surface, color: colors.text }, cardBorder]}
                         value={phoneNo}
                         onChangeText={setPhoneNo}
                         keyboardType="phone-pad"
                         maxLength={15}
+                        accessibilityLabel="Phone number"
                     />
                 </View>
 
                 {/* PwD */}
                 {roles.includes("pwd") && (
                     <View
-                        style={styles.card}
+                        style={[styles.card, { backgroundColor: colors.card }, cardBorder]}
                     >
-                        <Text
-                            style={
-                                styles.sectionTitle
-                            }
+                        <AccessibleText
+                            style={[styles.sectionTitle, { fontSize: fs(18), color: colors.primary }]}
                         >
                             Disability Details
-                        </Text>
+                        </AccessibleText>
 
                         <ScrollView
                             horizontal
@@ -576,26 +598,35 @@ const EditProfileScreen = () => {
                                             key={item}
                                             style={[
                                                 styles.chip,
+                                                { backgroundColor: colors.surface },
+                                                cardBorder,
 
-                                                selected &&
-                                                styles.selectedChip,
+                                                selected && {
+                                                    backgroundColor: highContrast ? "#000000" : colors.primary,
+                                                    borderColor: highContrast ? "#000000" : colors.primary,
+                                                },
                                             ]}
                                             onPress={() =>
                                                 setSelectedDisability(
                                                     item
                                                 )
                                             }
+                                            accessibilityRole="radio"
+                                            accessibilityState={{ checked: selected }}
+                                            accessibilityLabel={item}
                                         >
-                                            <Text
+                                            <AccessibleText
+                                                variant="body"
                                                 style={[
                                                     styles.chipText,
+                                                    { color: colors.subtext },
 
                                                     selected &&
                                                     styles.selectedChipText,
                                                 ]}
                                             >
                                                 {item}
-                                            </Text>
+                                            </AccessibleText>
                                         </TouchableOpacity>
                                     );
                                 }
@@ -604,13 +635,17 @@ const EditProfileScreen = () => {
 
                         <TextInput
                             placeholder="Disability Since"
-                            style={styles.input}
+                            placeholderTextColor={placeholderColor}
+                            style={[styles.input, { backgroundColor: colors.surface, color: colors.text }, cardBorder]}
                             value={
                                 disabilitySince
                             }
                             onChangeText={
                                 setDisabilitySince
                             }
+                            keyboardType="number-pad"
+                            maxLength={4}
+                            accessibilityLabel="Disability since year"
                         />
 
                         <ScrollView
@@ -633,26 +668,35 @@ const EditProfileScreen = () => {
                                             key={item}
                                             style={[
                                                 styles.chip,
+                                                { backgroundColor: colors.surface },
+                                                cardBorder,
 
-                                                selected &&
-                                                styles.selectedChip,
+                                                selected && {
+                                                    backgroundColor: highContrast ? "#000000" : colors.primary,
+                                                    borderColor: highContrast ? "#000000" : colors.primary,
+                                                },
                                             ]}
                                             onPress={() =>
                                                 setSelectedSupport(
                                                     item
                                                 )
                                             }
+                                            accessibilityRole="radio"
+                                            accessibilityState={{ checked: selected }}
+                                            accessibilityLabel={item}
                                         >
-                                            <Text
+                                            <AccessibleText
+                                                variant="body"
                                                 style={[
                                                     styles.chipText,
+                                                    { color: colors.subtext },
 
                                                     selected &&
                                                     styles.selectedChipText,
                                                 ]}
                                             >
                                                 {item}
-                                            </Text>
+                                            </AccessibleText>
                                         </TouchableOpacity>
                                     );
                                 }
@@ -664,43 +708,47 @@ const EditProfileScreen = () => {
                 {/* CAREGIVER */}
                 {roles.includes("caregiver") && (
                         <View
-                            style={styles.card}
+                            style={[styles.card, { backgroundColor: colors.card }, cardBorder]}
                         >
-                            <Text
-                                style={
-                                    styles.sectionTitle
-                                }
+                            <AccessibleText
+                                style={[styles.sectionTitle, { fontSize: fs(18), color: colors.primary }]}
                             >
                                 Caregiver Details
-                            </Text>
+                            </AccessibleText>
 
                             <TextInput
                                 placeholder="Person Name"
-                                style={styles.input}
+                                placeholderTextColor={placeholderColor}
+                                style={[styles.input, { backgroundColor: colors.surface, color: colors.text }, cardBorder]}
                                 value={personName}
                                 onChangeText={
                                     setPersonName
                                 }
+                                accessibilityLabel="Person name"
                             />
 
                             <TextInput
                                 placeholder="Relation"
-                                style={styles.input}
+                                placeholderTextColor={placeholderColor}
+                                style={[styles.input, { backgroundColor: colors.surface, color: colors.text }, cardBorder]}
                                 value={relation}
                                 onChangeText={
                                     setRelation
                                 }
+                                accessibilityLabel="Relation"
                             />
 
                             <TextInput
                                 placeholder="Disability Type"
-                                style={styles.input}
+                                placeholderTextColor={placeholderColor}
+                                style={[styles.input, { backgroundColor: colors.surface, color: colors.text }, cardBorder]}
                                 value={
                                     careDisability
                                 }
                                 onChangeText={
                                     setCareDisability
                                 }
+                                accessibilityLabel="Disability type"
                             />
                         </View>
                     )}
@@ -708,47 +756,52 @@ const EditProfileScreen = () => {
                 {/* EDUCATOR */}
                 {roles.includes("educator") && (
                         <View
-                            style={styles.card}
+                            style={[styles.card, { backgroundColor: colors.card }, cardBorder]}
                         >
-                            <Text
-                                style={
-                                    styles.sectionTitle
-                                }
+                            <AccessibleText
+                                style={[styles.sectionTitle, { fontSize: fs(18), color: colors.primary }]}
                             >
                                 Professional Info
-                            </Text>
+                            </AccessibleText>
 
                             <TextInput
                                 placeholder="Speciality"
-                                style={styles.input}
+                                placeholderTextColor={placeholderColor}
+                                style={[styles.input, { backgroundColor: colors.surface, color: colors.text }, cardBorder]}
                                 value={
                                     speciality
                                 }
                                 onChangeText={
                                     setSpeciality
                                 }
+                                accessibilityLabel="Speciality"
                             />
 
                             <TextInput
                                 placeholder="Organization"
-                                style={styles.input}
+                                placeholderTextColor={placeholderColor}
+                                style={[styles.input, { backgroundColor: colors.surface, color: colors.text }, cardBorder]}
                                 value={
                                     organization
                                 }
                                 onChangeText={
                                     setOrganization
                                 }
+                                accessibilityLabel="Organization"
                             />
 
                             <TextInput
                                 placeholder="Experience"
-                                style={styles.input}
+                                placeholderTextColor={placeholderColor}
+                                style={[styles.input, { backgroundColor: colors.surface, color: colors.text }, cardBorder]}
                                 value={
                                     experience
                                 }
                                 onChangeText={
                                     setExperience
                                 }
+                                keyboardType="number-pad"
+                                accessibilityLabel="Years of experience"
                             />
                         </View>
                     )}
@@ -756,41 +809,45 @@ const EditProfileScreen = () => {
                 {/* NGO */}
                 {roles.includes("ngo_worker") && (
                         <View
-                            style={styles.card}
+                            style={[styles.card, { backgroundColor: colors.card }, cardBorder]}
                         >
-                            <Text
-                                style={
-                                    styles.sectionTitle
-                                }
+                            <AccessibleText
+                                style={[styles.sectionTitle, { fontSize: fs(18), color: colors.primary }]}
                             >
                                 NGO Details
-                            </Text>
+                            </AccessibleText>
 
                             <TextInput
                                 placeholder="NGO Name"
-                                style={styles.input}
+                                placeholderTextColor={placeholderColor}
+                                style={[styles.input, { backgroundColor: colors.surface, color: colors.text }, cardBorder]}
                                 value={ngoName}
                                 onChangeText={
                                     setNgoName
                                 }
+                                accessibilityLabel="NGO name"
                             />
 
                             <TextInput
                                 placeholder="Role"
-                                style={styles.input}
+                                placeholderTextColor={placeholderColor}
+                                style={[styles.input, { backgroundColor: colors.surface, color: colors.text }, cardBorder]}
                                 value={ngoRole}
                                 onChangeText={
                                     setNgoRole
                                 }
+                                accessibilityLabel="Your role at the NGO"
                             />
 
                             <TextInput
                                 placeholder="District"
-                                style={styles.input}
+                                placeholderTextColor={placeholderColor}
+                                style={[styles.input, { backgroundColor: colors.surface, color: colors.text }, cardBorder]}
                                 value={district}
                                 onChangeText={
                                     setDistrict
                                 }
+                                accessibilityLabel="District"
                             />
                         </View>
                     )}
@@ -802,33 +859,20 @@ const EditProfileScreen = () => {
 
             {/* FOOTER */}
             <View style={[styles.footer, { bottom: Math.max(insets.bottom, 24) }]}>
-                <TouchableOpacity
-                    activeOpacity={0.9}
-                    onPress={
-                        handleSaveChanges
-                    }
+                <AccessibleButton
+                    variant="primary"
+                    onPress={handleSaveChanges}
                     disabled={saving}
+                    style={styles.button}
+                    accessibilityLabel="Save Changes"
+                    accessibilityHint="Saves your updated profile information"
                 >
-                    <LinearGradient
-                        colors={[
-                            "#500088",
-                            "#6B21A8",
-                        ]}
-                        style={styles.button}
-                    >
-                        {saving ? (
-                            <ActivityIndicator color="#fff" />
-                        ) : (
-                            <Text
-                                style={
-                                    styles.buttonText
-                                }
-                            >
-                                Save Changes
-                            </Text>
-                        )}
-                    </LinearGradient>
-                </TouchableOpacity>
+                    {saving ? (
+                        <ActivityIndicator color={colors.white} />
+                    ) : (
+                        "Save Changes"
+                    )}
+                </AccessibleButton>
             </View>
         </ScreenWrapper>
     );
@@ -842,50 +886,11 @@ export default EditProfileScreen;
 
 const styles =
     StyleSheet.create({
-        container: {
-            flex: 1,
-            backgroundColor:
-                "#FAF8FF",
-        },
-
         loaderContainer: {
             flex: 1,
             justifyContent:
                 "center",
             alignItems: "center",
-            backgroundColor:
-                "#FAF8FF",
-        },
-
-        header: {
-            height: 64,
-            paddingHorizontal: 20,
-
-            flexDirection: "row",
-            alignItems: "center",
-            justifyContent:
-                "space-between",
-        },
-
-        backButton: {
-            width: 32,
-            height: 32,
-
-            justifyContent:
-                "center",
-            alignItems: "center",
-        },
-
-        backText: {
-            fontSize: 22,
-            color: "#500088",
-            fontWeight: "700",
-        },
-
-        headerTitle: {
-            fontSize: 18,
-            fontWeight: "700",
-            color: "#1A1B20",
         },
 
         scrollContent: {
@@ -904,9 +909,6 @@ const styles =
             height: 70,
             borderRadius: 35,
 
-            backgroundColor:
-                "#500088",
-
             justifyContent:
                 "center",
 
@@ -916,28 +918,20 @@ const styles =
         },
 
         avatarText: {
-            color: "#fff",
-            fontSize: 28,
             fontWeight: "700",
         },
 
         bannerName: {
-            fontSize: 22,
             fontWeight: "700",
-            color: "#1A1B20",
         },
 
         bannerRole: {
-            color: "#6B7280",
             marginTop: 4,
             textTransform:
                 "capitalize",
         },
 
         card: {
-            backgroundColor:
-                "#FFFFFF",
-
             borderRadius: 20,
 
             padding: 18,
@@ -952,18 +946,13 @@ const styles =
         },
 
         sectionTitle: {
-            fontSize: 18,
             fontWeight: "700",
-            color: "#500088",
 
             marginBottom: 18,
         },
 
         input: {
             height: 56,
-
-            backgroundColor:
-                "#F4F3FA",
 
             borderRadius: 16,
 
@@ -979,9 +968,6 @@ const styles =
         },
 
         chip: {
-            backgroundColor:
-                "#F4F3FA",
-
             paddingHorizontal: 16,
             paddingVertical: 10,
 
@@ -990,13 +976,7 @@ const styles =
             marginRight: 10,
         },
 
-        selectedChip: {
-            backgroundColor:
-                "#500088",
-        },
-
         chipText: {
-            color: "#4C4452",
             fontWeight: "600",
         },
 
@@ -1020,11 +1000,5 @@ const styles =
                 "center",
 
             alignItems: "center",
-        },
-
-        buttonText: {
-            color: "#FFFFFF",
-            fontSize: 16,
-            fontWeight: "700",
         },
     });

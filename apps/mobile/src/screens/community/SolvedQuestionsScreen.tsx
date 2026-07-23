@@ -1,7 +1,6 @@
 import React, { useEffect } from "react";
 import {
   View,
-  Text,
   StyleSheet,
   TouchableOpacity,
   FlatList,
@@ -13,9 +12,12 @@ import { ArrowLeft } from "lucide-react-native";
 import { useForumStore, ForumQuestion } from "../../store/forumStore";
 import { ForumQuestionCard } from "../../components/shared/ForumQuestionCard";
 import { EmptyState } from "../../components/shared/EmptyState";
+import { useTheme } from "../../theme/ThemeContext";
+import { AccessibleText } from "../../components/shared/AccessibleText";
 
 const SolvedQuestionsScreen = () => {
   const navigation = useNavigation<any>();
+  const { colors } = useTheme();
   const {
     questions,
     loading,
@@ -53,11 +55,18 @@ const SolvedQuestionsScreen = () => {
   return (
     <View style={styles.container}>
       {/* HEADER */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-          <ArrowLeft size={24} color="#1A1B20" />
+      <View style={[styles.header, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
+        <TouchableOpacity
+          onPress={() => navigation.goBack()}
+          style={styles.backBtn}
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
+        >
+          <ArrowLeft size={24} color={colors.text} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Resolved Q&A</Text>
+        <AccessibleText variant="title" style={[styles.headerTitle, { color: colors.text }]}>
+          Resolved Q&A
+        </AccessibleText>
         <View style={{ width: 40 }} />
       </View>
 
@@ -105,7 +114,13 @@ export default SolvedQuestionsScreen;
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#F4FAF6" // light green hue
+    // Note: light green hue is an intentional "resolved/solved" identity color
+    // for this screen (matching the green accents used for solved status
+    // elsewhere — resolvedBanner, solvedBadge, the loading spinner tint below).
+    // It has no ThemeColors equivalent, so it's intentionally left as a
+    // literal, consistent with how QuestionDetailsScreen.tsx treats this
+    // same semantic color family.
+    backgroundColor: "#F4FAF6"
   },
   header: {
     flexDirection: "row",
@@ -113,17 +128,14 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingHorizontal: 16,
     paddingVertical: 14,
-    backgroundColor: "#FFFFFF",
-    borderBottomWidth: 1,
-    borderBottomColor: "#E8EAE6"
+    borderBottomWidth: 1
   },
   backBtn: {
     padding: 8
   },
   headerTitle: {
     fontSize: 18,
-    fontWeight: "800",
-    color: "#1A1B20"
+    fontWeight: "800"
   },
   listContent: {
     padding: 16

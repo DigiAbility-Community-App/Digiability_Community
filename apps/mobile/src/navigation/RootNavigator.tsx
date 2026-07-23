@@ -36,6 +36,7 @@ const RootNavigator = () => {
   const [isRestoringSession, setIsRestoringSession] = useState(true);
 
   const loadAccessibilityPreferences = useAccessibilityStore((s) => s.loadPreferences);
+  const pushNotifEnabled = useAccessibilityStore((s) => s.preferences.pushNotif);
 
   useEffect(() => {
     if (user?.id) {
@@ -99,14 +100,16 @@ const RootNavigator = () => {
 
   // Register for push notifications only once actually logged in — never
   // pre-login, since /api/auth/device-token requires an authenticated
-  // request. Covers both fresh logins and restored sessions.
+  // request. Covers both fresh logins and restored sessions. Skipped
+  // entirely when the user's Push Notifications accessibility preference
+  // is off.
   useEffect(() => {
-    if (isAuthenticated && !isRestoringSession) {
+    if (isAuthenticated && !isRestoringSession && pushNotifEnabled) {
       registerForPushNotifications().then((token) => {
         if (token) saveDeviceToken(token);
       });
     }
-  }, [isAuthenticated, isRestoringSession]);
+  }, [isAuthenticated, isRestoringSession, pushNotifEnabled]);
 
   if (isRestoringSession) {
     return (

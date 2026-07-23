@@ -1,7 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import {
   View,
-  Text,
   StyleSheet,
   FlatList,
   TouchableOpacity,
@@ -34,6 +33,8 @@ import {
   ArrowLeft, Settings, Trash2, Volume2, Users, Accessibility, Heart, HeartHandshake,
   Flag, CircleCheck, TriangleAlert,
 } from "lucide-react-native";
+import { useTheme } from "../../theme/ThemeContext";
+import { AccessibleText } from "../../components/shared/AccessibleText";
 
 // ─────────────────────────────────────────────────────────
 // Group Chat Screen — Care Circle / Group Thread
@@ -50,14 +51,26 @@ type Props = {
   route: RouteProp<ChatsStackParamList, "GroupChat">;
 };
 
+// Per-member color-coding palette — each group member gets a stable color for
+// their name/avatar initials so a multi-person thread stays scannable. This is
+// intentionally its own literal palette (not theme-driven): the whole point is
+// per-member distinction, which a single theme color couldn't provide.
 const MEMBER_COLORS = [
   "#E74C3C", "#2ECC71", "#3498DB", "#F39C12", "#9B59B6",
   "#1ABC9C", "#E91E63", "#00BCD4", "#FF5722", "#607D8B",
+];
+// Same hue family, darkened/deepened so each still passes readable contrast
+// against a white background under high-contrast mode (several of the
+// originals — the greens, oranges, teals, cyan — are too light for that).
+const MEMBER_COLORS_HC = [
+  "#B71C1C", "#1B5E20", "#0D47A1", "#E65100", "#4A148C",
+  "#004D40", "#880E4F", "#006064", "#BF360C", "#263238",
 ];
 
 const GroupChatScreen = ({ navigation, route }: Props) => {
   const { conversationId, groupName, subType } = route.params;
   const insets = useSafeAreaInsets();
+  const { colors, highContrast } = useTheme();
   const user = useAuthStore((s) => s.user);
   const storeMessages = useChatStore((s) => s.messages[conversationId] || []);
   const setMessages = useChatStore((s) => s.setMessages);
@@ -182,16 +195,18 @@ const GroupChatScreen = ({ navigation, route }: Props) => {
   // desync it from the render order and avatars/names vanish intermittently.
   const listData = useMemo(() => [...dedupedMessages].reverse(), [dedupedMessages]);
 
-  // Assign stable colors based on member index
+  // Assign stable colors based on member index — swap to the high-contrast
+  // variants when that preference is on, so member names/avatars stay legible.
   const memberColorMap = useCallback(() => {
     const map: Record<string, string> = {};
+    const palette = highContrast ? MEMBER_COLORS_HC : MEMBER_COLORS;
     if (conversation?.participants) {
       conversation.participants.forEach((p, i) => {
-        map[p.userId] = MEMBER_COLORS[i % MEMBER_COLORS.length];
+        map[p.userId] = palette[i % palette.length];
       });
     }
     return map;
-  }, [conversation]);
+  }, [conversation, highContrast]);
 
   const nameMap = memberNameMap();
   const colorMap = memberColorMap();
@@ -455,7 +470,7 @@ const GroupChatScreen = ({ navigation, route }: Props) => {
   const renderMessage = ({ item, index }: { item: ChatMessage; index: number }) => {
     const isMine = item.senderId === user?.id;
     const senderName = isMine ? "You" : (nameMap[item.senderId] || "Unknown");
-    const senderColor = colorMap[item.senderId] || "#8A38F5";
+    const senderColor = colorMap[item.senderId] || colors.primary;
 
     // List is inverted (newest first), so the chronologically-previous (older)
     // message — the one rendered directly above — is at index + 1. Show the
@@ -482,9 +497,9 @@ const GroupChatScreen = ({ navigation, route }: Props) => {
           <View style={styles.avatarSlot}>
             {showSender ? (
               <View style={[styles.msgAvatar, { backgroundColor: senderColor + "20" }]}>
-                <Text style={[styles.msgAvatarText, { color: senderColor }]}>
+                <AccessibleText variant="caption" style={[styles.msgAvatarText, { color: senderColor }]}>
                   {getInitials(senderName)}
-                </Text>
+                </AccessibleText>
               </View>
             ) : null}
           </View>
@@ -493,45 +508,54 @@ const GroupChatScreen = ({ navigation, route }: Props) => {
         <View style={[styles.bubbleWrapper, isMine && { alignItems: "flex-end" }]}>
           {/* Sender name */}
           {showSender && (
-            <Text style={[styles.senderName, { color: senderColor }]}>
+            <AccessibleText variant="caption" style={[styles.senderName, { color: senderColor }]}>
               {senderName}
-            </Text>
+            </AccessibleText>
           )}
 
           <TouchableOpacity
             activeOpacity={0.8}
             onLongPress={() => handleMessageLongPress(item)}
             delayLongPress={300}
+            accessibilityRole="button"
+            accessibilityLabel={isMine ? "Your message" : `Message from ${senderName}`}
+            accessibilityHint="Double tap and hold for message options"
             style={[
               styles.messageBubble,
               isMine ? styles.myBubble : styles.theirBubble,
+              isMine
+                ? { backgroundColor: colors.primary }
+                : { backgroundColor: colors.card, shadowColor: colors.primary },
+              !isMine && cardBorder,
             ]}
           >
             {item.type === "IMAGE" || item.type === "AUDIO" ? (
               <MessageMedia message={item} isMine={isMine} />
             ) : (
-              <Text
+              <AccessibleText
+                variant="body"
                 style={[
                   styles.messageText,
-                  isMine && styles.myMessageText,
+                  { color: isMine ? colors.white : colors.text },
                 ]}
               >
                 {item.content}
-              </Text>
+              </AccessibleText>
             )}
             <View style={styles.messageFooter}>
-              <Text
+              <AccessibleText
+                variant="caption"
                 style={[
                   styles.messageTime,
-                  isMine && styles.myMessageTime,
+                  { color: isMine ? "rgba(255,255,255,0.6)" : colors.subtext },
                 ]}
               >
                 {timeString}
-              </Text>
+              </AccessibleText>
               {isMine && (
                 <View style={{ marginLeft: 4 }}>
                   {item.status === "sending" ? (
-                    <Text style={{ color: "rgba(255,255,255,0.7)", fontSize: 10 }}>...</Text>
+                    <AccessibleText variant="caption" style={{ color: "rgba(255,255,255,0.7)", fontSize: 10 }}>...</AccessibleText>
                   ) : item.status === "read" ? (
                     <CheckCheck size={14} color="#38bdf8" />
                   ) : item.status === "delivered" ? (
@@ -548,29 +572,42 @@ const GroupChatScreen = ({ navigation, route }: Props) => {
     );
   };
 
+  // ── Theme-derived, high-contrast-aware colors ───────────────
+  // Standard card outline so white cards/bubbles stay visible against a
+  // (also white, under high contrast) screen background.
+  const cardBorder = highContrast
+    ? { borderWidth: 2, borderColor: "#000000" }
+    : { borderWidth: 1, borderColor: "rgba(0,0,0,0.05)" };
+
   if (isLoading) {
     return (
       <ScreenWrapper>
-        <View style={[styles.header, { paddingTop: insets.top + 10 }]}>
-          <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
-            <ArrowLeft size={24} color="#fff" strokeWidth={2.2} />
+        <View style={[styles.header, { paddingTop: insets.top + 10, backgroundColor: colors.primary }]}>
+          <TouchableOpacity
+            style={styles.backBtn}
+            onPress={() => navigation.goBack()}
+            accessibilityRole="button"
+            accessibilityLabel="Go back"
+            accessibilityHint="Returns to the conversation list"
+          >
+            <ArrowLeft size={24} color={colors.white} strokeWidth={2.2} />
           </TouchableOpacity>
           <View style={styles.headerCenter}>
             <View style={styles.groupIconContainer}>
               <View style={styles.groupIcon}>
                 {subType === 'CARE_CIRCLE'
-                  ? <Accessibility size={22} color="#fff" strokeWidth={2} />
-                  : <Users size={22} color="#fff" strokeWidth={2} />}
+                  ? <Accessibility size={22} color={colors.white} strokeWidth={2} />
+                  : <Users size={22} color={colors.white} strokeWidth={2} />}
               </View>
             </View>
             <View style={styles.headerInfo}>
-              <Text style={styles.headerName} numberOfLines={1}>{groupName}</Text>
-              <Text style={styles.headerMembers}>Loading...</Text>
+              <AccessibleText variant="title" style={[styles.headerName, { color: colors.white }]} numberOfLines={1}>{groupName}</AccessibleText>
+              <AccessibleText variant="caption" style={[styles.headerMembers, { color: "rgba(255,255,255,0.65)" }]}>Loading...</AccessibleText>
             </View>
           </View>
         </View>
         <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
-          <ActivityIndicator size="large" color="#8A38F5" />
+          <ActivityIndicator size="large" color={colors.primary} />
         </View>
       </ScreenWrapper>
     );
@@ -579,53 +616,62 @@ const GroupChatScreen = ({ navigation, route }: Props) => {
   return (
     <ScreenWrapper withBottomSafeArea={false}>
       {/* ── Header — paddingTop clears the translucent status bar via safe-area insets */}
-      <View style={[styles.header, { paddingTop: insets.top + 10 }]}>
+      <View style={[styles.header, { paddingTop: insets.top + 10, backgroundColor: colors.primary }]}>
         <TouchableOpacity
           style={styles.backBtn}
           onPress={() => navigation.goBack()}
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
+          accessibilityHint="Returns to the conversation list"
         >
-          <ArrowLeft size={24} color="#fff" strokeWidth={2.2} />
+          <ArrowLeft size={24} color={colors.white} strokeWidth={2.2} />
         </TouchableOpacity>
 
         <TouchableOpacity
           style={styles.headerCenter}
           onPress={() => navigation.navigate("GroupInfo", { conversationId })}
           activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel={`${groupName}, group info`}
+          accessibilityHint="Opens group members and settings"
         >
           <View style={styles.groupIconContainer}>
             <View style={styles.groupIcon}>
               {subType === 'CARE_CIRCLE'
-                ? <Accessibility size={22} color="#fff" strokeWidth={2} />
-                : <Users size={22} color="#fff" strokeWidth={2} />}
+                ? <Accessibility size={22} color={colors.white} strokeWidth={2} />
+                : <Users size={22} color={colors.white} strokeWidth={2} />}
             </View>
           </View>
 
           <View style={styles.headerInfo}>
-            <Text style={styles.headerName} numberOfLines={1}>
+            <AccessibleText variant="title" style={[styles.headerName, { color: colors.white }]} numberOfLines={1}>
               {groupName}
-            </Text>
-            <Text style={styles.headerMembers}>
+            </AccessibleText>
+            <AccessibleText variant="caption" style={[styles.headerMembers, { color: "rgba(255,255,255,0.65)" }]}>
               {conversation?.participants?.length || 0} members
-            </Text>
+            </AccessibleText>
           </View>
         </TouchableOpacity>
 
         <View style={styles.headerActions}>
           {subType === 'CARE_CIRCLE' && (
             <TouchableOpacity
-              style={styles.sosBtn}
+              style={[styles.sosBtn, { backgroundColor: colors.error }]}
               onPress={handleSOS}
               accessibilityRole="button"
               accessibilityLabel="Send emergency SOS to this care circle"
             >
-              <Text style={styles.sosBtnText}>SOS</Text>
+              <AccessibleText variant="caption" style={[styles.sosBtnText, { color: colors.white }]}>SOS</AccessibleText>
             </TouchableOpacity>
           )}
           <TouchableOpacity
             style={styles.headerActionBtn}
             onPress={() => navigation.navigate("GroupInfo", { conversationId })}
+            accessibilityRole="button"
+            accessibilityLabel="Group settings"
+            accessibilityHint="Opens group info and settings"
           >
-            <Settings size={20} color="#fff" strokeWidth={2} />
+            <Settings size={20} color={colors.white} strokeWidth={2} />
           </TouchableOpacity>
         </View>
       </View>
@@ -645,66 +691,79 @@ const GroupChatScreen = ({ navigation, route }: Props) => {
               showsVerticalScrollIndicator={false}
               ListEmptyComponent={
                 <View style={styles.emptyState}>
-                  <View style={styles.emptyIcon}>{subType === 'CARE_CIRCLE' ? <Heart size={48} color="#8A38F5" strokeWidth={1.75} /> : <HeartHandshake size={48} color="#8A38F5" strokeWidth={1.75} />}</View>
-                  <Text style={styles.emptyTitle}>Welcome to {groupName}!</Text>
-                  <Text style={styles.emptySubtitle}>
+                  <View style={styles.emptyIcon}>{subType === 'CARE_CIRCLE' ? <Heart size={48} color={colors.primary} strokeWidth={1.75} /> : <HeartHandshake size={48} color={colors.primary} strokeWidth={1.75} />}</View>
+                  <AccessibleText variant="title" style={[styles.emptyTitle, { color: colors.secondary }]}>Welcome to {groupName}!</AccessibleText>
+                  <AccessibleText variant="body" style={[styles.emptySubtitle, { color: colors.subtext }]}>
                     Send the first message to start the conversation
-                  </Text>
+                  </AccessibleText>
                 </View>
               }
             />
 
             {/* ── Composer ───────────────────────────────────── */}
             {media.isRecording && (
-              <View style={styles.recordingBar}>
-                <Text style={styles.recordingText}>● Recording… tap ⏹ to send</Text>
-                <TouchableOpacity onPress={media.cancelRecording}>
-                  <Text style={styles.recordingCancel}>Cancel</Text>
+              <View style={[styles.recordingBar, { backgroundColor: colors.card }, cardBorder]}>
+                <AccessibleText variant="body" style={[styles.recordingText, { color: colors.error }]}>● Recording… tap ⏹ to send</AccessibleText>
+                <TouchableOpacity
+                  onPress={media.cancelRecording}
+                  accessibilityRole="button"
+                  accessibilityLabel="Cancel recording"
+                >
+                  <AccessibleText variant="body" style={[styles.recordingCancel, { color: colors.subtext }]}>Cancel</AccessibleText>
                 </TouchableOpacity>
               </View>
             )}
             <View style={[styles.composer, { paddingBottom: Math.max(insets.bottom, 10) }]}>
-              <View style={styles.composerCard}>
+              <View style={[styles.composerCard, { backgroundColor: colors.card, shadowColor: colors.secondary }, cardBorder]}>
                 <TouchableOpacity
                   style={styles.plusBtn}
                   onPress={media.pickImage}
                   disabled={media.isUploading}
+                  accessibilityRole="button"
                   accessibilityLabel="Attach image"
+                  accessibilityHint="Opens your photo library to attach an image"
                 >
                   {media.isUploading
-                    ? <ActivityIndicator size="small" color="#7C3AED" />
-                    : <Plus size={24} color="#7C3AED" strokeWidth={2.5} />}
+                    ? <ActivityIndicator size="small" color={colors.primary} />
+                    : <Plus size={24} color={colors.primary} strokeWidth={2.5} />}
                 </TouchableOpacity>
 
-                <View style={styles.inputPill}>
+                <View style={[styles.inputPill, { backgroundColor: colors.surface }, cardBorder]}>
                   <TextInput
-                    style={styles.textInput}
+                    style={[styles.textInput, { color: colors.text }]}
                     placeholder="Message the group..."
-                    placeholderTextColor="#9A93A8"
+                    placeholderTextColor={colors.subtext}
                     value={messageText}
                     onChangeText={handleTextChange}
                     multiline
                     maxLength={5000}
+                    accessibilityLabel="Message input"
                   />
                 </View>
 
                 <TouchableOpacity
-                  style={[styles.micBtn, media.isRecording && styles.micBtnRecording]}
+                  style={[
+                    styles.micBtn,
+                    media.isRecording && [styles.micBtnRecording, { backgroundColor: colors.error }],
+                  ]}
                   onPress={() => (media.isRecording ? media.stopAndSendRecording() : media.startRecording())}
+                  accessibilityRole="button"
                   accessibilityLabel={media.isRecording ? "Stop and send voice note" : "Record voice note"}
                 >
                   {media.isRecording
-                    ? <Square size={16} color="#fff" fill="#fff" />
-                    : <Mic size={20} color="#fff" />}
+                    ? <Square size={16} color={colors.white} fill={colors.white} />
+                    : <Mic size={20} color={colors.white} />}
                 </TouchableOpacity>
 
                 <TouchableOpacity
-                  style={[styles.sendCircle, !messageText.trim() && styles.sendCircleDisabled]}
+                  style={[styles.sendCircle, { backgroundColor: colors.primary }, !messageText.trim() && styles.sendCircleDisabled]}
                   onPress={handleSend}
                   disabled={!messageText.trim()}
+                  accessibilityRole="button"
                   accessibilityLabel="Send message"
+                  accessibilityHint="Sends the typed message"
                 >
-                  <Send size={19} color="#fff" />
+                  <Send size={19} color={colors.white} />
                 </TouchableOpacity>
               </View>
             </View>
@@ -722,66 +781,79 @@ const GroupChatScreen = ({ navigation, route }: Props) => {
               showsVerticalScrollIndicator={false}
               ListEmptyComponent={
                 <View style={styles.emptyState}>
-                  <View style={styles.emptyIcon}>{subType === 'CARE_CIRCLE' ? <Heart size={48} color="#8A38F5" strokeWidth={1.75} /> : <HeartHandshake size={48} color="#8A38F5" strokeWidth={1.75} />}</View>
-                  <Text style={styles.emptyTitle}>Welcome to {groupName}!</Text>
-                  <Text style={styles.emptySubtitle}>
+                  <View style={styles.emptyIcon}>{subType === 'CARE_CIRCLE' ? <Heart size={48} color={colors.primary} strokeWidth={1.75} /> : <HeartHandshake size={48} color={colors.primary} strokeWidth={1.75} />}</View>
+                  <AccessibleText variant="title" style={[styles.emptyTitle, { color: colors.secondary }]}>Welcome to {groupName}!</AccessibleText>
+                  <AccessibleText variant="body" style={[styles.emptySubtitle, { color: colors.subtext }]}>
                     Send the first message to start the conversation
-                  </Text>
+                  </AccessibleText>
                 </View>
               }
             />
 
             {/* ── Composer ───────────────────────────────────── */}
             {media.isRecording && (
-              <View style={styles.recordingBar}>
-                <Text style={styles.recordingText}>● Recording… tap ⏹ to send</Text>
-                <TouchableOpacity onPress={media.cancelRecording}>
-                  <Text style={styles.recordingCancel}>Cancel</Text>
+              <View style={[styles.recordingBar, { backgroundColor: colors.card }, cardBorder]}>
+                <AccessibleText variant="body" style={[styles.recordingText, { color: colors.error }]}>● Recording… tap ⏹ to send</AccessibleText>
+                <TouchableOpacity
+                  onPress={media.cancelRecording}
+                  accessibilityRole="button"
+                  accessibilityLabel="Cancel recording"
+                >
+                  <AccessibleText variant="body" style={[styles.recordingCancel, { color: colors.subtext }]}>Cancel</AccessibleText>
                 </TouchableOpacity>
               </View>
             )}
             <View style={[styles.composer, { paddingBottom: Math.max(insets.bottom, 10) }]}>
-              <View style={styles.composerCard}>
+              <View style={[styles.composerCard, { backgroundColor: colors.card, shadowColor: colors.secondary }, cardBorder]}>
                 <TouchableOpacity
                   style={styles.plusBtn}
                   onPress={media.pickImage}
                   disabled={media.isUploading}
+                  accessibilityRole="button"
                   accessibilityLabel="Attach image"
+                  accessibilityHint="Opens your photo library to attach an image"
                 >
                   {media.isUploading
-                    ? <ActivityIndicator size="small" color="#7C3AED" />
-                    : <Plus size={24} color="#7C3AED" strokeWidth={2.5} />}
+                    ? <ActivityIndicator size="small" color={colors.primary} />
+                    : <Plus size={24} color={colors.primary} strokeWidth={2.5} />}
                 </TouchableOpacity>
 
-                <View style={styles.inputPill}>
+                <View style={[styles.inputPill, { backgroundColor: colors.surface }, cardBorder]}>
                   <TextInput
-                    style={styles.textInput}
+                    style={[styles.textInput, { color: colors.text }]}
                     placeholder="Message the group..."
-                    placeholderTextColor="#9A93A8"
+                    placeholderTextColor={colors.subtext}
                     value={messageText}
                     onChangeText={handleTextChange}
                     multiline
                     maxLength={5000}
+                    accessibilityLabel="Message input"
                   />
                 </View>
 
                 <TouchableOpacity
-                  style={[styles.micBtn, media.isRecording && styles.micBtnRecording]}
+                  style={[
+                    styles.micBtn,
+                    media.isRecording && [styles.micBtnRecording, { backgroundColor: colors.error }],
+                  ]}
                   onPress={() => (media.isRecording ? media.stopAndSendRecording() : media.startRecording())}
+                  accessibilityRole="button"
                   accessibilityLabel={media.isRecording ? "Stop and send voice note" : "Record voice note"}
                 >
                   {media.isRecording
-                    ? <Square size={16} color="#fff" fill="#fff" />
-                    : <Mic size={20} color="#fff" />}
+                    ? <Square size={16} color={colors.white} fill={colors.white} />
+                    : <Mic size={20} color={colors.white} />}
                 </TouchableOpacity>
 
                 <TouchableOpacity
-                  style={[styles.sendCircle, !messageText.trim() && styles.sendCircleDisabled]}
+                  style={[styles.sendCircle, { backgroundColor: colors.primary }, !messageText.trim() && styles.sendCircleDisabled]}
                   onPress={handleSend}
                   disabled={!messageText.trim()}
+                  accessibilityRole="button"
                   accessibilityLabel="Send message"
+                  accessibilityHint="Sends the typed message"
                 >
-                  <Send size={19} color="#fff" />
+                  <Send size={19} color={colors.white} />
                 </TouchableOpacity>
               </View>
             </View>
@@ -844,7 +916,6 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#500088",
     paddingHorizontal: 12,
     // paddingTop is dynamic via insets (applied inline)
     paddingBottom: 12,
@@ -888,12 +959,10 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   headerName: {
-    color: "#fff",
     fontSize: 16,
     fontWeight: "700",
   },
   headerMembers: {
-    color: "rgba(255,255,255,0.65)",
     fontSize: 12,
     marginTop: 1,
   },
@@ -967,13 +1036,10 @@ const styles = StyleSheet.create({
     borderRadius: 18,
   },
   myBubble: {
-    backgroundColor: "#8A38F5",
     borderBottomRightRadius: 6,
   },
   theirBubble: {
-    backgroundColor: "#fff",
     borderBottomLeftRadius: 6,
-    shadowColor: "#8A38F5",
     shadowOpacity: 0.05,
     shadowOffset: { width: 0, height: 2 },
     shadowRadius: 6,
@@ -982,10 +1048,6 @@ const styles = StyleSheet.create({
   messageText: {
     fontSize: 15,
     lineHeight: 21,
-    color: "#1a1a1a",
-  },
-  myMessageText: {
-    color: "#fff",
   },
   messageFooter: {
     flexDirection: "row",
@@ -996,10 +1058,6 @@ const styles = StyleSheet.create({
   },
   messageTime: {
     fontSize: 11,
-    color: "#aaa",
-  },
-  myMessageTime: {
-    color: "rgba(255,255,255,0.6)",
   },
   statusIcon: {
     fontSize: 11,
@@ -1020,20 +1078,17 @@ const styles = StyleSheet.create({
   emptyTitle: {
     fontSize: 18,
     fontWeight: "700",
-    color: "#6B21A8",
     textAlign: "center",
     marginBottom: 6,
   },
   emptySubtitle: {
     fontSize: 14,
-    color: "#999",
     textAlign: "center",
     lineHeight: 20,
   },
 
   // ── Composer ────────────────────────────────────────────
   sosBtn: {
-    backgroundColor: "#dc2626",
     paddingHorizontal: 12,
     paddingVertical: 7,
     borderRadius: 16,
@@ -1042,7 +1097,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   sosBtnText: {
-    color: "#fff",
     fontWeight: "800",
     fontSize: 13,
     letterSpacing: 0.5,
@@ -1055,16 +1109,13 @@ const styles = StyleSheet.create({
     marginBottom: 6,
     paddingHorizontal: 16,
     paddingVertical: 8,
-    backgroundColor: "#fff",
     borderRadius: 20,
   },
   recordingText: {
-    color: "#dc2626",
     fontSize: 13,
     fontWeight: "600",
   },
   recordingCancel: {
-    color: "#666",
     fontSize: 13,
     fontWeight: "600",
   },
@@ -1083,12 +1134,10 @@ const styles = StyleSheet.create({
   composerCard: {
     flexDirection: "row",
     alignItems: "flex-end",
-    backgroundColor: "#fff",
     borderRadius: 30,
     paddingVertical: 7,
     paddingHorizontal: 8,
     gap: 7,
-    shadowColor: "#6B21A8",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.1,
     shadowRadius: 12,
@@ -1105,14 +1154,12 @@ const styles = StyleSheet.create({
     flex: 1,
     minHeight: 44,
     maxHeight: 120,
-    backgroundColor: "#F1EFF6",
     borderRadius: 22,
     paddingHorizontal: 16,
     justifyContent: "center",
   },
   textInput: {
     fontSize: 15,
-    color: "#1a1a1a",
     paddingVertical: Platform.OS === "ios" ? 12 : 8,
     maxHeight: 110,
   },
@@ -1125,17 +1172,17 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   micBtnRecording: {
-    backgroundColor: "#dc2626",
+    // backgroundColor now themed inline (colors.error) so it stays a
+    // clear "recording/alert" red in both normal and high-contrast modes.
   },
   sendCircle: {
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: "#7C3AED",
     alignItems: "center",
     justifyContent: "center",
   },
   sendCircleDisabled: {
-    backgroundColor: "#CBB8ED",
+    opacity: 0.45,
   },
 });

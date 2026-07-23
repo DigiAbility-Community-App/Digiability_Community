@@ -137,7 +137,7 @@ const HomeScreen = () => {
 
   if (loading) {
     return (
-      <ScreenWrapper style={styles.loaderContainer}>
+      <ScreenWrapper style={[styles.loaderContainer, { backgroundColor: colors.background }]}>
         <ActivityIndicator
           size="large"
           color={colors.primary}
@@ -491,22 +491,10 @@ export default HomeScreen;
 // ----------------------
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#FAF8FF",
-  },
-
   loaderContainer: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "#FAF8FF",
-  },
-
-  loadingText: {
-    marginTop: 12,
-    color: "#500088",
-    fontWeight: "700",
   },
 
   scrollContent: {
@@ -526,18 +514,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.05,
     shadowRadius: 10,
     elevation: 3,
-  },
-
-  welcomeText: {
-    fontSize: 14,
-    color: "#666",
-    marginBottom: 4,
-  },
-
-  userName: {
-    fontSize: 28,
-    fontWeight: "800",
-    color: "#500088",
   },
 
   // QUICK GRID
@@ -573,18 +549,6 @@ const styles = StyleSheet.create({
     fontSize: 22,
   },
 
-  quickTitle: {
-    fontSize: 16,
-    fontWeight: "700",
-    marginBottom: 4,
-    color: "#1A1B20",
-  },
-
-  quickSubtitle: {
-    fontSize: 12,
-    color: "#666",
-  },
-
   // SECTIONS
   section: {
     marginTop: 24,
@@ -595,18 +559,6 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
     marginBottom: 16,
-  },
-
-  sectionTitle: {
-    fontSize: 20,
-    fontWeight: "700",
-    color: "#1A1B20",
-  },
-
-  viewAll: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: "#500088",
   },
 
   // EMPTY
@@ -620,19 +572,6 @@ const styles = StyleSheet.create({
   emptyEmoji: {
     fontSize: 40,
     marginBottom: 12,
-  },
-
-  emptyTitle: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: "#1A1B20",
-    marginBottom: 6,
-  },
-
-  emptyDesc: {
-    textAlign: "center",
-    color: "#666",
-    lineHeight: 22,
   },
 
   // EVENTS
@@ -659,26 +598,9 @@ const styles = StyleSheet.create({
     marginRight: 16,
   },
 
-  eventDateText: {
-    color: "#FFFFFF",
-    fontWeight: "800",
-    textAlign: "center",
-  },
-
   eventContent: {
     flex: 1,
     justifyContent: "center",
-  },
-
-  eventTitle: {
-    fontSize: 16,
-    fontWeight: "700",
-    marginBottom: 8,
-    color: "#1A1B20",
-  },
-
-  eventLocation: {
-    color: "#666",
   },
 
   // COMMUNITY
@@ -694,34 +616,7 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
 
-  communityUser: {
-    fontWeight: "700",
-    color: "#500088",
-    marginBottom: 12,
-  },
-
-  communityTitle: {
-    fontSize: 16,
-    fontWeight: "700",
-    marginBottom: 10,
-    color: "#1A1B20",
-  },
-
-  communityDescription: {
-    lineHeight: 22,
-    color: "#666",
-    marginBottom: 16,
-  },
-
   communityFooter: {
     flexDirection: "row",
   },
-
-  footerItem: {
-    marginRight: 16,
-    fontWeight: "700",
-    color: "#666",
-  },
-
-  // Legacy navbar styles removed
 });

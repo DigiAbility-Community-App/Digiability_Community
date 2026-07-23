@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from "react";
-import { View, Text, StyleSheet, TouchableOpacity, Dimensions } from "react-native";
+import { View, StyleSheet, TouchableOpacity, Dimensions } from "react-native";
 import { TabView } from "react-native-tab-view";
 import { useChatStore } from "@store/chatStore";
 import ScreenWrapper from "../../components/layout/ScreenWrapper";
@@ -9,6 +9,8 @@ import CareCirclesTab from "../../components/community/CareCirclesTab";
 import ForumsTab from "../../components/community/ForumsTab";
 import MentorsTab from "../../components/community/MentorsTab";
 import ChatsTab from "../../components/community/ChatsTab";
+import { useTheme } from "../../theme/ThemeContext";
+import { AccessibleText } from "../../components/shared/AccessibleText";
 
 const initialLayout = { width: Dimensions.get("window").width };
 
@@ -24,6 +26,8 @@ const ROUTES = [
 type RouteKey = typeof ROUTES[number]["key"];
 
 const CommunityDetailScreen = ({ navigation, route }: any) => {
+  const { colors } = useTheme();
+
   const [index, setIndex] = useState(() => {
     const initial: string | undefined = route?.params?.initialTab;
     if (initial === "groups")      return 1;
@@ -63,7 +67,7 @@ const CommunityDetailScreen = ({ navigation, route }: any) => {
   };
 
   const renderTabBar = (props: any) => (
-    <View style={styles.tabBar}>
+    <View style={[styles.tabBar, { backgroundColor: colors.background, borderBottomColor: colors.border }]}>
       {props.navigationState.routes.map((r: any, i: number) => {
         const active = index === i;
         const count = sectionUnread[r.key as RouteKey] || 0;
@@ -73,18 +77,26 @@ const CommunityDetailScreen = ({ navigation, route }: any) => {
             style={styles.tabItem}
             onPress={() => setIndex(i)}
             activeOpacity={0.8}
+            accessibilityRole="tab"
+            accessibilityLabel={`${r.title} tab${count > 0 ? `, ${count} unread` : ""}`}
+            accessibilityState={{ selected: active }}
           >
             <View style={styles.tabLabelRow}>
-              <Text style={[styles.tabText, active && styles.activeTabText]}>
+              <AccessibleText
+                variant="body"
+                style={[styles.tabText, { color: active ? colors.primary : colors.subtext }, active && styles.activeTabText]}
+              >
                 {r.title}
-              </Text>
+              </AccessibleText>
               {count > 0 && (
-                <View style={styles.tabBadge}>
-                  <Text style={styles.tabBadgeText}>{count > 99 ? "99+" : count}</Text>
+                <View style={[styles.tabBadge, { backgroundColor: colors.secondary }]}>
+                  <AccessibleText variant="overline" style={styles.tabBadgeText}>
+                    {count > 99 ? "99+" : count}
+                  </AccessibleText>
                 </View>
               )}
             </View>
-            {active && <View style={styles.activeIndicator} />}
+            {active && <View style={[styles.activeIndicator, { backgroundColor: colors.secondary }]} />}
           </TouchableOpacity>
         );
       })}
@@ -117,10 +129,8 @@ export default CommunityDetailScreen;
 const styles = StyleSheet.create({
   tabBar: {
     flexDirection: "row",
-    backgroundColor: "#FAF8FF",
     paddingHorizontal: 16,
     borderBottomWidth: 1,
-    borderBottomColor: "#EEEDF4",
   },
   tabItem: {
     marginRight: 20,
@@ -138,7 +148,6 @@ const styles = StyleSheet.create({
     height: 18,
     borderRadius: 9,
     paddingHorizontal: 5,
-    backgroundColor: "#9333EA",
     alignItems: "center",
     justifyContent: "center",
   },
@@ -149,11 +158,9 @@ const styles = StyleSheet.create({
   },
   tabText: {
     fontSize: 14,
-    color: "#6B7280",
     fontWeight: "500",
   },
   activeTabText: {
-    color: "#7E22CE",
     fontWeight: "700",
   },
   activeIndicator: {
@@ -162,6 +169,5 @@ const styles = StyleSheet.create({
     width: "100%",
     height: 3,
     borderRadius: 999,
-    backgroundColor: "#9333EA",
   },
 });

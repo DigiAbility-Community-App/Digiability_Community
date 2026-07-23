@@ -8,7 +8,6 @@ import React, {
 
 import {
   View,
-  Text,
   StyleSheet,
   TouchableOpacity,
   TextInput,
@@ -18,8 +17,6 @@ import {
   BackHandler,
 } from "react-native";
 import SafeScreen from "../../components/layout/SafeScreen";
-
-import { LinearGradient } from "expo-linear-gradient";
 
 import {
   useNavigation,
@@ -37,6 +34,9 @@ import {
 } from "@services/profileService";
 import DateTimePickerModal from "react-native-modal-datetime-picker";
 import * as Location from "expo-location";
+import { useTheme } from "../../theme/ThemeContext";
+import { AccessibleText } from "../../components/shared/AccessibleText";
+import { AccessibleButton } from "../../components/shared/AccessibleButton";
 
 // --------------------------------------------------
 // CONSTANTS
@@ -90,6 +90,8 @@ type UsernameStatus =
 const ProfileScreen = () => {
   const navigation =
     useNavigation<any>();
+
+  const { colors, highContrast } = useTheme();
 
   const user = useAuthStore(
     (s) => s.user
@@ -444,7 +446,7 @@ const ProfileScreen = () => {
         return (
           <ActivityIndicator
             size="small"
-            color="#7C3AED"
+            color={colors.secondary}
             style={
               styles.indicator
             }
@@ -465,7 +467,8 @@ const ProfileScreen = () => {
           : "✗";
 
       return (
-        <Text
+        <AccessibleText
+          variant="caption"
           style={[
             styles.usernameStatus,
             { color },
@@ -473,7 +476,7 @@ const ProfileScreen = () => {
         >
           {icon}{" "}
           {usernameMessage}
-        </Text>
+        </AccessibleText>
       );
     };
   // --------------------------------------------------
@@ -491,7 +494,7 @@ const ProfileScreen = () => {
   }, [fullName]);
 
   // --------------------------------------------------
-  // 
+  //
   // --------------------------------------------------
   const fetchCurrentLocation =
     async () => {
@@ -546,15 +549,31 @@ const ProfileScreen = () => {
         console.log(error);
       }
     };
+
+  // --------------------------------------------------
+  // THEME HELPERS
+  // --------------------------------------------------
+
+  // Hairline border in the default state (near-invisible), a solid
+  // 2px black border under High Contrast — same convention used for
+  // "card" surfaces across the app (see RoleSelection/HomeProfileScreen).
+  const cardBorder = highContrast
+    ? { borderWidth: 2, borderColor: "#000000" as const }
+    : { borderWidth: 1, borderColor: "rgba(0,0,0,0.05)" as const };
+
+  const placeholderColor = highContrast
+    ? "#000000"
+    : "rgba(126,115,131,0.6)";
+
   // --------------------------------------------------
   // UI
   // --------------------------------------------------
 
   return (
-    <SafeScreen style={styles.container}>
+    <SafeScreen style={[styles.container, { backgroundColor: colors.background }]}>
 
       {/* HEADER */}
-      <View style={styles.header}>
+      <View style={[styles.header, { backgroundColor: colors.background }]}>
         <TouchableOpacity
           style={styles.backButton}
           onPress={handleBack}
@@ -562,7 +581,7 @@ const ProfileScreen = () => {
           accessibilityLabel="Go back"
           accessibilityHint="Returns to the previous screen"
         >
-          <Text style={styles.backText}>←</Text>
+          <AccessibleText style={[styles.backText, { color: colors.secondary }]}>←</AccessibleText>
         </TouchableOpacity>
 
         <View
@@ -571,27 +590,28 @@ const ProfileScreen = () => {
           }
         >
           <View
-            style={
-              styles.inactiveDot
-            }
+            style={[
+              styles.inactiveDot,
+              highContrast && { backgroundColor: "#000000" },
+            ]}
           />
 
           <View
-            style={
-              styles.inactiveDot
-            }
+            style={[
+              styles.inactiveDot,
+              highContrast && { backgroundColor: "#000000" },
+            ]}
           />
 
           <View
-            style={
-              styles.activeBar
-            }
+            style={[styles.activeBar, { backgroundColor: colors.secondary }]}
           />
 
           <View
-            style={
-              styles.inactiveDot
-            }
+            style={[
+              styles.inactiveDot,
+              highContrast && { backgroundColor: "#000000" },
+            ]}
           />
         </View>
       </View>
@@ -611,24 +631,22 @@ const ProfileScreen = () => {
             styles.heroSection
           }
         >
-          <Text
-            style={
-              styles.heroTitle
-            }
+          <AccessibleText
+            variant="heroTitle"
+            style={[styles.heroTitle, { color: colors.primary }]}
           >
             Tell us about
             yourself
-          </Text>
+          </AccessibleText>
 
-          <Text
-            style={
-              styles.heroSubtitle
-            }
+          <AccessibleText
+            variant="body"
+            style={[styles.heroSubtitle, { color: colors.subtext }]}
           >
             Only share what
             you are comfortable
             with
-          </Text>
+          </AccessibleText>
 
           {!!roleLabel && (
             <View
@@ -636,45 +654,43 @@ const ProfileScreen = () => {
                 styles.roleBadge
               }
             >
-              <Text
+              <AccessibleText
+                variant="label"
                 style={
                   styles.roleBadgeText
                 }
               >
                 {roleLabel}
-              </Text>
+              </AccessibleText>
             </View>
           )}
         </View>
 
         {/* BASIC INFO */}
-        <View style={styles.card}>
-          <Text
-            style={
-              styles.sectionLabel
-            }
+        <View style={[styles.card, { backgroundColor: colors.card }, cardBorder]}>
+          <AccessibleText
+            variant="overline"
+            style={[styles.sectionLabel, { color: colors.subtext }]}
           >
             BASIC INFO
-          </Text>
+          </AccessibleText>
 
           {/* FULL NAME */}
           <View
-            style={
-              styles.inputContainer
-            }
+            style={[styles.inputContainer, { backgroundColor: colors.surface }, cardBorder]}
           >
-            <Text
+            <AccessibleText
               style={
                 styles.inputIcon
               }
             >
               👤
-            </Text>
+            </AccessibleText>
 
             <TextInput
               placeholder="Full Name"
-              placeholderTextColor="#7E7383"
-              style={styles.input}
+              placeholderTextColor={placeholderColor}
+              style={[styles.input, { color: colors.text }]}
               value={fullName}
               onChangeText={setFullName}
               accessibilityLabel="Full Name"
@@ -683,31 +699,30 @@ const ProfileScreen = () => {
           </View>
 
           {errors.fullName && (
-            <Text
-              style={
-                styles.errorText
-              }
+            <AccessibleText
+              variant="caption"
+              style={[styles.errorText, { color: colors.error }]}
             >
               {
                 errors.fullName
               }
-            </Text>
+            </AccessibleText>
           )}
 
           {/* DOB */}
           <TouchableOpacity
             activeOpacity={0.9}
             onPress={() => setShowDatePicker(true)}
-            style={styles.inputContainer}
+            style={[styles.inputContainer, { backgroundColor: colors.surface }, cardBorder]}
             accessibilityRole="button"
             accessibilityLabel="Date of birth"
             accessibilityHint={dob ? `Selected: ${dob}. Double tap to change` : "Double tap to open date picker"}
           >
-            <Text style={styles.inputIcon}>📅</Text>
+            <AccessibleText style={styles.inputIcon}>📅</AccessibleText>
             <TextInput
               placeholder="DD/MM/YYYY"
-              placeholderTextColor="#7E7383"
-              style={styles.input}
+              placeholderTextColor={placeholderColor}
+              style={[styles.input, { color: colors.text }]}
               value={dob}
               onChangeText={setDob}
               accessibilityLabel="Date of birth input"
@@ -742,7 +757,7 @@ const ProfileScreen = () => {
 
           {/* GENDER */}
           <TouchableOpacity
-            style={styles.inputContainer}
+            style={[styles.inputContainer, { backgroundColor: colors.surface }, cardBorder]}
             activeOpacity={0.9}
             onPress={() => setShowGenderDropdown(!showGenderDropdown)}
             accessibilityRole="combobox"
@@ -750,25 +765,38 @@ const ProfileScreen = () => {
             accessibilityHint={gender ? `Selected: ${gender}. Double tap to change` : "Double tap to select your gender"}
             accessibilityState={{ expanded: showGenderDropdown }}
           >
-            <Text style={styles.inputIcon}>⚧</Text>
-            <Text style={styles.dropdownText}>{gender || "Select Gender"}</Text>
-            <Text style={styles.dropdownArrow}>{showGenderDropdown ? "▲" : "▼"}</Text>
+            <AccessibleText style={styles.inputIcon}>⚧</AccessibleText>
+            <AccessibleText
+              variant="input"
+              style={[styles.dropdownText, { color: colors.text }]}
+            >
+              {gender || "Select Gender"}
+            </AccessibleText>
+            <AccessibleText style={[styles.dropdownArrow, { color: colors.subtext }]}>
+              {showGenderDropdown ? "▲" : "▼"}
+            </AccessibleText>
           </TouchableOpacity>
 
           {showGenderDropdown && (
-            <View style={styles.dropdownBox}>
+            <View style={[styles.dropdownBox, { backgroundColor: colors.surface }, cardBorder]}>
               {GENDERS.map((item) => (
                 <TouchableOpacity
                   key={item}
-                  style={styles.dropdownItem}
+                  style={[styles.dropdownItem, { borderBottomColor: colors.border }]}
                   onPress={() => {
                     setGender(item);
                     setShowGenderDropdown(false);
                   }}
+                  accessibilityRole="button"
+                  accessibilityLabel={item}
+                  accessibilityHint={`Double tap to select ${item} as your gender`}
                 >
-                  <Text style={styles.dropdownItemText}>
+                  <AccessibleText
+                    variant="body"
+                    style={[styles.dropdownItemText, { color: colors.text }]}
+                  >
                     {item}
-                  </Text>
+                  </AccessibleText>
                 </TouchableOpacity>
               ))}
             </View>
@@ -776,22 +804,20 @@ const ProfileScreen = () => {
 
           {/* PHONE NUMBER */}
           <View
-            style={
-              styles.inputContainer
-            }
+            style={[styles.inputContainer, { backgroundColor: colors.surface }, cardBorder]}
           >
-            <Text
+            <AccessibleText
               style={
                 styles.inputIcon
               }
             >
               📞
-            </Text>
+            </AccessibleText>
 
             <TextInput
               placeholder="+91 XXXXX XXXXX"
-              placeholderTextColor="#7E7383"
-              style={styles.input}
+              placeholderTextColor={placeholderColor}
+              style={[styles.input, { color: colors.text }]}
               value={phoneNo}
               onChangeText={setPhoneNo}
               keyboardType="phone-pad"
@@ -803,45 +829,39 @@ const ProfileScreen = () => {
           </View>
 
           {errors.phoneNo && (
-            <Text
-              style={
-                styles.errorText
-              }
+            <AccessibleText
+              variant="caption"
+              style={[styles.errorText, { color: colors.error }]}
             >
               {errors.phoneNo}
-            </Text>
+            </AccessibleText>
           )}
 
         </View>
 
         {/* USERNAME */}
-        <View style={styles.card}>
-          <Text
-            style={
-              styles.sectionLabel
-            }
+        <View style={[styles.card, { backgroundColor: colors.card }, cardBorder]}>
+          <AccessibleText
+            variant="overline"
+            style={[styles.sectionLabel, { color: colors.subtext }]}
           >
             CHOOSE YOUR
             USERNAME
-          </Text>
+          </AccessibleText>
 
           <View
-            style={
-              styles.usernameContainer
-            }
+            style={[styles.usernameContainer, { backgroundColor: colors.surface }, cardBorder]}
           >
-            <Text
-              style={
-                styles.usernameAt
-              }
+            <AccessibleText
+              style={[styles.usernameAt, { color: colors.primary }]}
             >
               @
-            </Text>
+            </AccessibleText>
 
             <TextInput
               placeholder="username"
-              placeholderTextColor="#7E7383"
-              style={styles.usernameInput}
+              placeholderTextColor={placeholderColor}
+              style={[styles.usernameInput, { color: colors.text }]}
               value={username}
               onChangeText={handleUsernameChange}
               autoCapitalize="none"
@@ -855,13 +875,12 @@ const ProfileScreen = () => {
           {renderUsernameIndicator()}
 
           {/* SUGGESTIONS */}
-          <Text
-            style={
-              styles.suggestionLabel
-            }
+          <AccessibleText
+            variant="caption"
+            style={[styles.suggestionLabel, { color: colors.subtext }]}
           >
             Suggestions:
-          </Text>
+          </AccessibleText>
 
           <View
             style={
@@ -871,42 +890,43 @@ const ProfileScreen = () => {
             {usernameSuggestions?.map((item) => (
               <TouchableOpacity
                 key={item}
-                style={
-                  styles.suggestionChip
-                }
+                style={[styles.suggestionChip, { backgroundColor: colors.surface }, cardBorder]}
                 onPress={() =>
                   handleUsernameChange(
                     item
                   )
                 }
+                accessibilityRole="button"
+                accessibilityLabel={`Use suggested username ${item}`}
+                accessibilityHint="Fills the username field in with this suggestion"
               >
-                <Text
-                  style={
-                    styles.suggestionText
-                  }
+                <AccessibleText
+                  variant="label"
+                  style={[styles.suggestionText, { color: colors.primary }]}
                 >
                   {item}
-                </Text>
+                </AccessibleText>
               </TouchableOpacity>
             ))}
           </View>
 
-          <Text
-            style={
-              styles.helperText
-            }
+          <AccessibleText
+            variant="caption"
+            style={[styles.helperText, { color: colors.subtext }]}
           >
             ℹ Username can be
             changed later
-          </Text>
+          </AccessibleText>
         </View>
 
         {/* LOCATION */}
-        {/* LOCATION */}
-        <View style={styles.card}>
-          <Text style={styles.sectionLabel}>
+        <View style={[styles.card, { backgroundColor: colors.card }, cardBorder]}>
+          <AccessibleText
+            variant="overline"
+            style={[styles.sectionLabel, { color: colors.subtext }]}
+          >
             YOUR LOCATION
-          </Text>
+          </AccessibleText>
 
           {/* LOCATION BUTTON */}
           <TouchableOpacity
@@ -917,26 +937,31 @@ const ProfileScreen = () => {
             accessibilityLabel="Use Current Location"
             accessibilityHint="Double tap to auto-fill your address using GPS"
           >
-            <Text style={styles.locationBtnText}>📍 Use Current Location</Text>
+            <AccessibleText
+              variant="label"
+              style={[styles.locationBtnText, { color: colors.primary }]}
+            >
+              📍 Use Current Location
+            </AccessibleText>
           </TouchableOpacity>
 
           {/* ADDRESS LINE 1 */}
-          <View style={styles.fullWidthInput}>
+          <View style={[styles.fullWidthInput, { backgroundColor: colors.surface }, cardBorder]}>
             <TextInput
               placeholder="Address Line 1"
-              placeholderTextColor="#9A94A3"
-              style={styles.input}
+              placeholderTextColor={placeholderColor}
+              style={[styles.input, { color: colors.text }]}
               value={houseNo}
               onChangeText={setHouseNo}
             />
           </View>
 
           {/* STREET */}
-          <View style={styles.fullWidthInput}>
+          <View style={[styles.fullWidthInput, { backgroundColor: colors.surface }, cardBorder]}>
             <TextInput
               placeholder="Street / Area"
-              placeholderTextColor="#9A94A3"
-              style={styles.input}
+              placeholderTextColor={placeholderColor}
+              style={[styles.input, { color: colors.text }]}
               value={streetArea}
               onChangeText={setStreetArea}
             />
@@ -944,21 +969,21 @@ const ProfileScreen = () => {
 
           {/* CITY + DISTRICT */}
           <View style={styles.doubleRow}>
-            <View style={styles.doubleInput}>
+            <View style={[styles.doubleInput, { backgroundColor: colors.surface }, cardBorder]}>
               <TextInput
                 placeholder="City"
-                placeholderTextColor="#9A94A3"
-                style={styles.input}
+                placeholderTextColor={placeholderColor}
+                style={[styles.input, { color: colors.text }]}
                 value={city}
                 onChangeText={setCity}
               />
             </View>
 
-            <View style={styles.doubleInput}>
+            <View style={[styles.doubleInput, { backgroundColor: colors.surface }, cardBorder]}>
               <TextInput
                 placeholder="District"
-                placeholderTextColor="#9A94A3"
-                style={styles.input}
+                placeholderTextColor={placeholderColor}
+                style={[styles.input, { color: colors.text }]}
                 value={district}
                 onChangeText={setDistrict}
               />
@@ -967,21 +992,21 @@ const ProfileScreen = () => {
 
           {/* STATE + PINCODE */}
           <View style={styles.doubleRow}>
-            <View style={styles.doubleInput}>
+            <View style={[styles.doubleInput, { backgroundColor: colors.surface }, cardBorder]}>
               <TextInput
                 placeholder="State"
-                placeholderTextColor="#9A94A3"
-                style={styles.input}
+                placeholderTextColor={placeholderColor}
+                style={[styles.input, { color: colors.text }]}
                 value={state}
                 onChangeText={setState}
               />
             </View>
 
-            <View style={styles.doubleInput}>
+            <View style={[styles.doubleInput, { backgroundColor: colors.surface }, cardBorder]}>
               <TextInput
                 placeholder="Pincode"
-                placeholderTextColor="#9A94A3"
-                style={styles.input}
+                placeholderTextColor={placeholderColor}
+                style={[styles.input, { color: colors.text }]}
                 value={pincode}
                 onChangeText={setPincode}
                 keyboardType="number-pad"
@@ -991,42 +1016,28 @@ const ProfileScreen = () => {
 
           {/* NOTICE */}
           <View style={styles.locationNotice}>
-            <Text style={styles.locationNoticeText}>
+            <AccessibleText
+              variant="label"
+              style={styles.locationNoticeText}
+            >
               📍 Helps us show nearby services
-            </Text>
+            </AccessibleText>
           </View>
         </View>
         {/* BUTTON */}
-        <TouchableOpacity
-          activeOpacity={0.9}
+        <AccessibleButton
           onPress={handleContinue}
           disabled={loading}
-          style={styles.buttonWrapper}
-          accessibilityRole="button"
+          style={[styles.buttonWrapper, styles.button]}
           accessibilityLabel="Continue"
           accessibilityHint="Saves your profile information and continues to the next step"
-          accessibilityState={{ disabled: loading }}
         >
-          <LinearGradient
-            colors={[
-              "#500088",
-              "#6B21A8",
-            ]}
-            style={styles.button}
-          >
-            {loading ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text
-                style={
-                  styles.buttonText
-                }
-              >
-                Continue
-              </Text>
-            )}
-          </LinearGradient>
-        </TouchableOpacity>
+          {loading ? (
+            <ActivityIndicator color={colors.white} />
+          ) : (
+            "Continue"
+          )}
+        </AccessibleButton>
       </ScrollView>
     </SafeScreen >
   );
@@ -1042,8 +1053,6 @@ const styles =
   StyleSheet.create({
     container: {
       flex: 1,
-      backgroundColor:
-        "#FAF8FF",
     },
 
     header: {
@@ -1071,7 +1080,6 @@ const styles =
 
     backText: {
       fontSize: 24,
-      color: "#581C87",
       fontWeight: "700",
     },
 
@@ -1085,8 +1093,6 @@ const styles =
       width: 24,
       height: 8,
       borderRadius: 999,
-      backgroundColor:
-        "#6B21A8",
     },
 
     inactiveDot: {
@@ -1110,13 +1116,11 @@ const styles =
     heroTitle: {
       fontSize: 28,
       fontWeight: "800",
-      color: "#500088",
       marginBottom: 4,
     },
 
     heroSubtitle: {
       fontSize: 14,
-      color: "#4C4452",
     },
 
     roleBadge: {
@@ -1140,9 +1144,6 @@ const styles =
     },
 
     card: {
-      backgroundColor:
-        "#FFFFFF",
-
       borderRadius: 24,
 
       padding: 20,
@@ -1162,16 +1163,11 @@ const styles =
 
       letterSpacing: 1.1,
 
-      color: "#4C4452",
-
       marginBottom: 16,
     },
 
     inputContainer: {
       height: 56,
-
-      backgroundColor:
-        "#F4F3FA",
 
       borderRadius: 24,
 
@@ -1191,49 +1187,38 @@ const styles =
     input: {
       flex: 1,
       fontSize: 16,
-      color: "#1A1B20",
       fontWeight: "500",
     },
 
     dropdownText: {
       flex: 1,
-      color: "#1A1B20",
       fontSize: 16,
     },
 
     dropdownArrow: {
-      color: "#7E7383",
       fontSize: 12,
     },
 
     dropdownBox: {
-      backgroundColor: "#f4f7f7e4",
       borderRadius: 18,
       marginTop: -8,
       marginBottom: 16,
       overflow: "hidden",
-      borderWidth: 1,
-      borderColor: "#ECEAF3",
     },
 
     dropdownItem: {
       paddingVertical: 16,
       paddingHorizontal: 18,
       borderBottomWidth: 1,
-      borderBottomColor: "#f1eef7bc",
     },
 
     dropdownItemText: {
       fontSize: 15,
-      color: "#1A1B20",
       fontWeight: "500",
     },
 
     usernameContainer: {
       height: 56,
-
-      backgroundColor:
-        "#F4F3FA",
 
       borderRadius: 24,
 
@@ -1246,14 +1231,12 @@ const styles =
     usernameAt: {
       fontSize: 18,
       fontWeight: "700",
-      color: "#500088",
       marginRight: 6,
     },
 
     usernameInput: {
       flex: 1,
       fontSize: 16,
-      color: "#1A1B20",
     },
 
     usernameStatus: {
@@ -1272,7 +1255,6 @@ const styles =
       marginBottom: 10,
 
       fontSize: 11,
-      color: "#4C4452",
     },
 
     suggestionRow: {
@@ -1282,9 +1264,6 @@ const styles =
     },
 
     suggestionChip: {
-      backgroundColor:
-        "#EEEDF4",
-
       borderRadius: 999,
 
       paddingHorizontal: 12,
@@ -1292,7 +1271,6 @@ const styles =
     },
 
     suggestionText: {
-      color: "#500088",
       fontSize: 12,
       fontWeight: "700",
     },
@@ -1302,9 +1280,6 @@ const styles =
 
       fontSize: 11,
       fontStyle: "italic",
-
-      color:
-        "rgba(76,68,82,0.6)",
     },
 
     row: {
@@ -1366,7 +1341,6 @@ const styles =
     },
 
     locationBtnText: {
-      color: "#500088",
       fontWeight: "700",
     },
     locationNoticeText: {
@@ -1404,16 +1378,7 @@ const styles =
       alignItems: "center",
     },
 
-    buttonText: {
-      color: "#FFFFFF",
-
-      fontSize: 16,
-      fontWeight: "700",
-    },
-
     errorText: {
-      color: "#DC2626",
-
       fontSize: 12,
 
       marginBottom: 10,
@@ -1422,7 +1387,6 @@ const styles =
 
     fullWidthInput: {
       height: 58,
-      backgroundColor: "#F4F3FA",
       borderRadius: 18,
       paddingHorizontal: 18,
       justifyContent: "center",
@@ -1438,7 +1402,6 @@ const styles =
     doubleInput: {
       width: "48%",
       height: 58,
-      backgroundColor: "#F4F3FA",
       borderRadius: 18,
       paddingHorizontal: 18,
       justifyContent: "center",

@@ -1,7 +1,6 @@
 import React, { useState } from "react";
 import {
   View,
-  Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
@@ -21,6 +20,9 @@ import {
   REPORT_REASON_LABELS,
   ReportReason,
 } from "@services/reportService";
+import { useTheme } from "../../theme/ThemeContext";
+import { AccessibleText } from "../../components/shared/AccessibleText";
+import { AccessibleButton } from "../../components/shared/AccessibleButton";
 
 // ─────────────────────────────────────────────────────────
 // User Profile Screen
@@ -47,8 +49,15 @@ const REPORT_REASONS: ReportReason[] = [
 const UserProfileScreen = ({ navigation, route }: Props) => {
   const { userId, userName } = route.params;
   const insets = useSafeAreaInsets();
+  const { colors, highContrast } = useTheme();
   const [showReportSheet, setShowReportSheet] = useState(false);
   const [submittingReport, setSubmittingReport] = useState(false);
+
+  // Standard card outline — subtle in normal mode, solid black under high
+  // contrast — for card-like containers.
+  const cardBorder = highContrast
+    ? { borderWidth: 2, borderColor: "#000000" }
+    : { borderWidth: 1, borderColor: "rgba(0,0,0,0.05)" };
 
   const handleReportUser = () => setShowReportSheet(true);
 
@@ -72,87 +81,104 @@ const UserProfileScreen = ({ navigation, route }: Props) => {
   return (
     <ScreenWrapper statusBarStyle="light">
       {/* ── Header with gradient ─────────────────────────── */}
-      <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
+      <View style={[styles.header, { paddingTop: insets.top + 8, backgroundColor: colors.primary }]}>
         <TouchableOpacity
           style={styles.backBtn}
           onPress={() => navigation.goBack()}
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
         >
-          <ArrowLeft size={24} color="#fff" strokeWidth={2.2} />
+          <ArrowLeft size={24} color={colors.white} strokeWidth={2.2} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Profile</Text>
+        <AccessibleText variant="subtitle" style={[styles.headerTitle, { color: colors.white }]}>Profile</AccessibleText>
         <View style={{ width: 36 }} />
       </View>
 
       <ScrollView contentContainerStyle={styles.content}>
         {/* ── Avatar Card ──────────────────────────────────── */}
-        <View style={styles.profileCard}>
-          <View style={styles.avatarLarge}>
-            <User size={44} color="#8A38F5" strokeWidth={1.9} />
+        <View style={[styles.profileCard, { backgroundColor: colors.card, shadowColor: colors.primary }, cardBorder]}>
+          <View style={[styles.avatarLarge, { backgroundColor: colors.surface, borderColor: colors.primary }]}>
+            <User size={44} color={colors.primary} strokeWidth={1.9} />
           </View>
-          <Text style={styles.profileName}>{userName}</Text>
-          <Text style={styles.profileRole}>Therapist • Physiotherapy</Text>
+          <AccessibleText variant="title" style={[styles.profileName, { color: colors.text }]}>{userName}</AccessibleText>
+          <AccessibleText variant="body" style={[styles.profileRole, { color: colors.subtext }]}>Therapist • Physiotherapy</AccessibleText>
 
           <View style={styles.statusRow}>
-            <View style={styles.onlineDot} />
-            <Text style={styles.statusText}>Online</Text>
+            <View style={[styles.onlineDot, { backgroundColor: highContrast ? colors.text : "#22C55E" }]} />
+            <AccessibleText variant="caption" style={[styles.statusText, { color: highContrast ? colors.text : "#22C55E" }]}>Online</AccessibleText>
           </View>
 
           {/* Quick Actions */}
           <View style={styles.actions}>
-            <TouchableOpacity style={styles.actionBtn}>
-              <MessageCircle size={22} color="#8A38F5" strokeWidth={2} style={styles.actionIcon} />
-              <Text style={styles.actionLabel}>Message</Text>
+            <TouchableOpacity
+              style={[styles.actionBtn, { backgroundColor: colors.surface }]}
+              accessibilityRole="button"
+              accessibilityLabel="Message"
+              accessibilityHint="Opens a direct message conversation with this user"
+            >
+              <MessageCircle size={22} color={colors.primary} strokeWidth={2} style={styles.actionIcon} />
+              <AccessibleText variant="caption" style={[styles.actionLabel, { color: colors.primary }]}>Message</AccessibleText>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.actionBtn}>
-              <Phone size={22} color="#8A38F5" strokeWidth={2} style={styles.actionIcon} />
-              <Text style={styles.actionLabel}>Call</Text>
+            <TouchableOpacity
+              style={[styles.actionBtn, { backgroundColor: colors.surface }]}
+              accessibilityRole="button"
+              accessibilityLabel="Call"
+              accessibilityHint="Voice calling is not yet available"
+            >
+              <Phone size={22} color={colors.primary} strokeWidth={2} style={styles.actionIcon} />
+              <AccessibleText variant="caption" style={[styles.actionLabel, { color: colors.primary }]}>Call</AccessibleText>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.actionBtn}>
-              <Video size={22} color="#8A38F5" strokeWidth={2} style={styles.actionIcon} />
-              <Text style={styles.actionLabel}>Video</Text>
+            <TouchableOpacity
+              style={[styles.actionBtn, { backgroundColor: colors.surface }]}
+              accessibilityRole="button"
+              accessibilityLabel="Video call"
+              accessibilityHint="Video calling is not yet available"
+            >
+              <Video size={22} color={colors.primary} strokeWidth={2} style={styles.actionIcon} />
+              <AccessibleText variant="caption" style={[styles.actionLabel, { color: colors.primary }]}>Video</AccessibleText>
             </TouchableOpacity>
           </View>
         </View>
 
         {/* ── Info Section ─────────────────────────────────── */}
-        <View style={styles.infoSection}>
-          <Text style={styles.sectionTitle}>About</Text>
-          <Text style={styles.infoText}>
+        <View style={[styles.infoSection, { backgroundColor: colors.card }, cardBorder]}>
+          <AccessibleText variant="subtitle" style={[styles.sectionTitle, { color: colors.text }]}>About</AccessibleText>
+          <AccessibleText variant="body" style={[styles.infoText, { color: colors.text }]}>
             Helping individuals with mobility challenges achieve their
             fullest potential through personalized therapy programs. 10+
             years of experience in rehabilitation medicine.
-          </Text>
+          </AccessibleText>
         </View>
 
-        <View style={styles.infoSection}>
-          <Text style={styles.sectionTitle}>Details</Text>
+        <View style={[styles.infoSection, { backgroundColor: colors.card }, cardBorder]}>
+          <AccessibleText variant="subtitle" style={[styles.sectionTitle, { color: colors.text }]}>Details</AccessibleText>
 
-          <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>Location</Text>
-            <Text style={styles.infoValue}>Mumbai, India</Text>
+          <View style={[styles.infoRow, { borderBottomColor: colors.border }]}>
+            <AccessibleText variant="body" style={[styles.infoLabel, { color: colors.subtext }]}>Location</AccessibleText>
+            <AccessibleText variant="body" style={[styles.infoValue, { color: colors.text }]}>Mumbai, India</AccessibleText>
           </View>
-          <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>Member since</Text>
-            <Text style={styles.infoValue}>January 2024</Text>
+          <View style={[styles.infoRow, { borderBottomColor: colors.border }]}>
+            <AccessibleText variant="body" style={[styles.infoLabel, { color: colors.subtext }]}>Member since</AccessibleText>
+            <AccessibleText variant="body" style={[styles.infoValue, { color: colors.text }]}>January 2024</AccessibleText>
           </View>
-          <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>Shared groups</Text>
-            <Text style={styles.infoValue}>3 groups</Text>
+          <View style={[styles.infoRow, { borderBottomColor: colors.border }]}>
+            <AccessibleText variant="body" style={[styles.infoLabel, { color: colors.subtext }]}>Shared groups</AccessibleText>
+            <AccessibleText variant="body" style={[styles.infoValue, { color: colors.text }]}>3 groups</AccessibleText>
           </View>
         </View>
 
         {/* ── Shared Media ─────────────────────────────────── */}
-        <View style={styles.infoSection}>
+        <View style={[styles.infoSection, { backgroundColor: colors.card }, cardBorder]}>
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Shared Media</Text>
-            <TouchableOpacity>
-              <Text style={styles.viewAll}>View All</Text>
+            <AccessibleText variant="subtitle" style={[styles.sectionTitle, { color: colors.text }]}>Shared Media</AccessibleText>
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="View all shared media">
+              <AccessibleText variant="caption" style={[styles.viewAll, { color: colors.primary }]}>View All</AccessibleText>
             </TouchableOpacity>
           </View>
           <View style={styles.mediaGrid}>
             {[1, 2, 3, 4].map((i) => (
-              <View key={i} style={styles.mediaThumbnail}>
-                <FileText size={26} color="#B9A9D6" strokeWidth={1.8} />
+              <View key={i} style={[styles.mediaThumbnail, { backgroundColor: colors.surface }]}>
+                <FileText size={26} color={colors.subtext} strokeWidth={1.8} />
               </View>
             ))}
           </View>
@@ -160,27 +186,34 @@ const UserProfileScreen = ({ navigation, route }: Props) => {
 
         {/* ── Danger Zone ──────────────────────────────────── */}
         <View style={styles.dangerSection}>
-          <TouchableOpacity style={[styles.dangerBtn, { flexDirection: "row", gap: 8 }]}>
-            <Ban size={17} color="#E53E3E" strokeWidth={2} />
-            <Text style={styles.dangerText}>Block User</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
+          <AccessibleButton
+            variant="danger"
+            accessibilityLabel="Block user"
+            accessibilityHint={`Blocks ${userName} from messaging you`}
+            style={styles.dangerBtn}
+          >
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+              <Ban size={17} color={colors.white} strokeWidth={2} />
+              <AccessibleText variant="button" style={{ color: colors.white }}>Block User</AccessibleText>
+            </View>
+          </AccessibleButton>
+          <AccessibleButton
+            variant="danger"
+            accessibilityLabel="Report user"
+            accessibilityHint="Report this user to the moderation team"
             style={styles.dangerBtn}
             onPress={handleReportUser}
             disabled={submittingReport}
-            accessibilityRole="button"
-            accessibilityLabel="Report user"
-            accessibilityHint="Report this user to the moderation team"
           >
             {submittingReport ? (
-              <ActivityIndicator color="#E53E3E" />
+              <ActivityIndicator color={colors.white} />
             ) : (
               <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                <Flag size={17} color="#E53E3E" strokeWidth={2} />
-                <Text style={styles.dangerText}>Report User</Text>
+                <Flag size={17} color={colors.white} strokeWidth={2} />
+                <AccessibleText variant="button" style={{ color: colors.white }}>Report User</AccessibleText>
               </View>
             )}
-          </TouchableOpacity>
+          </AccessibleButton>
         </View>
       </ScrollView>
 
@@ -196,24 +229,28 @@ const UserProfileScreen = ({ navigation, route }: Props) => {
           activeOpacity={1}
           onPress={() => setShowReportSheet(false)}
         >
-          <View style={styles.reasonSheet}>
-            <Text style={styles.reasonTitle}>Why are you reporting {userName}?</Text>
+          <View style={[styles.reasonSheet, { backgroundColor: colors.card }]}>
+            <AccessibleText variant="subtitle" style={[styles.reasonTitle, { color: colors.text, borderBottomColor: colors.border }]}>
+              Why are you reporting {userName}?
+            </AccessibleText>
             {REPORT_REASONS.map((reason) => (
               <TouchableOpacity
                 key={reason}
-                style={styles.reasonRow}
+                style={[styles.reasonRow, { borderBottomColor: colors.border }]}
                 onPress={() => handleSelectReason(reason)}
                 accessibilityRole="button"
                 accessibilityLabel={REPORT_REASON_LABELS[reason]}
               >
-                <Text style={styles.reasonLabel}>{REPORT_REASON_LABELS[reason]}</Text>
+                <AccessibleText variant="body" style={[styles.reasonLabel, { color: colors.error }]}>{REPORT_REASON_LABELS[reason]}</AccessibleText>
               </TouchableOpacity>
             ))}
             <TouchableOpacity
               style={[styles.reasonRow, styles.cancelRow]}
               onPress={() => setShowReportSheet(false)}
+              accessibilityRole="button"
+              accessibilityLabel="Cancel"
             >
-              <Text style={styles.cancelLabel}>Cancel</Text>
+              <AccessibleText variant="body" style={[styles.cancelLabel, { color: colors.subtext }]}>Cancel</AccessibleText>
             </TouchableOpacity>
           </View>
         </TouchableOpacity>
@@ -225,17 +262,11 @@ const UserProfileScreen = ({ navigation, route }: Props) => {
 export default UserProfileScreen;
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#F6F6F6",
-  },
-
   // ── Header ──────────────────────────────────────────────
   header: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    backgroundColor: "#8A38F5",
     paddingHorizontal: 16,
     paddingVertical: 14,
     borderBottomLeftRadius: 20,
@@ -249,13 +280,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-  backText: {
-    color: "#fff",
-    fontSize: 20,
-    fontWeight: "700",
-  },
   headerTitle: {
-    color: "#fff",
     fontSize: 18,
     fontWeight: "700",
   },
@@ -267,14 +292,12 @@ const styles = StyleSheet.create({
 
   // ── Profile Card ────────────────────────────────────────
   profileCard: {
-    backgroundColor: "#fff",
     marginHorizontal: 16,
     marginTop: -10,
     borderRadius: 20,
     alignItems: "center",
     paddingVertical: 24,
     paddingHorizontal: 20,
-    shadowColor: "#8A38F5",
     shadowOpacity: 0.08,
     shadowOffset: { width: 0, height: 4 },
     shadowRadius: 16,
@@ -284,25 +307,18 @@ const styles = StyleSheet.create({
     width: 88,
     height: 88,
     borderRadius: 28,
-    backgroundColor: "#F3EAFF",
     justifyContent: "center",
     alignItems: "center",
     marginBottom: 14,
     borderWidth: 3,
-    borderColor: "#8A38F5",
-  },
-  avatarLargeEmoji: {
-    fontSize: 40,
   },
   profileName: {
     fontSize: 22,
     fontWeight: "800",
-    color: "#1a1a1a",
     marginBottom: 4,
   },
   profileRole: {
     fontSize: 14,
-    color: "#888",
     marginBottom: 10,
   },
   statusRow: {
@@ -315,11 +331,9 @@ const styles = StyleSheet.create({
     width: 10,
     height: 10,
     borderRadius: 5,
-    backgroundColor: "#22C55E",
   },
   statusText: {
     fontSize: 13,
-    color: "#22C55E",
     fontWeight: "600",
   },
 
@@ -330,24 +344,20 @@ const styles = StyleSheet.create({
   },
   actionBtn: {
     alignItems: "center",
-    backgroundColor: "#F3EAFF",
     paddingHorizontal: 20,
     paddingVertical: 12,
     borderRadius: 14,
   },
   actionIcon: {
-    fontSize: 22,
     marginBottom: 4,
   },
   actionLabel: {
     fontSize: 12,
     fontWeight: "600",
-    color: "#500088",
   },
 
   // ── Info Sections ───────────────────────────────────────
   infoSection: {
-    backgroundColor: "#fff",
     marginHorizontal: 16,
     marginTop: 12,
     borderRadius: 16,
@@ -361,18 +371,15 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 16,
     fontWeight: "700",
-    color: "#1a1a1a",
     marginBottom: 10,
   },
   viewAll: {
     fontSize: 13,
-    color: "#8A38F5",
     fontWeight: "600",
     marginBottom: 10,
   },
   infoText: {
     fontSize: 14,
-    color: "#555",
     lineHeight: 22,
   },
   infoRow: {
@@ -380,15 +387,12 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     paddingVertical: 10,
     borderBottomWidth: 1,
-    borderBottomColor: "#f4f3fa",
   },
   infoLabel: {
     fontSize: 14,
-    color: "#888",
   },
   infoValue: {
     fontSize: 14,
-    color: "#1a1a1a",
     fontWeight: "600",
   },
 
@@ -402,12 +406,8 @@ const styles = StyleSheet.create({
     width: 72,
     height: 72,
     borderRadius: 12,
-    backgroundColor: "#F3EAFF",
     justifyContent: "center",
     alignItems: "center",
-  },
-  mediaPlaceholder: {
-    fontSize: 28,
   },
 
   // ── Danger Zone ─────────────────────────────────────────
@@ -417,17 +417,11 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   dangerBtn: {
-    backgroundColor: "#fff",
     padding: 16,
     borderRadius: 14,
     alignItems: "center",
     minHeight: 52,
     justifyContent: "center",
-  },
-  dangerText: {
-    fontSize: 14,
-    color: "#E53E3E",
-    fontWeight: "600",
   },
 
   // ── Report Reason Sheet ──────────────────────────────────
@@ -437,7 +431,6 @@ const styles = StyleSheet.create({
     justifyContent: "flex-end",
   },
   reasonSheet: {
-    backgroundColor: "#fff",
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     paddingBottom: 32,
@@ -446,22 +439,18 @@ const styles = StyleSheet.create({
   reasonTitle: {
     fontSize: 15,
     fontWeight: "700",
-    color: "#333",
     textAlign: "center",
     paddingVertical: 16,
     paddingHorizontal: 20,
     borderBottomWidth: 1,
-    borderBottomColor: "#f0f0f0",
   },
   reasonRow: {
     paddingVertical: 16,
     paddingHorizontal: 24,
     borderBottomWidth: 1,
-    borderBottomColor: "#f0f0f0",
   },
   reasonLabel: {
     fontSize: 15,
-    color: "#E53E3E",
     textAlign: "center",
   },
   cancelRow: {
@@ -470,7 +459,6 @@ const styles = StyleSheet.create({
   },
   cancelLabel: {
     fontSize: 15,
-    color: "#888",
     textAlign: "center",
     fontWeight: "600",
   },

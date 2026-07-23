@@ -281,7 +281,7 @@ export default function EventDetailScreen() {
             </AccessibleText>
           </View>
 
-          <TouchableOpacity
+          <AccessibleButton
             style={[
               styles.registerBtn,
               isSoldOut && styles.registerBtnDisabled,
@@ -289,16 +289,14 @@ export default function EventDetailScreen() {
             ]}
             onPress={handleRegisterPress}
             disabled={isSoldOut}
-            accessibilityRole="button"
             accessibilityLabel={isSoldOut ? "Registration closed for this event" : "Register via Digiability"}
             accessibilityHint="Opens the external Digiability registration portal"
-            accessibilityState={{ disabled: isSoldOut }}
           >
-            <AccessibleText style={[styles.registerBtnText, isSoldOut && { color: "#999" }]}>
+            <AccessibleText style={[styles.registerBtnText, highContrast && { color: "#FFFFFF" }, isSoldOut && { color: "#999" }]}>
               {isSoldOut ? "Registration Closed" : "Register via Digiability"}
             </AccessibleText>
-            {!isSoldOut && <ExternalLink color="#500088" size={18} style={{ marginLeft: 8 }} />}
-          </TouchableOpacity>
+            {!isSoldOut && <ExternalLink color={highContrast ? "#FFFFFF" : "#500088"} size={18} style={{ marginLeft: 8 }} />}
+          </AccessibleButton>
         </View>
 
         <View style={{ height: 140 }} />
