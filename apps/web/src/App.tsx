@@ -18,6 +18,8 @@ import ForumsPage from '@/features/forums/ForumsPage';
 import EventsPage from '@/features/events/EventsPage';
 import ServicesPage from '@/features/services/ServicesPage';
 import LearnPage from '@/features/learn/LearnPage';
+import SettingsPage from '@/features/settings/SettingsPage';
+import PrivacyDataPage from '@/features/settings/PrivacyDataPage';
 
 import PrivacyPolicy from '@/features/legal/PrivacyPolicy';
 import TermsOfService from '@/features/legal/TermsOfService';
@@ -88,6 +90,8 @@ const App = () => {
           <Route path="events" element={<EventsPage />} />
           <Route path="services" element={<ServicesPage />} />
           <Route path="learn" element={<LearnPage />} />
+          <Route path="settings" element={<SettingsPage />} />
+          <Route path="settings/privacy" element={<PrivacyDataPage />} />
         </Route>
         
         {/* Legal / Privacy (public, no auth required) */}

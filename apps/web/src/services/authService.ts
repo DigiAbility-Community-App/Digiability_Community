@@ -87,5 +87,10 @@ export const authService = {
     } finally {
       useAuthStore.getState().clearAuth();
     }
-  }
+  },
+
+  deleteAccount: async () => {
+    await apiClient.delete('/api/auth/delete-account');
+    useAuthStore.getState().clearAuth();
+  },
 };
