@@ -337,6 +337,7 @@ const ChatScreen = ({ navigation, route }: Props) => {
       content,
       type: "TEXT",
       clientMessageId,
+      senderName: user?.name,
     });
 
     // Re-enable after a brief debounce

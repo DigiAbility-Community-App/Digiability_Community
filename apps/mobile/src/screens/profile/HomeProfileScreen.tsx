@@ -8,7 +8,7 @@ import {
     Linking,
     Platform,
 } from "react-native";
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import { useAuthStore } from "../../store/authStore";
 import { useChatStore } from "../../store/chatStore";
 import { useTheme } from "../../theme/ThemeContext";
@@ -18,6 +18,7 @@ import ScreenWrapper from "../../components/layout/ScreenWrapper";
 import AppHeader from "../../components/layout/AppHeader";
 import { deleteAccount } from "@services/authService";
 import { forumService } from "@services/forumService";
+import { getNotificationPermissionStatus } from "@services/notificationService";
 
 // ─────────────────────────────────────────────
 // Helpers
@@ -99,6 +100,15 @@ const HomeProfileScreen = () => {
     }, []);
 
     useEffect(() => { loadData(); }, [loadData]);
+
+    // Refresh on focus so returning from the OS Settings app (via
+    // handleNotificationsPress's "Open Settings" action below) updates
+    // this row without requiring an app restart.
+    useFocusEffect(
+        useCallback(() => {
+            getNotificationPermissionStatus().then(setNotifStatus);
+        }, [])
+    );
 
     const handleNotificationsPress = async () => {
         if (notifStatus === "granted") {

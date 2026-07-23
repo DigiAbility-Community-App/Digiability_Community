@@ -274,6 +274,7 @@ const GroupChatScreen = ({ navigation, route }: Props) => {
       content,
       type: "TEXT",
       clientMessageId,
+      senderName: user.name,
     });
   }, [messageText, conversationId, user]);
 
@@ -312,6 +313,7 @@ const GroupChatScreen = ({ navigation, route }: Props) => {
         type: "TEXT",
         clientMessageId,
         metadata: JSON.stringify({ sos: true }),
+        senderName: user.name,
       });
     },
     [user, conversationId, addMessage]

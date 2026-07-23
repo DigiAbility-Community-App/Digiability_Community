@@ -16,11 +16,13 @@ import * as ImagePicker from "expo-image-picker";
 import { chatService } from "@services/chatService";
 import { sendSocketMessage } from "@services/socketService";
 import { useChatStore, ChatMessage } from "@store/chatStore";
+import { useAuthStore } from "@store/authStore";
 import { generateUUID } from "../utils/uuid";
 
 export function useChatMedia(conversationId: string, senderId: string | undefined) {
   const addMessage = useChatStore((s) => s.addMessage);
   const removeMessage = useChatStore((s) => s.removeMessage);
+  const senderName = useAuthStore((s) => s.user?.name);
 
   const [isRecording, setIsRecording] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
@@ -53,9 +55,10 @@ export function useChatMedia(conversationId: string, senderId: string | undefine
         type,
         clientMessageId,
         metadata: metaStr,
+        senderName,
       });
     },
-    [conversationId, senderId, addMessage]
+    [conversationId, senderId, addMessage, senderName]
   );
 
   // ── Voice recording ──────────────────────────────────────

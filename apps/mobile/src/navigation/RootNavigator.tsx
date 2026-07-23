@@ -10,6 +10,7 @@ import { getMe } from '@services/authService';
 import { REFRESH_TOKEN_KEY } from '@services/apiClient';
 import { initSocket, closeSocket } from '@services/socketService';
 import { forumSocketService } from '@services/forumSocketService';
+import { registerForPushNotifications, saveDeviceToken } from '@services/notificationService';
 
 // ─────────────────────────────────────────────────────────
 // RootNavigator
@@ -94,6 +95,17 @@ const RootNavigator = () => {
     return () => {
       // Don't close on every unmount, only when auth state changes
     };
+  }, [isAuthenticated, isRestoringSession]);
+
+  // Register for push notifications only once actually logged in — never
+  // pre-login, since /api/auth/device-token requires an authenticated
+  // request. Covers both fresh logins and restored sessions.
+  useEffect(() => {
+    if (isAuthenticated && !isRestoringSession) {
+      registerForPushNotifications().then((token) => {
+        if (token) saveDeviceToken(token);
+      });
+    }
   }, [isAuthenticated, isRestoringSession]);
 
   if (isRestoringSession) {
