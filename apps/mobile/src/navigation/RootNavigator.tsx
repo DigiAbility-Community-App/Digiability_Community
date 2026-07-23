@@ -10,6 +10,7 @@ import { getMe } from '@services/authService';
 import { REFRESH_TOKEN_KEY } from '@services/apiClient';
 import { initSocket, closeSocket } from '@services/socketService';
 import { forumSocketService } from '@services/forumSocketService';
+import { registerForPushNotifications, saveDeviceToken } from '@services/notificationService';
 
 // ─────────────────────────────────────────────────────────
 // RootNavigator
@@ -35,6 +36,7 @@ const RootNavigator = () => {
   const [isRestoringSession, setIsRestoringSession] = useState(true);
 
   const loadAccessibilityPreferences = useAccessibilityStore((s) => s.loadPreferences);
+  const pushNotifEnabled = useAccessibilityStore((s) => s.preferences.pushNotif);
 
   useEffect(() => {
     if (user?.id) {
@@ -95,6 +97,19 @@ const RootNavigator = () => {
       // Don't close on every unmount, only when auth state changes
     };
   }, [isAuthenticated, isRestoringSession]);
+
+  // Register for push notifications only once actually logged in — never
+  // pre-login, since /api/auth/device-token requires an authenticated
+  // request. Covers both fresh logins and restored sessions. Skipped
+  // entirely when the user's Push Notifications accessibility preference
+  // is off.
+  useEffect(() => {
+    if (isAuthenticated && !isRestoringSession && pushNotifEnabled) {
+      registerForPushNotifications().then((token) => {
+        if (token) saveDeviceToken(token);
+      });
+    }
+  }, [isAuthenticated, isRestoringSession, pushNotifEnabled]);
 
   if (isRestoringSession) {
     return (

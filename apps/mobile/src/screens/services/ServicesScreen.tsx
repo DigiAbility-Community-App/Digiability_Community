@@ -101,6 +101,7 @@ export const ServicesScreen = () => {
   const navigation = useNavigation<any>();
   const { colors, spacing, highContrast } = useTheme();
   const [activeCategory, setActiveCategory] = useState("all");
+  const iconMuted = highContrast ? colors.text : "#94A3B8";
 
   const filteredServices = MOCK_SERVICES.filter(
     s => activeCategory === "all" || s.category === activeCategory
@@ -110,7 +111,7 @@ export const ServicesScreen = () => {
     <ScreenWrapper>
       <AppHeader title="Professional Services" hideBackButton={true} />
 
-      <View style={styles.categoriesContainer}>
+      <View style={[styles.categoriesContainer, { backgroundColor: colors.background }]}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoriesScroll}>
           {CATEGORIES.map(cat => {
             const isActive = activeCategory === cat.id;
@@ -119,15 +120,19 @@ export const ServicesScreen = () => {
                 key={cat.id}
                 style={[
                   styles.categoryBtn,
-                  { backgroundColor: isActive ? "#E2D3FD" : colors.card },
-                  isActive && { borderColor: "#9333EA", borderWidth: 1 }
+                  { backgroundColor: isActive ? (highContrast ? "#000000" : "#E2D3FD") : colors.card },
+                  isActive && { borderColor: colors.primary, borderWidth: highContrast ? 2 : 1 }
                 ]}
                 onPress={() => setActiveCategory(cat.id)}
+                accessibilityRole="button"
+                accessibilityState={{ selected: isActive }}
+                accessibilityLabel={cat.label}
+                accessibilityHint={`Filters services by ${cat.label}`}
               >
-                <AccessibleText style={{ 
-                  color: isActive ? "#500088" : colors.text, 
+                <AccessibleText style={{
+                  color: isActive ? (highContrast ? "#FFFFFF" : colors.primary) : colors.text,
                   fontWeight: isActive ? "700" : "500",
-                  fontSize: 14 
+                  fontSize: 14
                 }}>
                   {cat.label}
                 </AccessibleText>
@@ -142,18 +147,18 @@ export const ServicesScreen = () => {
         contentContainerStyle={[styles.scrollContent, { paddingBottom: Platform.OS === "ios" ? 150 : 120 }]}
       >
         {filteredServices.map(service => (
-          <View key={service.id} style={[styles.serviceCard, { backgroundColor: colors.card }]}>
+          <View key={service.id} style={[styles.serviceCard, { backgroundColor: colors.card }, highContrast && { borderWidth: 2, borderColor: "#000000" }]}>
             <View style={styles.serviceHeader}>
-              <View style={styles.providerLogo}>
+              <View style={[styles.providerLogo, { backgroundColor: colors.surface }]}>
                 <AccessibleText style={{ fontSize: 24 }}>{service.logo}</AccessibleText>
               </View>
               <View style={styles.providerInfo}>
                 <View style={styles.nameRow}>
                   <AccessibleText variant="title" style={{ fontSize: 16, flexShrink: 1 }}>{service.name}</AccessibleText>
-                  {service.verified && <ShieldCheck size={16} color="#059669" style={{ marginLeft: 4 }} />}
+                  {service.verified && <ShieldCheck size={16} color={highContrast ? colors.text : "#059669"} style={{ marginLeft: 4 }} />}
                 </View>
-                <View style={styles.typeBadge}>
-                  <AccessibleText style={{ color: "#500088", fontSize: 11, fontWeight: "700" }}>{service.type}</AccessibleText>
+                <View style={[styles.typeBadge, { backgroundColor: highContrast ? colors.surface : "#F3E8FF" }, highContrast && { borderWidth: 1, borderColor: "#000000" }]}>
+                  <AccessibleText style={{ color: colors.primary, fontSize: 11, fontWeight: "700" }}>{service.type}</AccessibleText>
                 </View>
               </View>
             </View>
@@ -164,28 +169,31 @@ export const ServicesScreen = () => {
 
             <View style={styles.metaContainer}>
               <View style={styles.metaRow}>
-                <MapPin size={14} color="#94A3B8" />
+                <MapPin size={14} color={iconMuted} />
                 <AccessibleText style={{ color: colors.subtext, fontSize: 13, marginLeft: 6 }}>{service.location}</AccessibleText>
               </View>
               <View style={styles.metaRow}>
-                <Clock size={14} color="#94A3B8" />
+                <Clock size={14} color={iconMuted} />
                 <AccessibleText style={{ color: colors.subtext, fontSize: 13, marginLeft: 6 }}>{service.availability}</AccessibleText>
               </View>
               <View style={styles.metaRow}>
-                <Star size={14} color="#F59E0B" fill="#F59E0B" />
+                <Star size={14} color={highContrast ? colors.text : "#F59E0B"} fill={highContrast ? colors.text : "#F59E0B"} />
                 <AccessibleText style={{ color: colors.text, fontSize: 13, fontWeight: "600", marginLeft: 6 }}>{service.rating}</AccessibleText>
                 <AccessibleText style={{ color: colors.subtext, fontSize: 13, marginLeft: 4 }}>({service.reviews} reviews)</AccessibleText>
               </View>
             </View>
 
-            <View style={styles.cardFooter}>
+            <View style={[styles.cardFooter, { borderTopColor: colors.border }]}>
               <AccessibleText style={{ color: colors.text, fontSize: 14, fontWeight: "700" }}>{service.price}</AccessibleText>
-              <TouchableOpacity 
-                style={styles.contactBtn}
+              <TouchableOpacity
+                style={[styles.contactBtn, { backgroundColor: colors.primary }]}
                 onPress={() => Alert.alert("Contact", `Initiating contact with ${service.name}...`)}
+                accessibilityRole="button"
+                accessibilityLabel={`Contact ${service.name}`}
+                accessibilityHint="Starts contacting this service provider"
               >
-                <Phone size={14} color="#fff" />
-                <AccessibleText style={{ color: "#fff", fontSize: 13, fontWeight: "700", marginLeft: 6 }}>Contact</AccessibleText>
+                <Phone size={14} color={colors.white} />
+                <AccessibleText style={{ color: colors.white, fontSize: 13, fontWeight: "700", marginLeft: 6 }}>Contact</AccessibleText>
               </TouchableOpacity>
             </View>
           </View>
@@ -200,7 +208,6 @@ export default ServicesScreen;
 const styles = StyleSheet.create({
   categoriesContainer: {
     paddingVertical: 12,
-    backgroundColor: "#FAF8FF",
   },
   categoriesScroll: {
     paddingHorizontal: 20,
@@ -236,7 +243,6 @@ const styles = StyleSheet.create({
     width: 54,
     height: 54,
     borderRadius: 16,
-    backgroundColor: "#F1F5F9",
     justifyContent: "center",
     alignItems: "center",
     marginRight: 14,
@@ -250,7 +256,6 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   typeBadge: {
-    backgroundColor: "#F3E8FF",
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 8,
@@ -269,13 +274,11 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
     borderTopWidth: 1,
-    borderTopColor: "#F1F5F9",
     paddingTop: 16,
   },
   contactBtn: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#500088",
     paddingHorizontal: 16,
     paddingVertical: 10,
     borderRadius: 12,

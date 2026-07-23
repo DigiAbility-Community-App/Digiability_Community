@@ -1,7 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import {
   View,
-  Text,
   StyleSheet,
   Image,
   Animated,
@@ -12,6 +11,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { AuthStackParamList } from '@navigation/AuthNavigator';
 import { useAuthStore } from '@store/authStore';
+import { useTheme } from '../../theme/ThemeContext';
+import { AccessibleText } from '../../components/shared/AccessibleText';
 
 type Props = {
   navigation: NativeStackNavigationProp<AuthStackParamList, 'Splash'>;
@@ -23,13 +24,17 @@ const SplashScreen = ({ navigation }: Props) => {
   const user = useAuthStore((s) => s.user);
   const pendingBanInfo = useAuthStore((s) => s.pendingBanInfo);
   const clearPendingBanInfo = useAuthStore((s) => s.clearPendingBanInfo);
+  const { colors, highContrast, reduceMotion } = useTheme();
 
   const dot1Anim = useRef(new Animated.Value(1)).current;
   const dot2Anim = useRef(new Animated.Value(0.6)).current;
   const dot3Anim = useRef(new Animated.Value(0.3)).current;
 
-  // Loading animation
+  // Loading animation — skipped when Reduce Motion is on; the dots just
+  // render at their static initial opacities instead of pulsing.
   useEffect(() => {
+    if (reduceMotion) return;
+
     const animateDot = (anim: Animated.Value, delay: number) => {
       Animated.loop(
         Animated.sequence([
@@ -51,7 +56,7 @@ const SplashScreen = ({ navigation }: Props) => {
     animateDot(dot1Anim, 0);
     animateDot(dot2Anim, 200);
     animateDot(dot3Anim, 400);
-  }, []);
+  }, [reduceMotion]);
 
   // Navigation
   useEffect(() => {
@@ -70,7 +75,7 @@ const SplashScreen = ({ navigation }: Props) => {
 
   return (
     <LinearGradient
-      colors={['#F9F8FF', '#E9D5FF']}
+      colors={highContrast ? ['#FFFFFF', '#FFFFFF'] : ['#F9F8FF', '#E9D5FF']}
       start={{ x: 0, y: 0 }}
       end={{ x: 1, y: 1 }}
       style={styles.container}
@@ -88,11 +93,11 @@ const SplashScreen = ({ navigation }: Props) => {
         <View style={styles.contentContainer}>
 
           {/* Logo Card */}
-          <View style={styles.logoOuterContainer}>
+          <View style={[styles.logoOuterContainer, highContrast && { borderWidth: 2, borderColor: '#000000' }]}>
             <View style={styles.logoShadow} />
 
             <LinearGradient
-              colors={['#500088', '#6B21A8']}
+              colors={highContrast ? ['#000000', '#000000'] : ['#500088', '#6B21A8']}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
               style={styles.logoInnerContainer}
@@ -106,24 +111,26 @@ const SplashScreen = ({ navigation }: Props) => {
           </View>
 
           {/* Title */}
-          <Text style={styles.title}>DigiAbility</Text>
+          <AccessibleText variant="heroTitle" style={[styles.title, { color: colors.text }]}>
+            DigiAbility
+          </AccessibleText>
 
           {/* Subtitle */}
-          <Text style={styles.tagline}>
+          <AccessibleText variant="subtitle" style={[styles.tagline, { color: colors.subtext }]}>
             Empowering abilities, connecting hearts
-          </Text>
+          </AccessibleText>
         </View>
 
         {/* Loading Dots */}
         <View style={styles.loadingContainer}>
           <Animated.View
-            style={[styles.loadingDot, { opacity: dot1Anim }]}
+            style={[styles.loadingDot, { backgroundColor: colors.secondary, opacity: dot1Anim }]}
           />
           <Animated.View
-            style={[styles.loadingDot, { opacity: dot2Anim }]}
+            style={[styles.loadingDot, { backgroundColor: colors.secondary, opacity: dot2Anim }]}
           />
           <Animated.View
-            style={[styles.loadingDot, { opacity: dot3Anim }]}
+            style={[styles.loadingDot, { backgroundColor: colors.secondary, opacity: dot3Anim }]}
           />
         </View>
       </SafeAreaView>
@@ -231,7 +238,6 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 36,
     fontWeight: '700',
-    color: '#2D1B5E',
     letterSpacing: -0.9,
     lineHeight: 54,
     textAlign: 'center',
@@ -244,7 +250,6 @@ const styles = StyleSheet.create({
   tagline: {
     fontSize: 16,
     fontWeight: '400',
-    color: '#6B7280',
     lineHeight: 26,
     textAlign: 'center',
     maxWidth: 310,
@@ -266,7 +271,6 @@ const styles = StyleSheet.create({
     width: 10,
     height: 10,
     borderRadius: 5,
-    backgroundColor: '#7C3AED',
     marginHorizontal: 6,
   },
 });

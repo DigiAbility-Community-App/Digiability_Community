@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from "react";
 import {
   View,
-  Text,
   StyleSheet,
   TextInput,
   TouchableOpacity,
@@ -17,7 +16,9 @@ import { ArrowLeft, Camera, HelpCircle, X, Check, Mic } from "lucide-react-nativ
 import * as ImagePicker from "expo-image-picker";
 import { Dropdown } from "react-native-element-dropdown";
 import { useForumStore } from "../../store/forumStore";
+import { useTheme } from "../../theme/ThemeContext";
 import { AccessibleText } from "../../components/shared/AccessibleText";
+import { AccessibleButton } from "../../components/shared/AccessibleButton";
 
 const ALLOWED_CATEGORIES = [
   { label: "Healthcare 🏥", value: "Healthcare" },
@@ -34,6 +35,7 @@ const ALLOWED_CATEGORIES = [
 
 const AskQuestionScreen = () => {
   const navigation = useNavigation<any>();
+  const { colors, highContrast } = useTheme();
   const { createQuestion, checkDuplicateQuestions, duplicateSuggestions, clearDuplicateSuggestions, actionLoading } = useForumStore();
 
   const [title, setTitle] = useState("");
@@ -127,36 +129,55 @@ const AskQuestionScreen = () => {
     }
   };
 
+  const accentBorder = highContrast
+    ? { borderWidth: 2, borderColor: "#000000" as const }
+    : { borderWidth: 1, borderColor: "#E9D5FF" as const };
+
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.card }]}>
       {/* HEADER */}
-      <View style={styles.header}>
+      <View style={[styles.header, { borderBottomColor: colors.border }]}>
         <TouchableOpacity
           onPress={() => navigation.goBack()}
           style={styles.backBtn}
           accessibilityRole="button"
           accessibilityLabel="Go back"
         >
-          <ArrowLeft size={24} color="#1A1B20" />
+          <ArrowLeft size={24} color={colors.text} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Ask a Question</Text>
+        <AccessibleText variant="title" style={[styles.headerTitle, { color: colors.text }]}>
+          Ask a Question
+        </AccessibleText>
         <View style={{ width: 40 }} />
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent}>
         {/* HELP TEXT */}
-        <View style={styles.helpCard}>
-          <HelpCircle size={20} color="#7E22CE" style={{ marginRight: 10 }} />
-          <Text style={styles.helpText}>
+        <View
+          style={[
+            styles.helpCard,
+            { backgroundColor: highContrast ? "#FFFFFF" : "#F5F3FF" },
+            accentBorder,
+          ]}
+        >
+          <HelpCircle size={20} color={colors.secondary} style={{ marginRight: 10 }} />
+          <AccessibleText variant="body" style={[styles.helpText, { color: colors.secondary }]}>
             Describe your problem clearly. Other members of the community can upvote or answer your post.
-          </Text>
+          </AccessibleText>
         </View>
 
         {/* TITLE */}
-        <Text style={styles.inputLabel}>Title</Text>
+        <AccessibleText variant="label" style={[styles.inputLabel, { color: colors.text }]}>
+          Title
+        </AccessibleText>
         <TextInput
-          style={styles.textInput}
+          style={[
+            styles.textInput,
+            { backgroundColor: colors.surface, color: colors.text },
+            highContrast && { borderWidth: 1, borderColor: "#000000" },
+          ]}
           placeholder="e.g. Tips for managing evening restlessness?"
+          placeholderTextColor={colors.subtext}
           value={title}
           onChangeText={setTitle}
           accessibilityLabel="Question Title"
@@ -164,11 +185,17 @@ const AskQuestionScreen = () => {
         />
 
         {/* CATEGORY DROPDOWN */}
-        <Text style={styles.inputLabel}>Category</Text>
+        <AccessibleText variant="label" style={[styles.inputLabel, { color: colors.text }]}>
+          Category
+        </AccessibleText>
         <Dropdown
-          style={styles.dropdown}
-          placeholderStyle={styles.placeholderStyle}
-          selectedTextStyle={styles.selectedTextStyle}
+          style={[
+            styles.dropdown,
+            { backgroundColor: colors.surface },
+            highContrast && { borderWidth: 1, borderColor: "#000000" },
+          ]}
+          placeholderStyle={[styles.placeholderStyle, { color: colors.subtext }]}
+          selectedTextStyle={[styles.selectedTextStyle, { color: colors.text }]}
           data={ALLOWED_CATEGORIES}
           maxHeight={300}
           labelField="label"
@@ -181,21 +208,32 @@ const AskQuestionScreen = () => {
 
         {/* DESCRIPTION + VOICE INPUT */}
         <View style={styles.descriptionHeader}>
-          <Text style={styles.inputLabel}>Description</Text>
+          <AccessibleText variant="label" style={[styles.inputLabel, { color: colors.text }]}>
+            Description
+          </AccessibleText>
           <TouchableOpacity
             onPress={handleVoiceTyping}
-            style={styles.voiceBtn}
+            style={[styles.voiceBtn, { backgroundColor: colors.background }, accentBorder]}
             accessibilityRole="button"
             accessibilityLabel="Voice typing — coming soon"
+            accessibilityHint="Dictate your question description using your voice"
           >
-            <Mic size={14} color="#7E22CE" style={{ marginRight: 4 }} />
-            <Text style={styles.voiceBtnText}>Voice Type</Text>
+            <Mic size={14} color={colors.secondary} style={{ marginRight: 4 }} />
+            <AccessibleText variant="caption" style={[styles.voiceBtnText, { color: colors.secondary }]}>
+              Voice Type
+            </AccessibleText>
           </TouchableOpacity>
         </View>
 
         <TextInput
-          style={[styles.textInput, styles.textArea]}
+          style={[
+            styles.textInput,
+            styles.textArea,
+            { backgroundColor: colors.surface, color: colors.text },
+            highContrast && { borderWidth: 1, borderColor: "#000000" },
+          ]}
           placeholder="Provide more context or list things you have tried..."
+          placeholderTextColor={colors.subtext}
           value={description}
           onChangeText={setDescription}
           multiline
@@ -206,10 +244,17 @@ const AskQuestionScreen = () => {
         />
 
         {/* TAGS */}
-        <Text style={styles.inputLabel}>Tags (comma-separated)</Text>
+        <AccessibleText variant="label" style={[styles.inputLabel, { color: colors.text }]}>
+          Tags (comma-separated)
+        </AccessibleText>
         <TextInput
-          style={styles.textInput}
+          style={[
+            styles.textInput,
+            { backgroundColor: colors.surface, color: colors.text },
+            highContrast && { borderWidth: 1, borderColor: "#000000" },
+          ]}
           placeholder="e.g. Autism, Therapy, Parent Help"
+          placeholderTextColor={colors.subtext}
           value={tags}
           onChangeText={setTags}
           accessibilityLabel="Tags input"
@@ -217,45 +262,74 @@ const AskQuestionScreen = () => {
         />
 
         {/* IMAGE PICKER */}
-        <Text style={styles.inputLabel}>Optional Image</Text>
+        <AccessibleText variant="label" style={[styles.inputLabel, { color: colors.text }]}>
+          Optional Image
+        </AccessibleText>
         {imageUri ? (
           <View style={styles.imageSection}>
             <View style={styles.imagePreviewContainer}>
               <Image source={{ uri: imageUri }} style={styles.imagePreview} />
-              <TouchableOpacity style={styles.removeImageBtn} onPress={handleClearImage}>
+              <TouchableOpacity
+                style={styles.removeImageBtn}
+                onPress={handleClearImage}
+                accessibilityRole="button"
+                accessibilityLabel="Remove selected image"
+              >
                 <X size={16} color="#FFFFFF" />
               </TouchableOpacity>
             </View>
 
             {/* ALT TEXT INPUT */}
-            <Text style={styles.altTextLabel}>Alt Text Description (for Screen Readers)</Text>
+            <AccessibleText variant="label" style={[styles.altTextLabel, { color: colors.subtext }]}>
+              Alt Text Description (for Screen Readers)
+            </AccessibleText>
             <TextInput
-              style={styles.altTextInput}
+              style={[
+                styles.altTextInput,
+                { backgroundColor: colors.surface, color: colors.text },
+                highContrast && { borderWidth: 1, borderColor: "#000000" },
+              ]}
               placeholder="e.g., A child playing with sensory toys in a quiet room"
+              placeholderTextColor={colors.subtext}
               value={altText}
               onChangeText={setAltText}
               accessibilityLabel="Image Description Alt Text"
             />
           </View>
         ) : (
-          <TouchableOpacity style={styles.imagePickerBtn} onPress={handlePickImage}>
-            <Camera size={24} color="#6B7280" style={{ marginBottom: 6 }} />
-            <Text style={styles.imagePickerText}>Upload Image</Text>
+          <TouchableOpacity
+            style={[
+              styles.imagePickerBtn,
+              { backgroundColor: colors.surface, borderColor: colors.border },
+              highContrast && { borderStyle: "solid", borderWidth: 2 },
+            ]}
+            onPress={handlePickImage}
+            accessibilityRole="button"
+            accessibilityLabel="Upload image"
+            accessibilityHint="Opens your photo library to attach an image to this question"
+          >
+            <Camera size={24} color={colors.subtext} style={{ marginBottom: 6 }} />
+            <AccessibleText variant="caption" style={[styles.imagePickerText, { color: colors.subtext }]}>
+              Upload Image
+            </AccessibleText>
           </TouchableOpacity>
         )}
 
         {/* SUBMIT BUTTON */}
-        <TouchableOpacity
-          style={styles.submitBtn}
+        <AccessibleButton
+          variant="primary"
+          accessibilityLabel="Post question"
+          accessibilityHint="Submits your question to the community"
+          style={[styles.submitBtn, { shadowColor: colors.primary }]}
           onPress={checkAndSubmit}
           disabled={actionLoading || isCheckingDuplicates}
         >
           {actionLoading || isCheckingDuplicates ? (
             <ActivityIndicator size="small" color="#FFFFFF" />
           ) : (
-            <Text style={styles.submitBtnText}>Post Question</Text>
+            "Post Question"
           )}
-        </TouchableOpacity>
+        </AccessibleButton>
       </ScrollView>
 
       {/* DUPLICATE WARNING MODAL */}
@@ -266,35 +340,53 @@ const AskQuestionScreen = () => {
         onRequestClose={() => setShowDuplicateModal(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Similar Questions Found</Text>
-              <TouchableOpacity onPress={() => setShowDuplicateModal(false)}>
-                <X size={20} color="#6B7280" />
+          <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
+            <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
+              <AccessibleText variant="title" style={[styles.modalTitle, { color: colors.text }]}>
+                Similar Questions Found
+              </AccessibleText>
+              <TouchableOpacity
+                onPress={() => setShowDuplicateModal(false)}
+                accessibilityRole="button"
+                accessibilityLabel="Close similar questions dialog"
+              >
+                <X size={20} color={colors.subtext} />
               </TouchableOpacity>
             </View>
 
-            <Text style={styles.modalSubtitle}>
+            <AccessibleText variant="body" style={[styles.modalSubtitle, { color: colors.subtext }]}>
               We found some existing posts that might already solve your issue:
-            </Text>
+            </AccessibleText>
 
             <ScrollView style={styles.suggestionsScroll}>
               {duplicateSuggestions.map((item) => (
                 <TouchableOpacity
                   key={item.id}
-                  style={styles.suggestionCard}
+                  style={[styles.suggestionCard, { backgroundColor: colors.background }, accentBorder]}
                   onPress={() => {
                     setShowDuplicateModal(false);
                     navigation.navigate("QuestionDetails", { questionId: item.id });
                   }}
+                  accessibilityRole="button"
+                  accessibilityLabel={`View similar discussion: ${item.title}`}
+                  accessibilityHint="Opens this existing discussion instead of posting a new one"
                 >
-                  <Text style={styles.suggestionTitle}>{item.title}</Text>
+                  <AccessibleText variant="body" style={[styles.suggestionTitle, { color: colors.text }]}>
+                    {item.title}
+                  </AccessibleText>
                   <View style={styles.suggestionMeta}>
-                    <Text style={styles.suggestionCategory}>Category: {item.category}</Text>
+                    <AccessibleText variant="caption" style={[styles.suggestionCategory, { color: colors.subtext }]}>
+                      Category: {item.category}
+                    </AccessibleText>
+                    {/* Note: the solved-status green is a semantic status color with no
+                        ThemeColors equivalent, so it is intentionally left as a literal,
+                        consistent with how QuestionDetailsScreen.tsx treats this same color. */}
                     {item.status === "SOLVED" && (
                       <View style={styles.solvedBadge}>
                         <Check size={10} color="#16A34A" />
-                        <Text style={styles.solvedText}>SOLVED</Text>
+                        <AccessibleText variant="overline" style={styles.solvedText}>
+                          SOLVED
+                        </AccessibleText>
                       </View>
                     )}
                   </View>
@@ -303,16 +395,25 @@ const AskQuestionScreen = () => {
             </ScrollView>
 
             <View style={styles.modalActions}>
-              <TouchableOpacity
+              <AccessibleButton
+                variant="outline"
+                accessibilityLabel="Edit my post"
+                accessibilityHint="Close this dialog and keep editing your question"
                 style={styles.modalCancelBtn}
                 onPress={() => setShowDuplicateModal(false)}
               >
-                <Text style={styles.modalCancelBtnText}>Edit My Post</Text>
-              </TouchableOpacity>
+                Edit My Post
+              </AccessibleButton>
 
-              <TouchableOpacity style={styles.modalSubmitBtn} onPress={submitPost}>
-                <Text style={styles.modalSubmitBtnText}>Post Anyway</Text>
-              </TouchableOpacity>
+              <AccessibleButton
+                variant="primary"
+                accessibilityLabel="Post anyway"
+                accessibilityHint="Posts your question even though similar ones already exist"
+                style={styles.modalSubmitBtn}
+                onPress={submitPost}
+              >
+                Post Anyway
+              </AccessibleButton>
             </View>
           </View>
         </View>
@@ -325,8 +426,7 @@ export default AskQuestionScreen;
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
-    backgroundColor: "#FFFFFF"
+    flex: 1
   },
   header: {
     flexDirection: "row",
@@ -334,16 +434,14 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingHorizontal: 16,
     paddingVertical: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: "#EEEDF4"
+    borderBottomWidth: 1
   },
   backBtn: {
     padding: 8
   },
   headerTitle: {
     fontSize: 18,
-    fontWeight: "800",
-    color: "#1A1B20"
+    fontWeight: "800"
   },
   scrollContent: {
     padding: 20
@@ -351,9 +449,6 @@ const styles = StyleSheet.create({
   helpCard: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#F5F3FF",
-    borderWidth: 1,
-    borderColor: "#E9D5FF",
     borderRadius: 16,
     padding: 14,
     marginBottom: 20
@@ -361,14 +456,12 @@ const styles = StyleSheet.create({
   helpText: {
     flex: 1,
     fontSize: 13,
-    color: "#6B21A8",
     lineHeight: 18,
     fontWeight: "500"
   },
   inputLabel: {
     fontSize: 14,
     fontWeight: "700",
-    color: "#4C4452",
     marginBottom: 8
   },
   descriptionHeader: {
@@ -380,51 +473,33 @@ const styles = StyleSheet.create({
   voiceBtn: {
     flexDirection: "row",
     alignItems: "center",
-    borderColor: "#E9D5FF",
-    borderWidth: 1,
     borderRadius: 12,
     paddingHorizontal: 10,
-    paddingVertical: 5,
-    backgroundColor: "#FAF8FF"
-  },
-  voiceBtnRecording: {
-    backgroundColor: "#EF4444",
-    borderColor: "#EF4444"
+    paddingVertical: 5
   },
   voiceBtnText: {
     fontSize: 12,
-    fontWeight: "700",
-    color: "#7E22CE"
-  },
-  voiceBtnTextRecording: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: "#FFFFFF"
+    fontWeight: "700"
   },
   textInput: {
-    backgroundColor: "#F4F3FA",
     borderRadius: 12,
     paddingHorizontal: 16,
     height: 48,
     fontSize: 15,
-    color: "#1A1B20",
     marginBottom: 20,
     fontWeight: "500"
   },
   dropdown: {
-    backgroundColor: "#F4F3FA",
     borderRadius: 12,
     paddingHorizontal: 16,
     height: 48,
     marginBottom: 20
   },
   placeholderStyle: {
-    fontSize: 15,
-    color: "#9CA3AF"
+    fontSize: 15
   },
   selectedTextStyle: {
     fontSize: 15,
-    color: "#1A1B20",
     fontWeight: "500"
   },
   textArea: {
@@ -433,57 +508,32 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
     marginBottom: 16
   },
-  audioPreviewContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    backgroundColor: "#EFF6FF",
-    borderWidth: 1,
-    borderColor: "#BFDBFE",
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 20
-  },
-  audioPreviewText: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: "#1E40AF"
-  },
-  removeAudioBtn: {
-    padding: 4
-  },
   imageSection: {
     marginBottom: 24
   },
   altTextLabel: {
     fontSize: 12,
     fontWeight: "700",
-    color: "#4B5563",
     marginTop: 10,
     marginBottom: 6
   },
   altTextInput: {
-    backgroundColor: "#F3F4F6",
     borderRadius: 10,
     paddingHorizontal: 12,
     height: 40,
-    fontSize: 13,
-    color: "#1F2937"
+    fontSize: 13
   },
   imagePickerBtn: {
     borderWidth: 1,
-    borderColor: "#E5E7EB",
     borderStyle: "dashed",
     borderRadius: 12,
     height: 100,
     justifyContent: "center",
     alignItems: "center",
-    marginBottom: 24,
-    backgroundColor: "#FAF9F6"
+    marginBottom: 24
   },
   imagePickerText: {
     fontSize: 13,
-    color: "#6B7280",
     fontWeight: "600"
   },
   imagePreviewContainer: {
@@ -508,22 +558,13 @@ const styles = StyleSheet.create({
     alignItems: "center"
   },
   submitBtn: {
-    backgroundColor: "#500088",
     borderRadius: 14,
     height: 52,
-    justifyContent: "center",
-    alignItems: "center",
     marginTop: 10,
-    shadowColor: "#500088",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.2,
     shadowRadius: 6,
     elevation: 4
-  },
-  submitBtnText: {
-    color: "#FFFFFF",
-    fontSize: 16,
-    fontWeight: "700"
   },
   modalOverlay: {
     flex: 1,
@@ -533,7 +574,6 @@ const styles = StyleSheet.create({
     padding: 20
   },
   modalContent: {
-    backgroundColor: "#FFFFFF",
     borderRadius: 24,
     width: "100%",
     padding: 20,
@@ -544,18 +584,15 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
     borderBottomWidth: 1,
-    borderBottomColor: "#EEEDF4",
     paddingBottom: 12,
     marginBottom: 14
   },
   modalTitle: {
     fontSize: 18,
-    fontWeight: "800",
-    color: "#1A1B20"
+    fontWeight: "800"
   },
   modalSubtitle: {
     fontSize: 14,
-    color: "#4B5563",
     lineHeight: 20,
     marginBottom: 16
   },
@@ -563,9 +600,6 @@ const styles = StyleSheet.create({
     marginBottom: 20
   },
   suggestionCard: {
-    backgroundColor: "#FAF8FF",
-    borderWidth: 1,
-    borderColor: "#E2D3FD",
     borderRadius: 14,
     padding: 14,
     marginBottom: 10
@@ -573,7 +607,6 @@ const styles = StyleSheet.create({
   suggestionTitle: {
     fontSize: 14,
     fontWeight: "700",
-    color: "#1A1B20",
     lineHeight: 18,
     marginBottom: 8
   },
@@ -584,7 +617,6 @@ const styles = StyleSheet.create({
   },
   suggestionCategory: {
     fontSize: 11,
-    color: "#6B7280",
     fontWeight: "600"
   },
   solvedBadge: {
@@ -608,29 +640,12 @@ const styles = StyleSheet.create({
   modalCancelBtn: {
     flex: 1,
     height: 48,
-    justifyContent: "center",
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
     borderRadius: 12,
     marginRight: 10
   },
-  modalCancelBtnText: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: "#4B5563"
-  },
   modalSubmitBtn: {
     flex: 1,
-    backgroundColor: "#500088",
     height: 48,
-    justifyContent: "center",
-    alignItems: "center",
     borderRadius: 12
-  },
-  modalSubmitBtnText: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: "#FFFFFF"
   }
 });

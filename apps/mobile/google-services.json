@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "428627330619",
+    "project_id": "digiability-community",
+    "storage_bucket": "digiability-community.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:428627330619:android:832570a7a62719c0c27e1e",
+        "android_client_info": {
+          "package_name": "com.digiability.community"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBGH76J_hq3i5Dr35A7Z9EuqYTmPnjn6HY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

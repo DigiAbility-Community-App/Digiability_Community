@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import {
   View,
-  Text,
   StyleSheet,
   TextInput,
   TouchableOpacity,
@@ -15,6 +14,9 @@ import { MainStackParamList } from "../../navigation/MainNavigator";
 import { useAuthStore } from "../../store/authStore";
 import { verifyEmailOtp, resendVerificationOtp } from "../../services/authService";
 import { Ionicons } from "@expo/vector-icons";
+import { useTheme } from "../../theme/ThemeContext";
+import { AccessibleText } from "../../components/shared/AccessibleText";
+import { AccessibleButton } from "../../components/shared/AccessibleButton";
 
 type Props = {
   navigation: NativeStackNavigationProp<MainStackParamList, "VerifyEmail">;
@@ -26,6 +28,7 @@ const RESEND_COOLDOWN_SECONDS = 60;
 const VerifyEmailScreen = ({ navigation }: Props) => {
   const user = useAuthStore((s) => s.user);
   const setUser = useAuthStore((s) => s.setUser);
+  const { colors, highContrast } = useTheme();
 
   const [otp, setOtp] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -113,32 +116,40 @@ const VerifyEmailScreen = ({ navigation }: Props) => {
 
   return (
     <KeyboardAvoidingView
-      style={styles.container}
+      style={[styles.container, { backgroundColor: colors.background }]}
       behavior={Platform.OS === "ios" ? "padding" : "height"}
     >
       <View style={styles.content}>
         <View style={styles.iconContainer}>
-          <Ionicons name="mail-open-outline" size={64} color="#500088" />
+          <Ionicons name="mail-open-outline" size={64} color={colors.primary} />
         </View>
-        <Text style={styles.title}>Verify your email</Text>
-        <Text style={styles.subtitle}>
+        <AccessibleText variant="heroTitle" style={[styles.title, { color: colors.text }]}>
+          Verify your email
+        </AccessibleText>
+        <AccessibleText variant="subtitle" style={[styles.subtitle, { color: colors.subtext }]}>
           We sent a 6-digit code to {user?.email}. Enter it below to verify your account.
-        </Text>
+        </AccessibleText>
 
         {error && (
-          <View style={styles.errorContainer}>
-            <Text style={styles.errorText}>{error}</Text>
+          <View style={[styles.errorContainer, highContrast && { borderWidth: 2, borderColor: "#000000" }]}>
+            <AccessibleText style={styles.errorText} accessibilityRole="alert">{error}</AccessibleText>
           </View>
         )}
 
         {successMsg && (
-          <View style={styles.successContainer}>
-            <Text style={styles.successText}>{successMsg}</Text>
+          <View style={[styles.successContainer, highContrast && { borderWidth: 2, borderColor: "#000000" }]}>
+            <AccessibleText style={styles.successText}>{successMsg}</AccessibleText>
           </View>
         )}
 
         <View style={styles.otpContainer}>
-          <Pressable style={styles.otpBoxes} onPress={() => inputRef.current?.focus()}>
+          <Pressable
+            style={styles.otpBoxes}
+            onPress={() => inputRef.current?.focus()}
+            accessibilityRole="button"
+            accessibilityLabel="OTP input"
+            accessibilityHint="Focuses the one-time code field"
+          >
             {Array.from({ length: OTP_LENGTH }).map((_, index) => {
               const char = otp[index];
               const isCurrent = index === otp.length;
@@ -147,11 +158,13 @@ const VerifyEmailScreen = ({ navigation }: Props) => {
                   key={index}
                   style={[
                     styles.otpBox,
-                    isCurrent && styles.otpBoxActive,
-                    char ? styles.otpBoxFilled : null,
+                    { borderColor: colors.border, backgroundColor: colors.card },
+                    (isCurrent || char) && { borderColor: colors.primary },
+                    isCurrent && { backgroundColor: highContrast ? colors.card : "#F3E8FF" },
+                    highContrast && (isCurrent || char) && { borderWidth: 2 },
                   ]}
                 >
-                  <Text style={styles.otpBoxText}>{char || ""}</Text>
+                  <AccessibleText style={[styles.otpBoxText, { color: colors.text }]}>{char || ""}</AccessibleText>
                 </View>
               );
             })}
@@ -168,33 +181,36 @@ const VerifyEmailScreen = ({ navigation }: Props) => {
               if (error) setError(null);
             }}
             autoFocus
+            accessibilityLabel="Enter 6 digit verification code"
           />
         </View>
 
-        <TouchableOpacity
-          style={[styles.button, (!otp || otp.length < OTP_LENGTH || isLoading) && styles.buttonDisabled]}
+        <AccessibleButton
+          style={styles.button}
           onPress={handleVerify}
           disabled={isLoading || !otp || otp.length < OTP_LENGTH}
+          accessibilityLabel="Verify Email"
+          accessibilityHint="Submits the code to verify your email address"
         >
-          {isLoading ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text style={styles.buttonText}>Verify Email</Text>
-          )}
-        </TouchableOpacity>
+          {isLoading ? <ActivityIndicator color={colors.white} /> : "Verify Email"}
+        </AccessibleButton>
 
         <TouchableOpacity
           style={[styles.resendContainer, !canResend && styles.resendDisabled]}
           onPress={handleResend}
           disabled={!canResend}
+          accessibilityRole="button"
+          accessibilityLabel="Resend OTP"
+          accessibilityHint="Sends a new one-time code to your email"
+          accessibilityState={{ disabled: !canResend }}
         >
-          <Text style={[styles.resendText, !canResend && { color: "#9CA3AF" }]}>
+          <AccessibleText style={[styles.resendText, { color: colors.primary }, !canResend && { color: colors.subtext }]}>
             {isResending
               ? "Sending..."
               : resendCooldown > 0
                 ? `Resend OTP in ${resendCooldown}s`
                 : "Didn't receive code? Resend OTP"}
-          </Text>
+          </AccessibleText>
         </TouchableOpacity>
       </View>
     </KeyboardAvoidingView>
@@ -204,11 +220,11 @@ const VerifyEmailScreen = ({ navigation }: Props) => {
 export default VerifyEmailScreen;
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#F9FAFB" },
+  container: { flex: 1 },
   content: { flex: 1, padding: 24, justifyContent: "center" },
   iconContainer: { alignItems: "center", marginBottom: 24 },
-  title: { fontSize: 28, fontWeight: "700", color: "#1F2937", textAlign: "center", marginBottom: 12 },
-  subtitle: { fontSize: 16, color: "#4B5563", textAlign: "center", marginBottom: 32, lineHeight: 24 },
+  title: { fontSize: 28, textAlign: "center", marginBottom: 12 },
+  subtitle: { fontSize: 16, textAlign: "center", marginBottom: 32, lineHeight: 24 },
   errorContainer: { backgroundColor: "#FEE2E2", padding: 12, borderRadius: 8, marginBottom: 16 },
   errorText: { color: "#DC2626", fontSize: 14, textAlign: "center" },
   successContainer: { backgroundColor: "#D1FAE5", padding: 12, borderRadius: 8, marginBottom: 16 },
@@ -216,17 +232,13 @@ const styles = StyleSheet.create({
   otpContainer: { marginBottom: 32, alignItems: "center" },
   otpBoxes: { flexDirection: "row", justifyContent: "space-between", width: "100%", paddingHorizontal: 10 },
   otpBox: {
-    width: 48, height: 56, borderWidth: 1.5, borderColor: "#E5E7EB",
-    borderRadius: 12, backgroundColor: "#fff", justifyContent: "center", alignItems: "center",
+    width: 48, height: 56, borderWidth: 1.5,
+    borderRadius: 12, justifyContent: "center", alignItems: "center",
   },
-  otpBoxActive: { borderColor: "#500088", backgroundColor: "#F3E8FF" },
-  otpBoxFilled: { borderColor: "#500088" },
-  otpBoxText: { fontSize: 24, fontWeight: "600", color: "#1F2937" },
+  otpBoxText: { fontSize: 24, fontWeight: "600" },
   hiddenInput: { position: "absolute", width: 1, height: 1, opacity: 0 },
-  button: { backgroundColor: "#500088", paddingVertical: 16, borderRadius: 12, alignItems: "center" },
-  buttonDisabled: { backgroundColor: "#A78BFA" },
-  buttonText: { color: "#fff", fontSize: 18, fontWeight: "600" },
+  button: { paddingVertical: 16, borderRadius: 12 },
   resendContainer: { marginTop: 24, alignItems: "center" },
   resendDisabled: { opacity: 0.6 },
-  resendText: { color: "#500088", fontSize: 16, fontWeight: "600" },
+  resendText: { fontSize: 16, fontWeight: "600" },
 });

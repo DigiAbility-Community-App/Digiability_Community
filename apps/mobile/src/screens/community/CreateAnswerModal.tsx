@@ -1,7 +1,6 @@
 import React, { useState } from "react";
 import {
   View,
-  Text,
   StyleSheet,
   Modal,
   TextInput,
@@ -12,6 +11,9 @@ import {
 } from "react-native";
 import { Camera, X } from "lucide-react-native";
 import * as ImagePicker from "expo-image-picker";
+import { useTheme } from "../../theme/ThemeContext";
+import { AccessibleText } from "../../components/shared/AccessibleText";
+import { AccessibleButton } from "../../components/shared/AccessibleButton";
 
 interface CreateAnswerModalProps {
   visible: boolean;
@@ -26,6 +28,7 @@ const CreateAnswerModal = ({
   onSubmit,
   loading
 }: CreateAnswerModalProps) => {
+  const { colors, highContrast } = useTheme();
   const [content, setContent] = useState("");
   const [imageUri, setImageUri] = useState<string | null>(null);
 
@@ -64,20 +67,33 @@ const CreateAnswerModal = ({
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View style={styles.overlay}>
-        <View style={styles.modalContent}>
+        <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
           {/* HEADER */}
-          <View style={styles.header}>
-            <Text style={styles.title}>Post an Answer</Text>
-            <TouchableOpacity onPress={onClose} disabled={loading} style={styles.closeBtn}>
-              <X size={20} color="#6B7280" />
+          <View style={[styles.header, { borderBottomColor: colors.border }]}>
+            <AccessibleText variant="title" style={[styles.title, { color: colors.text }]}>
+              Post an Answer
+            </AccessibleText>
+            <TouchableOpacity
+              onPress={onClose}
+              disabled={loading}
+              style={styles.closeBtn}
+              accessibilityRole="button"
+              accessibilityLabel="Close"
+              accessibilityHint="Closes this dialog without posting an answer"
+            >
+              <X size={20} color={colors.subtext} />
             </TouchableOpacity>
           </View>
 
           {/* INPUT */}
           <TextInput
-            style={styles.textArea}
+            style={[
+              styles.textArea,
+              { backgroundColor: colors.surface, color: colors.text },
+              highContrast && { borderWidth: 1, borderColor: "#000000" },
+            ]}
             placeholder="Write your advice, solution, or experience..."
-            placeholderTextColor="#9CA3AF"
+            placeholderTextColor={colors.subtext}
             value={content}
             onChangeText={setContent}
             multiline
@@ -95,38 +111,51 @@ const CreateAnswerModal = ({
                 style={styles.removeImageBtn}
                 onPress={handleClearImage}
                 disabled={loading}
+                accessibilityRole="button"
+                accessibilityLabel="Remove attached image"
               >
                 <X size={14} color="#FFFFFF" />
               </TouchableOpacity>
             </View>
           ) : (
-            <TouchableOpacity style={styles.attachImageBtn} onPress={handlePickImage} disabled={loading}>
-              <Camera size={20} color="#6B7280" style={{ marginRight: 8 }} />
-              <Text style={styles.attachImageText}>Attach photo</Text>
+            <TouchableOpacity
+              style={[styles.attachImageBtn, { backgroundColor: colors.surface }]}
+              onPress={handlePickImage}
+              disabled={loading}
+              accessibilityRole="button"
+              accessibilityLabel="Attach photo"
+              accessibilityHint="Opens your photo library to attach an image to your answer"
+            >
+              <Camera size={20} color={colors.subtext} style={{ marginRight: 8 }} />
+              <AccessibleText variant="caption" style={[styles.attachImageText, { color: colors.subtext }]}>
+                Attach photo
+              </AccessibleText>
             </TouchableOpacity>
           )}
 
           {/* ACTIONS */}
           <View style={styles.actions}>
-            <TouchableOpacity
-              style={[styles.btn, styles.cancelBtn]}
+            <AccessibleButton
+              variant="outline"
+              accessibilityLabel="Cancel"
+              accessibilityHint="Closes this dialog without posting an answer"
+              style={styles.btn}
               onPress={onClose}
               disabled={loading}
             >
-              <Text style={styles.cancelBtnText}>Cancel</Text>
-            </TouchableOpacity>
+              Cancel
+            </AccessibleButton>
 
-            <TouchableOpacity
-              style={[styles.btn, styles.submitBtn]}
+            <AccessibleButton
+              variant="primary"
+              accessibilityLabel="Submit answer"
+              accessibilityHint="Posts your answer to this discussion"
+              style={styles.btn}
               onPress={handleSend}
               disabled={loading}
             >
-              {loading ? (
-                <ActivityIndicator size="small" color="#FFFFFF" />
-              ) : (
-                <Text style={styles.submitBtnText}>Submit Answer</Text>
-              )}
-            </TouchableOpacity>
+              {loading ? <ActivityIndicator size="small" color="#FFFFFF" /> : "Submit Answer"}
+            </AccessibleButton>
           </View>
         </View>
       </View>
@@ -143,7 +172,6 @@ const styles = StyleSheet.create({
     justifyContent: "flex-end"
   },
   modalContent: {
-    backgroundColor: "#FFFFFF",
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
     padding: 24,
@@ -156,24 +184,20 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 16,
     paddingBottom: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: "#F3F4F6"
+    borderBottomWidth: 1
   },
   title: {
     fontSize: 18,
-    fontWeight: "800",
-    color: "#1A1B20"
+    fontWeight: "800"
   },
   closeBtn: {
     padding: 4
   },
   textArea: {
-    backgroundColor: "#F4F3FA",
     borderRadius: 14,
     padding: 16,
     height: 120,
     fontSize: 15,
-    color: "#1A1B20",
     fontWeight: "500",
     marginBottom: 16
   },
@@ -181,7 +205,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     alignSelf: "flex-start",
-    backgroundColor: "#F4F3FA",
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 10,
@@ -189,8 +212,7 @@ const styles = StyleSheet.create({
   },
   attachImageText: {
     fontSize: 13,
-    fontWeight: "700",
-    color: "#4B5563"
+    fontWeight: "700"
   },
   imagePreviewContainer: {
     position: "relative",
@@ -223,25 +245,6 @@ const styles = StyleSheet.create({
   btn: {
     flex: 1,
     height: 48,
-    borderRadius: 12,
-    justifyContent: "center",
-    alignItems: "center"
-  },
-  cancelBtn: {
-    borderWidth: 1,
-    borderColor: "#E5E7EB"
-  },
-  submitBtn: {
-    backgroundColor: "#500088"
-  },
-  cancelBtnText: {
-    fontSize: 15,
-    fontWeight: "700",
-    color: "#4B5563"
-  },
-  submitBtnText: {
-    fontSize: 15,
-    fontWeight: "700",
-    color: "#FFFFFF"
+    borderRadius: 12
   }
 });

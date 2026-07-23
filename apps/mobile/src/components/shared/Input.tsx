@@ -4,11 +4,11 @@ import {
   TextInput,
   TextInputProps,
   StyleSheet,
-  AccessibilityInfo,
   ViewStyle,
 } from 'react-native';
 import { useTheme } from '../../theme/ThemeContext';
 import { AccessibleText } from './AccessibleText';
+import { useScreenReaderAnnounce } from '../../hooks/useScreenReaderAnnounce';
 
 export interface InputProps extends TextInputProps {
   label?: string;
@@ -32,13 +32,15 @@ export const Input: React.FC<InputProps> = ({
 }) => {
   const { colors, spacing, maxFontSizeMultiplier, highContrast } = useTheme();
   const [isFocused, setIsFocused] = useState(false);
+  const announce = useScreenReaderAnnounce();
 
-  // Announce errors automatically to screen readers
+  // Announce errors to screen readers, only when the user has the
+  // Screen Reader accessibility preference enabled.
   useEffect(() => {
     if (error) {
-      AccessibilityInfo.announceForAccessibility(`Error in input field: ${error}`);
+      announce(`Error in input field: ${error}`);
     }
-  }, [error]);
+  }, [error, announce]);
 
   const handleFocus = (e: any) => {
     setIsFocused(true);

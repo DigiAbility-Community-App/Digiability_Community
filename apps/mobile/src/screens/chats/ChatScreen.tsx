@@ -1,7 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import {
   View,
-  Text,
   StyleSheet,
   FlatList,
   TouchableOpacity,
@@ -28,6 +27,8 @@ import { ConfirmDialog } from "../../components/chat/ConfirmDialog";
 import ScreenWrapper from "../../components/layout/ScreenWrapper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Send, ArrowLeft, MoreVertical, Paperclip, Mic, Image as ImageIcon, Smile, Check, CheckCheck, Plus, Square, Phone, Trash2, Volume2, Flag, Ban, CircleCheck, TriangleAlert, User } from "lucide-react-native";
+import { useTheme } from "../../theme/ThemeContext";
+import { AccessibleText } from "../../components/shared/AccessibleText";
 
 // ─────────────────────────────────────────────────────────
 // 1:1 Chat Screen — Direct Message Thread
@@ -144,6 +145,7 @@ function formatLastSeen(iso: string): string {
 const ChatScreen = ({ navigation, route }: Props) => {
   const { conversationId, recipientName, recipientAvatar, isOnline } = route.params;
   const insets = useSafeAreaInsets();
+  const { colors, highContrast } = useTheme();
   const user = useAuthStore((s) => s.user);
   const storeMessages = useChatStore((s) => s.messages[conversationId] || []);
   const setMessages = useChatStore((s) => s.setMessages);
@@ -337,6 +339,7 @@ const ChatScreen = ({ navigation, route }: Props) => {
       content,
       type: "TEXT",
       clientMessageId,
+      senderName: user?.name,
     });
 
     // Re-enable after a brief debounce
@@ -452,7 +455,7 @@ const ChatScreen = ({ navigation, route }: Props) => {
   const renderStatusIcon = (status: string) => {
     switch (status) {
       case "sending":
-        return <Text style={styles.statusIcon}>...</Text>;
+        return <AccessibleText variant="caption" style={styles.statusIcon}>...</AccessibleText>;
       case "sent":
         return <Check size={14} color="rgba(255,255,255,0.8)" style={{ marginLeft: 4 }} />;
       case "delivered":
@@ -502,9 +505,14 @@ const ChatScreen = ({ navigation, route }: Props) => {
     if ((item as Message).isDateSeparator) {
       return (
         <View style={styles.dateSeparator}>
-          <View style={styles.dateLine} />
-          <Text style={styles.dateText}>{(item as Message).content}</Text>
-          <View style={styles.dateLine} />
+          <View style={[styles.dateLine, { backgroundColor: dateLineColor }]} />
+          <AccessibleText
+            variant="caption"
+            style={[styles.dateText, { color: colors.primary, backgroundColor: colors.surface }, cardBorder]}
+          >
+            {(item as Message).content}
+          </AccessibleText>
+          <View style={[styles.dateLine, { backgroundColor: dateLineColor }]} />
         </View>
       );
     }
@@ -525,32 +533,41 @@ const ChatScreen = ({ navigation, route }: Props) => {
           activeOpacity={0.8}
           onLongPress={() => handleMessageLongPress(item as ChatMessage)}
           delayLongPress={300}
+          accessibilityRole="button"
+          accessibilityLabel={isMine ? "Your message" : `Message from ${recipientName}`}
+          accessibilityHint="Double tap and hold for message options"
           style={[
             styles.messageBubble,
             isMine ? styles.myBubble : styles.theirBubble,
+            isMine
+              ? { backgroundColor: colors.primary }
+              : { backgroundColor: colors.card, shadowColor: colors.primary },
+            !isMine && cardBorder,
           ]}
         >
           {item.type === "IMAGE" || item.type === "AUDIO" ? (
             <MessageMedia message={item as ChatMessage} isMine={isMine} />
           ) : (
-            <Text
+            <AccessibleText
+              variant="body"
               style={[
                 styles.messageText,
-                isMine ? styles.myMessageText : styles.theirMessageText,
+                { color: isMine ? colors.white : colors.text },
               ]}
             >
               {item.content}
-            </Text>
+            </AccessibleText>
           )}
           <View style={styles.messageFooter}>
-            <Text
+            <AccessibleText
+              variant="caption"
               style={[
                 styles.messageTime,
-                isMine ? styles.myMessageTime : styles.theirMessageTime,
+                { color: isMine ? "rgba(255,255,255,0.65)" : colors.subtext },
               ]}
             >
               {timeString}
-            </Text>
+            </AccessibleText>
             {isMine && renderStatusIcon(item.status)}
           </View>
         </TouchableOpacity>
@@ -558,36 +575,58 @@ const ChatScreen = ({ navigation, route }: Props) => {
     );
   };
 
+  // ── Theme-derived, high-contrast-aware colors ───────────────
+  // Standard card outline so white cards/bubbles stay visible against a
+  // (also white, under high contrast) screen background.
+  const cardBorder = highContrast
+    ? { borderWidth: 2, borderColor: "#000000" }
+    : { borderWidth: 1, borderColor: "rgba(0,0,0,0.05)" };
+  // Date-separator divider — a light tint of primary normally, solid-ish
+  // black under high contrast so it doesn't disappear against the bg.
+  const dateLineColor = highContrast ? "rgba(0,0,0,0.3)" : "rgba(138,56,245,0.15)";
+  // Typing-indicator dots — swap the soft lavender for black under HC.
+  const typingDotColor = highContrast ? "#000000" : "#C4B5FD";
+
   return (
     <ScreenWrapper withBottomSafeArea={false}>
       {/* ── Header — paddingTop uses insets so it clears the translucent status bar */}
-      <View style={[styles.header, { paddingTop: insets.top + 10 }]}>
+      <View style={[styles.header, { paddingTop: insets.top + 10, backgroundColor: colors.primary }]}>
         <TouchableOpacity
           style={styles.backBtn}
           onPress={() => navigation.goBack()}
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
+          accessibilityHint="Returns to the conversation list"
         >
-          <ArrowLeft size={24} color="#fff" strokeWidth={2.2} />
+          <ArrowLeft size={24} color={colors.white} strokeWidth={2.2} />
         </TouchableOpacity>
 
         <View style={styles.headerProfile}>
           <View style={styles.headerAvatarContainer}>
             <View style={styles.headerAvatar}>
               {recipientAvatar ? (
-                <Text style={styles.headerAvatarEmoji}>{recipientAvatar}</Text>
+                <AccessibleText style={styles.headerAvatarEmoji}>{recipientAvatar}</AccessibleText>
               ) : (
-                <User size={22} color="#fff" strokeWidth={2} />
+                <User size={22} color={colors.white} strokeWidth={2} />
               )}
             </View>
             {(peerPresence?.status === "online" || (!peerPresence && isOnline)) && (
-              <View style={styles.headerOnlineDot} />
+              <View style={[styles.headerOnlineDot, { borderColor: colors.primary }]} />
             )}
           </View>
 
           <View style={styles.headerInfo}>
-            <Text style={styles.headerName} numberOfLines={1}>
+            <AccessibleText
+              variant="title"
+              style={[styles.headerName, { color: colors.white }]}
+              numberOfLines={1}
+            >
               {recipientName}
-            </Text>
-            <Text style={styles.headerStatus}>
+            </AccessibleText>
+            <AccessibleText
+              variant="caption"
+              style={[styles.headerStatus, { color: "rgba(255,255,255,0.7)" }]}
+            >
               {someoneTyping
                 ? "typing…"
                 : peerPresence?.status === "online"
@@ -597,13 +636,18 @@ const ChatScreen = ({ navigation, route }: Props) => {
                 : isOnline
                 ? "Online"
                 : "Offline"}
-            </Text>
+            </AccessibleText>
           </View>
         </View>
 
         <View style={styles.headerActions}>
-          <TouchableOpacity style={styles.headerActionBtn}>
-            <Phone size={20} color="#fff" strokeWidth={2} />
+          <TouchableOpacity
+            style={styles.headerActionBtn}
+            accessibilityRole="button"
+            accessibilityLabel="Call"
+            accessibilityHint="Voice calling is not yet available"
+          >
+            <Phone size={20} color={colors.white} strokeWidth={2} />
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.headerActionBtn}
@@ -611,7 +655,7 @@ const ChatScreen = ({ navigation, route }: Props) => {
             accessibilityRole="button"
             accessibilityLabel="More options"
           >
-            <MoreVertical size={20} color="#fff" strokeWidth={2} />
+            <MoreVertical size={20} color={colors.white} strokeWidth={2} />
           </TouchableOpacity>
         </View>
       </View>
@@ -632,11 +676,11 @@ const ChatScreen = ({ navigation, route }: Props) => {
               ListHeaderComponent={
                 someoneTyping ? (
                   <View style={styles.typingContainer}>
-                    <View style={styles.typingBubble}>
+                    <View style={[styles.typingBubble, { backgroundColor: colors.card, shadowColor: colors.primary }, cardBorder]}>
                       <View style={styles.typingDots}>
-                        <View style={[styles.typingDot, styles.typingDot1]} />
-                        <View style={[styles.typingDot, styles.typingDot2]} />
-                        <View style={[styles.typingDot, styles.typingDot3]} />
+                        <View style={[styles.typingDot, { backgroundColor: typingDotColor }, styles.typingDot1]} />
+                        <View style={[styles.typingDot, { backgroundColor: typingDotColor }, styles.typingDot2]} />
+                        <View style={[styles.typingDot, { backgroundColor: typingDotColor }, styles.typingDot3]} />
                       </View>
                     </View>
                   </View>
@@ -646,55 +690,72 @@ const ChatScreen = ({ navigation, route }: Props) => {
 
             {/* ── Composer ───────────────────────────────────────── */}
             {media.isRecording && (
-              <View style={styles.recordingBar}>
-                <Text style={styles.recordingText}>● Recording… tap ⏹ to send</Text>
-                <TouchableOpacity onPress={media.cancelRecording}>
-                  <Text style={styles.recordingCancel}>Cancel</Text>
+              <View style={[styles.recordingBar, { backgroundColor: colors.card }, cardBorder]}>
+                <AccessibleText variant="body" style={[styles.recordingText, { color: colors.error }]}>
+                  ● Recording… tap ⏹ to send
+                </AccessibleText>
+                <TouchableOpacity
+                  onPress={media.cancelRecording}
+                  accessibilityRole="button"
+                  accessibilityLabel="Cancel recording"
+                >
+                  <AccessibleText variant="body" style={[styles.recordingCancel, { color: colors.subtext }]}>
+                    Cancel
+                  </AccessibleText>
                 </TouchableOpacity>
               </View>
             )}
             <View style={[styles.composer, { paddingBottom: Math.max(insets.bottom, 10) }]}>
-              <View style={styles.composerCard}>
+              <View style={[styles.composerCard, { backgroundColor: colors.card, shadowColor: colors.secondary }, cardBorder]}>
                 <TouchableOpacity
                   style={styles.plusBtn}
                   onPress={media.pickImage}
                   disabled={media.isUploading}
+                  accessibilityRole="button"
                   accessibilityLabel="Attach image"
+                  accessibilityHint="Opens your photo library to attach an image"
                 >
                   {media.isUploading
-                    ? <ActivityIndicator size="small" color="#7C3AED" />
-                    : <Plus size={24} color="#7C3AED" strokeWidth={2.5} />}
+                    ? <ActivityIndicator size="small" color={colors.primary} />
+                    : <Plus size={24} color={colors.primary} strokeWidth={2.5} />}
                 </TouchableOpacity>
 
-                <View style={styles.inputPill}>
+                <View style={[styles.inputPill, { backgroundColor: colors.surface }, cardBorder]}>
                   <TextInput
-                    style={styles.textInput}
+                    style={[styles.textInput, { color: colors.text }]}
                     placeholder="Type a message..."
-                    placeholderTextColor="#9A93A8"
+                    placeholderTextColor={colors.subtext}
                     value={messageText}
                     onChangeText={handleTextChange}
                     multiline
                     maxLength={5000}
+                    accessibilityLabel="Message input"
                   />
                 </View>
 
                 <TouchableOpacity
-                  style={[styles.micBtn, media.isRecording && styles.micBtnRecording]}
+                  style={[
+                    styles.micBtn,
+                    media.isRecording && [styles.micBtnRecording, { backgroundColor: colors.error }],
+                  ]}
                   onPress={() => (media.isRecording ? media.stopAndSendRecording() : media.startRecording())}
+                  accessibilityRole="button"
                   accessibilityLabel={media.isRecording ? "Stop and send voice note" : "Record voice note"}
                 >
                   {media.isRecording
-                    ? <Square size={16} color="#fff" fill="#fff" />
-                    : <Mic size={20} color="#fff" />}
+                    ? <Square size={16} color={colors.white} fill={colors.white} />
+                    : <Mic size={20} color={colors.white} />}
                 </TouchableOpacity>
 
                 <TouchableOpacity
-                  style={[styles.sendCircle, !messageText.trim() && styles.sendCircleDisabled]}
+                  style={[styles.sendCircle, { backgroundColor: colors.primary }, !messageText.trim() && styles.sendCircleDisabled]}
                   onPress={handleSend}
                   disabled={!messageText.trim()}
+                  accessibilityRole="button"
                   accessibilityLabel="Send message"
+                  accessibilityHint="Sends the typed message"
                 >
-                  <Send size={19} color="#fff" />
+                  <Send size={19} color={colors.white} />
                 </TouchableOpacity>
               </View>
             </View>
@@ -713,11 +774,11 @@ const ChatScreen = ({ navigation, route }: Props) => {
               ListHeaderComponent={
                 someoneTyping ? (
                   <View style={styles.typingContainer}>
-                    <View style={styles.typingBubble}>
+                    <View style={[styles.typingBubble, { backgroundColor: colors.card, shadowColor: colors.primary }, cardBorder]}>
                       <View style={styles.typingDots}>
-                        <View style={[styles.typingDot, styles.typingDot1]} />
-                        <View style={[styles.typingDot, styles.typingDot2]} />
-                        <View style={[styles.typingDot, styles.typingDot3]} />
+                        <View style={[styles.typingDot, { backgroundColor: typingDotColor }, styles.typingDot1]} />
+                        <View style={[styles.typingDot, { backgroundColor: typingDotColor }, styles.typingDot2]} />
+                        <View style={[styles.typingDot, { backgroundColor: typingDotColor }, styles.typingDot3]} />
                       </View>
                     </View>
                   </View>
@@ -727,55 +788,72 @@ const ChatScreen = ({ navigation, route }: Props) => {
 
             {/* ── Composer ───────────────────────────────────────── */}
             {media.isRecording && (
-              <View style={styles.recordingBar}>
-                <Text style={styles.recordingText}>● Recording… tap ⏹ to send</Text>
-                <TouchableOpacity onPress={media.cancelRecording}>
-                  <Text style={styles.recordingCancel}>Cancel</Text>
+              <View style={[styles.recordingBar, { backgroundColor: colors.card }, cardBorder]}>
+                <AccessibleText variant="body" style={[styles.recordingText, { color: colors.error }]}>
+                  ● Recording… tap ⏹ to send
+                </AccessibleText>
+                <TouchableOpacity
+                  onPress={media.cancelRecording}
+                  accessibilityRole="button"
+                  accessibilityLabel="Cancel recording"
+                >
+                  <AccessibleText variant="body" style={[styles.recordingCancel, { color: colors.subtext }]}>
+                    Cancel
+                  </AccessibleText>
                 </TouchableOpacity>
               </View>
             )}
             <View style={[styles.composer, { paddingBottom: Math.max(insets.bottom, 10) }]}>
-              <View style={styles.composerCard}>
+              <View style={[styles.composerCard, { backgroundColor: colors.card, shadowColor: colors.secondary }, cardBorder]}>
                 <TouchableOpacity
                   style={styles.plusBtn}
                   onPress={media.pickImage}
                   disabled={media.isUploading}
+                  accessibilityRole="button"
                   accessibilityLabel="Attach image"
+                  accessibilityHint="Opens your photo library to attach an image"
                 >
                   {media.isUploading
-                    ? <ActivityIndicator size="small" color="#7C3AED" />
-                    : <Plus size={24} color="#7C3AED" strokeWidth={2.5} />}
+                    ? <ActivityIndicator size="small" color={colors.primary} />
+                    : <Plus size={24} color={colors.primary} strokeWidth={2.5} />}
                 </TouchableOpacity>
 
-                <View style={styles.inputPill}>
+                <View style={[styles.inputPill, { backgroundColor: colors.surface }, cardBorder]}>
                   <TextInput
-                    style={styles.textInput}
+                    style={[styles.textInput, { color: colors.text }]}
                     placeholder="Type a message..."
-                    placeholderTextColor="#9A93A8"
+                    placeholderTextColor={colors.subtext}
                     value={messageText}
                     onChangeText={handleTextChange}
                     multiline
                     maxLength={5000}
+                    accessibilityLabel="Message input"
                   />
                 </View>
 
                 <TouchableOpacity
-                  style={[styles.micBtn, media.isRecording && styles.micBtnRecording]}
+                  style={[
+                    styles.micBtn,
+                    media.isRecording && [styles.micBtnRecording, { backgroundColor: colors.error }],
+                  ]}
                   onPress={() => (media.isRecording ? media.stopAndSendRecording() : media.startRecording())}
+                  accessibilityRole="button"
                   accessibilityLabel={media.isRecording ? "Stop and send voice note" : "Record voice note"}
                 >
                   {media.isRecording
-                    ? <Square size={16} color="#fff" fill="#fff" />
-                    : <Mic size={20} color="#fff" />}
+                    ? <Square size={16} color={colors.white} fill={colors.white} />
+                    : <Mic size={20} color={colors.white} />}
                 </TouchableOpacity>
 
                 <TouchableOpacity
-                  style={[styles.sendCircle, !messageText.trim() && styles.sendCircleDisabled]}
+                  style={[styles.sendCircle, { backgroundColor: colors.primary }, !messageText.trim() && styles.sendCircleDisabled]}
                   onPress={handleSend}
                   disabled={!messageText.trim()}
+                  accessibilityRole="button"
                   accessibilityLabel="Send message"
+                  accessibilityHint="Sends the typed message"
                 >
-                  <Send size={19} color="#fff" />
+                  <Send size={19} color={colors.white} />
                 </TouchableOpacity>
               </View>
             </View>
@@ -852,7 +930,6 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#8A38F5",
     paddingHorizontal: 12,
     // paddingTop is now dynamic via insets (set inline)
     paddingBottom: 12,
@@ -902,18 +979,15 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     backgroundColor: "#22C55E",
     borderWidth: 2,
-    borderColor: "#8A38F5",
   },
   headerInfo: {
     flex: 1,
   },
   headerName: {
-    color: "#fff",
     fontSize: 16,
     fontWeight: "700",
   },
   headerStatus: {
-    color: "rgba(255,255,255,0.7)",
     fontSize: 12,
     marginTop: 1,
   },
@@ -950,14 +1024,11 @@ const styles = StyleSheet.create({
   dateLine: {
     flex: 1,
     height: 1,
-    backgroundColor: "rgba(138,56,245,0.15)",
   },
   dateText: {
     marginHorizontal: 12,
     fontSize: 12,
-    color: "#8A38F5",
     fontWeight: "600",
-    backgroundColor: "#EDE9FE",
     paddingHorizontal: 12,
     paddingVertical: 4,
     borderRadius: 10,
@@ -981,13 +1052,10 @@ const styles = StyleSheet.create({
     borderRadius: 18,
   },
   myBubble: {
-    backgroundColor: "#8A38F5",
     borderBottomRightRadius: 6,
   },
   theirBubble: {
-    backgroundColor: "#fff",
     borderBottomLeftRadius: 6,
-    shadowColor: "#8A38F5",
     shadowOpacity: 0.06,
     shadowOffset: { width: 0, height: 2 },
     shadowRadius: 6,
@@ -996,12 +1064,6 @@ const styles = StyleSheet.create({
   messageText: {
     fontSize: 15,
     lineHeight: 21,
-  },
-  myMessageText: {
-    color: "#fff",
-  },
-  theirMessageText: {
-    color: "#1a1a1a",
   },
   messageFooter: {
     flexDirection: "row",
@@ -1012,12 +1074,6 @@ const styles = StyleSheet.create({
   },
   messageTime: {
     fontSize: 11,
-  },
-  myMessageTime: {
-    color: "rgba(255,255,255,0.65)",
-  },
-  theirMessageTime: {
-    color: "#aaa",
   },
   statusIcon: {
     fontSize: 12,
@@ -1033,12 +1089,10 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   typingBubble: {
-    backgroundColor: "#fff",
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderRadius: 18,
     borderBottomLeftRadius: 6,
-    shadowColor: "#8A38F5",
     shadowOpacity: 0.06,
     shadowOffset: { width: 0, height: 2 },
     shadowRadius: 6,
@@ -1052,7 +1106,6 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: "#C4B5FD",
   },
   typingDot1: { opacity: 0.4 },
   typingDot2: { opacity: 0.7 },
@@ -1067,12 +1120,10 @@ const styles = StyleSheet.create({
   composerCard: {
     flexDirection: "row",
     alignItems: "flex-end",
-    backgroundColor: "#fff",
     borderRadius: 30,
     paddingVertical: 7,
     paddingHorizontal: 8,
     gap: 7,
-    shadowColor: "#6B21A8",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.1,
     shadowRadius: 12,
@@ -1086,16 +1137,13 @@ const styles = StyleSheet.create({
     marginBottom: 6,
     paddingHorizontal: 16,
     paddingVertical: 8,
-    backgroundColor: "#fff",
     borderRadius: 20,
   },
   recordingText: {
-    color: "#dc2626",
     fontSize: 13,
     fontWeight: "600",
   },
   recordingCancel: {
-    color: "#666",
     fontSize: 13,
     fontWeight: "600",
   },
@@ -1110,14 +1158,12 @@ const styles = StyleSheet.create({
     flex: 1,
     minHeight: 44,
     maxHeight: 120,
-    backgroundColor: "#F1EFF6",
     borderRadius: 22,
     paddingHorizontal: 16,
     justifyContent: "center",
   },
   textInput: {
     fontSize: 15,
-    color: "#1a1a1a",
     paddingVertical: Platform.OS === "ios" ? 12 : 8,
     maxHeight: 110,
   },
@@ -1130,17 +1176,17 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   micBtnRecording: {
-    backgroundColor: "#dc2626",
+    // backgroundColor now themed inline (colors.error) so it stays a
+    // clear "recording/alert" red in both normal and high-contrast modes.
   },
   sendCircle: {
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: "#7C3AED",
     alignItems: "center",
     justifyContent: "center",
   },
   sendCircleDisabled: {
-    backgroundColor: "#CBB8ED",
+    opacity: 0.45,
   },
 });

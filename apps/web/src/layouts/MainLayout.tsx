@@ -123,7 +123,12 @@ const MainLayout = () => {
         </div>
 
         <div className="sidebar-bottom">
-          <button className="nav-item" aria-label="Settings" title="Settings">
+          <button
+            className="nav-item"
+            aria-label="Settings"
+            title="Settings"
+            onClick={() => navigate('/app/settings')}
+          >
             <Settings size={22} />
           </button>
           

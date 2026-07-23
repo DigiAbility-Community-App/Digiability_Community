@@ -287,8 +287,8 @@ const WelcomeScreen = ({ navigation }: Props) => {
 
         {/* ERROR */}
         {error && (
-          <View style={styles.errorBanner}>
-            <AccessibleText variant="body" color="#C62828" accessibilityRole="alert">
+          <View style={[styles.errorBanner, highContrast && { borderWidth: 2, borderColor: "#000000" }]}>
+            <AccessibleText variant="body" color={colors.error} accessibilityRole="alert">
               ⚠️ {error}
             </AccessibleText>
           </View>
@@ -326,20 +326,20 @@ const WelcomeScreen = ({ navigation }: Props) => {
 
             {/* Phone Number — split: fixed +91 | digit input */}
             <View style={styles.phoneContainer}>
-              <Text style={styles.phoneLabel}>Phone Number (optional)</Text>
-              <View style={styles.phoneWrapper}>
+              <AccessibleText style={[styles.phoneLabel, { color: colors.subtext }]}>Phone Number (optional)</AccessibleText>
+              <View style={[styles.phoneWrapper, { backgroundColor: colors.surface, borderColor: colors.border }, highContrast && { borderWidth: 2, borderColor: "#000000" }]}>
                 {/* Static country code section */}
-                <View style={styles.phonePrefix}
+                <View style={[styles.phonePrefix, { backgroundColor: highContrast ? colors.card : "#EDEAF8" }]}
                   accessible={true}
                   accessibilityLabel="Country code India plus 91"
                 >
-                  <Text style={styles.phonePrefixText}>+91</Text>
+                  <AccessibleText style={[styles.phonePrefixText, { color: colors.subtext }]}>+91</AccessibleText>
                 </View>
                 {/* Divider */}
-                <View style={styles.phoneDivider} />
+                <View style={[styles.phoneDivider, { backgroundColor: colors.border }]} />
                 {/* Phone number digit section */}
                 <TextInput
-                  style={styles.phoneInput}
+                  style={[styles.phoneInput, { color: colors.text }]}
                   placeholder="XXXXX XXXXX"
                   placeholderTextColor="rgba(126,115,131,0.5)"
                   value={signUpPhone}
@@ -468,11 +468,6 @@ const WelcomeScreen = ({ navigation }: Props) => {
 export default WelcomeScreen;
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#FAF8FF",
-  },
-
   // PHONE INPUT
   phoneContainer: {
     width: '100%',
@@ -481,7 +476,6 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     fontSize: 12,
     fontFamily: 'Inter-SemiBold',
-    color: '#4B4558',
     marginBottom: 6,
     letterSpacing: 0.5,
   },
@@ -490,8 +484,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#E2DFF0',
-    backgroundColor: '#F4F3FA',
     overflow: 'hidden',
     minHeight: 48,
   },
@@ -500,24 +492,20 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#EDEAF8',
   },
   phonePrefixText: {
     fontSize: 16,
     fontFamily: 'Inter-SemiBold',
-    color: '#4B4558',
     letterSpacing: 0.5,
   },
   phoneDivider: {
     width: 1,
     height: '60%',
-    backgroundColor: '#C8C3DC',
   },
   phoneInput: {
     flex: 1,
     fontSize: 16,
     fontFamily: 'Inter-Regular',
-    color: '#1A1625',
     paddingHorizontal: 14,
     paddingVertical: 14,
     minHeight: 48,

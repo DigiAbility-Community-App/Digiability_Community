@@ -141,8 +141,8 @@ const ForgotPasswordScreen = ({ navigation }: Props) => {
         >
           {/* Error */}
           {error ? (
-            <View style={styles.errorBox}>
-              <AccessibleText variant="body" color={colors.error ?? "#BA1A1A"}>
+            <View style={[styles.errorBox, { borderLeftColor: colors.error }, highContrast && { backgroundColor: "#FFFFFF", borderWidth: 2, borderColor: "#000000" }]}>
+              <AccessibleText variant="body" color={colors.error} accessibilityRole="alert">
                 {error}
               </AccessibleText>
             </View>
@@ -274,7 +274,6 @@ const styles = StyleSheet.create({
     padding: 12,
     marginBottom: 16,
     borderLeftWidth: 4,
-    borderLeftColor: "#BA1A1A",
   },
   fieldLabel: {
     marginBottom: 6,

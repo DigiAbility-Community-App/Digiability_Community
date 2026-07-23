@@ -1,7 +1,6 @@
 import React, { useState, useCallback } from "react";
 import {
   View,
-  Text,
   StyleSheet,
   TouchableOpacity,
   Alert,
@@ -9,7 +8,6 @@ import {
   ScrollView,
 } from "react-native";
 
-import { LinearGradient } from "expo-linear-gradient";
 import {
   useNavigation,
   useFocusEffect,
@@ -19,6 +17,9 @@ import { useAuthStore } from "@store/authStore";
 import { logout } from "@services/authService";
 import SafeScreen from "../../components/layout/SafeScreen";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useTheme } from "../../theme/ThemeContext";
+import { AccessibleText } from "../../components/shared/AccessibleText";
+import { AccessibleButton } from "../../components/shared/AccessibleButton";
 
 // -------------------------
 // ROLE TYPES
@@ -82,6 +83,7 @@ const roles = [
 
 const RoleSelectionScreen = () => {
   const insets = useSafeAreaInsets();
+  const { colors, highContrast } = useTheme();
   // -------------------------
   // STATES
   // -------------------------
@@ -179,22 +181,30 @@ const RoleSelectionScreen = () => {
     navigation.navigate("Profile");
   };
 
+  const cardBorder = highContrast
+    ? { borderWidth: 2, borderColor: "#000000" }
+    : { borderWidth: 1, borderColor: "rgba(0,0,0,0.05)" };
+
   return (
     <SafeScreen
       bottom={false}
       statusBarStyle="dark"
+      style={{ backgroundColor: colors.background }}
     >
 
       {/* HEADER */}
-      <View style={styles.header}>
+      <View style={[styles.header, { backgroundColor: colors.background }]}>
         {/* BACK */}
         <TouchableOpacity
           style={styles.backButton}
           onPress={handleBack}
+          accessibilityRole="button"
+          accessibilityLabel="Go Back"
+          accessibilityHint="Returns to the previous screen"
         >
-          <Text style={styles.backIcon}>
+          <AccessibleText style={[styles.backIcon, { color: colors.secondary }]}>
             ←
-          </Text>
+          </AccessibleText>
         </TouchableOpacity>
 
         {/* PROGRESS */}
@@ -204,27 +214,28 @@ const RoleSelectionScreen = () => {
           }
         >
           <View
-            style={
-              styles.inactiveDot
-            }
+            style={[
+              styles.inactiveDot,
+              highContrast && { backgroundColor: "#000000" },
+            ]}
           />
 
           <View
-            style={
-              styles.activeBar
-            }
+            style={[styles.activeBar, { backgroundColor: colors.secondary }]}
           />
 
           <View
-            style={
-              styles.inactiveDot
-            }
+            style={[
+              styles.inactiveDot,
+              highContrast && { backgroundColor: "#000000" },
+            ]}
           />
 
           <View
-            style={
-              styles.inactiveDot
-            }
+            style={[
+              styles.inactiveDot,
+              highContrast && { backgroundColor: "#000000" },
+            ]}
           />
         </View>
       </View>
@@ -244,15 +255,16 @@ const RoleSelectionScreen = () => {
             styles.headingSection
           }
         >
-          <Text style={styles.title}>
+          <AccessibleText variant="title" style={[styles.title, { color: colors.text }]}>
             I am a...
-          </Text>
+          </AccessibleText>
 
-          <Text
-            style={styles.subtitle}
+          <AccessibleText
+            variant="body"
+            style={[styles.subtitle, { color: colors.subtext }]}
           >
             Select the role that best describes you.
-          </Text>
+          </AccessibleText>
         </View>
 
         {/* ROLE GRID */}
@@ -267,30 +279,36 @@ const RoleSelectionScreen = () => {
                 activeOpacity={0.85}
                 style={[
                   styles.card,
+                  { backgroundColor: colors.card },
+                  cardBorder,
 
                   isSelected &&
-                  styles.selectedCard,
+                  (highContrast
+                    ? { backgroundColor: "#000000", borderWidth: 2, borderColor: colors.secondary }
+                    : styles.selectedCard),
                 ]}
                 onPress={() =>
                   handleRoleSelect(
                     role.id as RoleType
                   )
                 }
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: isSelected }}
+                accessibilityLabel={role.title}
+                accessibilityHint={`${role.subtitle}. Double tap to ${isSelected ? "deselect" : "select"} this role`}
               >
                 {/* CHECK */}
                 {isSelected && (
                   <View
-                    style={
-                      styles.checkCircle
-                    }
+                    style={[styles.checkCircle, { backgroundColor: colors.secondary }]}
                   >
-                    <Text
+                    <AccessibleText
                       style={
                         styles.checkText
                       }
                     >
                       ✓
-                    </Text>
+                    </AccessibleText>
                   </View>
                 )}
 
@@ -300,42 +318,47 @@ const RoleSelectionScreen = () => {
                     styles.iconWrap
                   }
                 >
-                  <Text
-                    style={
-                      styles.icon
-                    }
+                  <AccessibleText
+                    style={[
+                      styles.icon,
+                      { color: highContrast && isSelected ? colors.white : colors.secondary },
+                    ]}
                   >
                     {role.icon}
-                  </Text>
+                  </AccessibleText>
                 </View>
 
                 {/* TITLE */}
-                <Text
-                  style={
-                    styles.cardTitle
-                  }
+                <AccessibleText
+                  variant="title"
+                  style={[
+                    styles.cardTitle,
+                    { color: highContrast && isSelected ? colors.white : colors.text },
+                  ]}
                 >
                   {role.title}
-                </Text>
+                </AccessibleText>
 
                 {/* SUBTITLE */}
-                <Text
-                  style={
-                    styles.cardSubtitle
-                  }
+                <AccessibleText
+                  variant="body"
+                  style={[
+                    styles.cardSubtitle,
+                    { color: highContrast && isSelected ? colors.white : colors.subtext },
+                  ]}
                 >
                   {role.subtitle}
-                </Text>
+                </AccessibleText>
               </TouchableOpacity>
             );
           })}
         </View>
 
         {/* NOTE */}
-        <Text style={styles.note}>
+        <AccessibleText variant="body" style={[styles.note, { color: colors.subtext }]}>
           You can update your roles
           anytime in Profile
-        </Text>
+        </AccessibleText>
 
         <View
           style={{ height: 120 }}
@@ -343,27 +366,15 @@ const RoleSelectionScreen = () => {
       </ScrollView>
 
       {/* FOOTER */}
-      <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 20) }]}>
-        <TouchableOpacity
-          activeOpacity={0.9}
+      <View style={[styles.footer, { backgroundColor: colors.background, paddingBottom: Math.max(insets.bottom, 20) }]}>
+        <AccessibleButton
+          accessibilityLabel="Continue"
+          accessibilityHint="Saves your selected roles and proceeds to the next step"
+          style={styles.button}
           onPress={handleContinue}
         >
-          <LinearGradient
-            colors={[
-              "#6B21A8",
-              "#7E22CE",
-            ]}
-            style={styles.button}
-          >
-            <Text
-                style={
-                  styles.buttonText
-                }
-              >
-                Continue
-              </Text>
-          </LinearGradient>
-        </TouchableOpacity>
+          Continue
+        </AccessibleButton>
       </View>
     </SafeScreen>
   );
@@ -377,12 +388,6 @@ export default RoleSelectionScreen;
 
 const styles =
   StyleSheet.create({
-    container: {
-      flex: 1,
-      backgroundColor:
-        "#F5F5F5",
-    },
-
     // HEADER
     header: {
       height: 64,
@@ -393,8 +398,6 @@ const styles =
       alignItems: "center",
 
       paddingHorizontal: 24,
-      backgroundColor:
-        "#F5F5F5",
     },
 
     backButton: {
@@ -408,7 +411,6 @@ const styles =
 
     backIcon: {
       fontSize: 24,
-      color: "#6B21A8",
       fontWeight: "700",
     },
 
@@ -422,8 +424,6 @@ const styles =
       width: 24,
       height: 8,
       borderRadius: 999,
-      backgroundColor:
-        "#7E22CE",
     },
 
     inactiveDot: {
@@ -447,14 +447,11 @@ const styles =
 
     title: {
       fontSize: 24,
-      fontWeight: "700",
-      color: "#1A1B20",
       marginBottom: 6,
     },
 
     subtitle: {
       fontSize: 16,
-      color: "#666",
       lineHeight: 24,
     },
 
@@ -470,9 +467,6 @@ const styles =
       width: "47%",
 
       minHeight: 132,
-
-      backgroundColor:
-        "#FFFFFF",
 
       borderRadius: 20,
 
@@ -523,9 +517,6 @@ const styles =
 
       borderRadius: 999,
 
-      backgroundColor:
-        "#8A38F5",
-
       justifyContent:
         "center",
       alignItems: "center",
@@ -543,13 +534,10 @@ const styles =
 
     icon: {
       fontSize: 34,
-      color: "#8A38F5",
     },
 
     cardTitle: {
       fontSize: 16,
-      fontWeight: "700",
-      color: "#1A1B20",
 
       textAlign: "center",
 
@@ -561,8 +549,6 @@ const styles =
       lineHeight: 18,
 
       textAlign: "center",
-
-      color: "#666",
     },
 
     // NOTE
@@ -572,7 +558,6 @@ const styles =
       textAlign: "center",
 
       fontSize: 14,
-      color: "#666",
     },
 
     // FOOTER
@@ -585,34 +570,10 @@ const styles =
       paddingHorizontal: 24,
       paddingBottom: 30,
       paddingTop: 20,
-
-      backgroundColor:
-        "#F5F5F5",
     },
 
     button: {
       height: 60,
-
       borderRadius: 16,
-
-      justifyContent:
-        "center",
-      alignItems: "center",
-
-      shadowColor: "#6B21A8",
-      shadowOpacity: 0.3,
-      shadowRadius: 12,
-      shadowOffset: {
-        width: 0,
-        height: 6,
-      },
-
-      elevation: 8,
-    },
-
-    buttonText: {
-      color: "#FFFFFF",
-      fontSize: 20,
-      fontWeight: "700",
     },
   });

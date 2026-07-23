@@ -36,7 +36,7 @@ export const AppFooter: React.FC<AppFooterProps> = ({
   navigation,
 }) => {
   const standaloneNavigation = useNavigation<any>();
-  const { colors, highContrast, spacing } = useTheme();
+  const { colors, highContrast, spacing, reduceMotion } = useTheme();
 
   // Tab definitions
   const tabs = [
@@ -106,15 +106,21 @@ export const AppFooter: React.FC<AppFooterProps> = ({
   const animX = useRef(new Animated.Value(activeIndex >= 0 ? activeIndex : 0)).current;
 
   useEffect(() => {
-    if (activeIndex >= 0) {
-      Animated.spring(animX, {
-        toValue: activeIndex,
-        useNativeDriver: true,
-        tension: 40,
-        friction: 8,
-      }).start();
+    if (activeIndex < 0) return;
+
+    if (reduceMotion) {
+      // Snap instantly instead of spring-animating the sliding pill.
+      animX.setValue(activeIndex);
+      return;
     }
-  }, [activeIndex]);
+
+    Animated.spring(animX, {
+      toValue: activeIndex,
+      useNativeDriver: true,
+      tension: 40,
+      friction: 8,
+    }).start();
+  }, [activeIndex, reduceMotion]);
 
   const handlePress = (tab: (typeof tabs)[number]) => {
     if (tab.id === activeTabName) return;

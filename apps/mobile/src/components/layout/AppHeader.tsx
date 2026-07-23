@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect } from "react";
 import {
   View,
   StyleSheet,
@@ -12,6 +12,7 @@ import { ArrowLeft, Bell } from "lucide-react-native";
 import { useNavigation } from "@react-navigation/native";
 import { useTheme } from "../../theme/ThemeContext";
 import { AccessibleText } from "../shared/AccessibleText";
+import { useScreenReaderAnnounce } from "../../hooks/useScreenReaderAnnounce";
 
 export interface AppHeaderProps {
   /**
@@ -77,6 +78,15 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<any>();
   const { colors, spacing, highContrast, reduceMotion } = useTheme();
+  const announce = useScreenReaderAnnounce();
+
+  // Speaks the screen title on mount/change — a spoken screen-transition
+  // cue, gated behind the Screen Reader accessibility preference.
+  useEffect(() => {
+    if (title) {
+      announce(title);
+    }
+  }, [title, announce]);
 
   // Dynamic Theme Styling
   const headerBgColor = highContrast ? "#000000" : colors.primary;

@@ -11,6 +11,7 @@ import CareCircleScreen from '@screens/profile/CareCircleScreen';
 import CreateCareCircleScreen from '@screens/profile/CreateCareCircleScreen';
 import NotificationsScreen from '@screens/home/NotificationScreen';
 import EditProfileScreen from '@screens/profile/EditProfileScreen';
+import PrivacyDataScreen from '@screens/profile/PrivacyDataScreen';
 import ChatsStack from './ChatsStack';
 import AskQuestionScreen from '@screens/community/AskQuestionScreen';
 import QuestionDetailsScreen from '@screens/community/QuestionDetailsScreen';
@@ -34,6 +35,7 @@ export type MainStackParamList = {
   Chats: undefined;
   Notifications: undefined;
   EditProfile: undefined;
+  PrivacyData: undefined;
   AskQuestion: undefined;
   QuestionDetails: { questionId: string };
   SolvedQuestions: undefined;
@@ -172,6 +174,7 @@ const MainNavigator = () => {
       <Stack.Screen name="Chats" component={ChatsStack} />
       <Stack.Screen name="Notifications" component={NotificationsScreen} />
       <Stack.Screen name="EditProfile" component={EditProfileScreen} />
+      <Stack.Screen name="PrivacyData" component={PrivacyDataScreen} />
       <Stack.Screen name="AskQuestion" component={AskQuestionScreen} />
       <Stack.Screen name="QuestionDetails" component={QuestionDetailsScreen} />
       <Stack.Screen name="SolvedQuestions" component={SolvedQuestionsScreen} />

@@ -1,6 +1,7 @@
 import * as SecureStore from 'expo-secure-store';
 import apiClient, { REFRESH_TOKEN_KEY, cancelPendingRequests } from './apiClient';
 import { useAuthStore, AuthUser } from '@store/authStore';
+import { removeDeviceToken } from './notificationService';
 
 // ─────────────────────────────────────────────────────────
 // Auth Service
@@ -149,6 +150,14 @@ export async function login(input: LoginInput): Promise<AuthUser> {
 // ── Logout ─────────────────────────────────────────────────
 
 export async function logout(): Promise<void> {
+  // Must run before clearAuth() below — DELETE /api/auth/device-token needs
+  // the still-valid bearer token from the auth store.
+  try {
+    await removeDeviceToken();
+  } catch {
+    // Best-effort — never block logout on this.
+  }
+
   // H11: Clear local auth state FIRST to prevent any in-flight responses
   // writing stale data to the store after logout.
   useAuthStore.getState().clearAuth();

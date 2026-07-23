@@ -1,7 +1,6 @@
 import React, { useState, useCallback, useEffect } from "react";
 import {
   View,
-  Text,
   StyleSheet,
   FlatList,
   TouchableOpacity,
@@ -23,6 +22,9 @@ import ScreenWrapper from "../../components/layout/ScreenWrapper";
 import AppHeader from "../../components/layout/AppHeader";
 import AppFooter from "../../components/layout/AppFooter";
 import { Mail, SquarePen, Search, Users, Accessibility, User, Bot, X, MessageCircle } from "lucide-react-native";
+import { useTheme } from "../../theme/ThemeContext";
+import { AccessibleText } from "../../components/shared/AccessibleText";
+import { AccessibleButton } from "../../components/shared/AccessibleButton";
 
 // ─────────────────────────────────────────────────────────
 // Conversation List Screen
@@ -66,6 +68,7 @@ interface Conversation {
 const ConversationListScreen = ({ navigation: propNavigation, isTab = false, directOnly = false }: Props) => {
   const localNavigation = useNavigation<any>();
   const navigation = propNavigation || localNavigation;
+  const { colors, highContrast } = useTheme();
   const user = useAuthStore((s) => s.user);
   const storeConversations = useChatStore((s) => {
     const seen = new Set<string>();
@@ -78,7 +81,7 @@ const ConversationListScreen = ({ navigation: propNavigation, isTab = false, dir
   const setConversations = useChatStore((s) => s.setConversations);
   const pendingInvites = useChatStore((s) => s.pendingInvites);
   const setPendingInvites = useChatStore((s) => s.setPendingInvites);
-  
+
   const [searchQuery, setSearchQuery] = useState("");
   const [activeFilter, setActiveFilter] = useState<"All" | "Direct" | "Groups" | "Care Circles">("All");
   const [isLoading, setIsLoading] = useState(true);
@@ -238,71 +241,87 @@ const ConversationListScreen = ({ navigation: propNavigation, isTab = false, dir
     }
   };
 
+  // ── Theme-derived, high-contrast-aware card outline ─────────
+  // Keeps white cards/rows visible against a (also white, under high
+  // contrast) screen background — same convention as ChatScreen.tsx.
+  const cardBorder = highContrast
+    ? { borderWidth: 2, borderColor: "#000000" }
+    : { borderWidth: 1, borderColor: "rgba(0,0,0,0.05)" };
+
   const renderConversation = ({ item }: { item: Conversation }) => (
     <TouchableOpacity
-      style={styles.conversationItem}
+      style={[styles.conversationItem, { backgroundColor: colors.card, shadowColor: colors.primary }, cardBorder]}
       onPress={() => handleConversationPress(item)}
       activeOpacity={0.7}
+      accessibilityRole="button"
+      accessibilityLabel={`${item.name}${item.unread > 0 ? `, ${item.unread} unread` : ""}`}
+      accessibilityHint="Opens this conversation"
     >
       {/* Avatar */}
       <View style={styles.avatarContainer}>
         <View
           style={[
             styles.avatar,
-            item.type === "GROUP" && styles.groupAvatar,
+            { backgroundColor: colors.background },
+            item.type === "GROUP" && [styles.groupAvatar, { backgroundColor: colors.surface }],
           ]}
         >
           {item.type === "GROUP"
             ? (item.subType === "CARE_CIRCLE"
-                ? <Accessibility size={24} color="#8A38F5" strokeWidth={2} />
-                : <Users size={24} color="#8A38F5" strokeWidth={2} />)
+                ? <Accessibility size={24} color={colors.primary} strokeWidth={2} />
+                : <Users size={24} color={colors.primary} strokeWidth={2} />)
             : (item.name === "DigiBot"
-                ? <Bot size={24} color="#8A38F5" strokeWidth={2} />
-                : <User size={24} color="#8A38F5" strokeWidth={2} />)}
+                ? <Bot size={24} color={colors.primary} strokeWidth={2} />
+                : <User size={24} color={colors.primary} strokeWidth={2} />)}
         </View>
         {item.isOnline && item.type === "DIRECT" && (
-          <View style={styles.onlineDot} />
+          <View style={[styles.onlineDot, { borderColor: colors.card }]} />
         )}
       </View>
 
       {/* Content */}
       <View style={styles.conversationContent}>
         <View style={styles.conversationTop}>
-          <Text style={styles.conversationName} numberOfLines={1}>
+          <AccessibleText variant="subtitle" style={[styles.conversationName, { color: colors.text }]} numberOfLines={1}>
             {item.name}
-          </Text>
-          <Text
+          </AccessibleText>
+          <AccessibleText
+            variant="caption"
             style={[
               styles.conversationTime,
-              item.unread > 0 && styles.conversationTimeActive,
+              { color: colors.subtext },
+              item.unread > 0 && [styles.conversationTimeActive, { color: colors.primary }],
             ]}
           >
             {item.time}
-          </Text>
+          </AccessibleText>
         </View>
         <View style={styles.conversationBottom}>
-          <Text style={styles.lastMessage} numberOfLines={1}>
+          <AccessibleText variant="body" style={[styles.lastMessage, { color: colors.subtext }]} numberOfLines={1}>
             {item.lastMessage}
-          </Text>
+          </AccessibleText>
           {item.unread > 0 && (
-            <View style={styles.unreadBadge}>
-              <Text style={styles.unreadText}>
+            /* colors.primary already resolves to black under high contrast,
+               so it stays visible against the always-white card background
+               without needing a separate high-contrast override. */
+            <View style={[styles.unreadBadge, { backgroundColor: colors.primary }]}>
+              <AccessibleText variant="caption" style={[styles.unreadText, { color: colors.white }]}>
                 {item.unread > 99 ? "99+" : item.unread}
-              </Text>
+              </AccessibleText>
             </View>
           )}
         </View>
         {item.type === "GROUP" && (
-          <Text style={styles.memberCount}>
+          <AccessibleText variant="caption" style={[styles.memberCount, { color: colors.subtext }]}>
             {item.memberCount} members
-          </Text>
+          </AccessibleText>
         )}
       </View>
     </TouchableOpacity>
   );
 
   const renderBody = () => (
-    <View style={[styles.container, isTab && { backgroundColor: "#FAF8FF" }]}>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
       {!isTab && (
         <AppHeader
           title="Messages"
@@ -315,14 +334,16 @@ const ConversationListScreen = ({ navigation: propNavigation, isTab = false, dir
                 accessibilityLabel="Pending Invites"
                 activeOpacity={0.7}
               >
-                <Mail size={22} color="#fff" strokeWidth={2} />
+                <Mail size={22} color={colors.white} strokeWidth={2} />
                 {pendingInvites.length > 0 && (
-                  <View style={styles.inviteBadge}>
-                    <Text style={styles.inviteBadgeText}>{pendingInvites.length}</Text>
+                  <View style={[styles.inviteBadge, { borderColor: colors.primary }]}>
+                    <AccessibleText variant="caption" style={[styles.inviteBadgeText, { color: colors.white }]}>
+                      {pendingInvites.length}
+                    </AccessibleText>
                   </View>
                 )}
               </TouchableOpacity>
-              
+
               <TouchableOpacity
                 style={styles.newChatTouch}
                 onPress={handleNewAction}
@@ -330,7 +351,7 @@ const ConversationListScreen = ({ navigation: propNavigation, isTab = false, dir
                 accessibilityLabel="New Chat"
                 activeOpacity={0.7}
               >
-                <SquarePen size={22} color="#fff" strokeWidth={2} />
+                <SquarePen size={22} color={colors.white} strokeWidth={2} />
               </TouchableOpacity>
             </View>
           }
@@ -339,64 +360,76 @@ const ConversationListScreen = ({ navigation: propNavigation, isTab = false, dir
       {/* ── Content Container (Search Bar moved into body flow for safe spacing) ── */}
       <View style={[
         styles.headerBodyFlow,
-        isTab 
-          ? { backgroundColor: "#FFFFFF", borderBottomWidth: 1, borderBottomColor: "#EEEDF4", paddingTop: 14 } 
-          : { backgroundColor: "#8A38F5" }
+        isTab
+          ? { backgroundColor: colors.card, borderBottomWidth: 1, borderBottomColor: colors.border, paddingTop: 14 }
+          : { backgroundColor: colors.primary }
       ]}>
         {unreadChats > 0 && (
-          <Text style={[
-            styles.headerSubtitleBody,
-            isTab ? { color: "#500088", marginBottom: 8 } : { color: "rgba(255,255,255,0.85)" }
-          ]}>
+          <AccessibleText
+            variant="caption"
+            style={[
+              styles.headerSubtitleBody,
+              isTab ? { color: colors.primary, marginBottom: 8 } : { color: "rgba(255,255,255,0.85)" }
+            ]}
+          >
             {unreadChats} unread chat{unreadChats !== 1 ? "s" : ""}
-          </Text>
+          </AccessibleText>
         )}
         <View style={[
           styles.searchContainer,
-          isTab ? { backgroundColor: "#F4F3FA" } : { backgroundColor: "rgba(255,255,255,0.15)" }
+          isTab ? { backgroundColor: colors.surface } : { backgroundColor: "rgba(255,255,255,0.15)" }
         ]}>
-          <Search size={16} color={isTab ? "#9A93A8" : "rgba(255,255,255,0.7)"} strokeWidth={2} style={styles.searchIcon} />
+          <Search size={16} color={isTab ? colors.subtext : "rgba(255,255,255,0.7)"} strokeWidth={2} style={styles.searchIcon} />
           <TextInput
             style={[
               styles.searchInput,
-              isTab ? { color: "#1A1B20" } : { color: "#fff" }
+              isTab ? { color: colors.text } : { color: colors.white }
             ]}
             placeholder="Search conversations..."
-            placeholderTextColor={isTab ? "#9CA3AF" : "rgba(255,255,255,0.6)"}
+            placeholderTextColor={isTab ? colors.subtext : "rgba(255,255,255,0.6)"}
             value={searchQuery}
             onChangeText={setSearchQuery}
             autoCapitalize="none"
             autoCorrect={false}
+            accessibilityLabel="Search conversations"
           />
           {searchQuery.length > 0 && (
-            <TouchableOpacity onPress={() => setSearchQuery("")}>
-              <X size={16} color={isTab ? "#6B7280" : "rgba(255,255,255,0.85)"} strokeWidth={2.4} />
+            <TouchableOpacity
+              onPress={() => setSearchQuery("")}
+              accessibilityRole="button"
+              accessibilityLabel="Clear search"
+            >
+              <X size={16} color={isTab ? colors.subtext : "rgba(255,255,255,0.85)"} strokeWidth={2.4} />
             </TouchableOpacity>
           )}
         </View>
       </View>
 
       {/* ── Filter Tabs — hidden when directOnly (Chats tab shows DMs only) */}
-      {!directOnly && <View style={[styles.filterContainer, isTab && { backgroundColor: "#FAF8FF" }]}>
+      {!directOnly && <View style={[styles.filterContainer, isTab && { backgroundColor: colors.background }]}>
         {(["All", "Direct", "Care Circles", "Groups"] as const).map((filter) => (
           <TouchableOpacity
             key={filter}
             style={[
               styles.filterTab,
-              activeFilter === filter && styles.filterTabActive,
-              isTab && activeFilter !== filter && { backgroundColor: "#FFFFFF", borderColor: "#EEEDF4" }
+              { backgroundColor: colors.card, borderColor: colors.border },
+              activeFilter === filter && { backgroundColor: colors.primary, borderColor: colors.primary },
             ]}
             onPress={() => setActiveFilter(filter)}
+            accessibilityRole="button"
+            accessibilityLabel={`Filter: ${filter}`}
+            accessibilityState={{ selected: activeFilter === filter }}
           >
-            <Text
+            <AccessibleText
+              variant="body"
               style={[
                 styles.filterText,
-                activeFilter === filter && styles.filterTextActive,
-                isTab && activeFilter !== filter && { color: "#4C4452" }
+                { color: colors.subtext },
+                activeFilter === filter && { color: colors.white },
               ]}
             >
               {filter}
-            </Text>
+            </AccessibleText>
           </TouchableOpacity>
         ))}
       </View>}
@@ -410,41 +443,51 @@ const ConversationListScreen = ({ navigation: propNavigation, isTab = false, dir
         showsVerticalScrollIndicator={false}
         ListEmptyComponent={
           <View style={styles.emptyState}>
-            <View style={styles.emptyEmoji}><MessageCircle size={44} color="#B9A9D6" strokeWidth={1.75} /></View>
-            <Text style={styles.emptyTitle}>No conversations</Text>
-            <Text style={styles.emptySubtitle}>
+            <View style={styles.emptyEmoji}><MessageCircle size={44} color={colors.subtext} strokeWidth={1.75} /></View>
+            <AccessibleText variant="title" style={[styles.emptyTitle, { color: colors.text }]}>
+              No conversations
+            </AccessibleText>
+            <AccessibleText variant="body" style={{ color: colors.subtext }}>
               Start chatting with your care circle
-            </Text>
+            </AccessibleText>
           </View>
         }
       />
 
       {/* ── FAB — New Chat ─────────────────── */}
-      <TouchableOpacity
-        style={[styles.fab, { bottom: Platform.OS === 'ios' ? 120 : 100 }]}
-        onPress={handleNewAction}
-        activeOpacity={0.85}
-      >
-        <SquarePen size={17} color="#fff" strokeWidth={2.2} style={styles.fabIcon} />
-        <Text style={styles.fabLabel}>New Chat</Text>
-      </TouchableOpacity>
+      <View style={[styles.fabPosition, { bottom: Platform.OS === 'ios' ? 120 : 100 }]}>
+        <AccessibleButton
+          variant="primary"
+          onPress={handleNewAction}
+          accessibilityLabel="New chat"
+          accessibilityHint="Opens options to start a new 1:1 chat, care circle, or group"
+          style={[styles.fab, { shadowColor: colors.primary }]}
+        >
+          <SquarePen size={17} color={colors.white} strokeWidth={2.2} style={styles.fabIcon} />
+          <AccessibleText variant="button" style={{ color: colors.white }}>New Chat</AccessibleText>
+        </AccessibleButton>
+      </View>
     </View>
   );
 
   if (loadError && storeConversations.length === 0) {
     return (
       <View style={{ flex: 1, justifyContent: "center", alignItems: "center", padding: 24 }}>
-        <Text style={{ fontSize: 16, color: "#6B7280", textAlign: "center", marginBottom: 16 }}>{loadError}</Text>
-        <TouchableOpacity
-          style={{ backgroundColor: "#500088", paddingHorizontal: 24, paddingVertical: 12, borderRadius: 12 }}
+        <AccessibleText variant="body" style={{ color: colors.subtext, textAlign: "center", marginBottom: 16 }}>
+          {loadError}
+        </AccessibleText>
+        <AccessibleButton
+          variant="primary"
           onPress={() => {
             setLoadError(null);
             setIsLoading(true);
             chatService.getConversations().then(convData => setConversations(convData)).catch(e => setLoadError("Failed to load. Please try again.")).finally(() => setIsLoading(false));
           }}
+          accessibilityLabel="Retry loading conversations"
+          style={{ paddingHorizontal: 24, paddingVertical: 12 }}
         >
-          <Text style={{ color: "#fff", fontWeight: "700" }}>Retry</Text>
-        </TouchableOpacity>
+          Retry
+        </AccessibleButton>
       </View>
     );
   }
@@ -466,14 +509,16 @@ const ConversationListScreen = ({ navigation: propNavigation, isTab = false, dir
               accessibilityLabel="Pending Invites"
               activeOpacity={0.7}
             >
-              <Mail size={22} color="#fff" strokeWidth={2} />
+              <Mail size={22} color={colors.white} strokeWidth={2} />
               {pendingInvites.length > 0 && (
-                <View style={styles.inviteBadge}>
-                  <Text style={styles.inviteBadgeText}>{pendingInvites.length}</Text>
+                <View style={[styles.inviteBadge, { borderColor: colors.primary }]}>
+                  <AccessibleText variant="caption" style={[styles.inviteBadgeText, { color: colors.white }]}>
+                    {pendingInvites.length}
+                  </AccessibleText>
                 </View>
               )}
             </TouchableOpacity>
-            
+
             <TouchableOpacity
               style={styles.newChatTouch}
               onPress={handleNewAction}
@@ -481,7 +526,7 @@ const ConversationListScreen = ({ navigation: propNavigation, isTab = false, dir
               accessibilityLabel="New Chat"
               activeOpacity={0.7}
             >
-              <SquarePen size={22} color="#fff" strokeWidth={2} />
+              <SquarePen size={22} color={colors.white} strokeWidth={2} />
             </TouchableOpacity>
           </View>
         }
@@ -497,12 +542,9 @@ export default ConversationListScreen;
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#F6F6F6",
   },
 
   headerSubtitleBody: {
-    fontSize: 13,
-    color: "rgba(255,255,255,0.85)",
     marginBottom: 10,
     fontWeight: "600",
   },
@@ -512,9 +554,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     position: 'relative',
-  },
-  newChatIcon: {
-    fontSize: 20,
   },
   inviteBadge: {
     position: 'absolute',
@@ -527,11 +566,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1.5,
-    borderColor: '#500088',
   },
   inviteBadgeText: {
-    color: '#fff',
-    fontSize: 9,
     fontWeight: '800',
   },
   headerBodyFlow: {
@@ -549,24 +585,16 @@ const styles = StyleSheet.create({
   searchContainer: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "rgba(255,255,255,0.15)",
     borderRadius: 14,
     paddingHorizontal: 14,
     height: 44,
   },
   searchIcon: {
-    fontSize: 16,
     marginRight: 10,
   },
   searchInput: {
     flex: 1,
     fontSize: 15,
-    color: "#fff",
-  },
-  clearSearch: {
-    color: "rgba(255,255,255,0.6)",
-    fontSize: 16,
-    paddingLeft: 8,
   },
 
   // ── Filters ─────────────────────────────────────────────
@@ -580,21 +608,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
     paddingVertical: 8,
     borderRadius: 20,
-    backgroundColor: "#fff",
     borderWidth: 1,
-    borderColor: "#E8E5F0",
-  },
-  filterTabActive: {
-    backgroundColor: "#8A38F5",
-    borderColor: "#8A38F5",
   },
   filterText: {
-    fontSize: 13,
     fontWeight: "600",
-    color: "#666",
-  },
-  filterTextActive: {
-    color: "#fff",
   },
 
   // ── List ────────────────────────────────────────────────
@@ -607,11 +624,9 @@ const styles = StyleSheet.create({
   conversationItem: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#fff",
     padding: 14,
     borderRadius: 16,
     marginBottom: 8,
-    shadowColor: "#8A38F5",
     shadowOpacity: 0.04,
     shadowOffset: { width: 0, height: 2 },
     shadowRadius: 8,
@@ -627,16 +642,11 @@ const styles = StyleSheet.create({
     width: 52,
     height: 52,
     borderRadius: 18,
-    backgroundColor: "#F3EAFF",
     justifyContent: "center",
     alignItems: "center",
   },
   groupAvatar: {
-    backgroundColor: "#EDE9FE",
     borderRadius: 16,
-  },
-  avatarEmoji: {
-    fontSize: 24,
   },
   onlineDot: {
     position: "absolute",
@@ -647,7 +657,6 @@ const styles = StyleSheet.create({
     borderRadius: 7,
     backgroundColor: "#22C55E",
     borderWidth: 2.5,
-    borderColor: "#fff",
   },
 
   // ── Content ─────────────────────────────────────────────
@@ -661,19 +670,13 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   conversationName: {
-    fontSize: 15,
-    fontWeight: "700",
-    color: "#1a1a1a",
     flex: 1,
     marginRight: 8,
   },
   conversationTime: {
-    fontSize: 12,
-    color: "#999",
     fontWeight: "500",
   },
   conversationTimeActive: {
-    color: "#8A38F5",
     fontWeight: "700",
   },
   conversationBottom: {
@@ -682,13 +685,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   lastMessage: {
-    fontSize: 13,
-    color: "#888",
     flex: 1,
     marginRight: 8,
   },
   unreadBadge: {
-    backgroundColor: "#8A38F5",
     minWidth: 22,
     height: 22,
     borderRadius: 11,
@@ -697,13 +697,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
   },
   unreadText: {
-    color: "#fff",
-    fontSize: 11,
     fontWeight: "800",
   },
   memberCount: {
-    fontSize: 11,
-    color: "#aaa",
     marginTop: 2,
   },
 
@@ -714,45 +710,27 @@ const styles = StyleSheet.create({
     paddingTop: 80,
   },
   emptyEmoji: {
-    fontSize: 48,
     marginBottom: 16,
   },
   emptyTitle: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: "#1a1a1a",
     marginBottom: 6,
-  },
-  emptySubtitle: {
-    fontSize: 14,
-    color: "#888",
   },
 
   // ── FAB ─────────────────────────────────────────────────
-  fab: {
+  fabPosition: {
     position: "absolute",
-    bottom: 24,
     right: 20,
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#500088",
+  },
+  fab: {
     paddingVertical: 14,
     paddingHorizontal: 20,
     borderRadius: 28,
-    shadowColor: "#500088",
     shadowOpacity: 0.35,
     shadowOffset: { width: 0, height: 6 },
     shadowRadius: 16,
     elevation: 8,
   },
   fabIcon: {
-    fontSize: 18,
     marginRight: 8,
-  },
-  fabLabel: {
-    color: "#fff",
-    fontSize: 15,
-    fontWeight: "700",
-    letterSpacing: 0.3,
   },
 });

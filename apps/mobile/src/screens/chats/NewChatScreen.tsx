@@ -1,7 +1,6 @@
 import React, { useState, useCallback, useEffect, useRef } from "react";
 import {
   View,
-  Text,
   StyleSheet,
   TextInput,
   TouchableOpacity,
@@ -16,6 +15,9 @@ import { chatService } from "@services/chatService";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import ScreenWrapper from "../../components/layout/ScreenWrapper";
 import { ArrowLeft, Search, SearchX, MessageCircle } from "lucide-react-native";
+import { useTheme } from "../../theme/ThemeContext";
+import { animateIfAllowed } from "../../hooks/motionHelper";
+import { AccessibleText } from "../../components/shared/AccessibleText";
 
 type Props = NativeStackScreenProps<ChatsStackParamList, "NewChat">;
 
@@ -27,6 +29,7 @@ interface UserResult {
 
 const NewChatScreen = ({ navigation }: Props) => {
   const insets = useSafeAreaInsets();
+  const { colors, highContrast, reduceMotion } = useTheme();
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<UserResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
@@ -36,12 +39,14 @@ const NewChatScreen = ({ navigation }: Props) => {
   const headerAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    Animated.timing(headerAnim, {
+    animateIfAllowed(reduceMotion, headerAnim, {
       toValue: 1,
       duration: 500,
       useNativeDriver: true,
     }).start();
+  }, [reduceMotion]);
 
+  useEffect(() => {
     // Fetch all users on mount
     const fetchAllUsers = async () => {
       setIsSearching(true);
@@ -61,7 +66,7 @@ const NewChatScreen = ({ navigation }: Props) => {
   const handleSearchChange = useCallback((text: string) => {
     setSearchQuery(text);
     if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
-    
+
     searchTimeoutRef.current = setTimeout(async () => {
       setIsSearching(true);
       setHasSearched(true);
@@ -98,58 +103,101 @@ const NewChatScreen = ({ navigation }: Props) => {
     return name.split(" ").map((w) => w[0]).join("").toUpperCase().slice(0, 2);
   };
 
+  // ── Theme-derived, high-contrast-aware card outline ─────────
+  // Keeps white cards/rows visible against a (also white, under high
+  // contrast) screen background — same convention as ChatScreen.tsx.
+  const cardBorder = highContrast
+    ? { borderWidth: 2, borderColor: "#000000" }
+    : { borderWidth: 1, borderColor: "rgba(0,0,0,0.05)" };
+
   const renderSearchResult = ({ item }: { item: UserResult }) => (
-    <TouchableOpacity style={styles.searchResultItem} onPress={() => startChat(item)} activeOpacity={0.7}>
-      <View style={styles.resultAvatar}>
-        <Text style={styles.resultAvatarText}>{getInitials(item.name)}</Text>
+    <TouchableOpacity
+      style={[styles.searchResultItem, { borderBottomColor: colors.border }]}
+      onPress={() => startChat(item)}
+      activeOpacity={0.7}
+      accessibilityRole="button"
+      accessibilityLabel={`Start chat with ${item.name}`}
+      accessibilityHint="Opens a direct message conversation"
+    >
+      <View style={[styles.resultAvatar, { backgroundColor: colors.surface }]}>
+        <AccessibleText variant="body" style={[styles.resultAvatarText, { color: colors.secondary }]}>
+          {getInitials(item.name)}
+        </AccessibleText>
       </View>
       <View style={styles.resultInfo}>
-        <Text style={styles.resultName}>{item.name}</Text>
-        <Text style={styles.resultEmail}>{item.email}</Text>
+        <AccessibleText variant="body" style={[styles.resultName, { color: colors.text }]}>
+          {item.name}
+        </AccessibleText>
+        <AccessibleText variant="caption" style={[styles.resultEmail, { color: colors.subtext }]}>
+          {item.email}
+        </AccessibleText>
       </View>
-      <View style={styles.addBtnSmall}>
-        <MessageCircle size={18} color="#8A38F5" strokeWidth={2} />
+      <View style={[styles.addBtnSmall, { backgroundColor: colors.surface }]}>
+        <MessageCircle size={18} color={colors.primary} strokeWidth={2} />
       </View>
     </TouchableOpacity>
   );
 
   return (
     <ScreenWrapper statusBarStyle="light">
-      <Animated.View style={[styles.header, { paddingTop: insets.top + 8, opacity: headerAnim, transform: [{ translateY: headerAnim.interpolate({ inputRange: [0, 1], outputRange: [-20, 0] }) }] }]}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
-          <ArrowLeft size={24} color="#fff" strokeWidth={2.2} />
+      <Animated.View
+        style={[
+          styles.header,
+          {
+            backgroundColor: colors.primary,
+            paddingTop: insets.top + 8,
+            opacity: headerAnim,
+            transform: [{ translateY: headerAnim.interpolate({ inputRange: [0, 1], outputRange: [-20, 0] }) }],
+          },
+        ]}
+      >
+        <TouchableOpacity
+          style={styles.backBtn}
+          onPress={() => navigation.goBack()}
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
+          accessibilityHint="Returns to the previous screen"
+        >
+          <ArrowLeft size={24} color={colors.white} strokeWidth={2.2} />
         </TouchableOpacity>
         <View style={styles.headerCenter}>
-          <Text style={styles.headerTitle}>New Chat</Text>
-          <Text style={styles.headerSubtitle}>Search for people to message</Text>
+          <AccessibleText variant="title" style={[styles.headerTitle, { color: colors.white }]}>
+            New Chat
+          </AccessibleText>
+          <AccessibleText variant="caption" style={[styles.headerSubtitle, { color: "rgba(255,255,255,0.6)" }]}>
+            Search for people to message
+          </AccessibleText>
         </View>
       </Animated.View>
 
       <KeyboardAwareScrollView style={styles.content} keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 100, flexGrow: 1 }}>
         <View style={styles.section}>
-          <View style={styles.searchContainer}>
-            <Search size={16} color="#1a1a1a" strokeWidth={2} style={styles.searchIcon} />
+          <View style={[styles.searchContainer, { backgroundColor: colors.card, shadowColor: colors.primary }, cardBorder]}>
+            <Search size={16} color={colors.text} strokeWidth={2} style={styles.searchIcon} />
             <TextInput
-              style={styles.searchInput}
+              style={[styles.searchInput, { color: colors.text }]}
               placeholder="Search by name..."
-              placeholderTextColor="#999"
+              placeholderTextColor={colors.subtext}
               value={searchQuery}
               onChangeText={handleSearchChange}
               autoCapitalize="none"
               returnKeyType="search"
+              accessibilityLabel="Search people by name"
             />
-            {isSearching && <ActivityIndicator size="small" color="#8A38F5" style={styles.searchSpinner} />}
+            {isSearching && <ActivityIndicator size="small" color={colors.primary} style={styles.searchSpinner} />}
           </View>
-          
+
           {hasSearched && !isSearching && searchResults.length === 0 && (
             <View style={styles.emptyState}>
-              <SearchX size={32} color="#666" strokeWidth={1.8} style={styles.emptyIcon} />
-              <Text style={styles.emptyText}>No members found for "{searchQuery}"</Text>
+              <SearchX size={32} color={colors.subtext} strokeWidth={1.8} style={styles.emptyIcon} />
+              <AccessibleText variant="body" style={[styles.emptyText, { color: colors.subtext }]}>
+                No members found for "{searchQuery}"
+              </AccessibleText>
             </View>
           )}
 
           {searchResults.length > 0 && (
-            <View style={styles.resultsCard}>
+            <View style={[styles.resultsCard, { backgroundColor: colors.card, shadowColor: colors.primary }, cardBorder]}>
               {searchResults.map((item) => (
                 <React.Fragment key={item.id}>{renderSearchResult({ item })}</React.Fragment>
               ))}
@@ -158,7 +206,7 @@ const NewChatScreen = ({ navigation }: Props) => {
         </View>
         {isCreating && (
           <View style={styles.overlayLoading}>
-            <ActivityIndicator size="large" color="#8A38F5" />
+            <ActivityIndicator size="large" color={colors.primary} />
           </View>
         )}
       </KeyboardAwareScrollView>
@@ -169,29 +217,27 @@ const NewChatScreen = ({ navigation }: Props) => {
 export default NewChatScreen;
 
 const styles = StyleSheet.create({
-  header: { backgroundColor: "#500088", paddingHorizontal: 16, paddingTop: 8, paddingBottom: 20, borderBottomLeftRadius: 24, borderBottomRightRadius: 24, flexDirection: "row", alignItems: "center" },
+  header: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 20, borderBottomLeftRadius: 24, borderBottomRightRadius: 24, flexDirection: "row", alignItems: "center" },
   backBtn: { width: 40, height: 40, borderRadius: 14, backgroundColor: "rgba(255,255,255,0.15)", justifyContent: "center", alignItems: "center", marginRight: 14 },
-  backText: { color: "#fff", fontSize: 22, fontWeight: "700" },
   headerCenter: { flex: 1 },
-  headerTitle: { color: "#fff", fontSize: 20, fontWeight: "800", letterSpacing: 0.3 },
-  headerSubtitle: { color: "rgba(255,255,255,0.6)", fontSize: 13, marginTop: 2 },
+  headerTitle: { letterSpacing: 0.3 },
+  headerSubtitle: { marginTop: 2 },
   content: { flex: 1, paddingTop: 20 },
   section: { paddingHorizontal: 16, marginBottom: 20 },
-  searchContainer: { flexDirection: "row", alignItems: "center", backgroundColor: "#fff", borderRadius: 16, paddingHorizontal: 14, shadowColor: "#8A38F5", shadowOpacity: 0.06, shadowOffset: { width: 0, height: 2 }, shadowRadius: 8, elevation: 2 },
-  searchIcon: { fontSize: 16, marginRight: 10 },
-  searchInput: { flex: 1, fontSize: 15, color: "#1a1a1a", paddingVertical: 14 },
+  searchContainer: { flexDirection: "row", alignItems: "center", borderRadius: 16, paddingHorizontal: 14, shadowOpacity: 0.06, shadowOffset: { width: 0, height: 2 }, shadowRadius: 8, elevation: 2 },
+  searchIcon: { marginRight: 10 },
+  searchInput: { flex: 1, fontSize: 15, paddingVertical: 14 },
   searchSpinner: { marginLeft: 8 },
-  resultsCard: { backgroundColor: "#fff", borderRadius: 16, marginTop: 10, overflow: "hidden", shadowColor: "#8A38F5", shadowOpacity: 0.06, shadowOffset: { width: 0, height: 2 }, shadowRadius: 8, elevation: 2 },
-  searchResultItem: { flexDirection: "row", alignItems: "center", paddingHorizontal: 14, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: "#f5f0fa" },
-  resultAvatar: { width: 42, height: 42, borderRadius: 14, backgroundColor: "#EDE9FE", justifyContent: "center", alignItems: "center", marginRight: 12 },
-  resultAvatarText: { fontSize: 15, fontWeight: "700", color: "#6B21A8" },
+  resultsCard: { borderRadius: 16, marginTop: 10, overflow: "hidden", shadowOpacity: 0.06, shadowOffset: { width: 0, height: 2 }, shadowRadius: 8, elevation: 2 },
+  searchResultItem: { flexDirection: "row", alignItems: "center", paddingHorizontal: 14, paddingVertical: 12, borderBottomWidth: 1 },
+  resultAvatar: { width: 42, height: 42, borderRadius: 14, justifyContent: "center", alignItems: "center", marginRight: 12 },
+  resultAvatarText: { fontWeight: "700" },
   resultInfo: { flex: 1 },
-  resultName: { fontSize: 15, fontWeight: "600", color: "#1a1a1a" },
-  resultEmail: { fontSize: 12, color: "#999", marginTop: 1 },
-  addBtnSmall: { width: 32, height: 32, borderRadius: 12, backgroundColor: "#EDE9FE", justifyContent: "center", alignItems: "center" },
-  addBtnSmallText: { fontSize: 14 },
+  resultName: { fontWeight: "600" },
+  resultEmail: { marginTop: 1 },
+  addBtnSmall: { width: 32, height: 32, borderRadius: 12, justifyContent: "center", alignItems: "center" },
   emptyState: { alignItems: "center", paddingVertical: 28, paddingHorizontal: 20 },
-  emptyIcon: { fontSize: 32, marginBottom: 8 },
-  emptyText: { fontSize: 14, color: "#666", fontWeight: "500", textAlign: "center" },
+  emptyIcon: { marginBottom: 8 },
+  emptyText: { fontWeight: "500", textAlign: "center" },
   overlayLoading: { position: "absolute", top: 100, left: 0, right: 0, alignItems: "center" }
 });

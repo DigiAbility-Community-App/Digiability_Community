@@ -12,6 +12,7 @@ import * as WebBrowser from "expo-web-browser";
 import ScreenWrapper from "../../components/layout/ScreenWrapper";
 import { useTheme } from "../../theme/ThemeContext";
 import { AccessibleText } from "../../components/shared/AccessibleText";
+import { AccessibleButton } from "../../components/shared/AccessibleButton";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 export default function LeavePortalScreen() {
@@ -114,7 +115,7 @@ export default function LeavePortalScreen() {
           </View>
 
           {/* CONTINUE BUTTON */}
-          <TouchableOpacity
+          <AccessibleButton
             style={[
               styles.continueBtn,
               highContrast && { backgroundColor: "#000" },
@@ -122,10 +123,8 @@ export default function LeavePortalScreen() {
             ]}
             onPress={handleContinue}
             disabled={loading}
-            accessibilityRole="button"
             accessibilityLabel="Continue to Digiability registration portal"
             accessibilityHint="Opens the external Digiability Services website in your browser"
-            accessibilityState={{ disabled: loading }}
           >
             {loading ? (
               <ActivityIndicator color={highContrast ? "#fff" : "#500088"} />
@@ -141,20 +140,20 @@ export default function LeavePortalScreen() {
                 />
               </>
             )}
-          </TouchableOpacity>
+          </AccessibleButton>
 
           {/* SKIP BUTTON */}
-          <TouchableOpacity
+          <AccessibleButton
+            variant="outline"
             style={[styles.skipBtn, { borderColor: colors.border }]}
             onPress={handleSkip}
-            accessibilityRole="button"
             accessibilityLabel="Skip and return to event details"
             accessibilityHint="Cancels the external navigation and returns to the event page"
           >
             <AccessibleText style={[styles.skipBtnText, { color: colors.text }]}>
               Skip
             </AccessibleText>
-          </TouchableOpacity>
+          </AccessibleButton>
 
           {/* FOOTER NOTE */}
           <AccessibleText variant="caption" style={[styles.footerNote, { color: colors.subtext }]}>

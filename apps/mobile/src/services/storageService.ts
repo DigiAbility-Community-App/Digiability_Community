@@ -7,10 +7,7 @@ export interface AccessibilityPreferences {
   highContrast: boolean;
   screenReader: boolean;
   reduceMotion: boolean;
-  language: string;
   pushNotif: boolean;
-  emailNotif: boolean;
-  smsNotif: boolean;
 }
 
 const ACCESSIBILITY_KEY_PREFIX = 'digiability_accessibility';
@@ -20,10 +17,7 @@ export const defaultAccessibilityPreferences: AccessibilityPreferences = {
   highContrast: false,
   screenReader: true,
   reduceMotion: false,
-  language: 'English',
   pushNotif: true,
-  emailNotif: true,
-  smsNotif: false,
 };
 
 function getAccessibilityKey(userId: string) {
