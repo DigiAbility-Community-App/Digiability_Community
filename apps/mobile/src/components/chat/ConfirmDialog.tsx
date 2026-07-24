@@ -143,7 +143,6 @@ const styles = StyleSheet.create({
   cancelText: {
     color: "#6B5B8A",
     fontWeight: "700",
-    fontSize: 15,
   },
   confirm: {
     flex: 1,
@@ -158,6 +157,5 @@ const styles = StyleSheet.create({
   confirmText: {
     color: "#fff",
     fontWeight: "700",
-    fontSize: 15,
   },
 });

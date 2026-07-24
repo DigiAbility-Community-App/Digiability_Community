@@ -256,7 +256,7 @@ const styles = StyleSheet.create({
   inputRow: {
     borderRadius: 16,
     paddingHorizontal: 16,
-    height: 56,
+    minHeight: 56,
     justifyContent: "center",
   },
   textAreaRow: {
@@ -304,7 +304,7 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   primaryButton: {
-    height: 56,
+    minHeight: 56,
     borderRadius: 20,
     shadowColor: "#500088",
     shadowOpacity: 0.25,

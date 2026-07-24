@@ -246,7 +246,7 @@ const styles = StyleSheet.create({
   },
   continueBtn: {
     width: "100%",
-    height: 56,
+    minHeight: 56,
     backgroundColor: "#F5C518",
     borderRadius: 16,
     flexDirection: "row",
@@ -259,13 +259,14 @@ const styles = StyleSheet.create({
     elevation: 5,
   },
   continueBtnText: {
-    fontSize: 16,
     fontWeight: "800",
     color: "#500088",
+    flexShrink: 1,
+    textAlign: "center",
   },
   skipBtn: {
     width: "100%",
-    height: 52,
+    minHeight: 52,
     borderRadius: 16,
     borderWidth: 1.5,
     justifyContent: "center",
@@ -273,7 +274,6 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   skipBtnText: {
-    fontSize: 16,
     fontWeight: "700",
   },
   footerNote: {

@@ -1162,7 +1162,7 @@ const styles =
     },
 
     inputContainer: {
-      height: 56,
+      minHeight: 56,
 
       borderRadius: 24,
 
@@ -1213,7 +1213,7 @@ const styles =
     },
 
     usernameContainer: {
-      height: 56,
+      minHeight: 56,
 
       borderRadius: 24,
 
@@ -1288,7 +1288,7 @@ const styles =
     halfInput: {
       width: "48%",
 
-      height: 56,
+      minHeight: 56,
 
       backgroundColor:
         "#F4F3FA",
@@ -1302,7 +1302,7 @@ const styles =
     },
 
     fullInput: {
-      height: 56,
+      minHeight: 56,
 
       backgroundColor:
         "#F4F3FA",
@@ -1328,7 +1328,7 @@ const styles =
     },
     locationBtn: {
       backgroundColor: "#F3EAFF",
-      height: 58,
+      minHeight: 58,
       borderRadius: 18,
       alignItems: "center",
       justifyContent: "center",
@@ -1363,7 +1363,7 @@ const styles =
     },
 
     button: {
-      height: 56,
+      minHeight: 56,
 
       borderRadius: 24,
 
@@ -1381,7 +1381,7 @@ const styles =
     },
 
     fullWidthInput: {
-      height: 58,
+      minHeight: 58,
       borderRadius: 18,
       paddingHorizontal: 18,
       justifyContent: "center",
@@ -1396,7 +1396,7 @@ const styles =
 
     doubleInput: {
       width: "48%",
-      height: 58,
+      minHeight: 58,
       borderRadius: 18,
       paddingHorizontal: 18,
       justifyContent: "center",

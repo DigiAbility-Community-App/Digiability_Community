@@ -939,7 +939,7 @@ const styles = StyleSheet.create({
   },
 
   input: {
-    height: 52,
+    minHeight: 52,
     borderRadius: 14,
     paddingHorizontal: 16,
     fontSize: 15,
@@ -978,7 +978,7 @@ const styles = StyleSheet.create({
   },
 
   button: {
-    height: 58,
+    minHeight: 58,
     borderRadius: 18,
     flexDirection: "row",
     justifyContent: "center",
@@ -988,8 +988,8 @@ const styles = StyleSheet.create({
 
   buttonText: {
     color: "#FFFFFF",
-    fontSize: 16,
     fontWeight: "700",
+    flexShrink: 1,
   },
 
   buttonArrow: {
@@ -1029,7 +1029,7 @@ const styles = StyleSheet.create({
   },
 
   dropdownTrigger: {
-    height: 52,
+    minHeight: 52,
     borderRadius: 14,
     paddingHorizontal: 16,
     flexDirection: "row",

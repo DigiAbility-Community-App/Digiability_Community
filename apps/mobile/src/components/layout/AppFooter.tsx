@@ -290,7 +290,6 @@ const styles = StyleSheet.create({
     borderRadius: 20,
   },
   navText: {
-    fontSize: 11,
     marginTop: 4,
     fontWeight: "700",
   },

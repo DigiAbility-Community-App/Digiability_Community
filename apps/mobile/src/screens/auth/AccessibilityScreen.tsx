@@ -640,13 +640,6 @@ const styles = StyleSheet.create({
         elevation: 8,
     },
 
-    button: {
-        height: 56,
-        justifyContent: "center",
-        alignItems: "center",
-        borderRadius: 999,
-    },
-
     buttonText: {
         color: "#FFFFFF",
         fontSize: 16,

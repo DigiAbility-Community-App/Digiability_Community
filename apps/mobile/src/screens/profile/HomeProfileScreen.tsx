@@ -620,7 +620,7 @@ const styles = StyleSheet.create({
     },
 
     logoutBtn: {
-        height: 56,
+        minHeight: 56,
         borderWidth: 2,
         borderColor: "#BA1A1A",
         borderRadius: 16,

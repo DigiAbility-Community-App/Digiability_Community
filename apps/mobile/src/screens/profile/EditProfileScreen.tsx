@@ -1055,7 +1055,7 @@ const styles =
         },
 
         input: {
-            height: 56,
+            minHeight: 56,
 
             borderRadius: 16,
 
@@ -1095,7 +1095,7 @@ const styles =
         },
 
         button: {
-            height: 58,
+            minHeight: 58,
 
             borderRadius: 18,
 

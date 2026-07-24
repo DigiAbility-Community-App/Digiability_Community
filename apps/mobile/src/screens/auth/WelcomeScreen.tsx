@@ -746,22 +746,6 @@ const styles = StyleSheet.create({
     gap: 14,
   },
 
-  socialBtn: {
-    flex: 1,
-    height: 58,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#CFC2D4",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-
-  socialText: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: "#1A1B20",
-  },
-
   // FOOTER
   footer: {
     marginTop: 34,

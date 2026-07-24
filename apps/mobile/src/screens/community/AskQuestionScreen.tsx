@@ -484,7 +484,7 @@ const styles = StyleSheet.create({
   textInput: {
     borderRadius: 12,
     paddingHorizontal: 16,
-    height: 48,
+    minHeight: 48,
     fontSize: 15,
     marginBottom: 20,
     fontWeight: "500"
@@ -492,7 +492,7 @@ const styles = StyleSheet.create({
   dropdown: {
     borderRadius: 12,
     paddingHorizontal: 16,
-    height: 48,
+    minHeight: 48,
     marginBottom: 20
   },
   placeholderStyle: {
@@ -559,7 +559,7 @@ const styles = StyleSheet.create({
   },
   submitBtn: {
     borderRadius: 14,
-    height: 52,
+    minHeight: 52,
     marginTop: 10,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.2,
@@ -639,13 +639,13 @@ const styles = StyleSheet.create({
   },
   modalCancelBtn: {
     flex: 1,
-    height: 48,
+    minHeight: 48,
     borderRadius: 12,
     marginRight: 10
   },
   modalSubmitBtn: {
     flex: 1,
-    height: 48,
+    minHeight: 48,
     borderRadius: 12
   }
 });
