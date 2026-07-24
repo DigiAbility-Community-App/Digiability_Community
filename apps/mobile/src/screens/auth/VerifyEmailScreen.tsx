@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import {
   View,
   StyleSheet,
@@ -9,10 +9,12 @@ import {
   ActivityIndicator,
   Pressable,
   Alert,
+  BackHandler,
 } from "react-native";
-import { useNavigation, useRoute } from "@react-navigation/native";
+import { useNavigation, useRoute, useFocusEffect } from "@react-navigation/native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuthStore } from "../../store/authStore";
-import { verifyEmailOtp, resendVerificationOtp } from "../../services/authService";
+import { verifyEmailOtp, resendVerificationOtp, logout } from "../../services/authService";
 import { Ionicons } from "@expo/vector-icons";
 import { useTheme } from "../../theme/ThemeContext";
 import { AccessibleText } from "../../components/shared/AccessibleText";
@@ -28,6 +30,7 @@ const RESEND_COOLDOWN_SECONDS = 60;
 const VerifyEmailScreen = () => {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
+  const insets = useSafeAreaInsets();
   const user = useAuthStore((s) => s.user);
   const setUser = useAuthStore((s) => s.setUser);
   const { colors, highContrast } = useTheme();
@@ -133,11 +136,65 @@ const VerifyEmailScreen = () => {
 
   const canResend = !isResending && resendCooldown === 0;
 
+  // Back / "wrong email" recovery. If the user is signed in (Main stack,
+  // just after registering), an account already exists for this email, so
+  // going back means signing out and returning to sign-up — confirm first.
+  // In the Auth stack (came from login) there's a real back stack to pop.
+  const handleBack = () => {
+    if (user) {
+      Alert.alert(
+        "Go back?",
+        "This will sign you out and return you to the sign-up screen. If you entered the wrong email, you can sign up again there.",
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Go Back",
+            style: "destructive",
+            onPress: async () => {
+              try {
+                await logout();
+              } catch {
+                // logout clears local state regardless; ignore errors
+              }
+            },
+          },
+        ]
+      );
+    } else if (navigation.canGoBack()) {
+      navigation.goBack();
+    } else {
+      navigation.navigate("Welcome");
+    }
+  };
+
+  // Route the Android hardware back button through the same handler so it
+  // doesn't just exit the app when this is the first screen (post-register).
+  useFocusEffect(
+    useCallback(() => {
+      const sub = BackHandler.addEventListener("hardwareBackPress", () => {
+        handleBack();
+        return true;
+      });
+      return () => sub.remove();
+    }, [user, navigation])
+  );
+
   return (
     <KeyboardAvoidingView
       style={[styles.container, { backgroundColor: colors.background }]}
       behavior={Platform.OS === "ios" ? "padding" : "height"}
     >
+      <TouchableOpacity
+        style={[styles.backBtn, { top: insets.top + 8 }]}
+        onPress={handleBack}
+        accessibilityRole="button"
+        accessibilityLabel="Go back"
+        accessibilityHint="Returns to the previous screen; if you entered the wrong email you can sign up again"
+        hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+      >
+        <Ionicons name="arrow-back" size={26} color={colors.text} />
+      </TouchableOpacity>
+
       <View style={styles.content}>
         <View style={styles.iconContainer}>
           <Ionicons name="mail-open-outline" size={64} color={colors.primary} />
@@ -240,6 +297,7 @@ export default VerifyEmailScreen;
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  backBtn: { position: "absolute", left: 16, zIndex: 10, padding: 4 },
   content: { flex: 1, padding: 24, justifyContent: "center" },
   iconContainer: { alignItems: "center", marginBottom: 24 },
   title: { fontSize: 28, textAlign: "center", marginBottom: 12 },
