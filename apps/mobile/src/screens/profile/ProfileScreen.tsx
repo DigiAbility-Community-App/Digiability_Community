@@ -618,6 +618,11 @@ const ProfileScreen = () => {
     ? { borderWidth: 2, borderColor: "#000000" as const }
     : { borderWidth: 1, borderColor: "rgba(0,0,0,0.05)" as const };
 
+  const fieldBorder = (hasError?: boolean) => {
+    if (hasError) return { borderWidth: 1, borderColor: colors.error };
+    return highContrast ? { borderWidth: 2, borderColor: "#000000" as const } : {};
+  };
+
   const placeholderColor = highContrast
     ? "#000000"
     : "rgba(126,115,131,0.6)";
@@ -734,7 +739,7 @@ const ProfileScreen = () => {
 
           {/* FULL NAME */}
           <View
-            style={[styles.inputContainer, { backgroundColor: colors.surface }, cardBorder]}
+            style={[styles.inputContainer, { backgroundColor: colors.surface }, cardBorder, fieldBorder(!!errors.fullName)]}
           >
             <AccessibleText
               style={
@@ -759,6 +764,7 @@ const ProfileScreen = () => {
             <AccessibleText
               variant="caption"
               style={[styles.errorText, { color: colors.error }]}
+              accessibilityRole="alert"
             >
               {
                 errors.fullName
@@ -861,7 +867,7 @@ const ProfileScreen = () => {
 
           {/* PHONE NUMBER */}
           <View
-            style={[styles.inputContainer, { backgroundColor: colors.surface }, cardBorder]}
+            style={[styles.inputContainer, { backgroundColor: colors.surface }, cardBorder, fieldBorder(!!errors.phoneNo)]}
           >
             <AccessibleText
               style={
@@ -889,6 +895,7 @@ const ProfileScreen = () => {
             <AccessibleText
               variant="caption"
               style={[styles.errorText, { color: colors.error }]}
+              accessibilityRole="alert"
             >
               {errors.phoneNo}
             </AccessibleText>
@@ -907,7 +914,12 @@ const ProfileScreen = () => {
           </AccessibleText>
 
           <View
-            style={[styles.usernameContainer, { backgroundColor: colors.surface }, cardBorder]}
+            style={[
+              styles.usernameContainer,
+              { backgroundColor: colors.surface },
+              cardBorder,
+              fieldBorder(!!errors.username || usernameStatus === "taken" || usernameStatus === "invalid"),
+            ]}
           >
             <AccessibleText
               style={[styles.usernameAt, { color: colors.primary }]}
@@ -930,6 +942,20 @@ const ProfileScreen = () => {
           </View>
 
           {renderUsernameIndicator()}
+
+          {/* usernameStatus stays "idle" for an empty field, so the live
+              indicator above shows nothing — this covers the "required but
+              empty" case, which validate() computes but the UI otherwise
+              never surfaces. */}
+          {usernameStatus === "idle" && errors.username && (
+            <AccessibleText
+              variant="caption"
+              style={[styles.errorText, { color: colors.error }]}
+              accessibilityRole="alert"
+            >
+              {errors.username}
+            </AccessibleText>
+          )}
 
           {/* SUGGESTIONS */}
           <AccessibleText
