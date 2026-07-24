@@ -11,7 +11,7 @@
 import "dotenv/config";
 import Redis from "ioredis";
 import { logger } from "../config/logger";
-import { messageRepository } from "../repositories/message.repository";
+import { conversationRepository } from "../repositories/conversation.repository";
 import { publishMessageNotify, ensureConsumerGroups } from "../streams/producer";
 import {
   STREAMS,
@@ -90,6 +90,7 @@ async function processEntry(redis: Redis, entryId: string, fields: string[]): Pr
     messageId: data.messageId,
     conversationId: data.conversationId,
     senderId: data.senderId,
+    senderName: data.senderName || undefined,
     clientMessageId: data.clientMessageId,
     content: data.content,
     type: data.type,
@@ -101,8 +102,21 @@ async function processEntry(redis: Redis, entryId: string, fields: string[]): Pr
   logger.debug("Processing MESSAGE_PERSISTED", { messageId: event.messageId });
 
   try {
-    const memberIds = await messageRepository.getConversationMemberIds(event.conversationId);
-    const recipientIds = memberIds.filter((id) => id !== event.senderId);
+    const conversation = await conversationRepository.getById(event.conversationId);
+    if (!conversation) {
+      await redis.xack(STREAMS.MESSAGE_PERSISTED, CONSUMER_GROUPS.DELIVERY_WORKER, entryId);
+      return;
+    }
+
+    const recipientIds = conversation.members
+      .filter((m) => m.userId !== event.senderId)
+      .map((m) => m.userId);
+    const mutedIds = new Set(
+      conversation.members.filter((m) => m.isMuted).map((m) => m.userId)
+    );
+    // Only groups have a display name; DMs fall through to senderName
+    // in notif-svc's title-selection chain.
+    const conversationName = conversation.type !== "DIRECT" ? conversation.name ?? undefined : undefined;
 
     if (recipientIds.length === 0) {
       await redis.xack(STREAMS.MESSAGE_PERSISTED, CONSUMER_GROUPS.DELIVERY_WORKER, entryId);
@@ -129,7 +143,7 @@ async function processEntry(redis: Redis, entryId: string, fields: string[]): Pr
     for (const recipientId of recipientIds) {
       const sessions = await getRecipientSessions(redis, recipientId);
       if (sessions.length === 0) {
-        offlineRecipients.push(recipientId);
+        if (!mutedIds.has(recipientId)) offlineRecipients.push(recipientId);
         continue;
       }
       const serverIds = new Set(sessions.map((s) => s.serverId));
@@ -157,7 +171,9 @@ async function processEntry(redis: Redis, entryId: string, fields: string[]): Pr
       const notifyEvent: MessageNotifyEvent = {
         messageId: event.messageId,
         conversationId: event.conversationId,
+        conversationName,
         senderId: event.senderId,
+        senderName: event.senderName,
         recipientId,
         contentPreview: event.content.substring(0, 100),
         type: event.type,

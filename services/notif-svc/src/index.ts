@@ -25,9 +25,22 @@ const F_STREAM = "forum:notify";
 const GROUP    = "notif-svc-group";
 const CONSUMER = `notif-${process.pid}`;
 
+const STALE_ENTRY_CLAIM_MS   = 60_000;       // reclaim entries pending longer than this
+const CLAIM_SWEEP_INTERVAL_MS = 60_000;
+const RECEIPT_MIN_AGE_MS  = 15 * 60_000;     // Expo recommends waiting ~15min before checking
+const RECEIPT_MAX_AGE_MS  = 24 * 60 * 60_000; // Expo only retains receipts for ~a day
+const RECEIPT_SWEEP_INTERVAL_MS = 10 * 60_000;
+
 const expo = new Expo();
 let pool: Pool;
+let redisClient: Redis;
 let isShuttingDown = false;
+
+interface PendingReceipt {
+  ticketId: string;
+  sentAt: number;
+}
+let pendingReceipts: PendingReceipt[] = [];
 
 // ─── DB helpers ───────────────────────────────────────────────
 
@@ -56,10 +69,60 @@ async function sendPush(
   const chunks = expo.chunkPushNotifications(messages);
   for (const chunk of chunks) {
     try {
-      await expo.sendPushNotificationsAsync(chunk);
+      const tickets = await expo.sendPushNotificationsAsync(chunk);
+      const sentAt = Date.now();
+      for (const ticket of tickets) {
+        if (ticket.status === "ok") {
+          pendingReceipts.push({ ticketId: ticket.id, sentAt });
+        } else {
+          console.error("[notif-svc] Push ticket error:", ticket.message, ticket.details);
+        }
+      }
     } catch (err) {
       console.error("[notif-svc] Push send error:", err);
     }
+  }
+}
+
+// ─── Push receipts — prune tokens Expo reports as dead ────────
+// Ticket IDs come back immediately from sendPushNotificationsAsync, but
+// the actual delivery receipt (which reveals DeviceNotRegistered, etc.)
+// is only available from Expo a short while later. This sweep checks
+// receipts in batches and deletes tokens Expo says are gone for good.
+
+async function checkPushReceipts(): Promise<void> {
+  const now = Date.now();
+  pendingReceipts = pendingReceipts.filter((r) => now - r.sentAt < RECEIPT_MAX_AGE_MS);
+
+  const due = pendingReceipts.filter((r) => now - r.sentAt >= RECEIPT_MIN_AGE_MS);
+  if (due.length === 0) return;
+
+  const processedIds = new Set<string>();
+  const chunks = expo.chunkPushNotificationReceiptIds(due.map((r) => r.ticketId));
+
+  for (const chunk of chunks) {
+    try {
+      const receipts = await expo.getPushNotificationReceiptsAsync(chunk);
+      for (const id of chunk) processedIds.add(id);
+
+      for (const [id, receipt] of Object.entries(receipts)) {
+        if (receipt.status === "error") {
+          console.error(`[notif-svc] Push receipt error for ${id}:`, receipt.message);
+          const token = receipt.details?.expoPushToken;
+          if (receipt.details?.error === "DeviceNotRegistered" && token) {
+            await pool.query('DELETE FROM device_tokens WHERE token = $1', [token]);
+            console.log("[notif-svc] Pruned stale device token (DeviceNotRegistered)");
+          }
+        }
+      }
+    } catch (err) {
+      console.error("[notif-svc] Receipt check request failed, will retry next sweep:", err);
+      // Leave this chunk's ids out of processedIds so they're retried.
+    }
+  }
+
+  if (processedIds.size > 0) {
+    pendingReceipts = pendingReceipts.filter((r) => !processedIds.has(r.ticketId));
   }
 }
 
@@ -72,11 +135,23 @@ interface NotifyRequest {
   data?: Record<string, string>;
 }
 
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) => setTimeout(() => reject(new Error("timeout")), ms)),
+  ]);
+}
+
 function startHttpServer(): http.Server {
   const server = http.createServer(async (req, res) => {
     if (req.method === "GET" && req.url === "/health") {
-      res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ status: "ok", service: "notif-svc" }));
+      const [dbOk, redisOk] = await Promise.all([
+        withTimeout(pool.query("SELECT 1"), 2000).then(() => true).catch(() => false),
+        withTimeout(redisClient.ping(), 2000).then(() => true).catch(() => false),
+      ]);
+      const healthy = dbOk && redisOk;
+      res.writeHead(healthy ? 200 : 503, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ status: healthy ? "ok" : "degraded", service: "notif-svc", db: dbOk, redis: redisOk }));
       return;
     }
 
@@ -176,11 +251,33 @@ async function ensureGroup(redis: Redis, stream: string): Promise<void> {
   }
 }
 
+// Reclaim entries left pending by a consumer that died mid-processing
+// (e.g. this process crashed before XACK). Each restart uses a fresh
+// CONSUMER name, so without this sweep those entries would be orphaned
+// in the group's pending-entries list forever.
+async function claimStaleEntries(redis: Redis, stream: string): Promise<void> {
+  try {
+    const result = await redis.xautoclaim(
+      stream, GROUP, CONSUMER, STALE_ENTRY_CLAIM_MS, "0-0", "COUNT", "50"
+    ) as any;
+    const claimed: any[] = result?.[1] ?? [];
+    if (claimed.length > 0) {
+      console.log(`[notif-svc] Claimed ${claimed.length} stale entries on ${stream}`);
+      for (const [entryId, fields] of claimed) {
+        await processMsgNotify(redis, entryId, fields, stream);
+      }
+    }
+  } catch (err) {
+    console.error(`[notif-svc] XAUTOCLAIM failed for ${stream}:`, err);
+  }
+}
+
 async function main(): Promise<void> {
   console.log(`[notif-svc] Starting (consumer: ${CONSUMER})`);
 
   // PostgreSQL connection
   pool = new Pool({ connectionString: DATABASE_URL });
+  pool.on("error", (err) => console.error("[notif-svc] Postgres pool error:", err));
   await pool.query("SELECT 1");
   console.log("[notif-svc] PostgreSQL connected");
 
@@ -189,9 +286,24 @@ async function main(): Promise<void> {
     maxRetriesPerRequest: 3,
     retryStrategy: (times) => (isShuttingDown ? null : Math.min(times * 200, 5000)),
   });
+  redis.on("error", (err) => console.error("[notif-svc] Redis client error:", err));
+  redisClient = redis;
 
   await ensureGroup(redis, STREAM);
   await ensureGroup(redis, F_STREAM);
+
+  // Reclaim any entries orphaned by a previous crashed process, then
+  // keep sweeping periodically in case this process itself dies mid-entry.
+  await claimStaleEntries(redis, STREAM);
+  await claimStaleEntries(redis, F_STREAM);
+  const claimInterval = setInterval(() => {
+    claimStaleEntries(redis, STREAM).catch(() => {});
+    claimStaleEntries(redis, F_STREAM).catch(() => {});
+  }, CLAIM_SWEEP_INTERVAL_MS);
+
+  const receiptInterval = setInterval(() => {
+    checkPushReceipts().catch((err) => console.error("[notif-svc] Receipt sweep error:", err));
+  }, RECEIPT_SWEEP_INTERVAL_MS);
 
   const httpServer = startHttpServer();
 
@@ -219,6 +331,8 @@ async function main(): Promise<void> {
     }
   }
 
+  clearInterval(claimInterval);
+  clearInterval(receiptInterval);
   httpServer.close();
   await redis.quit();
   await pool.end();

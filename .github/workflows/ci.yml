@@ -207,7 +207,7 @@ jobs:
           fi
 
       - name: Sync ArgoCD & run migrations
-        if: matrix.changed == 'true' && (matrix.service == 'user-svc' || matrix.service == 'chat-svc')
+        if: matrix.changed == 'true'
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.SERVER_HOST }}
@@ -219,4 +219,8 @@ jobs:
             kubectl exec deployment/argocd-server -n argocd -- argocd app sync community-app --insecure --timeout 180
             kubectl exec deployment/argocd-server -n argocd -- argocd app wait community-app --insecure --health --timeout 180
             kubectl rollout status deployment/${{ matrix.service }} -n communityapp --timeout=180s
-            kubectl exec deployment/${{ matrix.service }} -n communityapp -- npx prisma migrate deploy
+            # notif-svc has no Prisma schema at all (raw pg Pool) — migrate deploy
+            # would fail with "command not found" / no schema.prisma for it.
+            if [ "${{ matrix.service }}" != "notif-svc" ]; then
+              kubectl exec deployment/${{ matrix.service }} -n communityapp -- npx prisma migrate deploy
+            fi

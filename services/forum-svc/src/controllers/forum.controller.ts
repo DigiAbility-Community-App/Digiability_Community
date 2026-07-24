@@ -9,7 +9,7 @@ import { enqueueForClassification } from '../moderation/classify-queue';
 import { calculateCosineSimilarity, generateThreadSummary } from '../services/ai.service';
 import { broadcastForumEvent, sendNotificationToUser } from '../websocket/socket';
 
-const NOTIF_SVC_URL = process.env.NOTIF_SVC_URL ?? 'http://localhost:4003';
+const NOTIF_SVC_URL = process.env.NOTIF_SVC_URL ?? 'http://localhost:4004';
 
 function sendPushNotification(
   userId: string,
@@ -751,6 +751,16 @@ export const acceptAnswer = async (req: Request, res: Response): Promise<void> =
 
       return updatedAns;
     });
+
+    // Push notification to the answer author (fire-and-forget)
+    if (answer.authorId !== userId) {
+      sendPushNotification(
+        answer.authorId,
+        'Answer Accepted!',
+        `Your answer was accepted as the solution for "${answer.question.title}".`,
+        { type: 'forum_answer', questionId: answer.questionId }
+      );
+    }
 
     broadcastForumEvent('answer_accepted', result);
     res.status(200).json({ success: true, data: result });

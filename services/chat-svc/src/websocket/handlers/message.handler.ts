@@ -63,7 +63,7 @@ export async function handleMessageSend(
     return;
   }
 
-  const { conversationId, clientMessageId, content, type, metadata } = parsed.data;
+  const { conversationId, clientMessageId, content, type, metadata, senderName } = parsed.data;
 
   try {
     // ── 2. Verify membership ───────────────────────────────────
@@ -172,6 +172,7 @@ export async function handleMessageSend(
       messageId,
       conversationId,
       senderId: userId,
+      senderName,
       clientMessageId,
       content,
       type: type || "TEXT",
