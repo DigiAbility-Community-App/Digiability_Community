@@ -34,8 +34,10 @@ type Props = {
 
 type ApiErrorShape = {
   response?: {
+    status?: number;
     data?: {
       message?: string;
+      code?: string;
       banned?: boolean;
       permanent?: boolean;
       suspendedUntil?: string | null;
@@ -47,6 +49,14 @@ type ApiErrorShape = {
     };
   };
 };
+
+function isUnverifiedEmailError(error: unknown): boolean {
+  const res = (error as ApiErrorShape).response;
+  return (
+    res?.data?.code === "EMAIL_NOT_VERIFIED" ||
+    (res?.status === 403 && !!res?.data?.message?.toLowerCase().includes("verify"))
+  );
+}
 
 function getBanInfo(error: unknown) {
   const data = (error as ApiErrorShape).response?.data;
@@ -185,6 +195,10 @@ const WelcomeScreen = ({ navigation }: Props) => {
       const banInfo = getBanInfo(err);
       if (banInfo) {
         navigation.navigate("AccountSuspended", banInfo);
+      } else if (isUnverifiedEmailError(err)) {
+        // Account exists but email isn't verified — send them to the verify
+        // screen (with resend) so they can finish signup they abandoned.
+        navigation.navigate("VerifyEmail", { email: loginEmail.trim().toLowerCase() });
       } else {
         setError(getApiErrorMessage(err, "Login failed."));
       }

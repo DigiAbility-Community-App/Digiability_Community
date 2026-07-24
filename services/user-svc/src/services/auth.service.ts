@@ -247,9 +247,15 @@ export async function loginUser(input: LoginInput): Promise<LoginResult> {
     throw createError("Invalid email or password", 400);
   }
 
-  // 5. Require email verification
+  // 5. Require email verification. Attach a machine-readable code so the
+  //    client can route the user to the verify-email screen instead of
+  //    string-matching the message.
   if (!user.isEmailVerified) {
-    throw createError("Please verify your email address before logging in.", 403);
+    throw createError(
+      "Please verify your email address before logging in.",
+      403,
+      { code: "EMAIL_NOT_VERIFIED" }
+    );
   }
 
   // 6. Block suspended/banned accounts before issuing tokens
