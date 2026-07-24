@@ -11,6 +11,10 @@ export interface BasicProfileData {
   gender?: string | null;
   city?: string | null;
   state?: string | null;
+  addressLine1?: string | null;
+  streetArea?: string | null;
+  pincode?: string | null;
+  locationDistrict?: string | null;
   phoneNo?: string | null; // Stored on User model
 }
 
@@ -144,6 +148,10 @@ export const profileService = {
       gender: getStringVal(data.gender),
       city: getStringVal(data.city),
       state: getStringVal(data.state),
+      addressLine1: getStringVal(data.addressLine1),
+      streetArea: getStringVal(data.streetArea),
+      pincode: getStringVal(data.pincode),
+      locationDistrict: getStringVal(data.locationDistrict),
     };
 
     // phoneNo lives on the User model — update it separately when provided
@@ -168,6 +176,10 @@ export const profileService = {
         gender: getStringVal(data.gender) ?? null,
         city: getStringVal(data.city) ?? null,
         state: getStringVal(data.state) ?? null,
+        addressLine1: getStringVal(data.addressLine1) ?? null,
+        streetArea: getStringVal(data.streetArea) ?? null,
+        pincode: getStringVal(data.pincode) ?? null,
+        locationDistrict: getStringVal(data.locationDistrict) ?? null,
       },
     });
   },

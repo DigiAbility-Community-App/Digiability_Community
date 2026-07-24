@@ -400,6 +400,13 @@ model UserProfile {
   city      String?
   state     String?
 
+  // Address (collected at onboarding). locationDistrict is the personal
+  // address district — distinct from the NGO-scoped `district` field below.
+  addressLine1     String?
+  streetArea       String?
+  pincode          String?
+  locationDistrict String?
+
   // PwD Fields
   disabilityType  String?
   disabilitySince Int?

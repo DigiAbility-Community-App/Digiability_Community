@@ -336,6 +336,12 @@ model UserProfile {
   city      String?
   state     String?
 
+  // Address — mirror of user-svc; keep in sync so db push won't drop them.
+  addressLine1     String?
+  streetArea       String?
+  pincode          String?
+  locationDistrict String?
+
   // PwD Fields
   disabilityType  String?
   disabilitySince Int?

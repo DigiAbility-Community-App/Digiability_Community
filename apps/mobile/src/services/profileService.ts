@@ -272,7 +272,7 @@ export async function getMyProfile() {
       supportNeeded: profile.supportNeeded,
       carePersonName: profile.carePersonName,
       careRelation: profile.careRelation,
-      careDob: profile.careDob,
+      careDob: formatIsoToDmy(profile.careDob),
       careDisabilityType: profile.careDisabilityType,
       speciality: profile.speciality,
       organization: profile.organization,

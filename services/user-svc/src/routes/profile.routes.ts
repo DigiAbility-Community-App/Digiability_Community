@@ -45,6 +45,10 @@ const basicProfileSchema = z.object({
   gender: z.string().optional(),
   city: z.string().optional(),
   state: z.string().optional(),
+  addressLine1: z.string().max(200).optional(),
+  streetArea: z.string().max(200).optional(),
+  pincode: z.string().max(20).optional(),
+  locationDistrict: z.string().max(100).optional(),
   phoneNo: z.string().max(20, 'Phone number is too long').optional(),
 });
 
