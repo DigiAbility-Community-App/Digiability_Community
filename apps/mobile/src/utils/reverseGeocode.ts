@@ -12,6 +12,8 @@ interface NominatimAddress {
   road?: string;
   neighbourhood?: string;
   suburb?: string;
+  quarter?: string;
+  city_district?: string;
   city?: string;
   town?: string;
   village?: string;
@@ -46,7 +48,12 @@ async function fetchNominatimAddress(
   if (!a) throw new Error("No address in response");
 
   return {
-    streetArea: a.road || a.neighbourhood || a.suburb || "",
+    // Prefer the named locality (suburb/neighbourhood, ~300-500m — e.g.
+    // "Rahatani", "Pimple Saudagar") over the specific road name: it's both
+    // what users actually recognize as "their area" and more reliably
+    // tagged in OSM than individual residential-lane names.
+    streetArea:
+      a.suburb || a.neighbourhood || a.quarter || a.city_district || a.road || "",
     city: a.city || a.town || a.village || a.municipality || "",
     district: a.state_district || a.county || "",
     state: a.state || "",
@@ -78,7 +85,11 @@ async function fetchNativeCrossCheck(
   // differently, and a malformed value is worse than none.
   const pincode = p?.postalCode && /^\d{6}$/.test(p.postalCode) ? p.postalCode : "";
 
-  const streetCandidate = p?.street || p?.name || "";
+  // expo-location's `district` field is docs'd as "additional city-level
+  // info" — on Android this is the geocoder's subLocality, i.e. the named
+  // ~300-500m locality (Rahatani, Pimple Saudagar, Kalewadi...), which is
+  // the granularity we want here — not `street`, which is a specific road.
+  const streetCandidate = p?.district || p?.street || p?.name || "";
   const streetArea = streetCandidate && isPlainAscii(streetCandidate) ? streetCandidate : "";
 
   return { pincode, streetArea };
@@ -93,14 +104,17 @@ async function fetchNativeCrossCheck(
  * If that request fails (offline, rate-limited), we fall back to the native
  * geocoder so the fields still populate (device-locale beats nothing).
  *
- * Both postcode AND road-level tagging are sparse/patchy in OpenStreetMap
- * for India — Nominatim can resolve city/district/state correctly (those
- * come from well-mapped administrative boundaries) while still returning a
- * postcode from an unrelated postal circle, or a road/neighbourhood name
- * that isn't actually where the user is. The native platform geocoder
- * (backed by Google's data on Android) has much better Indian street- and
- * postal-level coverage, so its postcode and street are preferred whenever
- * they're available, well-formed, and in English.
+ * `streetArea` targets the named ~300-500m locality (e.g. "Rahatani",
+ * "Pimple Saudagar", "Kalewadi") — what users actually recognize as "their
+ * area" — not a specific road name. Both postcode AND locality-level
+ * tagging are sparse/patchy in OpenStreetMap for India — Nominatim can
+ * resolve city/district/state correctly (those come from well-mapped
+ * administrative boundaries) while still returning a postcode from an
+ * unrelated postal circle, or a suburb/road name that isn't actually where
+ * the user is. The native platform geocoder (backed by Google's data on
+ * Android) has much better Indian locality- and postal-level coverage, so
+ * its postcode and sub-locality are preferred whenever they're available,
+ * well-formed, and in English.
  */
 export async function reverseGeocodeEnglish(
   latitude: number,
@@ -116,7 +130,7 @@ export async function reverseGeocodeEnglish(
       const p = results[0];
       if (p) {
         result = {
-          streetArea: p.street || "",
+          streetArea: p.district || p.street || "",
           city: p.city || "",
           district: p.subregion || "",
           state: p.region || "",
