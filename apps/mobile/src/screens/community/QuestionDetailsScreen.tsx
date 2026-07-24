@@ -761,18 +761,24 @@ const QuestionDetailsScreen = () => {
       />
 
       {/* FLOAT REPLY BUTTON */}
+      {/* The absolute positioning lives on this wrapper View, NOT on the
+          AccessibleButton: AccessibleButton applies its `style` to an inner
+          Animated.View, so position:absolute there collapses the outer
+          Pressable (the touch target) to 0×0 and taps do nothing. */}
       {!isSolved && (
-        <AccessibleButton
-          variant="primary"
-          accessibilityLabel="Post your answer"
-          style={[styles.replyFab, { shadowColor: colors.primary }]}
-          onPress={() => setIsAnswerModalOpen(true)}
-        >
-          <Plus size={24} color="#FFFFFF" style={{ marginRight: 6 }} />
-          <AccessibleText variant="button" style={styles.replyFabText}>
-            Answer
-          </AccessibleText>
-        </AccessibleButton>
+        <View style={styles.replyFabWrapper} pointerEvents="box-none">
+          <AccessibleButton
+            variant="primary"
+            accessibilityLabel="Post your answer"
+            style={[styles.replyFab, { shadowColor: colors.primary }]}
+            onPress={() => setIsAnswerModalOpen(true)}
+          >
+            <Plus size={24} color="#FFFFFF" style={{ marginRight: 6 }} />
+            <AccessibleText variant="button" style={styles.replyFabText}>
+              Answer
+            </AccessibleText>
+          </AccessibleButton>
+        </View>
       )}
 
       {/* WRITE REPLY MODAL */}
@@ -1266,11 +1272,14 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 4
   },
-  replyFab: {
+  replyFabWrapper: {
     position: "absolute",
     bottom: 20,
-    left: "50%",
-    transform: [{ translateX: -60 }],
+    left: 0,
+    right: 0,
+    alignItems: "center",
+  },
+  replyFab: {
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 20,
