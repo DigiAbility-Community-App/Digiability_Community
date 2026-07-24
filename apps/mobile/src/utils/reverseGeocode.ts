@@ -39,12 +39,17 @@ export async function reverseGeocodeEnglish(
     const url =
       `https://nominatim.openstreetmap.org/reverse?lat=${latitude}` +
       `&lon=${longitude}&format=jsonv2&accept-language=en`;
+    // Abort after 8s — RN fetch has no default timeout, and a stalled
+    // request here would leave the "Use Current Location" flow hanging.
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 8000);
     const res = await fetch(url, {
+      signal: controller.signal,
       headers: {
         // Nominatim usage policy requires an identifying User-Agent.
         "User-Agent": "DigiabilityCommunity/1.0 (support@digiability.app)",
       },
-    });
+    }).finally(() => clearTimeout(timer));
     if (!res.ok) throw new Error(`Nominatim ${res.status}`);
     const json = (await res.json()) as { address?: NominatimAddress };
     const a = json.address;

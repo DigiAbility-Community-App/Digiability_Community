@@ -152,6 +152,8 @@ const ProfileScreen = () => {
   const [state, setState] =
     useState("");
 
+  const [locationLoading, setLocationLoading] = useState(false);
+
   const [loading, setLoading] =
     useState(false);
 
@@ -511,27 +513,68 @@ const ProfileScreen = () => {
   // --------------------------------------------------
   const fetchCurrentLocation =
     async () => {
+      if (locationLoading) return; // prevent double-tap
+      setLocationLoading(true);
       try {
         const { status } =
           await Location.requestForegroundPermissionsAsync();
 
         if (status !== "granted") {
           Alert.alert(
-            "Permission denied"
+            "Location Permission Needed",
+            "Please allow location access so we can auto-fill your address."
           );
           return;
         }
 
-        const location =
-          await Location.getCurrentPositionAsync(
-            {}
+        // GPS/location services off entirely → getCurrentPositionAsync would
+        // hang or throw with no feedback. Tell the user what to do instead.
+        const servicesOn = await Location.hasServicesEnabledAsync();
+        if (!servicesOn) {
+          Alert.alert(
+            "Location Is Off",
+            "Please turn on your device's location (GPS) and try again."
           );
+          return;
+        }
+
+        // Fast path: reuse the OS's cached fix if one exists (instant).
+        // Otherwise request a fresh fix with Balanced accuracy — the empty
+        // options object previously used can take a very long time (or hang)
+        // on a cold GPS, which looked like "location not fetching" at all.
+        let location = await Location.getLastKnownPositionAsync();
+        if (!location) {
+          location = await Promise.race([
+            Location.getCurrentPositionAsync({
+              accuracy: Location.Accuracy.Balanced,
+            }),
+            new Promise<null>((resolve) =>
+              setTimeout(() => resolve(null), 15000)
+            ),
+          ]);
+        }
+
+        if (!location) {
+          Alert.alert(
+            "Couldn't Get Location",
+            "We couldn't get a GPS fix. Move somewhere with a clearer view of the sky or check that location is enabled, then try again."
+          );
+          return;
+        }
 
         // Reverse-geocode in English (device-locale geocoder returns Marathi).
         const place = await reverseGeocodeEnglish(
           location.coords.latitude,
           location.coords.longitude
         );
+
+        if (!place) {
+          Alert.alert(
+            "Couldn't Find Address",
+            "We got your location but couldn't turn it into an address. Please fill the fields manually."
+          );
+          return;
+        }
 
         if (place) {
           setStreetArea(place.streetArea);
@@ -541,7 +584,13 @@ const ProfileScreen = () => {
           setPincode(place.pincode);
         }
       } catch (error) {
-        console.log(error);
+        console.log("[Location] fetch failed:", error);
+        Alert.alert(
+          "Location Error",
+          "Something went wrong while fetching your location. Please try again or fill the fields manually."
+        );
+      } finally {
+        setLocationLoading(false);
       }
     };
 
