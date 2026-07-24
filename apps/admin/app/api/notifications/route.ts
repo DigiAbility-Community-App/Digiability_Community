@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdminAuth } from "@/lib/auth";
 import { dbPool } from "@/lib/db";
+import { sendBroadcastPush } from "@/lib/push";
 
 async function ensureTables() {
   await dbPool.query(`
@@ -78,7 +79,9 @@ export async function POST(request: NextRequest) {
 
     const notifType = `ADMIN_${type.toUpperCase()}`;
 
-    // Insert one notification row per target user using a SELECT-based INSERT.
+    // Insert one notification row per target user using a SELECT-based INSERT,
+    // returning the targeted user ids so the push step below reaches the
+    // exact same audience as the in-app notification.
     // gen_random_uuid()::text handles the id column (no DB-level default).
     let insertResult;
     if (audience === "ALL") {
@@ -87,6 +90,7 @@ export async function POST(request: NextRequest) {
         SELECT gen_random_uuid()::text, id, $1, $2, $3, false, NOW()
         FROM users
         WHERE "deletedAt" IS NULL
+        RETURNING "userId"
       `, [notifType, title, message]);
     } else {
       // audience is a role value like "pwd", "caregiver", etc.
@@ -96,6 +100,7 @@ export async function POST(request: NextRequest) {
         FROM users
         WHERE "deletedAt" IS NULL
           AND $4 = ANY(roles::text[])
+        RETURNING "userId"
       `, [notifType, title, message, audience.toLowerCase()]);
     }
 
@@ -108,13 +113,18 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const targetUserIds = insertResult.rows.map((row) => row.userId as string);
+    const pushedCount = await sendBroadcastPush(targetUserIds, title, message, {
+      type: "admin_broadcast",
+    });
+
     // Log the broadcast
     await dbPool.query(`
       INSERT INTO admin_notification_logs (title, message, type, audience, sent_count)
       VALUES ($1, $2, $3, $4, $5)
     `, [title, message, type, audience, sentCount]);
 
-    return NextResponse.json({ success: true, sentTo: sentCount });
+    return NextResponse.json({ success: true, sentTo: sentCount, pushedTo: pushedCount });
   } catch (error) {
     console.error("Notification POST error:", error);
     return NextResponse.json(

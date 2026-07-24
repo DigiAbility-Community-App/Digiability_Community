@@ -8,6 +8,7 @@ export interface MessageCreatedEvent {
   messageId: string;
   conversationId: string;
   senderId: string;
+  senderName?: string;     // Client-reported display name, for push notification titles
   clientMessageId: string;
   content: string;
   type: string;
@@ -20,6 +21,7 @@ export interface MessagePersistedEvent {
   messageId: string;
   conversationId: string;
   senderId: string;
+  senderName?: string;     // Client-reported display name, for push notification titles
   clientMessageId: string;
   content: string;
   type: string;

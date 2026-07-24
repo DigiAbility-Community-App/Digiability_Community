@@ -16,7 +16,7 @@ import { MessageCreatedEvent, MessagePersistedEvent, MessageNotifyEvent } from "
  */
 async function xadd(
   stream: string,
-  data: Record<string, string>
+  data: Record<string, string | undefined | null>
 ): Promise<string> {
   // Flatten object to alternating key-value array for XADD
   const fields: string[] = [];
@@ -81,6 +81,7 @@ export async function publishMessageCreated(
     messageId: event.messageId,
     conversationId: event.conversationId,
     senderId: event.senderId,
+    senderName: event.senderName,
     clientMessageId: event.clientMessageId,
     content: event.content,
     type: event.type,
@@ -104,6 +105,7 @@ export async function publishMessagePersisted(
     messageId: event.messageId,
     conversationId: event.conversationId,
     senderId: event.senderId,
+    senderName: event.senderName,
     clientMessageId: event.clientMessageId,
     content: event.content,
     type: event.type,
@@ -126,9 +128,9 @@ export async function publishMessageNotify(
   const entryId = await xadd(STREAMS.MESSAGE_NOTIFY, {
     messageId: event.messageId,
     conversationId: event.conversationId,
-    conversationName: event.conversationName ?? "",
+    conversationName: event.conversationName,
     senderId: event.senderId,
-    senderName: event.senderName ?? "",
+    senderName: event.senderName,
     recipientId: event.recipientId,
     contentPreview: event.contentPreview,
     type: event.type,

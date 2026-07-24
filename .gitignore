@@ -75,3 +75,6 @@ replace_invalid_vars.py
 
 # ── Misc ─────────────────────────────────────────────────────
 *.pdf
+
+# ── Local manual Docker image exports (docker save output) ───
+apps/admin/admin-*.tar

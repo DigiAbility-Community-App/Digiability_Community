@@ -20,6 +20,13 @@ export const messageSendSchema = z.object({
   content: z.string().min(1).max(10000),
   type: z.enum(["TEXT", "IMAGE", "FILE", "AUDIO", "VIDEO"]).default("TEXT"),
   metadata: z.string().max(5000).optional(),
+  // Client-reported display name of the sender, used only as a push
+  // notification title for DMs (chat-svc has no other source of user
+  // display names — see CLAUDE.md: no runtime calls to user-svc).
+  // No .min(1): this is a best-effort cosmetic field, not something that
+  // should ever reject an otherwise-valid message send. An empty string
+  // is normalized to undefined downstream (msg-svc.worker's `|| undefined`).
+  senderName: z.string().trim().max(200).optional(),
 });
 
 export const messageDeliveredSchema = z.object({
