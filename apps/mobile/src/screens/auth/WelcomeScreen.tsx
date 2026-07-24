@@ -34,8 +34,10 @@ type Props = {
 
 type ApiErrorShape = {
   response?: {
+    status?: number;
     data?: {
       message?: string;
+      code?: string;
       banned?: boolean;
       permanent?: boolean;
       suspendedUntil?: string | null;
@@ -47,6 +49,14 @@ type ApiErrorShape = {
     };
   };
 };
+
+function isUnverifiedEmailError(error: unknown): boolean {
+  const res = (error as ApiErrorShape).response;
+  return (
+    res?.data?.code === "EMAIL_NOT_VERIFIED" ||
+    (res?.status === 403 && !!res?.data?.message?.toLowerCase().includes("verify"))
+  );
+}
 
 function getBanInfo(error: unknown) {
   const data = (error as ApiErrorShape).response?.data;
@@ -104,12 +114,12 @@ const WelcomeScreen = ({ navigation }: Props) => {
 
     const trimmedPhone = signUpPhone.trim();
 
-    if (!trimmedName || !trimmedEmail || !trimmedPassword) {
+    if (!trimmedName || !trimmedEmail || !trimmedPassword || !trimmedPhone) {
       setError("Please fill in all required fields.");
       return;
     }
 
-    if (trimmedPhone && !/^[0-9]{10}$/.test(trimmedPhone)) {
+    if (!/^[0-9]{10}$/.test(trimmedPhone)) {
       setError("Please enter a valid 10-digit mobile number.");
       return;
     }
@@ -146,7 +156,7 @@ const WelcomeScreen = ({ navigation }: Props) => {
         name: trimmedName,
         email: trimmedEmail,
         password: trimmedPassword,
-        ...(trimmedPhone ? { phoneNo: trimmedPhone } : {}),
+        phoneNo: trimmedPhone,
       });
       // register() calls setAuth() in the auth store → isAuthenticated flips
       // to true → RootNavigator auto-switches to Main stack (Accessibility first).
@@ -185,6 +195,10 @@ const WelcomeScreen = ({ navigation }: Props) => {
       const banInfo = getBanInfo(err);
       if (banInfo) {
         navigation.navigate("AccountSuspended", banInfo);
+      } else if (isUnverifiedEmailError(err)) {
+        // Account exists but email isn't verified — send them to the verify
+        // screen (with resend) so they can finish signup they abandoned.
+        navigation.navigate("VerifyEmail", { email: loginEmail.trim().toLowerCase() });
       } else {
         setError(getApiErrorMessage(err, "Login failed."));
       }
@@ -326,7 +340,7 @@ const WelcomeScreen = ({ navigation }: Props) => {
 
             {/* Phone Number — split: fixed +91 | digit input */}
             <View style={styles.phoneContainer}>
-              <AccessibleText style={[styles.phoneLabel, { color: colors.subtext }]}>Phone Number (optional)</AccessibleText>
+              <AccessibleText style={[styles.phoneLabel, { color: colors.subtext }]}>Phone Number</AccessibleText>
               <View style={[styles.phoneWrapper, { backgroundColor: colors.surface, borderColor: colors.border }, highContrast && { borderWidth: 2, borderColor: "#000000" }]}>
                 {/* Static country code section */}
                 <View style={[styles.phonePrefix, { backgroundColor: highContrast ? colors.card : "#EDEAF8" }]}
@@ -348,7 +362,7 @@ const WelcomeScreen = ({ navigation }: Props) => {
                   maxLength={10}
                   accessible={true}
                   accessibilityLabel="Phone number"
-                  accessibilityHint="Enter your 10-digit mobile number without country code. This field is optional."
+                  accessibilityHint="Enter your 10-digit mobile number without country code."
                 />
               </View>
             </View>
@@ -730,22 +744,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "center",
     gap: 14,
-  },
-
-  socialBtn: {
-    flex: 1,
-    height: 58,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#CFC2D4",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-
-  socialText: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: "#1A1B20",
   },
 
   // FOOTER

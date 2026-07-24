@@ -60,7 +60,18 @@ export async function handleSyncRequest(
       const hasMore = messages.length > SYNC_BATCH_SIZE;
       const batch = hasMore ? messages.slice(0, SYNC_BATCH_SIZE) : messages;
 
-      const messagePayloads: MessageNewPayload[] = batch.map((msg) => ({
+      // Exclude messages this user deleted "for me" so a reconnect sync
+      // doesn't resurrect them. hasMore/nextCursor stay on the fetched
+      // boundary so the client keeps paging from the right sequence.
+      const hiddenIds = await messageRepository.getHiddenMessageIds(
+        userId,
+        batch.map((m) => m.id)
+      );
+      const visibleBatch = hiddenIds.size === 0
+        ? batch
+        : batch.filter((m) => !hiddenIds.has(m.id));
+
+      const messagePayloads: MessageNewPayload[] = visibleBatch.map((msg) => ({
         messageId: msg.id,
         conversationId: msg.conversationId,
         senderId: msg.senderId,

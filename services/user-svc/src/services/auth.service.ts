@@ -8,14 +8,14 @@ import {
   validateEmailVerificationOtp,
   deleteEmailVerificationOtp,
   createRefreshToken,
-  createPasswordResetToken,
-  validatePasswordResetToken,
-  deletePasswordResetToken,
+  createPasswordResetOtp,
+  validatePasswordResetOtp,
+  deletePasswordResetOtp,
   revokeAllUserRefreshTokens,
 } from "./token.service";
 import {
   sendVerificationOtpEmail,
-  sendPasswordResetEmail,
+  sendPasswordResetOtpEmail,
 } from "./email.service";
 import { auditLog } from "./audit.service";
 import { recordRegistrationConsents } from "./consent.service";
@@ -247,9 +247,15 @@ export async function loginUser(input: LoginInput): Promise<LoginResult> {
     throw createError("Invalid email or password", 400);
   }
 
-  // 5. Require email verification
+  // 5. Require email verification. Attach a machine-readable code so the
+  //    client can route the user to the verify-email screen instead of
+  //    string-matching the message.
   if (!user.isEmailVerified) {
-    throw createError("Please verify your email address before logging in.", 403);
+    throw createError(
+      "Please verify your email address before logging in.",
+      403,
+      { code: "EMAIL_NOT_VERIFIED" }
+    );
   }
 
   // 6. Block suspended/banned accounts before issuing tokens
@@ -283,16 +289,16 @@ export async function forgotPassword(
 
   // Always return same message to prevent email enumeration
   const SAFE_MESSAGE =
-    "If an account with that email exists, a reset link has been sent.";
+    "If an account with that email exists, a reset code has been sent.";
 
   const user = await prisma.user.findUnique({ where: { email } });
   if (!user) return { message: SAFE_MESSAGE };
 
-  // Create reset token
-  const rawToken = await createPasswordResetToken(user.id);
+  // Create a 6-digit reset OTP
+  const rawOtp = await createPasswordResetOtp(user.id);
 
   // Send email (non-blocking)
-  sendPasswordResetEmail(user.email, user.name, rawToken).catch((err) =>
+  sendPasswordResetOtpEmail(user.email, user.name, rawOtp).catch((err) =>
     console.error("[EmailService] Failed to send reset email:", err)
   );
 
@@ -304,10 +310,17 @@ export async function forgotPassword(
 export async function resetPassword(
   input: ResetPasswordInput
 ): Promise<{ message: string }> {
-  const { token, password } = input;
+  const { email, otp, password } = input;
 
-  // 1. Validate token
-  const userId = await validatePasswordResetToken(token);
+  // 1. Resolve the user by email, then validate the OTP against that user.
+  //    Use the same generic message for an unknown email as for a bad code
+  //    so this endpoint can't be used to enumerate accounts.
+  const user = await prisma.user.findUnique({ where: { email } });
+  if (!user) {
+    throw createError("Invalid or expired reset code.", 400);
+  }
+
+  const userId = await validatePasswordResetOtp(user.id, otp);
 
   // 2. Hash new password
   const hashedPassword = await hashPassword(password);
@@ -321,8 +334,8 @@ export async function resetPassword(
     revokeAllUserRefreshTokens(userId),
   ]);
 
-  // 4. Delete used reset token
-  await deletePasswordResetToken(token);
+  // 4. Delete used reset OTP
+  await deletePasswordResetOtp(userId);
 
   auditLog("auth.password_reset", { userId });
 

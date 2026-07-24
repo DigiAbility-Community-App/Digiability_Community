@@ -17,6 +17,7 @@ import { AccessibleButton } from "../../components/shared/AccessibleButton";
 import ScreenWrapper from "../../components/layout/ScreenWrapper";
 import AppHeader from "../../components/layout/AppHeader";
 import { confirmDeleteAccount } from "../../utils/accountDeletion";
+import { logout } from "@services/authService";
 import { forumService } from "@services/forumService";
 import { getNotificationPermissionStatus } from "@services/notificationService";
 
@@ -61,7 +62,6 @@ function comingSoonAlert(feature: string) {
 const HomeProfileScreen = () => {
     const navigation = useNavigation<any>();
     const user = useAuthStore((state) => state.user);
-    const clearAuth = useAuthStore((state) => state.clearAuth);
     const { colors, highContrast } = useTheme();
 
     // ── Chat store — derive group + care circle counts ──
@@ -85,6 +85,26 @@ const HomeProfileScreen = () => {
 
     // ── Delete ──
     const [deletingAccount, setDeletingAccount] = useState(false);
+    const [loggingOut, setLoggingOut] = useState(false);
+
+    const handleLogout = () => {
+        Alert.alert("Log Out", "Are you sure you want to log out?", [
+            { text: "Cancel", style: "cancel" },
+            {
+                text: "Log Out",
+                style: "destructive",
+                onPress: async () => {
+                    setLoggingOut(true);
+                    try {
+                        await logout();
+                    } catch {
+                        setLoggingOut(false);
+                        Alert.alert("Error", "Failed to log out. Please try again.");
+                    }
+                },
+            },
+        ]);
+    };
 
     const loadData = useCallback(async () => {
         setStatsLoading(true);
@@ -363,9 +383,10 @@ const HomeProfileScreen = () => {
                     accessibilityLabel="Logout"
                     accessibilityHint="Logs you out of the application"
                     style={styles.logoutBtn}
-                    onPress={() => clearAuth()}
+                    onPress={handleLogout}
+                    disabled={loggingOut}
                 >
-                    LOGOUT
+                    {loggingOut ? "LOGGING OUT…" : "LOGOUT"}
                 </AccessibleButton>
 
                 {/* ── DELETE ACCOUNT ── */}
@@ -599,7 +620,7 @@ const styles = StyleSheet.create({
     },
 
     logoutBtn: {
-        height: 56,
+        minHeight: 56,
         borderWidth: 2,
         borderColor: "#BA1A1A",
         borderRadius: 16,

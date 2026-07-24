@@ -457,7 +457,7 @@ const styles = StyleSheet.create({
   registerBtn: {
     backgroundColor: "#F5C518",
     borderRadius: 16,
-    height: 56,
+    minHeight: 56,
     flexDirection: "row",
     justifyContent: "center",
     alignItems: "center",
@@ -472,8 +472,9 @@ const styles = StyleSheet.create({
     elevation: 0,
   },
   registerBtnText: {
-    fontSize: 16,
     fontWeight: "800",
     color: "#500088",
+    flexShrink: 1,
+    textAlign: "center",
   },
 });

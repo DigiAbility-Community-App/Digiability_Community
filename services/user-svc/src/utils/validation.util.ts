@@ -21,6 +21,13 @@ export const RegisterSchema = z.object({
       /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/,
       "Password must include uppercase, lowercase, and a number"
     ),
+  // Optional server-side: the mobile app requires it, but web register
+  // sends no phone. Without this key the validate middleware strips phoneNo
+  // from req.body before registerUser can persist it.
+  phoneNo: z
+    .string()
+    .regex(/^[0-9]{10}$/, "Phone number must be 10 digits")
+    .optional(),
   role: z.enum(["pwd", "caregiver", "therapist", "ngo", "volunteer", "student", "other"]).optional(),
   roles: z.array(z.enum(["pwd", "caregiver", "therapist", "ngo", "volunteer", "student", "other"])).optional(),
 });
@@ -41,7 +48,14 @@ export const ForgotPasswordSchema = z.object({
 });
 
 export const ResetPasswordSchema = z.object({
-  token: z.string({ required_error: "Reset token is required" }),
+  email: z
+    .string({ required_error: "Email is required" })
+    .email("Invalid email address")
+    .toLowerCase(),
+  otp: z
+    .string({ required_error: "Reset code is required" })
+    .length(6, "Reset code must be exactly 6 digits")
+    .regex(/^\d{6}$/, "Reset code must be 6 digits"),
   password: z
     .string({ required_error: "New password is required" })
     .min(8, "Password must be at least 8 characters")

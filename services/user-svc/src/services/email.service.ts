@@ -86,7 +86,15 @@ function otpVerificationEmailHTML(otp: string, name: string): string {
   `;
 }
 
-function resetPasswordEmailHTML(resetUrl: string, name: string): string {
+function resetPasswordOtpEmailHTML(otp: string, name: string): string {
+  const digitBoxes = otp
+    .split("")
+    .map(
+      (d) =>
+        `<td style="width:48px;height:56px;background:#fdecec;border-radius:10px;text-align:center;font-size:28px;font-weight:800;color:#ef4444;letter-spacing:2px;border:2px solid #f7c9c9;">${d}</td>`
+    )
+    .join('<td style="width:8px;"></td>');
+
   return `
   <!DOCTYPE html>
   <html lang="en">
@@ -111,18 +119,18 @@ function resetPasswordEmailHTML(resetUrl: string, name: string): string {
             <td style="padding:40px;">
               <h2 style="color:#1e1b4b;margin:0 0 16px;font-size:20px;">Reset your password, ${name}</h2>
               <p style="color:#4b5563;line-height:1.7;margin:0 0 24px;">
-                We received a request to reset your password. Click the button below to create a new password. This link expires in <strong>1 hour</strong>.
+                We received a request to reset your password. Use the code below in the app to set a new password. This code expires in <strong>10 minutes</strong>.
               </p>
               <div style="text-align:center;margin:32px 0;">
-                <a href="${resetUrl}"
-                   style="display:inline-block;padding:14px 32px;background:linear-gradient(135deg,#ef4444,#f97316);color:#fff;text-decoration:none;border-radius:8px;font-size:16px;font-weight:600;">
-                  🔐 Reset Password
-                </a>
+                <table cellpadding="0" cellspacing="0" style="margin:0 auto;">
+                  <tr>${digitBoxes}</tr>
+                </table>
               </div>
+              <p style="color:#4b5563;text-align:center;font-size:14px;margin:0 0 24px;">
+                Enter this code in the app to reset your password.
+              </p>
               <p style="color:#9ca3af;font-size:13px;line-height:1.6;margin:0;">
-                If you didn't request a password reset, you can safely ignore this email — your password won't change.<br/>
-                If the button doesn't work, copy this link:<br/>
-                <a href="${resetUrl}" style="color:#ef4444;word-break:break-all;">${resetUrl}</a>
+                If you didn't request a password reset, you can safely ignore this email — your password won't change.
               </p>
             </td>
           </tr>
@@ -165,26 +173,23 @@ export async function sendVerificationOtpEmail(
 }
 
 /**
- * Send password reset email.
+ * Send password reset OTP email.
  */
-export async function sendPasswordResetEmail(
+export async function sendPasswordResetOtpEmail(
   to: string,
   name: string,
-  rawToken: string
+  otp: string
 ): Promise<void> {
-  const baseUrl = process.env.CLIENT_BASE_URL ?? "http://localhost:3000";
-  const resetUrl = `${baseUrl}/reset-password?token=${rawToken}`;
-
   // Debug log: only when DEBUG_AUTH=true is explicitly set — never in staging/prod.
   if (process.env.DEBUG_AUTH === "true") {
-    process.stdout.write(`[DEV] Reset link for ${to}: ${resetUrl}\n`);
+    process.stdout.write(`[DEV] Password reset OTP for ${to}: ${otp}\n`);
   }
 
   await getTransporter().sendMail({
     from: process.env.EMAIL_FROM,
     to,
-    subject: "Reset your Digiability password",
-    html: resetPasswordEmailHTML(resetUrl, name),
+    subject: `${otp} — Reset your Digiability password`,
+    html: resetPasswordOtpEmailHTML(otp, name),
   });
 }
 

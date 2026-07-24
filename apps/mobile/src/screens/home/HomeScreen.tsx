@@ -9,8 +9,10 @@ import {
 } from "react-native";
 
 import { LinearGradient } from "expo-linear-gradient";
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import { useAuthStore } from "@store/authStore";
+import { useForumStore } from "@store/forumStore";
+import { useChatStore } from "@store/chatStore";
 import { useTheme } from "../../theme/ThemeContext";
 import { AccessibleText } from "../../components/shared/AccessibleText";
 import { AccessibleButton } from "../../components/shared/AccessibleButton";
@@ -43,6 +45,23 @@ const HomeScreen = () => {
   const navigation = useNavigation<any>();
   const user = useAuthStore((state) => state.user);
   const { colors, spacing, highContrast } = useTheme();
+
+  // ── Notification bell indicator ──
+  // Mirrors NotificationScreen: unread = any unread forum notification OR any
+  // pending chat invite (invites are always shown as unread there).
+  const forumNotifications = useForumStore((s) => s.notifications);
+  const fetchNotifications = useForumStore((s) => s.fetchNotifications);
+  const pendingInvites = useChatStore((s) => s.pendingInvites);
+  const hasUnreadNotifications =
+    pendingInvites.length > 0 || forumNotifications.some((n) => !n.read);
+
+  // Refresh forum notifications each time Home regains focus so the dot
+  // reflects current state (socket pushes keep it live in between).
+  useFocusEffect(
+    React.useCallback(() => {
+      fetchNotifications();
+    }, [fetchNotifications])
+  );
 
   // ----------------------
   // STATES
@@ -156,7 +175,7 @@ const HomeScreen = () => {
 
   return (
     <ScreenWrapper>
-      <AppHeader showLogo title="DigiAbility" showNotification hasUnreadNotifications={true} hideBackButton={true} />
+      <AppHeader showLogo title="DigiAbility" showNotification hasUnreadNotifications={hasUnreadNotifications} hideBackButton={true} />
 
       {/* BODY */}
       <ScrollView

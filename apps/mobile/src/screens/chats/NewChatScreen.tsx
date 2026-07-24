@@ -12,6 +12,7 @@ import { KeyboardAwareScrollView } from "react-native-keyboard-aware-scroll-view
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { ChatsStackParamList } from "@navigation/ChatsStack";
 import { chatService } from "@services/chatService";
+import { useChatStore } from "@store/chatStore";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import ScreenWrapper from "../../components/layout/ScreenWrapper";
 import { ArrowLeft, Search, SearchX, MessageCircle } from "lucide-react-native";
@@ -86,6 +87,11 @@ const NewChatScreen = ({ navigation }: Props) => {
     setIsCreating(true);
     try {
       const conversation = await chatService.createDirectChat(selectedUser.id);
+      // Add it to the store immediately so it shows in the list even before
+      // the list's on-focus refetch enriches it.
+      if (conversation?.id) {
+        useChatStore.getState().addConversation(conversation);
+      }
       navigation.replace("Chat", {
         conversationId: conversation.id,
         recipientName: selectedUser.name,

@@ -8,9 +8,9 @@ import {
   Platform,
   ActivityIndicator,
   Pressable,
+  Alert,
 } from "react-native";
-import { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import { MainStackParamList } from "../../navigation/MainNavigator";
+import { useNavigation, useRoute } from "@react-navigation/native";
 import { useAuthStore } from "../../store/authStore";
 import { verifyEmailOtp, resendVerificationOtp } from "../../services/authService";
 import { Ionicons } from "@expo/vector-icons";
@@ -18,17 +18,23 @@ import { useTheme } from "../../theme/ThemeContext";
 import { AccessibleText } from "../../components/shared/AccessibleText";
 import { AccessibleButton } from "../../components/shared/AccessibleButton";
 
-type Props = {
-  navigation: NativeStackNavigationProp<MainStackParamList, "VerifyEmail">;
-};
-
 const OTP_LENGTH = 6;
 const RESEND_COOLDOWN_SECONDS = 60;
 
-const VerifyEmailScreen = ({ navigation }: Props) => {
+// Rendered in BOTH stacks: the Main stack (a signed-in user resuming
+// verification) and the Auth stack (a user with no session who logged in
+// with an unverified account). Navigation/route are read via hooks so the
+// same component works under either navigator.
+const VerifyEmailScreen = () => {
+  const navigation = useNavigation<any>();
+  const route = useRoute<any>();
   const user = useAuthStore((s) => s.user);
   const setUser = useAuthStore((s) => s.setUser);
   const { colors, highContrast } = useTheme();
+
+  // Session user's email when signed in, else the email passed in from the
+  // login screen (auth-stack, pre-verification).
+  const email: string | undefined = user?.email ?? route.params?.email;
 
   const [otp, setOtp] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -64,7 +70,7 @@ const VerifyEmailScreen = ({ navigation }: Props) => {
       setError("Please enter a valid 6-digit OTP.");
       return;
     }
-    if (!user?.email) {
+    if (!email) {
       setError("Email not found. Please log in again.");
       return;
     }
@@ -75,14 +81,27 @@ const VerifyEmailScreen = ({ navigation }: Props) => {
     setSuccessMsg(null);
 
     try {
-      await verifyEmailOtp(user.email, otp);
-      setUser({ ...user, isEmailVerified: true });
-      if (!user.roles || user.roles.length === 0) {
-        navigation.replace("Accessibility");
-      } else if (!user.profileComplete) {
-        navigation.replace("Profile");
+      await verifyEmailOtp(email, otp);
+
+      if (user) {
+        // Signed-in session (Main stack): update the user and continue
+        // onboarding wherever they left off.
+        setUser({ ...user, isEmailVerified: true });
+        if (!user.roles || user.roles.length === 0) {
+          navigation.replace("Accessibility");
+        } else if (!user.profileComplete) {
+          navigation.replace("Profile");
+        } else {
+          navigation.replace("MainTabs");
+        }
       } else {
-        navigation.replace("MainTabs");
+        // No session (Auth stack): email is now verified but they still need
+        // to log in — send them back to Welcome to sign in.
+        Alert.alert(
+          "Email Verified",
+          "Your email has been verified. Please log in to continue.",
+          [{ text: "Log In", onPress: () => navigation.navigate("Welcome") }]
+        );
       }
     } catch (err: any) {
       const msg = err.response?.data?.message || "Failed to verify email. Please try again.";
@@ -94,7 +113,7 @@ const VerifyEmailScreen = ({ navigation }: Props) => {
   };
 
   const handleResend = async () => {
-    if (!user?.email || isResending || resendCooldown > 0) return;
+    if (!email || isResending || resendCooldown > 0) return;
 
     setIsResending(true);
     setError(null);
@@ -102,7 +121,7 @@ const VerifyEmailScreen = ({ navigation }: Props) => {
     setOtp("");
 
     try {
-      const msg = await resendVerificationOtp(user.email);
+      const msg = await resendVerificationOtp(email);
       setSuccessMsg(msg);
       startCooldown();
     } catch (err: any) {
@@ -127,7 +146,7 @@ const VerifyEmailScreen = ({ navigation }: Props) => {
           Verify your email
         </AccessibleText>
         <AccessibleText variant="subtitle" style={[styles.subtitle, { color: colors.subtext }]}>
-          We sent a 6-digit code to {user?.email}. Enter it below to verify your account.
+          We sent a 6-digit code to {email}. Enter it below to verify your account.
         </AccessibleText>
 
         {error && (

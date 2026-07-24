@@ -33,7 +33,9 @@ import { useAuthStore } from "@store/authStore";
 import {
     getUserProfile,
     updateUserProfile,
+    parseDateInput,
 } from "@services/profileService";
+import apiClient from "@services/apiClient";
 
 import { useTheme, getFontScale } from "../../theme/ThemeContext";
 import { AccessibleText } from "../../components/shared/AccessibleText";
@@ -43,12 +45,19 @@ import { AccessibleButton } from "../../components/shared/AccessibleButton";
 // CONSTANTS
 // ─────────────────────────────────────────────────────────────
 
-const disabilityOptions = [
-    "Visual",
-    "Hearing",
-    "Mobility",
-    "Cognitive",
-    "Speech",
+// Same vocabulary as onboarding (ProfileDetailsScreen); the live list comes
+// from /api/master/disability-types, this is the offline fallback.
+const FALLBACK_DISABILITY_OPTIONS = [
+    "Visual Impairment",
+    "Locomotor Disability",
+    "Hearing Impairment",
+    "Intellectual Disability",
+    "Autism Spectrum",
+    "Speech & Language",
+    "Physical Disability",
+    "Mental Health",
+    "Learning Disability",
+    "Multiple Disabilities",
 ];
 
 const supportOptions = [
@@ -111,6 +120,11 @@ const EditProfileScreen = () => {
     const [state, setState] =
         useState("");
 
+    const [addressLine1, setAddressLine1] = useState("");
+    const [streetArea, setStreetArea] = useState("");
+    const [pincode, setPincode] = useState("");
+    const [locationDistrict, setLocationDistrict] = useState("");
+
     const [phoneNo, setPhoneNo] =
         useState("");
 
@@ -124,10 +138,14 @@ const EditProfileScreen = () => {
 
     // ───────────────── PwD ─────────────────
 
-    const [
-        selectedDisability,
-        setSelectedDisability,
-    ] = useState("");
+    const [selectedDisabilities, setSelectedDisabilities] = useState<string[]>([]);
+    const [disabilityOptions, setDisabilityOptions] = useState<string[]>(FALLBACK_DISABILITY_OPTIONS);
+
+    const toggleDisability = (item: string) => {
+        setSelectedDisabilities((prev) =>
+            prev.includes(item) ? prev.filter((d) => d !== item) : [...prev, item]
+        );
+    };
 
     const [
         disabilitySince,
@@ -146,6 +164,8 @@ const EditProfileScreen = () => {
 
     const [relation, setRelation] =
         useState("");
+
+    const [careDob, setCareDob] = useState("");
 
     const [careDisability,
         setCareDisability] =
@@ -189,6 +209,20 @@ const EditProfileScreen = () => {
         fetchProfile();
     }, []);
 
+    // Load the live disability vocabulary (falls back to the offline list).
+    useEffect(() => {
+        apiClient
+            .get<{ success: boolean; data: { name: string }[] }>("/api/master/disability-types")
+            .then(({ data }) => {
+                if (data.success && data.data.length > 0) {
+                    setDisabilityOptions(data.data.map((t) => t.name));
+                }
+            })
+            .catch(() => {
+                // keep FALLBACK_DISABILITY_OPTIONS
+            });
+    }, []);
+
     const fetchProfile = async () => {
         try {
             if (!user?.id) return;
@@ -225,6 +259,11 @@ const EditProfileScreen = () => {
                 response?.state || ""
             );
 
+            setAddressLine1(response?.addressLine1 || "");
+            setStreetArea(response?.streetArea || "");
+            setPincode(response?.pincode || "");
+            setLocationDistrict(response?.locationDistrict || "");
+
             setPhoneNo(
                 response?.phoneNo || ""
             );
@@ -234,9 +273,14 @@ const EditProfileScreen = () => {
                 response?.roleDetails;
 
             if (roles.includes("pwd")) {
-                setSelectedDisability(
-                    details?.disabilityType ||
-                    ""
+                // disabilityType is a comma-separated list (multi-select).
+                setSelectedDisabilities(
+                    details?.disabilityType
+                        ? String(details.disabilityType)
+                              .split(",")
+                              .map((d: string) => d.trim())
+                              .filter(Boolean)
+                        : []
                 );
 
                 setDisabilitySince(
@@ -262,6 +306,11 @@ const EditProfileScreen = () => {
 
                 setRelation(
                     details?.careRelation ||
+                    ""
+                );
+
+                setCareDob(
+                    details?.careDob ||
                     ""
                 );
 
@@ -328,7 +377,7 @@ const EditProfileScreen = () => {
             const payload: any = {};
 
             if (roles.includes("pwd")) {
-                payload.disabilityType = selectedDisability;
+                payload.disabilityType = selectedDisabilities.join(", ");
                 payload.disabilitySince = disabilitySince ? (parseInt(disabilitySince, 10) || undefined) : undefined;
                 payload.supportNeeded = selectedSupport;
             }
@@ -336,6 +385,11 @@ const EditProfileScreen = () => {
             if (roles.includes("caregiver")) {
                 payload.carePersonName = personName;
                 payload.careRelation = relation;
+                // careDob is DD/MM/YYYY in the UI; convert to ISO the backend
+                // can parse. Empty string clears it.
+                payload.careDob = careDob.trim()
+                    ? parseDateInput(careDob.trim(), "DMY")
+                    : "";
                 payload.careDisabilityType = careDisability;
             }
 
@@ -373,6 +427,10 @@ const EditProfileScreen = () => {
                         gender,
                         city,
                         state,
+                        addressLine1,
+                        streetArea,
+                        pincode,
+                        locationDistrict,
                         phoneNo,
                     },
 
@@ -556,6 +614,44 @@ const EditProfileScreen = () => {
                     />
 
                     <TextInput
+                        placeholder="Address Line 1"
+                        placeholderTextColor={placeholderColor}
+                        style={[styles.input, { backgroundColor: colors.surface, color: colors.text }, cardBorder]}
+                        value={addressLine1}
+                        onChangeText={setAddressLine1}
+                        accessibilityLabel="Address line 1"
+                    />
+
+                    <TextInput
+                        placeholder="Street / Area"
+                        placeholderTextColor={placeholderColor}
+                        style={[styles.input, { backgroundColor: colors.surface, color: colors.text }, cardBorder]}
+                        value={streetArea}
+                        onChangeText={setStreetArea}
+                        accessibilityLabel="Street or area"
+                    />
+
+                    <TextInput
+                        placeholder="District"
+                        placeholderTextColor={placeholderColor}
+                        style={[styles.input, { backgroundColor: colors.surface, color: colors.text }, cardBorder]}
+                        value={locationDistrict}
+                        onChangeText={setLocationDistrict}
+                        accessibilityLabel="District"
+                    />
+
+                    <TextInput
+                        placeholder="Pincode"
+                        placeholderTextColor={placeholderColor}
+                        style={[styles.input, { backgroundColor: colors.surface, color: colors.text }, cardBorder]}
+                        value={pincode}
+                        onChangeText={setPincode}
+                        keyboardType="number-pad"
+                        maxLength={6}
+                        accessibilityLabel="Pincode"
+                    />
+
+                    <TextInput
                         placeholder="Phone Number"
                         placeholderTextColor={placeholderColor}
                         style={[styles.input, { backgroundColor: colors.surface, color: colors.text }, cardBorder]}
@@ -590,8 +686,7 @@ const EditProfileScreen = () => {
                             {disabilityOptions.map(
                                 (item) => {
                                     const selected =
-                                        selectedDisability ===
-                                        item;
+                                        selectedDisabilities.includes(item);
 
                                     return (
                                         <TouchableOpacity
@@ -607,11 +702,9 @@ const EditProfileScreen = () => {
                                                 },
                                             ]}
                                             onPress={() =>
-                                                setSelectedDisability(
-                                                    item
-                                                )
+                                                toggleDisability(item)
                                             }
-                                            accessibilityRole="radio"
+                                            accessibilityRole="checkbox"
                                             accessibilityState={{ checked: selected }}
                                             accessibilityLabel={item}
                                         >
@@ -736,6 +829,16 @@ const EditProfileScreen = () => {
                                     setRelation
                                 }
                                 accessibilityLabel="Relation"
+                            />
+
+                            <TextInput
+                                placeholder="Date of Birth (DD/MM/YYYY)"
+                                placeholderTextColor={placeholderColor}
+                                style={[styles.input, { backgroundColor: colors.surface, color: colors.text }, cardBorder]}
+                                value={careDob}
+                                onChangeText={setCareDob}
+                                accessibilityLabel="Care recipient date of birth"
+                                accessibilityHint="Format: day, month, year"
                             />
 
                             <TextInput
@@ -952,7 +1055,7 @@ const styles =
         },
 
         input: {
-            height: 56,
+            minHeight: 56,
 
             borderRadius: 16,
 
@@ -992,7 +1095,7 @@ const styles =
         },
 
         button: {
-            height: 58,
+            minHeight: 58,
 
             borderRadius: 18,
 

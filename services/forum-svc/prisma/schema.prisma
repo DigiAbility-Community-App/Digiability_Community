@@ -336,6 +336,12 @@ model UserProfile {
   city      String?
   state     String?
 
+  // Address — mirror of user-svc; keep in sync so db push won't drop them.
+  addressLine1     String?
+  streetArea       String?
+  pincode          String?
+  locationDistrict String?
+
   // PwD Fields
   disabilityType  String?
   disabilitySince Int?
@@ -406,6 +412,7 @@ model PasswordResetToken {
   userId    String
   token     String   // stored as SHA-256 hash
   expiresAt DateTime
+  attempts  Int      @default(0)  // mirror of user-svc — keep in sync so db push won't drop it
   createdAt DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)

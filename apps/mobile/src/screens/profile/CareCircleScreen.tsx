@@ -393,7 +393,7 @@ const styles = StyleSheet.create({
   },
 
   primaryButton: {
-    height: 60,
+    minHeight: 60,
     borderRadius: 24,
     shadowColor: "#500088",
     shadowOpacity: 0.25,
@@ -406,13 +406,12 @@ const styles = StyleSheet.create({
   },
 
   skipButton: {
-    height: 48,
+    minHeight: 48,
     justifyContent: "center",
     alignItems: "center",
   },
 
   skipText: {
-    fontSize: 16,
     fontWeight: "600",
 
     fontFamily: "PlusJakartaSans-Regular",

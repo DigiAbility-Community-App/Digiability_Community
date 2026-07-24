@@ -244,7 +244,7 @@ const styles = StyleSheet.create({
   },
   btn: {
     flex: 1,
-    height: 48,
+    minHeight: 48,
     borderRadius: 12
   }
 });

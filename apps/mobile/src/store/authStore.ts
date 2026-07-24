@@ -27,6 +27,10 @@ export interface PendingBasicProfile {
   gender?: string;
   city?: string;
   state?: string;
+  addressLine1?: string;
+  streetArea?: string;
+  pincode?: string;
+  locationDistrict?: string;
   phoneNo?: string;
 }
 

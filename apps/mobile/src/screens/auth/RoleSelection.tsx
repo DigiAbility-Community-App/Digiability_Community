@@ -573,7 +573,7 @@ const styles =
     },
 
     button: {
-      height: 60,
+      minHeight: 60,
       borderRadius: 16,
     },
   });

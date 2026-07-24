@@ -34,6 +34,7 @@ import {
 } from "@services/profileService";
 import DateTimePickerModal from "react-native-modal-datetime-picker";
 import * as Location from "expo-location";
+import { reverseGeocodeEnglish } from "../../utils/reverseGeocode";
 import { useTheme } from "../../theme/ThemeContext";
 import { AccessibleText } from "../../components/shared/AccessibleText";
 import { AccessibleButton } from "../../components/shared/AccessibleButton";
@@ -421,6 +422,18 @@ const ProfileScreen = () => {
 
       state:
         optionalString(state),
+
+      addressLine1:
+        optionalString(houseNo),
+
+      streetArea:
+        optionalString(streetArea),
+
+      pincode:
+        optionalString(pincode),
+
+      locationDistrict:
+        optionalString(district),
     });
 
     setLoading(false);
@@ -514,36 +527,18 @@ const ProfileScreen = () => {
             {}
           );
 
-        const address =
-          await Location.reverseGeocodeAsync({
-            latitude:
-              location.coords.latitude,
-            longitude:
-              location.coords.longitude,
-          });
+        // Reverse-geocode in English (device-locale geocoder returns Marathi).
+        const place = await reverseGeocodeEnglish(
+          location.coords.latitude,
+          location.coords.longitude
+        );
 
-        if (address.length > 0) {
-          const place = address[0];
-
-          setStreetArea(
-            place.street || ""
-          );
-
-          setCity(
-            place.city || ""
-          );
-
-          setDistrict(
-            place.subregion || ""
-          );
-
-          setState(
-            place.region || ""
-          );
-
-          setPincode(
-            place.postalCode || ""
-          );
+        if (place) {
+          setStreetArea(place.streetArea);
+          setCity(place.city);
+          setDistrict(place.district);
+          setState(place.state);
+          setPincode(place.pincode);
         }
       } catch (error) {
         console.log(error);
@@ -1167,7 +1162,7 @@ const styles =
     },
 
     inputContainer: {
-      height: 56,
+      minHeight: 56,
 
       borderRadius: 24,
 
@@ -1218,7 +1213,7 @@ const styles =
     },
 
     usernameContainer: {
-      height: 56,
+      minHeight: 56,
 
       borderRadius: 24,
 
@@ -1293,7 +1288,7 @@ const styles =
     halfInput: {
       width: "48%",
 
-      height: 56,
+      minHeight: 56,
 
       backgroundColor:
         "#F4F3FA",
@@ -1307,7 +1302,7 @@ const styles =
     },
 
     fullInput: {
-      height: 56,
+      minHeight: 56,
 
       backgroundColor:
         "#F4F3FA",
@@ -1333,7 +1328,7 @@ const styles =
     },
     locationBtn: {
       backgroundColor: "#F3EAFF",
-      height: 58,
+      minHeight: 58,
       borderRadius: 18,
       alignItems: "center",
       justifyContent: "center",
@@ -1368,7 +1363,7 @@ const styles =
     },
 
     button: {
-      height: 56,
+      minHeight: 56,
 
       borderRadius: 24,
 
@@ -1386,7 +1381,7 @@ const styles =
     },
 
     fullWidthInput: {
-      height: 58,
+      minHeight: 58,
       borderRadius: 18,
       paddingHorizontal: 18,
       justifyContent: "center",
@@ -1401,7 +1396,7 @@ const styles =
 
     doubleInput: {
       width: "48%",
-      height: 58,
+      minHeight: 58,
       borderRadius: 18,
       paddingHorizontal: 18,
       justifyContent: "center",

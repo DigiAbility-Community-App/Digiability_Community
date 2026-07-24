@@ -27,7 +27,8 @@ const REFRESH_TOKEN_EXPIRES_DAYS = parseInt(
   process.env.REFRESH_TOKEN_EXPIRES_DAYS ?? "30",
   10
 );
-const PASSWORD_RESET_EXPIRES_HOURS = 1;
+const PASSWORD_RESET_OTP_EXPIRES_MINUTES = 10;
+const PASSWORD_RESET_OTP_MAX_ATTEMPTS = 5;
 
 // ─── Refresh Tokens ────────────────────────────────────
 
@@ -236,37 +237,66 @@ export async function deleteEmailVerificationOtp(userId: string): Promise<void> 
   await prisma.emailVerificationToken.deleteMany({ where: { userId } });
 }
 
-// ─── Password Reset Tokens ─────────────────────────────
+// ─── Password Reset OTPs ───────────────────────────────
+// Password reset uses a 6-digit OTP (same UX as email verification),
+// not a long link-token — the mobile app has no way to receive a
+// web-style reset link. Looked up by userId (not the bare code) so we
+// can enforce a per-user failed-attempt lockout against brute force.
 
-export async function createPasswordResetToken(userId: string): Promise<string> {
-  const { rawToken, tokenHash } = generateToken(32);
+export async function createPasswordResetOtp(userId: string): Promise<string> {
+  const rawOtp = crypto.randomInt(100000, 999999).toString();
+  const otpHash = hashToken(rawOtp);
 
   const expiresAt = new Date();
-  expiresAt.setHours(expiresAt.getHours() + PASSWORD_RESET_EXPIRES_HOURS);
+  expiresAt.setMinutes(expiresAt.getMinutes() + PASSWORD_RESET_OTP_EXPIRES_MINUTES);
 
   await prisma.passwordResetToken.deleteMany({ where: { userId } });
 
   await prisma.passwordResetToken.create({
-    data: { userId, token: tokenHash, expiresAt },
+    data: { userId, token: otpHash, expiresAt },
   });
 
-  return rawToken;
+  return rawOtp;
 }
 
-export async function validatePasswordResetToken(rawToken: string): Promise<string> {
-  const tokenHash = hashToken(rawToken);
-
+/**
+ * Validate a password-reset OTP for a given user. Returns the userId on
+ * success; increments the attempt counter and throws on mismatch, deleting
+ * the OTP once the attempt ceiling is hit.
+ */
+export async function validatePasswordResetOtp(
+  userId: string,
+  rawOtp: string
+): Promise<string> {
   const stored = await prisma.passwordResetToken.findFirst({
-    where: { token: tokenHash },
+    where: { userId },
+    orderBy: { createdAt: "desc" },
   });
 
-  if (!stored) throw new Error("Invalid or expired reset link");
-  if (stored.expiresAt < new Date()) throw new Error("Password reset link has expired");
+  if (!stored) throw createError("No password reset code found. Please request a new one.", 400);
+  if (stored.expiresAt < new Date()) {
+    throw createError("Password reset code has expired. Please request a new one.", 400);
+  }
+
+  if (stored.attempts >= PASSWORD_RESET_OTP_MAX_ATTEMPTS) {
+    await prisma.passwordResetToken.delete({ where: { id: stored.id } });
+    throw createError("Too many incorrect attempts. Please request a new reset code.", 400);
+  }
+
+  const otpHash = hashToken(rawOtp);
+
+  if (otpHash !== stored.token) {
+    await prisma.passwordResetToken.update({
+      where: { id: stored.id },
+      data: { attempts: { increment: 1 } },
+    });
+    const remaining = PASSWORD_RESET_OTP_MAX_ATTEMPTS - stored.attempts - 1;
+    throw createError(`Invalid code. ${remaining} attempt${remaining === 1 ? "" : "s"} remaining.`, 400);
+  }
 
   return stored.userId;
 }
 
-export async function deletePasswordResetToken(rawToken: string): Promise<void> {
-  const tokenHash = hashToken(rawToken);
-  await prisma.passwordResetToken.deleteMany({ where: { token: tokenHash } });
+export async function deletePasswordResetOtp(userId: string): Promise<void> {
+  await prisma.passwordResetToken.deleteMany({ where: { userId } });
 }

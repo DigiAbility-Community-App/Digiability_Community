@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from "react";
+import React, { useState, useCallback } from "react";
 import {
   View,
   StyleSheet,
@@ -13,7 +13,7 @@ import {
   Keyboard,
 } from "react-native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import { ChatsStackParamList } from "@navigation/ChatsStack";
 import { useAuthStore } from "@store/authStore";
 import { useChatStore } from "@store/chatStore";
@@ -87,8 +87,15 @@ const ConversationListScreen = ({ navigation: propNavigation, isTab = false, dir
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
+  // Most-recent-activity first. New/updated conversations bubble to the top.
+  const sortedConversations = [...storeConversations].sort((a, b) => {
+    const ta = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
+    const tb = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
+    return tb - ta;
+  });
+
   // Map real data to UI props
-  const uiConversations: Conversation[] = storeConversations.map(c => {
+  const uiConversations: Conversation[] = sortedConversations.map(c => {
     // For direct chat, find the other participant
     let displayName = c.name || "Unknown";
     if (c.type === "DIRECT" && c.participants) {
@@ -122,24 +129,32 @@ const ConversationListScreen = ({ navigation: propNavigation, isTab = false, dir
     };
   });
 
-  useEffect(() => {
-    const loadData = async () => {
-      try {
-        const [convData, invitesData] = await Promise.all([
-          chatService.getConversations(),
-          chatService.getPendingInvites()
-        ]);
-        setConversations(convData);
-        setPendingInvites(invitesData);
-      } catch (err) {
-        console.error("Failed to fetch conversations/invites", err);
-        setLoadError("Failed to load conversations. Pull down to retry.");
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    loadData();
-  }, []);
+  // Refetch every time the list regains focus (e.g. returning from a chat or
+  // from NewChat) so newly started/updated conversations always show up.
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+      const loadData = async () => {
+        try {
+          const [convData, invitesData] = await Promise.all([
+            chatService.getConversations(),
+            chatService.getPendingInvites()
+          ]);
+          if (!active) return;
+          setConversations(convData);
+          setPendingInvites(invitesData);
+        } catch (err) {
+          if (!active) return;
+          console.error("Failed to fetch conversations/invites", err);
+          setLoadError("Failed to load conversations. Pull down to retry.");
+        } finally {
+          if (active) setIsLoading(false);
+        }
+      };
+      loadData();
+      return () => { active = false; };
+    }, [setConversations, setPendingInvites])
+  );
 
   const filteredConversations = uiConversations
     .filter((conv, index, arr) => arr.findIndex((c) => c.id === conv.id) === index)

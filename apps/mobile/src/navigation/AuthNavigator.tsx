@@ -4,6 +4,7 @@ import WelcomeScreen from '@screens/auth/WelcomeScreen';
 import SplashScreen from '@screens/auth/SplashScreen';
 import ForgotPasswordScreen from '@screens/auth/ForgotPasswordScreen';
 import AccountSuspendedScreen from '@screens/auth/AccountSuspendedScreen';
+import VerifyEmailScreen from '@screens/auth/VerifyEmailScreen';
 
 // ─────────────────────────────────────────────────────────
 // Auth Navigator
@@ -19,6 +20,8 @@ export type AuthStackParamList = {
   Splash: undefined;
   Welcome: undefined;
   ForgotPassword: undefined;
+  // Reachable when a user logs in with an unverified account (no session yet).
+  VerifyEmail: { email: string } | undefined;
   AccountSuspended: {
     permanent: boolean;
     suspendedUntil: string | null;
@@ -37,6 +40,7 @@ const AuthNavigator = () => {
       <Stack.Screen name="Splash" component={SplashScreen} />
       <Stack.Screen name="Welcome" component={WelcomeScreen} />
       <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
+      <Stack.Screen name="VerifyEmail" component={VerifyEmailScreen} />
       <Stack.Screen name="AccountSuspended" component={AccountSuspendedScreen} />
     </Stack.Navigator>
   );

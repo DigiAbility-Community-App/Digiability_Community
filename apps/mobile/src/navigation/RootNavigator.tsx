@@ -66,9 +66,16 @@ const RootNavigator = () => {
         } else if (isMounted) {
           setUser(restoredUser);
         }
-      } catch {
-        // No active session to restore — silently clear any stale token
-        await SecureStore.deleteItemAsync(REFRESH_TOKEN_KEY).catch(() => {});
+      } catch (err: any) {
+        // Only discard the stored refresh token on a DEFINITIVE auth rejection
+        // (the interceptor already tried /refresh and still got 401/403 — the
+        // token is truly invalid). On a network error / cold-start blip there's
+        // no response; keep the token so the next launch can retry instead of
+        // silently logging the user out (which stranded unverified signups).
+        const status = err?.response?.status;
+        if (status === 401 || status === 403) {
+          await SecureStore.deleteItemAsync(REFRESH_TOKEN_KEY).catch(() => {});
+        }
       } finally {
         if (isMounted) {
           setIsRestoringSession(false);

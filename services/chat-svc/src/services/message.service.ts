@@ -39,8 +39,13 @@ class MessageService {
     const hasMore = messages.length > limit;
     const result = hasMore ? messages.slice(0, limit) : messages;
 
+    // Drop messages this user deleted "for me" (HiddenMessage) so they don't
+    // reappear on refetch. hasMore/nextCursor stay based on the fetched page
+    // boundary so pagination isn't skewed by the hidden ones being removed.
+    const visible = await this.stripHidden(userId, result);
+
     // Sanitize deleted messages — clear content but preserve metadata
-    const sanitized = result.map((msg) => ({
+    const sanitized = visible.map((msg) => ({
       ...msg,
       content: msg.deletedAt ? "" : msg.content,
       sequenceNo: Number(msg.sequenceNo),
@@ -53,6 +58,21 @@ class MessageService {
         ? result[result.length - 1].createdAt.getTime()
         : undefined,
     };
+  }
+
+  /**
+   * Remove messages the user has hidden via "delete for me" (HiddenMessage).
+   */
+  private async stripHidden<T extends { id: string }>(
+    userId: string,
+    messages: T[]
+  ): Promise<T[]> {
+    if (messages.length === 0) return messages;
+    const hiddenIds = await messageRepository.getHiddenMessageIds(
+      userId,
+      messages.map((m) => m.id)
+    );
+    return hiddenIds.size === 0 ? messages : messages.filter((m) => !hiddenIds.has(m.id));
   }
 
   /**
@@ -79,7 +99,10 @@ class MessageService {
     const hasMore = messages.length > limit;
     const result = hasMore ? messages.slice(0, limit) : messages;
 
-    const sanitized = result.map((msg) => ({
+    // Exclude "delete for me" messages (see getHistory).
+    const visible = await this.stripHidden(userId, result);
+
+    const sanitized = visible.map((msg) => ({
       ...msg,
       content: msg.deletedAt ? "" : msg.content,
       sequenceNo: Number(msg.sequenceNo),
