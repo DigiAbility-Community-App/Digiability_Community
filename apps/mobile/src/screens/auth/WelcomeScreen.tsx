@@ -114,12 +114,12 @@ const WelcomeScreen = ({ navigation }: Props) => {
 
     const trimmedPhone = signUpPhone.trim();
 
-    if (!trimmedName || !trimmedEmail || !trimmedPassword) {
+    if (!trimmedName || !trimmedEmail || !trimmedPassword || !trimmedPhone) {
       setError("Please fill in all required fields.");
       return;
     }
 
-    if (trimmedPhone && !/^[0-9]{10}$/.test(trimmedPhone)) {
+    if (!/^[0-9]{10}$/.test(trimmedPhone)) {
       setError("Please enter a valid 10-digit mobile number.");
       return;
     }
@@ -156,7 +156,7 @@ const WelcomeScreen = ({ navigation }: Props) => {
         name: trimmedName,
         email: trimmedEmail,
         password: trimmedPassword,
-        ...(trimmedPhone ? { phoneNo: trimmedPhone } : {}),
+        phoneNo: trimmedPhone,
       });
       // register() calls setAuth() in the auth store → isAuthenticated flips
       // to true → RootNavigator auto-switches to Main stack (Accessibility first).
@@ -340,7 +340,7 @@ const WelcomeScreen = ({ navigation }: Props) => {
 
             {/* Phone Number — split: fixed +91 | digit input */}
             <View style={styles.phoneContainer}>
-              <AccessibleText style={[styles.phoneLabel, { color: colors.subtext }]}>Phone Number (optional)</AccessibleText>
+              <AccessibleText style={[styles.phoneLabel, { color: colors.subtext }]}>Phone Number</AccessibleText>
               <View style={[styles.phoneWrapper, { backgroundColor: colors.surface, borderColor: colors.border }, highContrast && { borderWidth: 2, borderColor: "#000000" }]}>
                 {/* Static country code section */}
                 <View style={[styles.phonePrefix, { backgroundColor: highContrast ? colors.card : "#EDEAF8" }]}
@@ -362,7 +362,7 @@ const WelcomeScreen = ({ navigation }: Props) => {
                   maxLength={10}
                   accessible={true}
                   accessibilityLabel="Phone number"
-                  accessibilityHint="Enter your 10-digit mobile number without country code. This field is optional."
+                  accessibilityHint="Enter your 10-digit mobile number without country code."
                 />
               </View>
             </View>

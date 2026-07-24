@@ -21,6 +21,13 @@ export const RegisterSchema = z.object({
       /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/,
       "Password must include uppercase, lowercase, and a number"
     ),
+  // Optional server-side: the mobile app requires it, but web register
+  // sends no phone. Without this key the validate middleware strips phoneNo
+  // from req.body before registerUser can persist it.
+  phoneNo: z
+    .string()
+    .regex(/^[0-9]{10}$/, "Phone number must be 10 digits")
+    .optional(),
   role: z.enum(["pwd", "caregiver", "therapist", "ngo", "volunteer", "student", "other"]).optional(),
   roles: z.array(z.enum(["pwd", "caregiver", "therapist", "ngo", "volunteer", "student", "other"])).optional(),
 });
