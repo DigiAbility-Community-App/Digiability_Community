@@ -977,16 +977,22 @@ const ProfileScreen = () => {
             style={styles.locationBtn}
             onPress={fetchCurrentLocation}
             activeOpacity={0.9}
+            disabled={locationLoading}
             accessibilityRole="button"
             accessibilityLabel="Use Current Location"
             accessibilityHint="Double tap to auto-fill your address using GPS"
+            accessibilityState={{ disabled: locationLoading, busy: locationLoading }}
           >
-            <AccessibleText
-              variant="label"
-              style={[styles.locationBtnText, { color: colors.primary }]}
-            >
-              📍 Use Current Location
-            </AccessibleText>
+            {locationLoading ? (
+              <ActivityIndicator color={colors.primary} />
+            ) : (
+              <AccessibleText
+                variant="label"
+                style={[styles.locationBtnText, { color: colors.primary }]}
+              >
+                📍 Use Current Location
+              </AccessibleText>
+            )}
           </TouchableOpacity>
 
           {/* ADDRESS LINE 1 */}
