@@ -54,15 +54,34 @@ async function fetchNominatimAddress(
   };
 }
 
-async function fetchNativePostalCode(
+// A device in a non-English locale (e.g. Marathi) returns native geocoder
+// text in that locale's script — this is the original bug we moved away
+// from native for. Only trust a native text field as an English cross-check
+// if it contains no non-ASCII script characters (Devanagari, etc).
+function isPlainAscii(text: string): boolean {
+  return /^[\x00-\x7F]*$/.test(text);
+}
+
+interface NativeCrossCheck {
+  pincode: string;
+  streetArea: string;
+}
+
+async function fetchNativeCrossCheck(
   latitude: number,
   longitude: number
-): Promise<string> {
+): Promise<NativeCrossCheck> {
   const results = await Location.reverseGeocodeAsync({ latitude, longitude });
-  const code = results[0]?.postalCode || "";
-  // Only trust a proper 6-digit Indian PIN — some locales can format the
-  // field differently, and a malformed value is worse than none.
-  return /^\d{6}$/.test(code) ? code : "";
+  const p = results[0];
+
+  // Only trust a proper 6-digit Indian PIN — some locales format the field
+  // differently, and a malformed value is worse than none.
+  const pincode = p?.postalCode && /^\d{6}$/.test(p.postalCode) ? p.postalCode : "";
+
+  const streetCandidate = p?.street || p?.name || "";
+  const streetArea = streetCandidate && isPlainAscii(streetCandidate) ? streetCandidate : "";
+
+  return { pincode, streetArea };
 }
 
 /**
@@ -74,12 +93,14 @@ async function fetchNativePostalCode(
  * If that request fails (offline, rate-limited), we fall back to the native
  * geocoder so the fields still populate (device-locale beats nothing).
  *
- * Postcode tagging in OpenStreetMap is sparse in India — Nominatim can fall
- * back to the nearest tagged node and return a PIN from a completely
- * different postal circle even when road/city/district/state are all
- * correctly resolved. The native platform geocoder (backed by Google's data
- * on Android) has much better Indian postal-code coverage, so its postcode
- * is preferred whenever it's available and well-formed.
+ * Both postcode AND road-level tagging are sparse/patchy in OpenStreetMap
+ * for India — Nominatim can resolve city/district/state correctly (those
+ * come from well-mapped administrative boundaries) while still returning a
+ * postcode from an unrelated postal circle, or a road/neighbourhood name
+ * that isn't actually where the user is. The native platform geocoder
+ * (backed by Google's data on Android) has much better Indian street- and
+ * postal-level coverage, so its postcode and street are preferred whenever
+ * they're available, well-formed, and in English.
  */
 export async function reverseGeocodeEnglish(
   latitude: number,
@@ -110,10 +131,11 @@ export async function reverseGeocodeEnglish(
   if (!result) return null;
 
   try {
-    const nativePincode = await fetchNativePostalCode(latitude, longitude);
-    if (nativePincode) result.pincode = nativePincode;
+    const native = await fetchNativeCrossCheck(latitude, longitude);
+    if (native.pincode) result.pincode = native.pincode;
+    if (native.streetArea) result.streetArea = native.streetArea;
   } catch {
-    // keep whatever pincode `result` already has
+    // keep whatever `result` already has from Nominatim
   }
 
   return result;
