@@ -538,18 +538,31 @@ const ProfileScreen = () => {
           return;
         }
 
-        // Fast path: reuse the OS's cached fix if one exists (instant).
-        // Otherwise request a fresh fix with Balanced accuracy — the empty
-        // options object previously used can take a very long time (or hang)
-        // on a cold GPS, which looked like "location not fetching" at all.
+        // Fast path: reuse the OS's cached fix, but ONLY if it's recent and
+        // reasonably precise. An unconditional getLastKnownPositionAsync()
+        // can hand back a coarse, network/cell-tower-triangulated fix that's
+        // stale or many km off (this produced a pincode in a different city
+        // entirely) — so validate age + accuracy before trusting it.
+        const LAST_KNOWN_MAX_AGE_MS = 2 * 60 * 1000; // 2 minutes
+        const LAST_KNOWN_MAX_ACCURACY_M = 100;
+
         let location = await Location.getLastKnownPositionAsync();
-        if (!location) {
+        const isFreshAndAccurate =
+          !!location &&
+          Date.now() - location.timestamp < LAST_KNOWN_MAX_AGE_MS &&
+          (location.coords.accuracy == null ||
+            location.coords.accuracy <= LAST_KNOWN_MAX_ACCURACY_M);
+
+        if (!isFreshAndAccurate) {
+          // Request a fresh, GPS-based fix (High, not Balanced — Balanced
+          // can still resolve via network positioning on some devices,
+          // which is exactly the imprecise source we're trying to avoid).
           location = await Promise.race([
             Location.getCurrentPositionAsync({
-              accuracy: Location.Accuracy.Balanced,
+              accuracy: Location.Accuracy.High,
             }),
             new Promise<null>((resolve) =>
-              setTimeout(() => resolve(null), 15000)
+              setTimeout(() => resolve(null), 20000)
             ),
           ]);
         }
