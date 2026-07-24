@@ -61,13 +61,6 @@ const FALLBACK_DISABILITY_OPTIONS = [
   "Multiple Disabilities",
 ];
 
-const supportOptions = [
-  "Mobility",
-  "Communication",
-  "Learning",
-  "Daily Tasks",
-];
-
 const CURRENT_YEAR = new Date().getFullYear();
 const MIN_YEAR = 1900;
 
@@ -97,7 +90,6 @@ const ProfileDetailsScreen = () => {
 
   const [selectedDisabilities, setSelectedDisabilities] = useState<string[]>([]);
   const [disabilitySince, setDisabilitySince] = useState("");
-  const [selectedSupport, setSelectedSupport] = useState("Communication");
 
   const toggleDisability = (item: string) => {
     setSelectedDisabilities((prev) =>
@@ -110,7 +102,13 @@ const ProfileDetailsScreen = () => {
   const [personName, setPersonName] = useState("");
   const [relation, setRelation] = useState("");
   const [careeDob, setCareeDob] = useState("");
-  const [careDisability, setCareDisability] = useState("");
+  const [careDisabilities, setCareDisabilities] = useState<string[]>([]);
+
+  const toggleCareDisability = (item: string) => {
+    setCareDisabilities((prev) =>
+      prev.includes(item) ? prev.filter((d) => d !== item) : [...prev, item]
+    );
+  };
 
   // ───────────────── Educator ─────────────────
 
@@ -258,7 +256,6 @@ const ProfileDetailsScreen = () => {
       payload.disabilitySince = disabilitySince.trim()
         ? parseInt(disabilitySince.trim(), 10)
         : undefined;
-      payload.supportNeeded = selectedSupport;
     }
 
     if (roles.includes("caregiver")) {
@@ -267,7 +264,7 @@ const ProfileDetailsScreen = () => {
       payload.careDob = careeDob.trim()
         ? parseDateInput(careeDob.trim(), "DMY")
         : undefined;
-      payload.careDisabilityType = careDisability.trim();
+      payload.careDisabilityType = careDisabilities.join(", ");
     }
 
     if (roles.includes("educator")) {
@@ -358,7 +355,9 @@ const ProfileDetailsScreen = () => {
     const triggerText =
       selected.length === 0
         ? (multi ? "Select disability type(s)" : "Select disability type")
-        : selected.join(", ");
+        : multi
+          ? `${selected.length} selected`
+          : selected.join(", ");
 
     return (
       <>
@@ -383,6 +382,40 @@ const ProfileDetailsScreen = () => {
           </AccessibleText>
           <AccessibleText style={[styles.dropdownArrow, { color: colors.subtext }]}>{open ? "▲" : "▼"}</AccessibleText>
         </TouchableOpacity>
+
+        {/* Selected chips: clear visual confirmation of multi-select picks,
+            each removable directly without reopening the panel. */}
+        {multi && selected.length > 0 && (
+          <View style={styles.selectedChipsRow}>
+            {selected.map((item) => (
+              <View
+                key={item}
+                style={[
+                  styles.selectedChip,
+                  { backgroundColor: highContrast ? "#000000" : "rgba(80,0,136,0.1)" },
+                ]}
+              >
+                <AccessibleText
+                  style={[styles.selectedChipText, { color: highContrast ? "#FFFFFF" : colors.primary }]}
+                >
+                  {item}
+                </AccessibleText>
+                <TouchableOpacity
+                  onPress={() => onChoose(item)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Remove ${item}`}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <AccessibleText
+                    style={[styles.selectedChipRemove, { color: highContrast ? "#FFFFFF" : colors.primary }]}
+                  >
+                    ✕
+                  </AccessibleText>
+                </TouchableOpacity>
+              </View>
+            ))}
+          </View>
+        )}
 
         {open && (
           <View style={[styles.dropdownPanel, { backgroundColor: colors.surface, borderColor: colors.border }]}>
@@ -441,6 +474,24 @@ const ProfileDetailsScreen = () => {
                 <AccessibleText style={[styles.noResults, { color: colors.subtext }]}>No results</AccessibleText>
               )}
             </ScrollView>
+
+            {/* Multi-select never auto-closes on tap (so multiple picks are
+                easy) — give it an explicit, obvious way to close instead. */}
+            {multi && (
+              <TouchableOpacity
+                style={[styles.dropdownDoneBtn, { backgroundColor: highContrast ? "#000000" : colors.primary }]}
+                onPress={() => {
+                  setOpen(false);
+                  setSearch("");
+                }}
+                accessibilityRole="button"
+                accessibilityLabel="Done selecting"
+              >
+                <AccessibleText style={styles.dropdownDoneBtnText}>
+                  Done{selected.length > 0 ? ` (${selected.length} selected)` : ""}
+                </AccessibleText>
+              </TouchableOpacity>
+            )}
           </View>
         )}
       </>
@@ -553,34 +604,6 @@ const ProfileDetailsScreen = () => {
                   {fieldErrors.disabilitySince}
                 </AccessibleText>
               )}
-
-              <AccessibleText variant="label" style={[styles.label, { color: colors.subtext, marginTop: 20 }]}>Support Needed</AccessibleText>
-
-              <View style={styles.chipsContainer}>
-                {supportOptions.map((item) => {
-                  const selected = selectedSupport === item;
-                  return (
-                    <TouchableOpacity
-                      key={item}
-                      style={[
-                        styles.chip,
-                        { backgroundColor: colors.surface },
-                        selected && { backgroundColor: highContrast ? "#000000" : colors.primary },
-                      ]}
-                      onPress={() => setSelectedSupport(item)}
-                      accessibilityRole="radio"
-                      accessibilityState={{ checked: selected }}
-                      accessibilityLabel={item}
-                    >
-                      <AccessibleText
-                        style={[styles.chipText, { color: colors.subtext }, selected && { color: "#FFFFFF" }]}
-                      >
-                        {item}
-                      </AccessibleText>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
             </View>
           )}
 
@@ -640,17 +663,17 @@ const ProfileDetailsScreen = () => {
                 </AccessibleText>
               )}
 
-              <AccessibleText variant="label" style={[styles.label, { color: colors.subtext, marginTop: 18 }]}>Disability Type</AccessibleText>
+              <AccessibleText variant="label" style={[styles.label, { color: colors.subtext, marginTop: 18 }]}>Disability Type(s)</AccessibleText>
 
               {renderDisabilityDropdown(
-                careDisability ? [careDisability] : [],
+                careDisabilities,
                 careDropdownOpen,
                 setCareDropdownOpen,
                 careSearch,
                 setCareSearch,
-                setCareDisability,
-                "Disability type",
-                false
+                toggleCareDisability,
+                "Disability types",
+                true
               )}
             </View>
           )}
@@ -945,20 +968,47 @@ const styles = StyleSheet.create({
     fontSize: 15,
   },
 
-  chipsContainer: {
+  selectedChipsRow: {
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 8,
+    marginTop: 10,
   },
 
-  chip: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
+  selectedChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingLeft: 12,
+    paddingRight: 8,
+    paddingVertical: 7,
+    borderRadius: 16,
+    gap: 6,
+  },
+
+  selectedChipText: {
+    fontSize: 13,
+    fontWeight: "600",
+  },
+
+  selectedChipRemove: {
+    fontSize: 13,
+    fontWeight: "700",
+    paddingHorizontal: 2,
+  },
+
+  dropdownDoneBtn: {
+    marginTop: 10,
+    marginHorizontal: 12,
+    marginBottom: 12,
+    paddingVertical: 12,
     borderRadius: 12,
+    alignItems: "center",
   },
 
-  chipText: {
+  dropdownDoneBtnText: {
+    color: "#FFFFFF",
     fontSize: 14,
+    fontWeight: "700",
   },
 
   row: {

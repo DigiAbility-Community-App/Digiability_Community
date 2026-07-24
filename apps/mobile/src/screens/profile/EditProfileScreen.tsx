@@ -60,13 +60,6 @@ const FALLBACK_DISABILITY_OPTIONS = [
     "Multiple Disabilities",
 ];
 
-const supportOptions = [
-    "Mobility",
-    "Communication",
-    "Learning",
-    "Daily Tasks",
-];
-
 // ─────────────────────────────────────────────────────────────
 // SCREEN
 // ─────────────────────────────────────────────────────────────
@@ -152,11 +145,6 @@ const EditProfileScreen = () => {
         setDisabilitySince,
     ] = useState("");
 
-    const [
-        selectedSupport,
-        setSelectedSupport,
-    ] = useState("");
-
     // ───────────────── Caregiver ─────────────────
 
     const [personName, setPersonName] =
@@ -167,9 +155,13 @@ const EditProfileScreen = () => {
 
     const [careDob, setCareDob] = useState("");
 
-    const [careDisability,
-        setCareDisability] =
-        useState("");
+    const [careDisabilities, setCareDisabilities] = useState<string[]>([]);
+
+    const toggleCareDisability = (item: string) => {
+        setCareDisabilities((prev) =>
+            prev.includes(item) ? prev.filter((d) => d !== item) : [...prev, item]
+        );
+    };
 
     // ───────────────── Educator ─────────────────
 
@@ -289,11 +281,6 @@ const EditProfileScreen = () => {
                         ""
                     )
                 );
-
-                setSelectedSupport(
-                    details?.supportNeeded ||
-                    ""
-                );
             }
 
             if (
@@ -314,9 +301,14 @@ const EditProfileScreen = () => {
                     ""
                 );
 
-                setCareDisability(
-                    details?.careDisabilityType ||
-                    ""
+                // careDisabilityType is a comma-separated list (multi-select).
+                setCareDisabilities(
+                    details?.careDisabilityType
+                        ? String(details.careDisabilityType)
+                              .split(",")
+                              .map((d: string) => d.trim())
+                              .filter(Boolean)
+                        : []
                 );
             }
 
@@ -379,7 +371,6 @@ const EditProfileScreen = () => {
             if (roles.includes("pwd")) {
                 payload.disabilityType = selectedDisabilities.join(", ");
                 payload.disabilitySince = disabilitySince ? (parseInt(disabilitySince, 10) || undefined) : undefined;
-                payload.supportNeeded = selectedSupport;
             }
 
             if (roles.includes("caregiver")) {
@@ -390,7 +381,7 @@ const EditProfileScreen = () => {
                 payload.careDob = careDob.trim()
                     ? parseDateInput(careDob.trim(), "DMY")
                     : "";
-                payload.careDisabilityType = careDisability;
+                payload.careDisabilityType = careDisabilities.join(", ");
             }
 
             if (roles.includes("educator")) {
@@ -741,60 +732,6 @@ const EditProfileScreen = () => {
                             accessibilityLabel="Disability since year"
                         />
 
-                        <ScrollView
-                            horizontal
-                            showsHorizontalScrollIndicator={
-                                false
-                            }
-                            style={
-                                styles.chipsScroll
-                            }
-                        >
-                            {supportOptions.map(
-                                (item) => {
-                                    const selected =
-                                        selectedSupport ===
-                                        item;
-
-                                    return (
-                                        <TouchableOpacity
-                                            key={item}
-                                            style={[
-                                                styles.chip,
-                                                { backgroundColor: colors.surface },
-                                                cardBorder,
-
-                                                selected && {
-                                                    backgroundColor: highContrast ? "#000000" : colors.primary,
-                                                    borderColor: highContrast ? "#000000" : colors.primary,
-                                                },
-                                            ]}
-                                            onPress={() =>
-                                                setSelectedSupport(
-                                                    item
-                                                )
-                                            }
-                                            accessibilityRole="radio"
-                                            accessibilityState={{ checked: selected }}
-                                            accessibilityLabel={item}
-                                        >
-                                            <AccessibleText
-                                                variant="body"
-                                                style={[
-                                                    styles.chipText,
-                                                    { color: colors.subtext },
-
-                                                    selected &&
-                                                    styles.selectedChipText,
-                                                ]}
-                                            >
-                                                {item}
-                                            </AccessibleText>
-                                        </TouchableOpacity>
-                                    );
-                                }
-                            )}
-                        </ScrollView>
                     </View>
                 )}
 
@@ -841,18 +778,55 @@ const EditProfileScreen = () => {
                                 accessibilityHint="Format: day, month, year"
                             />
 
-                            <TextInput
-                                placeholder="Disability Type"
-                                placeholderTextColor={placeholderColor}
-                                style={[styles.input, { backgroundColor: colors.surface, color: colors.text }, cardBorder]}
-                                value={
-                                    careDisability
-                                }
-                                onChangeText={
-                                    setCareDisability
-                                }
-                                accessibilityLabel="Disability type"
-                            />
+                            <AccessibleText
+                                variant="label"
+                                style={{ color: placeholderColor, marginBottom: 8, marginTop: 4 }}
+                            >
+                                Disability Type(s)
+                            </AccessibleText>
+
+                            <ScrollView
+                                horizontal
+                                showsHorizontalScrollIndicator={false}
+                                style={styles.chipsScroll}
+                            >
+                                {disabilityOptions.map((item) => {
+                                    const selected = careDisabilities.includes(item);
+
+                                    return (
+                                        <TouchableOpacity
+                                            key={item}
+                                            style={[
+                                                styles.chip,
+                                                { backgroundColor: colors.surface },
+                                                cardBorder,
+
+                                                selected && {
+                                                    backgroundColor: highContrast ? "#000000" : colors.primary,
+                                                    borderColor: highContrast ? "#000000" : colors.primary,
+                                                },
+                                            ]}
+                                            onPress={() => toggleCareDisability(item)}
+                                            accessibilityRole="checkbox"
+                                            accessibilityState={{ checked: selected }}
+                                            accessibilityLabel={item}
+                                        >
+                                            <AccessibleText
+                                                variant="body"
+                                                style={[
+                                                    styles.chipText,
+                                                    { color: colors.subtext },
+
+                                                    selected &&
+                                                    styles.selectedChipText,
+                                                ]}
+                                            >
+                                                {item}
+                                            </AccessibleText>
+                                        </TouchableOpacity>
+                                    );
+                                })}
+                            </ScrollView>
                         </View>
                     )}
 
