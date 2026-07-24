@@ -52,8 +52,13 @@ export const mentorService = {
       },
     });
 
-    // Determine the user's disability type (direct or via caregiver)
-    const userDisabilityType = userProfile?.disabilityType || userProfile?.careDisabilityType || null;
+    // Determine the user's disability type(s) — direct or via caregiver.
+    // disabilityType may be a comma-separated list (multi-select), so split
+    // it into normalized parts for matching against mentor specialties.
+    const rawDisability = userProfile?.disabilityType || userProfile?.careDisabilityType || null;
+    const userDisabilityTypes = rawDisability
+      ? rawDisability.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean)
+      : [];
     const userCity = userProfile?.city || null;
     const userState = userProfile?.state || null;
 
@@ -95,12 +100,11 @@ export const mentorService = {
       const mentorCity = mentorUserProfile?.city || null;
       const mentorState = mentorUserProfile?.state || null;
 
-      // Disability type match
-      if (userDisabilityType && mentor.disabilitySpecialties.length > 0) {
-        const normalizedUserType = userDisabilityType.toLowerCase().trim();
-        const hasMatch = mentor.disabilitySpecialties.some(
-          (s) => s.toLowerCase().trim() === normalizedUserType
-        );
+      // Disability type match — fire if ANY of the user's selected types
+      // matches ANY of the mentor's specialties.
+      if (userDisabilityTypes.length > 0 && mentor.disabilitySpecialties.length > 0) {
+        const mentorSpecialties = mentor.disabilitySpecialties.map((s) => s.toLowerCase().trim());
+        const hasMatch = userDisabilityTypes.some((t) => mentorSpecialties.includes(t));
         if (hasMatch) score += DISABILITY_MATCH_SCORE;
       }
 

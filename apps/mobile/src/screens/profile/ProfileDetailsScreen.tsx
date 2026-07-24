@@ -95,9 +95,15 @@ const ProfileDetailsScreen = () => {
 
   // ───────────────── PwD ─────────────────
 
-  const [selectedDisability, setSelectedDisability] = useState("Hearing");
+  const [selectedDisabilities, setSelectedDisabilities] = useState<string[]>([]);
   const [disabilitySince, setDisabilitySince] = useState("");
   const [selectedSupport, setSelectedSupport] = useState("Communication");
+
+  const toggleDisability = (item: string) => {
+    setSelectedDisabilities((prev) =>
+      prev.includes(item) ? prev.filter((d) => d !== item) : [...prev, item]
+    );
+  };
 
   // ───────────────── Caregiver ─────────────────
 
@@ -199,8 +205,12 @@ const ProfileDetailsScreen = () => {
   const validateFields = () => {
     const newErrors: Record<string, string> = {};
 
-    // PwD
+    // PwD — at least one disability is required (backend gates profile
+    // completion on disabilityType being present).
     if (roles.includes("pwd")) {
+      if (selectedDisabilities.length === 0) {
+        newErrors.disabilityType = "Please select at least one disability type";
+      }
       const yearErr = validateYear(disabilitySince);
       if (yearErr) newErrors.disabilitySince = yearErr;
     }
@@ -243,7 +253,8 @@ const ProfileDetailsScreen = () => {
     const payload: any = {};
 
     if (roles.includes("pwd")) {
-      payload.disabilityType = selectedDisability;
+      // Multiple disabilities are stored as a comma-separated string.
+      payload.disabilityType = selectedDisabilities.join(", ");
       payload.disabilitySince = disabilitySince.trim()
         ? parseInt(disabilitySince.trim(), 10)
         : undefined;
@@ -329,95 +340,112 @@ const ProfileDetailsScreen = () => {
     return highContrast ? { borderWidth: 2, borderColor: "#000000" } : {};
   };
 
-  // ───────────────── DISABILITY DROPDOWN (shared render, used twice) ─────────────────
+  // ───────────────── DISABILITY DROPDOWN (shared render) ─────────────────
+  // Supports single-select (caregiver — one care recipient) and multi-select
+  // (PwD — a person may have multiple disabilities). In multi mode the panel
+  // stays open on tap and each row is a checkbox.
 
   const renderDisabilityDropdown = (
-    value: string,
+    selected: string[],
     open: boolean,
     setOpen: (v: boolean) => void,
     search: string,
     setSearch: (v: string) => void,
-    onSelect: (v: string) => void,
-    label: string
-  ) => (
-    <>
-      <TouchableOpacity
-        style={[styles.dropdownTrigger, { backgroundColor: colors.surface }, highContrast && { borderWidth: 2, borderColor: "#000000" }]}
-        activeOpacity={0.8}
-        onPress={() => {
-          setOpen(!open);
-          setSearch("");
-        }}
-        accessibilityRole="button"
-        accessibilityLabel={label}
-        accessibilityHint={`Currently ${value || "not set"}. Double tap to choose a disability type`}
-        accessibilityState={{ expanded: open }}
-      >
-        <AccessibleText style={[styles.dropdownValue, { color: value ? colors.text : colors.subtext }]}>
-          {value || "Select disability type"}
-        </AccessibleText>
-        <AccessibleText style={[styles.dropdownArrow, { color: colors.subtext }]}>{open ? "▲" : "▼"}</AccessibleText>
-      </TouchableOpacity>
+    onChoose: (v: string) => void,
+    label: string,
+    multi: boolean
+  ) => {
+    const triggerText =
+      selected.length === 0
+        ? (multi ? "Select disability type(s)" : "Select disability type")
+        : selected.join(", ");
 
-      {open && (
-        <View style={[styles.dropdownPanel, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-          <View style={[styles.dropdownSearch, { borderBottomColor: colors.border }]}>
-            <AccessibleText style={styles.searchIcon}>🔍</AccessibleText>
-            <TextInput
-              style={[styles.searchInput, { color: colors.text }]}
-              placeholder="Search..."
-              placeholderTextColor={colors.subtext}
-              value={search}
-              onChangeText={setSearch}
-              autoFocus
-              accessibilityLabel="Search disability types"
-            />
-          </View>
-          <ScrollView style={styles.dropdownList} nestedScrollEnabled keyboardShouldPersistTaps="handled">
-            {disabilityOptions
-              .filter((o) => o.toLowerCase().includes(search.toLowerCase()))
-              .map((item) => {
-                const selected = value === item;
-                return (
-                  <TouchableOpacity
-                    key={item}
-                    style={[
-                      styles.dropdownOption,
-                      { borderBottomColor: colors.border },
-                      selected && { backgroundColor: highContrast ? "#000000" : "rgba(80,0,136,0.06)" },
-                    ]}
-                    onPress={() => {
-                      onSelect(item);
-                      setOpen(false);
-                      setSearch("");
-                    }}
-                    accessibilityRole="radio"
-                    accessibilityState={{ checked: selected }}
-                    accessibilityLabel={item}
-                  >
-                    <AccessibleText
+    return (
+      <>
+        <TouchableOpacity
+          style={[styles.dropdownTrigger, { backgroundColor: colors.surface }, highContrast && { borderWidth: 2, borderColor: "#000000" }]}
+          activeOpacity={0.8}
+          onPress={() => {
+            setOpen(!open);
+            setSearch("");
+          }}
+          accessibilityRole="button"
+          accessibilityLabel={label}
+          accessibilityHint={
+            selected.length > 0
+              ? `Currently ${selected.join(", ")}. Double tap to change your ${multi ? "disability types" : "disability type"}`
+              : `Double tap to choose ${multi ? "one or more disability types" : "a disability type"}`
+          }
+          accessibilityState={{ expanded: open }}
+        >
+          <AccessibleText style={[styles.dropdownValue, { color: selected.length ? colors.text : colors.subtext }]}>
+            {triggerText}
+          </AccessibleText>
+          <AccessibleText style={[styles.dropdownArrow, { color: colors.subtext }]}>{open ? "▲" : "▼"}</AccessibleText>
+        </TouchableOpacity>
+
+        {open && (
+          <View style={[styles.dropdownPanel, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <View style={[styles.dropdownSearch, { borderBottomColor: colors.border }]}>
+              <AccessibleText style={styles.searchIcon}>🔍</AccessibleText>
+              <TextInput
+                style={[styles.searchInput, { color: colors.text }]}
+                placeholder="Search..."
+                placeholderTextColor={colors.subtext}
+                value={search}
+                onChangeText={setSearch}
+                autoFocus
+                accessibilityLabel="Search disability types"
+              />
+            </View>
+            <ScrollView style={styles.dropdownList} nestedScrollEnabled keyboardShouldPersistTaps="handled">
+              {disabilityOptions
+                .filter((o) => o.toLowerCase().includes(search.toLowerCase()))
+                .map((item) => {
+                  const isSelected = selected.includes(item);
+                  return (
+                    <TouchableOpacity
+                      key={item}
                       style={[
-                        styles.dropdownOptionText,
-                        { color: selected ? colors.primary : colors.text },
-                        selected && highContrast && { color: "#FFFFFF", fontWeight: "700" },
+                        styles.dropdownOption,
+                        { borderBottomColor: colors.border },
+                        isSelected && { backgroundColor: highContrast ? "#000000" : "rgba(80,0,136,0.06)" },
                       ]}
+                      onPress={() => {
+                        onChoose(item);
+                        if (!multi) {
+                          setOpen(false);
+                          setSearch("");
+                        }
+                      }}
+                      accessibilityRole={multi ? "checkbox" : "radio"}
+                      accessibilityState={{ checked: isSelected }}
+                      accessibilityLabel={item}
                     >
-                      {item}
-                    </AccessibleText>
-                    {selected && (
-                      <AccessibleText style={[styles.checkmark, { color: highContrast ? "#FFFFFF" : colors.primary }]}>✓</AccessibleText>
-                    )}
-                  </TouchableOpacity>
-                );
-              })}
-            {disabilityOptions.filter((o) => o.toLowerCase().includes(search.toLowerCase())).length === 0 && (
-              <AccessibleText style={[styles.noResults, { color: colors.subtext }]}>No results</AccessibleText>
-            )}
-          </ScrollView>
-        </View>
-      )}
-    </>
-  );
+                      <AccessibleText
+                        style={[
+                          styles.dropdownOptionText,
+                          { color: isSelected ? colors.primary : colors.text },
+                          isSelected && highContrast && { color: "#FFFFFF", fontWeight: "700" },
+                        ]}
+                      >
+                        {item}
+                      </AccessibleText>
+                      {isSelected && (
+                        <AccessibleText style={[styles.checkmark, { color: highContrast ? "#FFFFFF" : colors.primary }]}>✓</AccessibleText>
+                      )}
+                    </TouchableOpacity>
+                  );
+                })}
+              {disabilityOptions.filter((o) => o.toLowerCase().includes(search.toLowerCase())).length === 0 && (
+                <AccessibleText style={[styles.noResults, { color: colors.subtext }]}>No results</AccessibleText>
+              )}
+            </ScrollView>
+          </View>
+        )}
+      </>
+    );
+  };
 
   // ───────────────── UI ─────────────────
 
@@ -473,20 +501,31 @@ const ProfileDetailsScreen = () => {
                   My Disability
                 </AccessibleText>
                 <View style={[styles.badge, { backgroundColor: highContrast ? "#FFFFFF" : "rgba(80,0,136,0.1)" }, highContrast && { borderWidth: 1, borderColor: "#000000" }]}>
-                  <AccessibleText style={[styles.badgeText, { color: colors.primary }]}>OPTIONAL</AccessibleText>
+                  <AccessibleText style={[styles.badgeText, { color: colors.primary }]}>REQUIRED</AccessibleText>
                 </View>
               </View>
 
-              <AccessibleText variant="label" style={[styles.label, { color: colors.subtext }]}>Disability Type</AccessibleText>
+              <AccessibleText variant="label" style={[styles.label, { color: colors.subtext }]}>Disability Type(s) *</AccessibleText>
 
               {renderDisabilityDropdown(
-                selectedDisability,
+                selectedDisabilities,
                 disabilityDropdownOpen,
                 setDisabilityDropdownOpen,
                 disabilitySearch,
                 setDisabilitySearch,
-                setSelectedDisability,
-                "Disability type"
+                (item) => {
+                  toggleDisability(item);
+                  if (fieldErrors.disabilityType) {
+                    setFieldErrors((e) => ({ ...e, disabilityType: undefined as any }));
+                  }
+                },
+                "Disability types",
+                true
+              )}
+              {fieldErrors.disabilityType && (
+                <AccessibleText style={[styles.errorText, { color: colors.error }]} accessibilityRole="alert">
+                  {fieldErrors.disabilityType}
+                </AccessibleText>
               )}
 
               <AccessibleText variant="label" style={[styles.label, { color: colors.subtext, marginTop: 20 }]}>Disability Since</AccessibleText>
@@ -604,13 +643,14 @@ const ProfileDetailsScreen = () => {
               <AccessibleText variant="label" style={[styles.label, { color: colors.subtext, marginTop: 18 }]}>Disability Type</AccessibleText>
 
               {renderDisabilityDropdown(
-                careDisability,
+                careDisability ? [careDisability] : [],
                 careDropdownOpen,
                 setCareDropdownOpen,
                 careSearch,
                 setCareSearch,
                 setCareDisability,
-                "Disability type"
+                "Disability type",
+                false
               )}
             </View>
           )}
