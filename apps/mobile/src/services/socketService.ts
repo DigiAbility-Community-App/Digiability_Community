@@ -139,6 +139,15 @@ const handleSocketEvent = (message: any) => {
         createdAt: payload.createdAt,
       };
       console.log('[WS-EVENT] message.new → addMessage', mapped.id, 'conv:', mapped.conversationId);
+      // First-ever message of a brand-new conversation someone started with us:
+      // the conversation isn't in the store yet, so addMessage can't attach its
+      // lastMessage. Pull the fresh conversation list so it appears in the chat
+      // list. (addMessage still runs below so the message is ready if opened.)
+      if (!store.conversations[payload.conversationId]) {
+        chatService.getConversations()
+          .then((convos) => store.setConversations(convos))
+          .catch(() => {});
+      }
       store.addMessage(mapped);
       // Increment unread count
       store.incrementUnreadCount(payload.conversationId);
