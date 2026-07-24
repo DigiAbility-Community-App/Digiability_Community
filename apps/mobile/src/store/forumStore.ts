@@ -101,6 +101,10 @@ interface ForumState {
   fetchNotifications: () => Promise<void>;
   markNotificationRead: (id: string) => Promise<void>;
 
+  // Wipes all user-scoped forum state on logout so the next user
+  // doesn't see the previous user's questions/bookmarks/notifications.
+  clearStore: () => void;
+
   // Realtime handlers
   onSocketQuestionCreated: (question: ForumQuestion) => void;
   onSocketQuestionDeleted: (payload: { id: string }) => void;
@@ -406,6 +410,21 @@ export const useForumStore = create<ForumState>((set, get) => ({
       console.warn("Failed to mark notification read:", err);
     }
   },
+
+  clearStore: () =>
+    set({
+      questions: [],
+      bookmarks: [],
+      notifications: [],
+      currentQuestion: null,
+      currentQuestionSummary: null,
+      duplicateSuggestions: [],
+      loading: false,
+      actionLoading: false,
+      error: null,
+      filters: initialFilters,
+      nextCursor: null,
+    }),
 
   // Realtime Socket updates
   onSocketQuestionCreated: (question) => {

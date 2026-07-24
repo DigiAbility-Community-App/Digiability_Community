@@ -486,8 +486,9 @@ model RefreshToken {
 model PasswordResetToken {
   id        String   @id @default(uuid())
   userId    String
-  token     String   // stored as SHA-256 hash
+  token     String   // stored as SHA-256 hash of the 6-digit OTP
   expiresAt DateTime
+  attempts  Int      @default(0)  // failed attempt counter for brute-force protection
   createdAt DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)

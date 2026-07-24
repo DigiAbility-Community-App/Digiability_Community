@@ -1,7 +1,20 @@
 import * as SecureStore from 'expo-secure-store';
 import apiClient, { REFRESH_TOKEN_KEY, cancelPendingRequests } from './apiClient';
 import { useAuthStore, AuthUser } from '@store/authStore';
+import { useChatStore } from '@store/chatStore';
+import { useForumStore } from '@store/forumStore';
 import { removeDeviceToken } from './notificationService';
+
+/**
+ * Wipes all user-scoped in-memory state. Called on logout and account
+ * deletion so the next user who logs in on this device never sees the
+ * previous user's conversations, forum posts, bookmarks, etc.
+ */
+function clearUserScopedStores() {
+  useAuthStore.getState().clearAuth();
+  useChatStore.getState().clearStore();
+  useForumStore.getState().clearStore();
+}
 
 // ─────────────────────────────────────────────────────────
 // Auth Service
@@ -29,7 +42,8 @@ export interface ForgotPasswordInput {
 }
 
 export interface ResetPasswordInput {
-  token: string;
+  email: string;
+  otp: string;
   password: string;
 }
 
@@ -130,6 +144,12 @@ export async function register(input: RegisterInput): Promise<AuthUser> {
 // ── Login ──────────────────────────────────────────────────
 
 export async function login(input: LoginInput): Promise<AuthUser> {
+  // Defensively wipe any leftover state from a previous session that
+  // wasn't cleanly logged out (e.g. an app crash), so switching accounts
+  // never surfaces the prior user's cached chat/forum data.
+  useChatStore.getState().clearStore();
+  useForumStore.getState().clearStore();
+
   const response = await apiClient.post<ApiResponse<LoginResponseData>>(
     '/api/auth/login',
     input,
@@ -158,9 +178,10 @@ export async function logout(): Promise<void> {
     // Best-effort — never block logout on this.
   }
 
-  // H11: Clear local auth state FIRST to prevent any in-flight responses
-  // writing stale data to the store after logout.
-  useAuthStore.getState().clearAuth();
+  // H11: Clear local state FIRST to prevent any in-flight responses
+  // writing stale data to the stores after logout. Clears auth + all
+  // user-scoped stores (chat, forum) so the next user starts clean.
+  clearUserScopedStores();
   await SecureStore.deleteItemAsync(REFRESH_TOKEN_KEY);
 
   // Then cancel pending requests and notify the server (best-effort)
@@ -263,7 +284,7 @@ export async function updateRole(
 
 export async function deleteAccount(): Promise<void> {
   await apiClient.delete('/api/auth/delete-account');
-  // Clear all local auth state after the server confirms deletion
-  useAuthStore.getState().clearAuth();
+  // Clear all local state after the server confirms deletion
+  clearUserScopedStores();
   await SecureStore.deleteItemAsync(REFRESH_TOKEN_KEY);
 }

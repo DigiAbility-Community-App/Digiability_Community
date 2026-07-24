@@ -28,8 +28,8 @@ const ForgotPasswordScreen = ({ navigation }: Props) => {
 
   // Step 1: enter email
   const [email, setEmail] = useState("");
-  // Step 2: enter OTP token + new password
-  const [token, setToken] = useState("");
+  // Step 2: enter 6-digit OTP + new password
+  const [otp, setOtp] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
 
@@ -68,8 +68,8 @@ const ForgotPasswordScreen = ({ navigation }: Props) => {
   const handleResetPassword = async () => {
     clearError();
 
-    if (!token.trim()) {
-      setError("Please enter the OTP token from your email.");
+    if (!/^\d{6}$/.test(otp.trim())) {
+      setError("Please enter the 6-digit code from your email.");
       return;
     }
 
@@ -90,7 +90,7 @@ const ForgotPasswordScreen = ({ navigation }: Props) => {
 
     setLoading(true);
     try {
-      await resetPassword({ token: token.trim(), password: newPassword });
+      await resetPassword({ email: email.trim().toLowerCase(), otp: otp.trim(), password: newPassword });
       Alert.alert(
         "Password Reset",
         "Your password has been reset successfully. Please log in with your new password.",
@@ -98,7 +98,7 @@ const ForgotPasswordScreen = ({ navigation }: Props) => {
       );
     } catch (err: any) {
       const msg = err?.response?.data?.message;
-      setError(msg || "Invalid or expired token. Please request a new one.");
+      setError(msg || "Invalid or expired code. Please request a new one.");
     } finally {
       setLoading(false);
     }
@@ -174,15 +174,17 @@ const ForgotPasswordScreen = ({ navigation }: Props) => {
             </>
           ) : (
             <>
-              <AccessibleText variant="label" style={styles.fieldLabel}>OTP Token</AccessibleText>
+              <AccessibleText variant="label" style={styles.fieldLabel}>Reset Code</AccessibleText>
               <Input
-                value={token}
-                onChangeText={(t) => { setToken(t); clearError(); }}
-                placeholder="Paste the token from your email"
+                value={otp}
+                onChangeText={(t) => { setOtp(t.replace(/[^0-9]/g, "")); clearError(); }}
+                placeholder="6-digit code"
+                keyboardType="number-pad"
+                maxLength={6}
                 autoCapitalize="none"
                 autoCorrect={false}
-                accessibilityLabel="OTP token"
-                accessibilityHint="Copy and paste the token from the reset email"
+                accessibilityLabel="Reset code"
+                accessibilityHint="Enter the 6-digit code from the reset email"
               />
 
               <AccessibleText variant="label" style={[styles.fieldLabel, { marginTop: spacing.md }]}>

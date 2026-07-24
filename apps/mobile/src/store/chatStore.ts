@@ -107,8 +107,11 @@ export const useChatStore = create<ChatState>((set) => ({
   setLastSyncTime: (time) => set({ lastSyncTime: time }),
 
   setConversations: (convos) =>
-    set((state) => {
-      const newConvos = { ...state.conversations };
+    // Replace (not merge) so a fresh fetch fully reflects the current
+    // user's conversations — leftover entries from a previous account
+    // or a stale socket event can't survive a reload.
+    set(() => {
+      const newConvos: Record<string, (typeof convos)[number]> = {};
       convos.forEach((c) => {
         newConvos[c.id] = c;
       });
