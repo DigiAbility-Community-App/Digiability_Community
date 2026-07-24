@@ -145,10 +145,15 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
 function startHttpServer(): http.Server {
   const server = http.createServer(async (req, res) => {
     if (req.method === "GET" && req.url === "/health") {
-      const [dbOk, redisOk] = await Promise.all([
-        withTimeout(pool.query("SELECT 1"), 2000).then(() => true).catch(() => false),
-        withTimeout(redisClient.ping(), 2000).then(() => true).catch(() => false),
-      ]);
+      // DB: the pg Pool has spare connections, so a probe query is safe.
+      const dbOk = await withTimeout(pool.query("SELECT 1"), 2000).then(() => true).catch(() => false);
+      // Redis: do NOT send a command here — the consumer loop holds this same
+      // connection blocked in XREADGROUP ... BLOCK 5000, so a ping() would queue
+      // behind it and time out, making a healthy pod fail its liveness probe
+      // (CrashLoop). Read ioredis's local connection state instead, which needs
+      // no round-trip. "ready" | "connecting"/"reconnecting" are all acceptable —
+      // only a fully closed/ended client is unhealthy.
+      const redisOk = redisClient.status !== "end" && redisClient.status !== "close";
       const healthy = dbOk && redisOk;
       res.writeHead(healthy ? 200 : 503, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ status: healthy ? "ok" : "degraded", service: "notif-svc", db: dbOk, redis: redisOk }));
