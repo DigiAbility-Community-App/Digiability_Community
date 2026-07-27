@@ -10,7 +10,7 @@
     "start": "node dist/index.js"
   },
   "dependencies": {
-    "dotenv": "^16.4.5",
+    "dotenv": "^17.4.2",
     "expo-server-sdk": "^3.10.0",
     "ioredis": "^5.4.1",
     "pg": "^8.12.0"
