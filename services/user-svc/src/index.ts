@@ -27,6 +27,13 @@ import { errorHandler, notFoundHandler } from "./middleware/error.middleware";
 const app = express();
 const PORT = parseInt(process.env.PORT ?? "4001", 10);
 
+// Behind the ingress reverse proxy (Traefik — 1 hop). Trust it so `req.ip` is the
+// real client IP. Without this, rate limiting keys on the proxy IP (one shared
+// bucket for everyone) or on a client-spoofable X-Forwarded-For header.
+// NOTE: `1` = a single trusted proxy. If a CDN/extra LB is added in front, bump
+// this to the number of proxies between the client and this service.
+app.set("trust proxy", 1);
+
 function getDatabaseTarget() {
   const databaseUrl = process.env.DATABASE_URL;
   if (!databaseUrl) return null;
