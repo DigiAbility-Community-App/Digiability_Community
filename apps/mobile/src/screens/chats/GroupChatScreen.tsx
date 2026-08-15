@@ -23,6 +23,7 @@ import * as Location from "expo-location";
 import { generateUUID } from "../../utils/uuid";
 import { useChatMedia } from "@hooks/useChatMedia";
 import { MessageMedia } from "../../components/chat/MessageMedia";
+import { MediaViewer } from "../../components/chat/MediaViewer";
 import { AltTextModal } from "../../components/chat/AltTextModal";
 import { ActionSheet, ActionSheetOption } from "../../components/chat/ActionSheet";
 import { ConfirmDialog } from "../../components/chat/ConfirmDialog";
@@ -35,6 +36,8 @@ import {
 } from "lucide-react-native";
 import { useTheme } from "../../theme/ThemeContext";
 import { AccessibleText } from "../../components/shared/AccessibleText";
+import { LinkifiedText } from "../../components/shared/LinkifiedText";
+import { istDateKey, formatDateLabel } from "../../utils/dateHelpers";
 
 // ─────────────────────────────────────────────────────────
 // Group Chat Screen — Care Circle / Group Thread
@@ -104,6 +107,16 @@ const GroupChatScreen = ({ navigation, route }: Props) => {
   const [messageText, setMessageText] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const [mediaViewer, setMediaViewer] = useState<{ src: string; alt: string; isVideo: boolean } | null>(null);
+
+  const openMediaViewer = useCallback((src: string, alt: string, isVideo: boolean) => {
+    setMediaViewer({ src, alt, isVideo });
+  }, []);
+  const closeMediaViewer = useCallback(() => {
+    setMediaViewer(null);
+  }, []);
+
+  const flatListRef = useRef<FlatList>(null);
 
   // Emit typing.start while the user types; auto-stop after idle.
   const typingStopTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -147,7 +160,6 @@ const GroupChatScreen = ({ navigation, route }: Props) => {
     };
   }, []);
 
-  const flatListRef = useRef<FlatList>(null);
 
   // Build a userId → name map from conversation participants
   const memberNameMap = useCallback(() => {
@@ -485,13 +497,31 @@ const GroupChatScreen = ({ navigation, route }: Props) => {
         })
       : "";
 
+    // Date Separator logic
+    const msgDateKey = item.createdAt ? istDateKey(new Date(item.createdAt)) : "";
+    const prevMsgDateKey = prevMsg?.createdAt ? istDateKey(new Date(prevMsg.createdAt)) : "";
+    const showDateSep = msgDateKey && (!prevMsg || msgDateKey !== prevMsgDateKey);
+
     return (
-      <View
-        style={[
-          styles.messageRow,
-          isMine ? styles.myMessageRow : styles.theirMessageRow,
-        ]}
-      >
+      <View>
+        {showDateSep && (
+          <View style={styles.dateSeparator}>
+            <View style={[styles.dateLine, { backgroundColor: dateLineColor }]} />
+            <AccessibleText
+              variant="caption"
+              style={[styles.dateText, { color: colors.primary, backgroundColor: colors.surface }, cardBorder]}
+            >
+              {formatDateLabel(msgDateKey)}
+            </AccessibleText>
+            <View style={[styles.dateLine, { backgroundColor: dateLineColor }]} />
+          </View>
+        )}
+        <View
+          style={[
+            styles.messageRow,
+            isMine ? styles.myMessageRow : styles.theirMessageRow,
+          ]}
+        >
         {/* Sender Avatar (only for others, first in sequence) */}
         {!isMine && (
           <View style={styles.avatarSlot}>
@@ -529,18 +559,18 @@ const GroupChatScreen = ({ navigation, route }: Props) => {
               !isMine && cardBorder,
             ]}
           >
-            {item.type === "IMAGE" || item.type === "AUDIO" ? (
-              <MessageMedia message={item} isMine={isMine} />
+            {item.type === "IMAGE" || item.type === "VIDEO" || item.type === "AUDIO" ? (
+              <MessageMedia message={item} isMine={isMine} onOpenViewer={openMediaViewer} />
             ) : (
-              <AccessibleText
+              <LinkifiedText
                 variant="body"
+                text={item.content}
                 style={[
                   styles.messageText,
                   { color: isMine ? colors.white : colors.text },
                 ]}
-              >
-                {item.content}
-              </AccessibleText>
+                linkStyle={{ color: isMine ? "rgba(255,255,255,0.9)" : colors.primary }}
+              />
             )}
             <View style={styles.messageFooter}>
               <AccessibleText
@@ -568,6 +598,7 @@ const GroupChatScreen = ({ navigation, route }: Props) => {
             </View>
           </TouchableOpacity>
         </View>
+        </View>
       </View>
     );
   };
@@ -578,6 +609,9 @@ const GroupChatScreen = ({ navigation, route }: Props) => {
   const cardBorder = highContrast
     ? { borderWidth: 2, borderColor: "#000000" }
     : { borderWidth: 1, borderColor: "rgba(0,0,0,0.05)" };
+  
+  const dateLineColor = highContrast ? "rgba(0,0,0,0.3)" : "rgba(138,56,245,0.15)";
+  const typingDotColor = highContrast ? "#000000" : "#C4B5FD";
 
   if (isLoading) {
     return (
@@ -717,7 +751,7 @@ const GroupChatScreen = ({ navigation, route }: Props) => {
               <View style={[styles.composerCard, { backgroundColor: colors.card, shadowColor: colors.secondary }, cardBorder]}>
                 <TouchableOpacity
                   style={styles.plusBtn}
-                  onPress={media.pickImage}
+                  onPress={media.pickMedia}
                   disabled={media.isUploading}
                   accessibilityRole="button"
                   accessibilityLabel="Attach image"
@@ -807,7 +841,7 @@ const GroupChatScreen = ({ navigation, route }: Props) => {
               <View style={[styles.composerCard, { backgroundColor: colors.card, shadowColor: colors.secondary }, cardBorder]}>
                 <TouchableOpacity
                   style={styles.plusBtn}
-                  onPress={media.pickImage}
+                  onPress={media.pickMedia}
                   disabled={media.isUploading}
                   accessibilityRole="button"
                   accessibilityLabel="Attach image"
@@ -900,6 +934,16 @@ const GroupChatScreen = ({ navigation, route }: Props) => {
         }))}
         onClose={() => setReportTarget(null)}
       />
+      {/* Full-screen Media Viewer */}
+      {mediaViewer && (
+        <MediaViewer
+          visible={!!mediaViewer}
+          src={mediaViewer.src}
+          alt={mediaViewer.alt}
+          isVideo={mediaViewer.isVideo}
+          onClose={closeMediaViewer}
+        />
+      )}
     </ScreenWrapper>
   );
 };
@@ -980,6 +1024,26 @@ const styles = StyleSheet.create({
   },
   headerActionIcon: {
     fontSize: 18,
+  },
+
+  // Date separator
+  dateSeparator: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginVertical: 16,
+  },
+  dateLine: {
+    flex: 1,
+    height: 1,
+  },
+  dateText: {
+    marginHorizontal: 12,
+    fontSize: 12,
+    fontWeight: "600",
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 10,
+    overflow: "hidden",
   },
 
   // ── Messages ────────────────────────────────────────────
@@ -1073,6 +1137,7 @@ const styles = StyleSheet.create({
   },
   emptyIcon: {
     fontSize: 48,
+    lineHeight: 60,
     marginBottom: 12,
   },
   emptyTitle: {

@@ -1,7 +1,7 @@
-import React, { useEffect, useState, useRef, useMemo } from 'react';
+import React, { useEffect, useState, useRef, useMemo, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
-import { Send, MoreVertical, Check, CheckCheck, Info, Trash2, Volume2, Image as ImageIcon, Mic, Square, X, Lock } from 'lucide-react';
-import { MessageMedia } from './MessageMedia';
+import { Send, MoreVertical, Check, CheckCheck, Info, Trash2, Volume2, Image as ImageIcon, Mic, Square, X, Lock, Paperclip } from 'lucide-react';
+import { MessageMedia, MediaViewer } from './MessageMedia';
 import { useAuthStore } from '../../store/authStore';
 import { useChatStore } from '../../store/chatStore';
 import { chatService } from '../../services/chatService';
@@ -10,6 +10,33 @@ import { format } from 'date-fns';
 import clsx from 'clsx';
 import GroupInfoPanel from './GroupInfoPanel';
 import './ChatView.css';
+
+// ── Linkify helper: detect URLs in text and render as clickable <a> tags ──
+const URL_REGEX = /(https?:\/\/[^\s<>"']+)/gi;
+
+function linkifyContent(text: string): React.ReactNode {
+  const parts = text.split(URL_REGEX);
+  if (parts.length === 1) return text; // No URLs found
+  return parts.map((part, i) => {
+    if (URL_REGEX.test(part)) {
+      // Reset lastIndex since we're reusing the global regex
+      URL_REGEX.lastIndex = 0;
+      return (
+        <a
+          key={i}
+          href={part}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="message-link"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {part}
+        </a>
+      );
+    }
+    return part;
+  });
+}
 
 // ── Indian date helpers (IST = UTC+5:30) ─────────────────
 const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000; // +5:30 in ms
@@ -86,6 +113,15 @@ const ChatView = () => {
   const [isRecording, setIsRecording] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [showDmMenu, setShowDmMenu] = useState(false);
+  const [mediaViewer, setMediaViewer] = useState<{ src: string; alt: string; isVideo: boolean } | null>(null);
+
+  const openMediaViewer = useCallback((src: string, alt: string, isVideo: boolean) => {
+    setMediaViewer({ src, alt, isVideo });
+  }, []);
+
+  const closeMediaViewer = useCallback(() => {
+    setMediaViewer(null);
+  }, []);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const contextMenuRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -210,7 +246,7 @@ const ChatView = () => {
   };
 
   // Optimistically insert a media message, then fire the real send.
-  const sendMedia = (type: 'IMAGE' | 'AUDIO', url: string, metadata: Record<string, unknown>) => {
+  const sendMedia = (type: 'IMAGE' | 'AUDIO' | 'VIDEO', url: string, metadata: Record<string, unknown>) => {
     if (!conversationId) return;
     const clientMsgId = crypto.randomUUID();
     const metaStr = JSON.stringify(metadata);
@@ -234,18 +270,27 @@ const ChatView = () => {
     });
   };
 
-  const handlePickImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePickMedia = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = ''; // allow re-selecting the same file
     if (!file) return;
-    const altText = window.prompt('Describe this image (for screen readers):', '') || '';
+
+    const isVideo = file.type.startsWith('video/');
+    const altText = isVideo
+      ? ''
+      : (window.prompt('Describe this image (for screen readers):', '') || '');
+
     setIsUploading(true);
     try {
-      const { url } = await chatService.uploadMedia(file, 'image', file.name);
-      sendMedia('IMAGE', url, { altText: altText.trim() });
+      const field = isVideo ? 'video' : 'image';
+      const { url } = await chatService.uploadMedia(file, field, file.name);
+      const msgType = isVideo ? 'VIDEO' : 'IMAGE';
+      const meta: Record<string, unknown> = { mimeType: file.type };
+      if (!isVideo && altText.trim()) meta.altText = altText.trim();
+      sendMedia(msgType as 'IMAGE' | 'VIDEO', url, meta);
     } catch (err) {
-      console.error('image upload failed', err);
-      alert('Could not send image.');
+      console.error('media upload failed', err);
+      alert(isVideo ? 'Could not send video.' : 'Could not send image.');
     } finally {
       setIsUploading(false);
     }
@@ -491,10 +536,10 @@ const ChatView = () => {
                           {senderName}
                         </div>
                       )}
-                      {msg.type === 'IMAGE' || msg.type === 'AUDIO' ? (
-                        <MessageMedia message={msg} isMine={isMine} />
+                      {msg.type === 'IMAGE' || msg.type === 'VIDEO' || msg.type === 'AUDIO' ? (
+                        <MessageMedia message={msg} isMine={isMine} onOpenViewer={openMediaViewer} />
                       ) : (
-                        <div className="message-content">{msg.content}</div>
+                        <div className="message-content">{linkifyContent(msg.content)}</div>
                       )}
                       <div className="message-footer">
                         <span>{format(new Date(msg.createdAt), 'HH:mm')}</span>
@@ -515,19 +560,19 @@ const ChatView = () => {
             <input
               ref={fileInputRef}
               type="file"
-              accept="image/*"
+              accept="image/*,video/*"
               style={{ display: 'none' }}
-              onChange={handlePickImage}
+              onChange={handlePickMedia}
             />
             <button
               type="button"
               className="composer-icon-btn"
               onClick={() => fileInputRef.current?.click()}
               disabled={isUploading || isRecording}
-              aria-label="Share an image"
-              title="Share an image"
+              aria-label="Share media"
+              title="Share image or video"
             >
-              <ImageIcon size={18} />
+              <Paperclip size={18} />
             </button>
             {isRecording ? (
               <>
@@ -629,6 +674,16 @@ const ChatView = () => {
             </button>
           )}
         </div>
+      )}
+
+      {/* Full-screen Media Viewer */}
+      {mediaViewer && (
+        <MediaViewer
+          src={mediaViewer.src}
+          alt={mediaViewer.alt}
+          isVideo={mediaViewer.isVideo}
+          onClose={closeMediaViewer}
+        />
       )}
     </div>
   );

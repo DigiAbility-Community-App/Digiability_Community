@@ -27,7 +27,9 @@ const CATEGORIES = [
   "Legal Help",
   "Assistive Technology",
   "Caregiver Support",
-  "Community"
+  "Community",
+  "Document",
+  "Others"
 ];
 
 const SearchScreen = () => {

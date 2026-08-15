@@ -534,6 +534,7 @@ const styles =
 
     icon: {
       fontSize: 34,
+      lineHeight: 44,
     },
 
     cardTitle: {

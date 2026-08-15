@@ -33,7 +33,7 @@ export function useChatMedia(conversationId: string, senderId: string | undefine
 
   // Insert an optimistic media message and fire the real send.
   const sendMedia = useCallback(
-    (type: "IMAGE" | "AUDIO", url: string, metadata: Record<string, unknown>) => {
+    (type: "IMAGE" | "AUDIO" | "VIDEO", url: string, metadata: Record<string, unknown>) => {
       if (!senderId) return;
       const clientMessageId = generateUUID();
       const metaStr = JSON.stringify(metadata);
@@ -126,25 +126,47 @@ export function useChatMedia(conversationId: string, senderId: string | undefine
     }
   }, [teardownRecording, sendMedia]);
 
-  // ── Image picking ────────────────────────────────────────
-  const pickImage = useCallback(async () => {
+  // ── Media picking ────────────────────────────────────────
+  const pickMedia = useCallback(async () => {
     try {
       const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!perm.granted) {
-        Alert.alert("Photos needed", "Please allow photo access to share an image.");
+        Alert.alert("Photos needed", "Please allow photo access to share media.");
         return;
       }
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        mediaTypes: ImagePicker.MediaTypeOptions.All,
         quality: 0.7,
       });
       if (!result.canceled && result.assets?.[0]?.uri) {
-        setPendingImageUri(result.assets[0].uri);
+        const asset = result.assets[0];
+        const uri = asset.uri;
+        const isVideo = asset.type === 'video';
+
+        if (isVideo) {
+          // Immediately send video (no alt text needed)
+          setIsUploading(true);
+          try {
+            const ext = uri.split(".").pop()?.toLowerCase() || "mp4";
+            const { url } = await chatService.uploadMedia(
+              { uri, name: `video-${Date.now()}.${ext}`, type: `video/${ext}` },
+              "video"
+            );
+            sendMedia("VIDEO", url, { mimeType: `video/${ext}` });
+          } catch (err) {
+            console.error("video upload failed", err);
+            Alert.alert("Send failed", "Could not send your video.");
+          } finally {
+            setIsUploading(false);
+          }
+        } else {
+          setPendingImageUri(uri);
+        }
       }
     } catch (err) {
-      console.error("pickImage failed", err);
+      console.error("pickMedia failed", err);
     }
-  }, []);
+  }, [sendMedia]);
 
   const cancelPendingImage = useCallback(() => setPendingImageUri(null), []);
 
@@ -179,7 +201,7 @@ export function useChatMedia(conversationId: string, senderId: string | undefine
     cancelRecording,
     stopAndSendRecording,
     pendingImageUri,
-    pickImage,
+    pickMedia,
     cancelPendingImage,
     sendPendingImage,
     removeMessage,

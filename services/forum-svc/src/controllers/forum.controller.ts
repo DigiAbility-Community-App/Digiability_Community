@@ -41,7 +41,9 @@ const ALLOWED_CATEGORIES = [
   'Legal Help',
   'Assistive Technology',
   'Caregiver Support',
-  'Community'
+  'Community',
+  'Document',
+  'Others'
 ];
 
 const getImageUrl = (req: Request, filename?: string) => {
@@ -207,7 +209,7 @@ export const createQuestion = async (req: Request, res: Response): Promise<void>
   }
 };
 
-export const checkDuplicates = async (req: Request, res: Response): Promise<void> => {
+export const checkDuplicates = async (req: Request, res: Response): Pr1omise<void> => {
   try {
     const { title } = req.query;
 

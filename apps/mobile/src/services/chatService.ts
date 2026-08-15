@@ -203,8 +203,8 @@ export const chatService = {
   // builds the multipart body + boundary natively.
   uploadMedia: async (
     file: { uri: string; name: string; type: string },
-    field: "image" | "audio"
-  ): Promise<{ url: string; kind: "IMAGE" | "AUDIO"; mimeType: string; size: number }> => {
+    field: "image" | "audio" | "video"
+  ): Promise<{ url: string; kind: "IMAGE" | "AUDIO" | "VIDEO"; mimeType: string; size: number }> => {
     const form = new FormData();
     // React Native FormData file shape.
     form.append(field, {

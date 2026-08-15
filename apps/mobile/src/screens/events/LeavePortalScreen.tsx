@@ -194,6 +194,7 @@ const styles = StyleSheet.create({
   },
   orgEmoji: {
     fontSize: 34,
+    lineHeight: 44,
   },
   sheetTitle: {
     fontSize: 24,

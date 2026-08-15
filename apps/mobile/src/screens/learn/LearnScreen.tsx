@@ -104,7 +104,7 @@ export const LearnScreen = () => {
             accessibilityHint={`Starts the course ${course.title} by ${course.instructor}`}
           >
             <View style={[styles.courseImage, { backgroundColor: highContrast ? colors.surface : "#F3E8FF" }]}>
-              <AccessibleText style={{ fontSize: 48 }}>{course.emoji}</AccessibleText>
+              <AccessibleText style={{ fontSize: 48, lineHeight: 60 }}>{course.emoji}</AccessibleText>
               <View style={styles.courseDuration}>
                 <Clock size={12} color={colors.white} />
                 <AccessibleText style={{ color: colors.white, fontSize: 11, fontWeight: "600", marginLeft: 4 }}>

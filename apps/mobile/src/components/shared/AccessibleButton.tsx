@@ -126,7 +126,7 @@ export const AccessibleButton: React.FC<AccessibleButtonProps> = ({
             backgroundColor,
             borderColor,
             borderWidth,
-            paddingVertical: spacing.md,
+            paddingVertical: spacing.sm,
             paddingHorizontal: spacing.lg,
           },
           focusBorder,

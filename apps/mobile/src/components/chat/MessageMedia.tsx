@@ -1,16 +1,31 @@
 // ─────────────────────────────────────────────────────────────
-// MessageMedia — renders IMAGE and AUDIO chat messages.
-//  • IMAGE: thumbnail with the sender's alt text as the a11y label
-//           (and a visible caption for everyone).
-//  • AUDIO: a play/pause voice-note bubble backed by expo-av.
+// MessageMedia — renders IMAGE, VIDEO, and AUDIO chat messages.
+//
+//  • IMAGE: larger thumbnail (300px), tappable to open full-screen viewer
+//  • VIDEO: thumbnail with play icon overlay, tappable to open viewer
+//  • AUDIO: play/pause voice-note bubble backed by expo-av
+//
 // TEXT messages are rendered by the parent screen as before.
 // ─────────────────────────────────────────────────────────────
 
 import React, { useEffect, useRef, useState } from "react";
-import { View, Text, Image, TouchableOpacity, StyleSheet, ActivityIndicator } from "react-native";
+import {
+  View,
+  Text,
+  Image,
+  TouchableOpacity,
+  StyleSheet,
+  ActivityIndicator,
+  Dimensions,
+} from "react-native";
 import { Audio } from "expo-av";
+import { Play } from "lucide-react-native";
 import { ChatMessage } from "@store/chatStore";
 import { resolveMediaUrl } from "@services/chatService";
+
+const SCREEN_WIDTH = Dimensions.get("window").width;
+// Image thumbnail should be large but bounded — roughly 70% of screen width
+const IMAGE_SIZE = Math.min(300, SCREEN_WIDTH * 0.7);
 
 function parseMeta(metadata?: string): Record<string, any> {
   if (!metadata) return {};
@@ -29,20 +44,94 @@ function formatDuration(ms?: number): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
-export function MessageMedia({ message, isMine }: { message: ChatMessage; isMine: boolean }) {
+/** Detect if a media message is actually a video based on metadata or URL. */
+function isVideoContent(message: ChatMessage): boolean {
   const meta = parseMeta(message.metadata);
+  const mime: string = meta.mimeType || "";
+  if (mime.startsWith("video/")) return true;
+  // Fallback: check file extension in the content URL
+  const url = message.content.split("?")[0].toLowerCase();
+  return /\.(mp4|webm|mov|avi|mkv|m4v|ogg|ogv)$/.test(url);
+}
 
-  if (message.type === "IMAGE") {
-    const altText: string = meta.altText || "Shared image";
+interface MessageMediaProps {
+  message: ChatMessage;
+  isMine: boolean;
+  onOpenViewer?: (src: string, alt: string, isVideo: boolean) => void;
+}
+
+export function MessageMedia({ message, isMine, onOpenViewer }: MessageMediaProps) {
+  const meta = parseMeta(message.metadata);
+  const mediaSrc = resolveMediaUrl(message.content);
+
+  // ── IMAGE or VIDEO ──
+  if (message.type === "IMAGE" || message.type === "VIDEO") {
+    const video = message.type === "VIDEO" || isVideoContent(message);
+    const altText: string = meta.altText || (video ? "Shared video" : "Shared image");
+
+    const handlePress = () => {
+      onOpenViewer?.(mediaSrc, altText, video);
+    };
+
+    if (video) {
+      // Video: show static thumbnail with play icon overlay
+      return (
+        <View>
+          <TouchableOpacity
+            activeOpacity={0.85}
+            onPress={handlePress}
+            accessibilityRole="button"
+            accessibilityLabel="Play video"
+            accessibilityHint="Opens video in full-screen player"
+            style={styles.videoThumbWrap}
+          >
+            {/* Use Image for the poster — server may return a thumbnail, or we show a dark placeholder */}
+            <Image
+              source={{ uri: mediaSrc }}
+              style={styles.image}
+              resizeMode="cover"
+              accessible={false}
+            />
+            {/* Dark overlay + play button */}
+            <View style={styles.videoOverlay}>
+              <View style={styles.playBtn}>
+                <Play size={28} color="#fff" fill="#fff" style={{ marginLeft: 2 }} />
+              </View>
+            </View>
+            {/* Duration badge */}
+            {meta.durationMs ? (
+              <View style={styles.durationBadge}>
+                <Text style={styles.durationText}>{formatDuration(meta.durationMs)}</Text>
+              </View>
+            ) : null}
+          </TouchableOpacity>
+          {meta.altText ? (
+            <Text style={[styles.caption, isMine ? styles.captionMine : undefined]} numberOfLines={3}>
+              {meta.altText}
+            </Text>
+          ) : null}
+        </View>
+      );
+    }
+
+    // Regular image: tappable thumbnail
     return (
       <View>
-        <Image
-          source={{ uri: resolveMediaUrl(message.content) }}
-          style={styles.image}
-          resizeMode="cover"
-          accessible
+        <TouchableOpacity
+          activeOpacity={0.85}
+          onPress={handlePress}
+          accessibilityRole="button"
           accessibilityLabel={altText}
-        />
+          accessibilityHint="Tap to view full-screen"
+        >
+          <Image
+            source={{ uri: mediaSrc }}
+            style={styles.image}
+            resizeMode="cover"
+            accessible
+            accessibilityLabel={altText}
+          />
+        </TouchableOpacity>
         {meta.altText ? (
           <Text style={[styles.caption, isMine ? styles.captionMine : undefined]} numberOfLines={3}>
             {meta.altText}
@@ -52,8 +141,9 @@ export function MessageMedia({ message, isMine }: { message: ChatMessage; isMine
     );
   }
 
+  // ── AUDIO ──
   if (message.type === "AUDIO") {
-    return <AudioBubble uri={resolveMediaUrl(message.content)} durationMs={meta.durationMs} isMine={isMine} />;
+    return <AudioBubble uri={mediaSrc} durationMs={meta.durationMs} isMine={isMine} />;
   }
 
   return null;
@@ -66,7 +156,6 @@ function AudioBubble({ uri, durationMs, isMine }: { uri: string; durationMs?: nu
 
   useEffect(() => {
     return () => {
-      // Unload sound when the bubble unmounts.
       soundRef.current?.unloadAsync().catch(() => {});
       soundRef.current = null;
     };
@@ -129,8 +218,8 @@ function AudioBubble({ uri, durationMs, isMine }: { uri: string; durationMs?: nu
 
 const styles = StyleSheet.create({
   image: {
-    width: 220,
-    height: 220,
+    width: IMAGE_SIZE,
+    height: IMAGE_SIZE,
     borderRadius: 12,
     backgroundColor: "#eee",
   },
@@ -142,6 +231,44 @@ const styles = StyleSheet.create({
   captionMine: {
     color: "#f3e8ff",
   },
+
+  // ── Video thumbnail overlay ──
+  videoThumbWrap: {
+    position: "relative",
+    borderRadius: 12,
+    overflow: "hidden",
+  },
+  videoOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.3)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  playBtn: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: "rgba(0,0,0,0.55)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  durationBadge: {
+    position: "absolute",
+    bottom: 8,
+    right: 10,
+    backgroundColor: "rgba(0,0,0,0.6)",
+    borderRadius: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  durationText: {
+    color: "#fff",
+    fontSize: 12,
+    fontWeight: "600",
+    fontVariant: ["tabular-nums"],
+  },
+
+  // ── Audio ──
   audioRow: {
     flexDirection: "row",
     alignItems: "center",

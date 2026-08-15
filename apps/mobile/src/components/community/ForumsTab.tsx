@@ -33,7 +33,9 @@ const CATEGORIES = [
   { id: "Legal Help", name: "Legal Help", Icon: Scale },
   { id: "Assistive Technology", name: "Assistive Tech", Icon: Laptop },
   { id: "Caregiver Support", name: "Caregiver", Icon: HeartHandshake },
-  { id: "Community", name: "Community", Icon: Users }
+  { id: "Community", name: "Community", Icon: Users },
+  { id: "Document", name: "Document", Icon: ScrollText },
+  { id: "Others", name: "Others", Icon: Globe }
 ];
 
 const ForumsTab = () => {
