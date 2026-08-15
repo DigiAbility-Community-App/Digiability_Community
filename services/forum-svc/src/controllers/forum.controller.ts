@@ -209,7 +209,7 @@ export const createQuestion = async (req: Request, res: Response): Promise<void>
   }
 };
 
-export const checkDuplicates = async (req: Request, res: Response): Pr1omise<void> => {
+export const checkDuplicates = async (req: Request, res: Response): Promise<void> => {
   try {
     const { title } = req.query;
 
