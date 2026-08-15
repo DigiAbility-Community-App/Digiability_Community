@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { useParams } from 'react-router-dom';
 import { Send, MoreVertical, Check, CheckCheck, Info, Trash2, Volume2, Image as ImageIcon, Mic, Square, X, Lock } from 'lucide-react';
 import { MessageMedia } from './MessageMedia';
@@ -10,6 +10,40 @@ import { format } from 'date-fns';
 import clsx from 'clsx';
 import GroupInfoPanel from './GroupInfoPanel';
 import './ChatView.css';
+
+// ── Indian date helpers (IST = UTC+5:30) ─────────────────
+const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000; // +5:30 in ms
+
+/** Return a Date shifted so its UTC values represent IST calendar values. */
+function toIST(date: Date): Date {
+  return new Date(date.getTime() + IST_OFFSET_MS);
+}
+
+/** Format a date key like "2026-08-14" from an IST-shifted Date. */
+function istDateKey(date: Date): string {
+  const ist = toIST(date);
+  return `${ist.getUTCFullYear()}-${String(ist.getUTCMonth() + 1).padStart(2, '0')}-${String(ist.getUTCDate()).padStart(2, '0')}`;
+}
+
+const MONTH_NAMES = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+];
+
+/** Return "Today", "Yesterday", or "14 August 2026" for a date key. */
+function formatDateLabel(dateKey: string): string {
+  const todayKey = istDateKey(new Date());
+  if (dateKey === todayKey) return 'Today';
+
+  // Yesterday in IST
+  const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const yesterdayKey = istDateKey(yesterday);
+  if (dateKey === yesterdayKey) return 'Yesterday';
+
+  // Indian date convention: "14 August 2026"
+  const [y, m, d] = dateKey.split('-').map(Number);
+  return `${d} ${MONTH_NAMES[m - 1]} ${y}`;
+}
 
 // Format a presence "last seen" ISO timestamp into a short relative string.
 function formatLastSeen(iso: string): string {
@@ -426,36 +460,52 @@ const ChatView = () => {
 
         {/* Messages Area */}
         <div className="chat-messages">
-          {messages.map(msg => {
-            const isMine = msg.senderId === user?.id;
-            const senderParticipant = conversation.participants?.find(p => p.userId === msg.senderId);
-            const senderName = senderParticipant?.user?.name || 'Unknown User';
+          {(() => {
+            let lastDateKey = '';
+            return messages.map(msg => {
+              const isMine = msg.senderId === user?.id;
+              const senderParticipant = conversation.participants?.find(p => p.userId === msg.senderId);
+              const senderName = senderParticipant?.user?.name || 'Unknown User';
 
-            return (
-              <div
-                key={msg.id}
-                className={clsx('message-row', { 'is-mine': isMine, 'is-other': !isMine })}
-                onContextMenu={(e) => handleContextMenu(e, msg as any)}
-              >
-                <div className="message-bubble">
-                  {!isMine && conversation.type === 'GROUP' && (
-                    <div className="message-sender-name">
-                      {senderName}
+              const msgDateKey = istDateKey(new Date(msg.createdAt));
+              let showDateSep = false;
+              if (msgDateKey !== lastDateKey) {
+                showDateSep = true;
+                lastDateKey = msgDateKey;
+              }
+
+              return (
+                <React.Fragment key={msg.id}>
+                  {showDateSep && (
+                    <div className="chat-date-separator">
+                      <span className="chat-date-label">{formatDateLabel(msgDateKey)}</span>
                     </div>
                   )}
-                  {msg.type === 'IMAGE' || msg.type === 'AUDIO' ? (
-                    <MessageMedia message={msg} isMine={isMine} />
-                  ) : (
-                    <div className="message-content">{msg.content}</div>
-                  )}
-                  <div className="message-footer">
-                    <span>{format(new Date(msg.createdAt), 'HH:mm')}</span>
-                    {isMine && <span className="msg-status">{renderStatus(msg.status)}</span>}
+                  <div
+                    className={clsx('message-row', { 'is-mine': isMine, 'is-other': !isMine })}
+                    onContextMenu={(e) => handleContextMenu(e, msg as any)}
+                  >
+                    <div className="message-bubble">
+                      {!isMine && conversation.type === 'GROUP' && (
+                        <div className="message-sender-name">
+                          {senderName}
+                        </div>
+                      )}
+                      {msg.type === 'IMAGE' || msg.type === 'AUDIO' ? (
+                        <MessageMedia message={msg} isMine={isMine} />
+                      ) : (
+                        <div className="message-content">{msg.content}</div>
+                      )}
+                      <div className="message-footer">
+                        <span>{format(new Date(msg.createdAt), 'HH:mm')}</span>
+                        {isMine && <span className="msg-status">{renderStatus(msg.status)}</span>}
+                      </div>
+                    </div>
                   </div>
-                </div>
-              </div>
-            );
-          })}
+                </React.Fragment>
+              );
+            });
+          })()}
           <div ref={messagesEndRef} />
         </div>
 

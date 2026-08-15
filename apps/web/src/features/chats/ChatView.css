@@ -64,6 +64,41 @@
   background-color: var(--bg-base);
 }
 
+/* ── WhatsApp-style Date Separators ── */
+.chat-date-separator {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 100%;
+  padding: 8px 0;
+  margin: 4px 0;
+  position: relative;
+}
+
+.chat-date-separator::before,
+.chat-date-separator::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background-color: var(--border-color);
+}
+
+.chat-date-label {
+  display: inline-block;
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 16px;
+  border-radius: var(--radius-full);
+  white-space: nowrap;
+  box-shadow: var(--shadow-sm);
+  letter-spacing: 0.02em;
+  margin: 0 12px;
+  user-select: none;
+}
+
 .message-row {
   display: flex;
   width: 100%;

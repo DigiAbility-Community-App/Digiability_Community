@@ -87,17 +87,19 @@ const InvitesPanel: React.FC<Props> = ({ onClose }) => {
                       className="ip-btn ip-btn-accept"
                       disabled={isResponding}
                       onClick={() => handleRespond(invite, 'accept')}
-                      aria-label="Accept"
+                      aria-label="Accept invite"
                     >
-                      <Check size={16} />
+                      <Check size={15} />
+                      <span>Accept</span>
                     </button>
                     <button
                       className="ip-btn ip-btn-decline"
                       disabled={isResponding}
                       onClick={() => handleRespond(invite, 'decline')}
-                      aria-label="Decline"
+                      aria-label="Decline invite"
                     >
-                      <XCircle size={16} />
+                      <XCircle size={15} />
+                      <span>Decline</span>
                     </button>
                   </div>
                 </div>
