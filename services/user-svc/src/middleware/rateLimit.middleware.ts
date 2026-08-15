@@ -1,4 +1,4 @@
-import rateLimit from "express-rate-limit";
+import rateLimit, { ipKeyGenerator } from "express-rate-limit";
 import { RedisStore } from "rate-limit-redis";
 import { getRedis } from "../config/redis";
 
@@ -29,10 +29,13 @@ function makeStore(prefix: string) {
 }
 
 function makeIpKey(req: Express.Request): string {
-  // Prefer the real IP when behind a trusted reverse proxy
-  const forwarded = (req as any).headers["x-forwarded-for"];
-  if (typeof forwarded === "string") return forwarded.split(",")[0].trim();
-  return (req as any).ip ?? "unknown";
+  // `trust proxy` is set on the app (index.ts), so req.ip is the REAL client IP:
+  // Express ignores X-Forwarded-For entries injected beyond the trusted hop count.
+  // The previous version read the *leftmost* X-Forwarded-For entry, which a client
+  // can forge on every request to get a fresh bucket and bypass the limit entirely
+  // (e.g. the login brute-force guard). ipKeyGenerator also normalizes IPv6 so a
+  // client can't rotate within its /64 to evade the limit.
+  return ipKeyGenerator((req as any).ip ?? "unknown");
 }
 
 export const loginLimiter = rateLimit({
