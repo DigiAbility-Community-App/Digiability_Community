@@ -5,7 +5,9 @@ import {
   TextInputProps,
   StyleSheet,
   ViewStyle,
+  TouchableOpacity,
 } from 'react-native';
+import { Eye, EyeOff } from 'lucide-react-native';
 import { useTheme } from '../../theme/ThemeContext';
 import { AccessibleText } from './AccessibleText';
 import { useScreenReaderAnnounce } from '../../hooks/useScreenReaderAnnounce';
@@ -16,6 +18,8 @@ export interface InputProps extends TextInputProps {
   accessibilityLabel?: string;
   accessibilityHint?: string;
   containerStyle?: ViewStyle;
+  isPassword?: boolean;
+  showPasswordToggle?: boolean;
 }
 
 export const Input: React.FC<InputProps> = ({
@@ -28,11 +32,17 @@ export const Input: React.FC<InputProps> = ({
   onFocus,
   onBlur,
   placeholderTextColor,
+  isPassword,
+  showPasswordToggle = true,
+  secureTextEntry,
   ...rest
 }) => {
   const { colors, spacing, maxFontSizeMultiplier, highContrast } = useTheme();
   const [isFocused, setIsFocused] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const announce = useScreenReaderAnnounce();
+
+  const isPasswordField = Boolean(isPassword || secureTextEntry !== undefined);
 
   // Announce errors to screen readers, only when the user has the
   // Screen Reader accessibility preference enabled.
@@ -74,6 +84,14 @@ export const Input: React.FC<InputProps> = ({
       }
     : {};
 
+  const togglePasswordVisibility = () => {
+    setShowPassword((prev) => {
+      const next = !prev;
+      announce(next ? 'Password displayed' : 'Password hidden');
+      return next;
+    });
+  };
+
   return (
     <View style={[styles.container, containerStyle]}>
       {/* Input Label */}
@@ -98,18 +116,37 @@ export const Input: React.FC<InputProps> = ({
           placeholderTextColor={placeholderTextColor || (highContrast ? '#000000' : 'rgba(126,115,131,0.5)')}
           onFocus={handleFocus}
           onBlur={handleBlur}
+          secureTextEntry={isPasswordField ? !showPassword : secureTextEntry}
           style={[
             styles.input,
             {
               color: colors.text,
               fontSize: 16, // Minimum legible size
               paddingVertical: spacing.md,
-              paddingHorizontal: spacing.md,
+              paddingLeft: spacing.md,
+              paddingRight: isPasswordField && showPasswordToggle ? 48 : spacing.md,
             },
             style,
           ]}
           {...rest}
         />
+
+        {isPasswordField && showPasswordToggle && (
+          <TouchableOpacity
+            style={styles.eyeButton}
+            onPress={togglePasswordVisibility}
+            accessibilityRole="button"
+            accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
+            accessibilityHint="Toggles password visibility on screen"
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            {showPassword ? (
+              <EyeOff size={20} color={colors.primary} strokeWidth={2} />
+            ) : (
+              <Eye size={20} color={highContrast ? '#000000' : 'rgba(125, 115, 135, 0.8)'} strokeWidth={2} />
+            )}
+          </TouchableOpacity>
+        )}
       </View>
 
       {/* Error Message */}
@@ -138,10 +175,21 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     backgroundColor: '#F4F3FA',
     overflow: 'hidden',
+    position: 'relative',
+    justifyContent: 'center',
   },
   input: {
     width: '100%',
     fontFamily: 'Inter-Regular',
     minHeight: 48, // Minimum tap height
+  },
+  eyeButton: {
+    position: 'absolute',
+    right: 12,
+    top: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: 36,
   },
 });
