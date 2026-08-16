@@ -79,6 +79,7 @@ export default function GroupDetailPage() {
   // Delete group state
   const [showDelete,   setShowDelete]   = useState(false);
   const [deleting,     setDeleting]     = useState(false);
+  const [deleteError,  setDeleteError]  = useState("");
   const [actionMsg,    setActionMsg]    = useState("");
 
   // ── fetch group ──
@@ -172,9 +173,19 @@ export default function GroupDetailPage() {
   // ── delete group ──
   const handleDelete = async () => {
     setDeleting(true);
+    setDeleteError("");
     try {
-      await fetch(`/api/groups/${id}`, { method: "DELETE" });
-      router.push("/groups");
+      const res  = await fetch(`/api/groups/${id}`, { method: "DELETE" });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.success) {
+        router.push("/groups");
+      } else {
+        setDeleteError(data.message || "Failed to delete group. Please try again.");
+        setShowDelete(false);
+      }
+    } catch {
+      setDeleteError("Network error — could not reach the server.");
+      setShowDelete(false);
     } finally { setDeleting(false); }
   };
 
@@ -351,6 +362,12 @@ export default function GroupDetailPage() {
           <div className="bg-white rounded-2xl p-5 shadow-sm border border-red-100">
             <h4 className="text-sm font-extrabold text-red-600 mb-3">Danger Zone</h4>
             <p className="text-xs text-[#7D7387] mb-3">Deleting a group is irreversible. All messages and memberships will be lost.</p>
+            {deleteError && (
+              <div className="flex items-center gap-2 bg-red-50 border border-red-200 text-red-600 rounded-xl px-3 py-2 text-xs font-semibold mb-3">
+                <AlertTriangle className="w-3.5 h-3.5 shrink-0" />{deleteError}
+                <button onClick={() => setDeleteError("")} className="ml-auto"><X className="w-3.5 h-3.5" /></button>
+              </div>
+            )}
             {!showDelete ? (
               <button onClick={() => setShowDelete(true)} className="w-full h-10 rounded-xl border-2 border-red-200 text-red-600 text-sm font-bold hover:bg-red-50 transition flex items-center justify-center gap-2">
                 <Trash2 className="w-4 h-4" /> Delete Group

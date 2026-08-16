@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import { asyncHandler, createError } from "../middleware/error.middleware";
+import prisma from "../models/prisma.client";
 import {
   registerUser,
   verifyEmailOtp,
@@ -236,4 +237,18 @@ export const removeDeviceTokenHandler = asyncHandler(async (req: Request, res: R
 
   await removeDeviceToken(userId, token);
   res.status(200).json({ success: true, message: "Device token removed" });
+});
+
+// ─── GET /auth/maintenance ──────────────────────────────
+// Returns the current platform maintenance mode status.
+export const checkMaintenanceHandler = asyncHandler(async (_req: Request, res: Response) => {
+  try {
+    const result: Array<{ maintenance_mode: boolean }> = await prisma.$queryRaw`
+      SELECT maintenance_mode FROM admin_general_settings WHERE id = 'default' LIMIT 1
+    `;
+    const inMaintenance = result.length > 0 ? Boolean(result[0].maintenance_mode) : false;
+    res.status(200).json({ success: true, inMaintenance });
+  } catch {
+    res.status(200).json({ success: true, inMaintenance: false });
+  }
 });

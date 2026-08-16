@@ -346,7 +346,7 @@ function ProfileTab({ user }: { user: UserDetail }) {
           <InfoItem label="DATE OF BIRTH" value={(() => {
             if (!user.dob) return "—";
             const d = new Date(user.dob);
-            return isNaN(d.getTime()) ? "—" : d.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
+            return isNaN(d.getTime()) ? "—" : d.toLocaleDateString("en-GB").replace(/\//g, "/");
           })()} />
           <InfoItem label="GENDER" value={user.gender || "—"} />
           <InfoItem label="PRIMARY LANGUAGE" value="Telugu, English" />

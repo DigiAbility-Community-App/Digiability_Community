@@ -1,6 +1,7 @@
 import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
 import * as SecureStore from 'expo-secure-store';
 import { useAuthStore } from '@store/authStore';
+import { useSystemStore } from '@store/systemStore';
 
 // ─────────────────────────────────────────────────────────
 // API Client
@@ -106,7 +107,7 @@ apiClient.interceptors.response.use(
     // service's auth check (user-svc, chat-svc, forum-svc). Force logout and
     // stash the ban info so the auth stack can show the suspended screen —
     // this catches a ban that lands mid-session, not just at login.
-    const body = error.response?.data as BanResponseBody | undefined;
+    const body = error.response?.data as (BanResponseBody & { maintenance?: boolean; inMaintenance?: boolean }) | undefined;
     if (error.response?.status === 403 && body?.banned) {
       useAuthStore.getState().setPendingBanInfo({
         permanent: !!body.permanent,
@@ -116,6 +117,12 @@ apiClient.interceptors.response.use(
       cancelPendingRequests();
       useAuthStore.getState().clearAuth();
       await SecureStore.deleteItemAsync(REFRESH_TOKEN_KEY);
+      return Promise.reject(error);
+    }
+
+    // 503 Service Unavailable / Maintenance Mode detected
+    if (error.response?.status === 503 || body?.maintenance || body?.inMaintenance) {
+      useSystemStore.getState().setMaintenanceMode(true);
       return Promise.reject(error);
     }
 
