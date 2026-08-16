@@ -27,6 +27,7 @@ import { useTheme } from "../../theme/ThemeContext";
 import { AccessibleText } from "../../components/shared/AccessibleText";
 import { AccessibleButton } from "../../components/shared/AccessibleButton";
 import { fetchEventById, EventModel, parseAccessibilityTags } from "../../services/eventService";
+import { formatEventDateDisplay } from "../../utils/dateHelpers";
 
 function isEventCompleted(dateStr: string): boolean {
   if (!dateStr) return false;
@@ -83,7 +84,7 @@ export default function EventDetailScreen() {
     if (!event) return;
     try {
       await Share.share({
-        message: `Check out this event: ${event.title}\nDate: ${event.date}${event.time ? ` • ${event.time}` : ""}\nLocation: ${event.location}\nShared via DigiAbility Community.`,
+        message: `Check out this event: ${event.title}\nDate: ${formatEventDateDisplay(event.date)}${event.time ? ` • ${event.time}` : ""}\nLocation: ${event.location}\nShared via DigiAbility Community.`,
       });
     } catch {}
   };
@@ -94,7 +95,7 @@ export default function EventDetailScreen() {
       eventId: event.id,
       externalUrl: event.externalUrl,
       eventTitle: event.title,
-      eventDate: event.date,
+      eventDate: formatEventDateDisplay(event.date),
       eventLocation: event.location,
       organizer: event.organizer || "DigiAbility Admin",
     });
@@ -230,7 +231,7 @@ export default function EventDetailScreen() {
             <View style={styles.metaText}>
               <AccessibleText variant="title" style={styles.metaLabel}>Date & Time</AccessibleText>
               <AccessibleText variant="body" style={{ color: colors.subtext, marginTop: 2 }}>
-                {event.date}{event.time ? ` • ${event.time}` : ""}
+                {formatEventDateDisplay(event.date)}{event.time ? ` • ${event.time}` : ""}
               </AccessibleText>
             </View>
           </View>
