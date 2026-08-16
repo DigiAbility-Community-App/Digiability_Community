@@ -108,7 +108,7 @@ const MOCK_SERVICES: ServiceModel[] = [
   }
 ];
 
-const CATEGORIES = [
+const BASE_CATEGORIES = [
   { id: "all", label: "All" },
   { id: "therapists", label: "Therapists" },
   { id: "equipment", label: "Equipment" },
@@ -178,9 +178,34 @@ export const ServicesScreen = () => {
     Alert.alert(`Contact ${service.name}`, "Choose contact option:", options);
   };
 
-  const filteredServices = services.filter(
-    s => activeCategory === "all" || s.category.toLowerCase() === activeCategory.toLowerCase()
-  );
+  // Build unique category pills dynamically including any custom categories
+  const categories = (() => {
+    const list = [...BASE_CATEGORIES];
+    const knownIds = new Set(list.map((c) => c.id));
+    services.forEach((s) => {
+      if (s.category && !knownIds.has(s.category.toLowerCase())) {
+        const catKey = s.category.toLowerCase();
+        knownIds.add(catKey);
+        list.push({ id: catKey, label: s.category });
+      }
+    });
+    return list;
+  })();
+
+  const matchesCategory = (serviceCategory: string, catId: string) => {
+    if (catId === "all") return true;
+    const s = (serviceCategory || "").toLowerCase().trim();
+    const c = catId.toLowerCase().trim();
+    if (s === c) return true;
+    if (c === "therapists" && (s.includes("therap") || s.includes("doctor"))) return true;
+    if (c === "equipment" && (s.includes("equip") || s.includes("vendor") || s.includes("aid"))) return true;
+    if (c === "care" && (s.includes("care") || s.includes("respite"))) return true;
+    if (c === "legal" && (s.includes("legal") || s.includes("advoca") || s.includes("law"))) return true;
+    if (c === "transport" && (s.includes("transport") || s.includes("transit") || s.includes("cab"))) return true;
+    return s.includes(c) || c.includes(s);
+  };
+
+  const filteredServices = services.filter((s) => matchesCategory(s.category, activeCategory));
 
   return (
     <ScreenWrapper>
@@ -188,7 +213,7 @@ export const ServicesScreen = () => {
 
       <View style={[styles.categoriesContainer, { backgroundColor: colors.background }]}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoriesScroll}>
-          {CATEGORIES.map(cat => {
+          {categories.map((cat) => {
             const isActive = activeCategory === cat.id;
             return (
               <TouchableOpacity
