@@ -191,22 +191,8 @@ export default function GroupsPage() {
               </div>
               {/* ACTIONS */}
               <div className="px-6 py-5 flex items-center gap-2">
-                <button onClick={() => router.push(`/groups/${group.id}`)} className="h-9 px-3 rounded-xl bg-[#7004DC] hover:bg-[#5c03b7] text-white text-xs font-bold flex items-center gap-1.5 transition">
+                <button onClick={() => router.push(`/groups/${group.id}`)} className="h-9 px-4 rounded-xl bg-[#7004DC] hover:bg-[#5c03b7] text-white text-xs font-bold flex items-center gap-1.5 transition">
                   <Settings className="w-3.5 h-3.5" /> Manage
-                </button>
-                <button
-                  onClick={() => { setMessageGroup(group); setMsgSubject(""); setMsgBody(""); setMsgType("General Update"); setMsgSendTo(["All Members"]); }}
-                  className="h-9 w-9 rounded-xl border border-[#7004DC] text-[#7004DC] hover:bg-violet-50 flex items-center justify-center transition"
-                  title="Message Group"
-                >
-                  <MessageSquare className="w-3.5 h-3.5" />
-                </button>
-                <button
-                  onClick={() => { setSuspendGroup(group); setSuspendReason("Spam/Harassment"); setSuspendNote(""); }}
-                  className="h-9 w-9 rounded-xl border border-red-200 text-red-400 hover:bg-red-50 flex items-center justify-center transition"
-                  title="Suspend Group"
-                >
-                  <Ban className="w-3.5 h-3.5" />
                 </button>
               </div>
             </div>

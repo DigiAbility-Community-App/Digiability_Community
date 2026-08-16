@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   StyleSheet,
@@ -6,16 +6,21 @@ import {
   TouchableOpacity,
   Platform,
   Alert,
+  Image,
+  RefreshControl,
+  Linking,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { useNavigation } from "@react-navigation/native";
+import * as WebBrowser from "expo-web-browser";
 import { useTheme } from "../../theme/ThemeContext";
 import { AccessibleText } from "../../components/shared/AccessibleText";
 import ScreenWrapper from "../../components/layout/ScreenWrapper";
 import AppHeader from "../../components/layout/AppHeader";
-import { MapPin, Phone, Star, ShieldCheck, Clock } from "lucide-react-native";
+import { MapPin, Phone, Star, ShieldCheck, Clock, Mail, Globe } from "lucide-react-native";
+import { fetchPublishedServices, ServiceModel } from "../../services/serviceService";
 
-const MOCK_SERVICES = [
+const MOCK_SERVICES: ServiceModel[] = [
   {
     id: "srv-1",
     name: "Dr. Sarah Jenkins",
@@ -24,6 +29,9 @@ const MOCK_SERVICES = [
     logo: "👩‍⚕️",
     description: "Specialized in pediatric occupational therapy and sensory integration for children with autism and developmental delays.",
     location: "Downtown Clinic & Home Visits",
+    contactPhone: "+1 (555) 234-5678",
+    contactEmail: "sarah.jenkins@therapy.org",
+    contactUrl: "https://services.digiability.org/sarah-jenkins",
     rating: 4.9,
     reviews: 124,
     verified: true,
@@ -38,6 +46,9 @@ const MOCK_SERVICES = [
     logo: "🦽",
     description: "Rental and purchase of wheelchairs, walkers, and custom-fitted seating systems. Same-day delivery available.",
     location: "Westside Hub",
+    contactPhone: "+1 (555) 876-5432",
+    contactEmail: "info@mobilitysolutions.com",
+    contactUrl: "https://services.digiability.org/mobility-solutions",
     rating: 4.7,
     reviews: 89,
     verified: true,
@@ -52,6 +63,9 @@ const MOCK_SERVICES = [
     logo: "🤝",
     description: "Professional respite care providers offering short-term relief for primary caregivers. Background-checked and certified.",
     location: "All City Areas",
+    contactPhone: "+1 (555) 345-6789",
+    contactEmail: "contact@carebridge.org",
+    contactUrl: "https://services.digiability.org/carebridge",
     rating: 4.8,
     reviews: 210,
     verified: true,
@@ -66,6 +80,9 @@ const MOCK_SERVICES = [
     logo: "⚖️",
     description: "Assistance with disability claims, appeals, and educational advocacy (IEP meetings).",
     location: "City Center",
+    contactPhone: "+1 (555) 901-2345",
+    contactEmail: "legal@disabilityadvocates.org",
+    contactUrl: "https://services.digiability.org/legal-advocates",
     rating: 4.6,
     reviews: 45,
     verified: true,
@@ -80,6 +97,9 @@ const MOCK_SERVICES = [
     logo: "🚐",
     description: "Wheelchair-accessible vans and specialized transport services for medical appointments and daily commuting.",
     location: "Metro Area",
+    contactPhone: "+1 (555) 456-7890",
+    contactEmail: "dispatch@accessibletransit.com",
+    contactUrl: "https://services.digiability.org/accessible-transit",
     rating: 4.9,
     reviews: 312,
     verified: true,
@@ -101,10 +121,65 @@ export const ServicesScreen = () => {
   const navigation = useNavigation<any>();
   const { colors, spacing, highContrast } = useTheme();
   const [activeCategory, setActiveCategory] = useState("all");
+  const [services, setServices] = useState<ServiceModel[]>(MOCK_SERVICES);
+  const [refreshing, setRefreshing] = useState(false);
   const iconMuted = highContrast ? colors.text : "#94A3B8";
 
-  const filteredServices = MOCK_SERVICES.filter(
-    s => activeCategory === "all" || s.category === activeCategory
+  const loadServices = async () => {
+    const data = await fetchPublishedServices();
+    if (data && data.length > 0) {
+      setServices(data);
+    }
+  };
+
+  useEffect(() => {
+    loadServices();
+  }, []);
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await loadServices();
+    setRefreshing(false);
+  };
+
+  const handleContact = (service: ServiceModel) => {
+    const options: { text: string; onPress?: () => void; style?: "default" | "cancel" | "destructive" }[] = [];
+
+    if (service.contactPhone) {
+      options.push({
+        text: `Call (${service.contactPhone})`,
+        onPress: () => Linking.openURL(`tel:${service.contactPhone}`).catch(() => {}),
+      });
+    }
+    if (service.contactEmail) {
+      options.push({
+        text: `Email (${service.contactEmail})`,
+        onPress: () => Linking.openURL(`mailto:${service.contactEmail}`).catch(() => {}),
+      });
+    }
+    if (service.contactUrl) {
+      options.push({
+        text: "Open Website / Portal",
+        onPress: () => WebBrowser.openBrowserAsync(service.contactUrl!).catch(() => {}),
+      });
+    }
+
+    if (options.length === 0) {
+      Alert.alert("Contact Provider", `You can reach out to ${service.name} at their location: ${service.location}`);
+      return;
+    }
+
+    if (options.length === 1 && options[0].onPress) {
+      options[0].onPress();
+      return;
+    }
+
+    options.push({ text: "Cancel", style: "cancel" });
+    Alert.alert(`Contact ${service.name}`, "Choose contact option:", options);
+  };
+
+  const filteredServices = services.filter(
+    s => activeCategory === "all" || s.category.toLowerCase() === activeCategory.toLowerCase()
   );
 
   return (
@@ -144,13 +219,18 @@ export const ServicesScreen = () => {
 
       <ScrollView
         showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[colors.primary]} />}
         contentContainerStyle={[styles.scrollContent, { paddingBottom: Platform.OS === "ios" ? 150 : 120 }]}
       >
         {filteredServices.map(service => (
           <View key={service.id} style={[styles.serviceCard, { backgroundColor: colors.card }, highContrast && { borderWidth: 2, borderColor: "#000000" }]}>
             <View style={styles.serviceHeader}>
               <View style={[styles.providerLogo, { backgroundColor: colors.surface }]}>
-                <AccessibleText style={{ fontSize: 24 }}>{service.logo}</AccessibleText>
+                {service.image && service.image.startsWith("http") ? (
+                  <Image source={{ uri: service.image }} style={{ width: 44, height: 44, borderRadius: 12 }} resizeMode="cover" />
+                ) : (
+                  <AccessibleText style={{ fontSize: 24 }}>{service.logo || "🏢"}</AccessibleText>
+                )}
               </View>
               <View style={styles.providerInfo}>
                 <View style={styles.nameRow}>
@@ -178,8 +258,8 @@ export const ServicesScreen = () => {
               </View>
               <View style={styles.metaRow}>
                 <Star size={14} color={highContrast ? colors.text : "#F59E0B"} fill={highContrast ? colors.text : "#F59E0B"} />
-                <AccessibleText style={{ color: colors.text, fontSize: 13, fontWeight: "600", marginLeft: 6 }}>{service.rating}</AccessibleText>
-                <AccessibleText style={{ color: colors.subtext, fontSize: 13, marginLeft: 4 }}>({service.reviews} reviews)</AccessibleText>
+                <AccessibleText style={{ color: colors.text, fontSize: 13, fontWeight: "600", marginLeft: 6 }}>{service.rating ?? 4.9}</AccessibleText>
+                <AccessibleText style={{ color: colors.subtext, fontSize: 13, marginLeft: 4 }}>({service.reviews ?? 10} reviews)</AccessibleText>
               </View>
             </View>
 
@@ -187,7 +267,7 @@ export const ServicesScreen = () => {
               <AccessibleText style={{ color: colors.text, fontSize: 14, fontWeight: "700" }}>{service.price}</AccessibleText>
               <TouchableOpacity
                 style={[styles.contactBtn, { backgroundColor: colors.primary }]}
-                onPress={() => Alert.alert("Contact", `Initiating contact with ${service.name}...`)}
+                onPress={() => handleContact(service)}
                 accessibilityRole="button"
                 accessibilityLabel={`Contact ${service.name}`}
                 accessibilityHint="Starts contacting this service provider"

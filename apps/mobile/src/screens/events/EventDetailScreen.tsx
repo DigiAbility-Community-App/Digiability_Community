@@ -28,6 +28,29 @@ import { AccessibleText } from "../../components/shared/AccessibleText";
 import { AccessibleButton } from "../../components/shared/AccessibleButton";
 import { fetchEventById, EventModel, parseAccessibilityTags } from "../../services/eventService";
 
+function isEventCompleted(dateStr: string): boolean {
+  if (!dateStr) return false;
+  const str = dateStr.trim();
+  // Check DD/MM/YYYY
+  const dmy = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (dmy) {
+    const endOfDay = new Date(parseInt(dmy[3], 10), parseInt(dmy[2], 10) - 1, parseInt(dmy[1], 10), 23, 59, 59);
+    return endOfDay.getTime() < Date.now();
+  }
+  // Check YYYY-MM-DD
+  const iso = str.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (iso) {
+    const endOfDay = new Date(parseInt(iso[1], 10), parseInt(iso[2], 10) - 1, parseInt(iso[3], 10), 23, 59, 59);
+    return endOfDay.getTime() < Date.now();
+  }
+  const parsed = new Date(str);
+  if (!isNaN(parsed.getTime())) {
+    parsed.setHours(23, 59, 59, 999);
+    return parsed.getTime() < Date.now();
+  }
+  return false;
+}
+
 export default function EventDetailScreen() {
   const route = useRoute<any>();
   const navigation = useNavigation<any>();
@@ -122,7 +145,9 @@ export default function EventDetailScreen() {
     : { borderWidth: 1, borderColor: "rgba(0,0,0,0.06)" };
 
   const accessibilityTags = parseAccessibilityTags(event.accessibility_tags);
-  const isSoldOut = event.spots <= 0;
+  const isCompleted = isEventCompleted(event.date);
+  const isSoldOut = !isCompleted && event.spots <= 0;
+  const isActionDisabled = isCompleted || isSoldOut;
   const organizer = event.organizer || "DigiAbility Admin";
 
   return (
@@ -223,16 +248,26 @@ export default function EventDetailScreen() {
           </View>
 
           <View style={[styles.metaRow, styles.metaBorder, { borderColor: colors.border }]}>
-            <View style={[styles.metaIcon, { backgroundColor: highContrast ? "#000" : "#FEE2E2" }]}>
-              <Users color={highContrast ? "#fff" : colors.error} size={20} />
+            <View style={[styles.metaIcon, { backgroundColor: highContrast ? "#000" : isCompleted ? "#EDE9FE" : isSoldOut ? "#FEE2E2" : "#D1FAE5" }]}>
+              <Users color={highContrast ? "#fff" : isCompleted ? colors.primary : isSoldOut ? colors.error : "#059669"} size={20} />
             </View>
             <View style={styles.metaText}>
-              <AccessibleText variant="title" style={styles.metaLabel}>Availability</AccessibleText>
+              <AccessibleText variant="title" style={styles.metaLabel}>
+                {isCompleted ? "Event Attendance" : "Capacity & Slots"}
+              </AccessibleText>
               <AccessibleText
                 variant="body"
-                style={{ color: isSoldOut ? colors.error : "#059669", fontWeight: "700", marginTop: 2 }}
+                style={{
+                  color: isCompleted ? colors.primary : isSoldOut ? colors.error : "#059669",
+                  fontWeight: "700",
+                  marginTop: 2,
+                }}
               >
-                {isSoldOut ? "Sold Out" : `${event.spots} people attending`}
+                {isCompleted
+                  ? `${event.spots || 0} people attended`
+                  : isSoldOut
+                  ? "Sold Out (0 slots available)"
+                  : `${event.spots} slots available`}
               </AccessibleText>
             </View>
           </View>
@@ -277,25 +312,51 @@ export default function EventDetailScreen() {
         <View style={styles.registerSection}>
           <View style={styles.registrationNote}>
             <AccessibleText variant="caption" style={{ color: colors.subtext, textAlign: "center" }}>
-              Registrations handled by Digiability Services
+              {isCompleted
+                ? "This event has ended. Registrations are closed."
+                : isSoldOut
+                ? "All spots for this event have been filled."
+                : "Registrations handled by Digiability Services"}
             </AccessibleText>
           </View>
 
           <AccessibleButton
             style={[
               styles.registerBtn,
-              isSoldOut && styles.registerBtnDisabled,
-              highContrast && { backgroundColor: isSoldOut ? "#555" : "#000" },
+              isActionDisabled && styles.registerBtnDisabled,
+              highContrast && { backgroundColor: isActionDisabled ? "#555" : "#000" },
             ]}
             onPress={handleRegisterPress}
-            disabled={isSoldOut}
-            accessibilityLabel={isSoldOut ? "Registration closed for this event" : "Register via Digiability"}
+            disabled={isActionDisabled}
+            accessibilityLabel={
+              isCompleted
+                ? "Event completed and registration closed"
+                : isSoldOut
+                ? "Registration closed, event sold out"
+                : "Register via Digiability"
+            }
             accessibilityHint="Opens the external Digiability registration portal"
           >
-            <AccessibleText style={[styles.registerBtnText, highContrast && { color: "#FFFFFF" }, isSoldOut && { color: "#999" }]}>
-              {isSoldOut ? "Registration Closed" : "Register via Digiability"}
+            <AccessibleText
+              style={[
+                styles.registerBtnText,
+                highContrast && { color: "#FFFFFF" },
+                isActionDisabled && { color: "#999" },
+              ]}
+            >
+              {isCompleted
+                ? "Event Completed"
+                : isSoldOut
+                ? "Registration Closed"
+                : "Register via Digiability"}
             </AccessibleText>
-            {!isSoldOut && <ExternalLink color={highContrast ? "#FFFFFF" : "#500088"} size={18} style={{ marginLeft: 8 }} />}
+            {!isActionDisabled && (
+              <ExternalLink
+                color={highContrast ? "#FFFFFF" : "#500088"}
+                size={18}
+                style={{ marginLeft: 8 }}
+              />
+            )}
           </AccessibleButton>
         </View>
 

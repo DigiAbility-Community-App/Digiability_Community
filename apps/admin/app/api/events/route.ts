@@ -18,6 +18,7 @@ async function ensureEventsTable() {
       "externalUrl" TEXT NOT NULL DEFAULT '',
       organizer TEXT NOT NULL DEFAULT 'DigiAbility Admin',
       accessibility_tags TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'published',
       "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
@@ -26,7 +27,8 @@ async function ensureEventsTable() {
   await dbPool.query(`
     ALTER TABLE events
       ADD COLUMN IF NOT EXISTS organizer TEXT NOT NULL DEFAULT 'DigiAbility Admin',
-      ADD COLUMN IF NOT EXISTS accessibility_tags TEXT NOT NULL DEFAULT ''
+      ADD COLUMN IF NOT EXISTS accessibility_tags TEXT NOT NULL DEFAULT '',
+      ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'published'
   `);
 }
 
@@ -60,7 +62,7 @@ export async function POST(request: NextRequest) {
   try {
     await ensureEventsTable();
     const body = await request.json();
-    const { title, category, location, date, time, image, description, spots, buttonType, externalUrl, organizer, accessibilityTags } = body;
+    const { title, category, location, date, time, image, description, spots, buttonType, externalUrl, organizer, accessibilityTags, status } = body;
 
     if (!title || !category || !location || !date || !image || !description || !externalUrl) {
       return NextResponse.json(
@@ -76,16 +78,17 @@ export async function POST(request: NextRequest) {
       INSERT INTO events (
         id, title, category, location, date, time, image, description,
         spots, "buttonType", "externalUrl", organizer, accessibility_tags,
-        "createdAt", "updatedAt"
+        status, "createdAt", "updatedAt"
       )
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,NOW(),NOW())
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,NOW(),NOW())
       RETURNING *
     `, [
       id, title, category, location, date,
       time || null, image, description,
       spotsNum, buttonType || "filled", externalUrl,
       organizer || "DigiAbility Admin",
-      accessibilityTags || ""
+      accessibilityTags || "",
+      status || "published"
     ]);
     
     return NextResponse.json({

@@ -25,6 +25,10 @@ import {
   Moon,
   MessageSquare,
   Smartphone,
+  Briefcase,
+  Activity,
+  Calendar as CalendarIcon,
+  Lock,
 } from "lucide-react";
 
 // ─────────────────────────────────────
@@ -237,18 +241,36 @@ function GeneralTab({ onSave }: { onSave: () => void }) {
           </div>
         )}
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-8">
+        <div className="mt-4 p-4 rounded-2xl bg-violet-50/70 border border-violet-100 flex items-start gap-3">
+          <div className="w-8 h-8 rounded-xl bg-[#7004DC] text-white flex items-center justify-center shrink-0 mt-0.5 text-xs font-bold">
+            ℹ️
+          </div>
+          <div>
+            <p className="text-xs font-bold text-[#1A1C1C]">Support &amp; Helpline Configuration</p>
+            <p className="text-xs text-[#4B4355] mt-0.5 leading-relaxed">
+              Updates to the <strong>Support Phone</strong> and <strong>Email Configuration</strong> will automatically publish to all user-facing contact and help screens. Dedicated OTP &amp; SMS authentication services remain isolated and will not be affected.
+            </p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
           <IconInput
             label="Platform Name"
             icon={<Monitor className="w-4 h-4" />}
             value={platformName}
-            onChange={setPlatformName}
+            disabled={true}
+            badge="Fixed System Identifier"
+            badgeVariant="locked"
+            helperText="Platform identifier is fixed for system reference and cannot be altered."
           />
           <IconInput
             label="Support Phone"
             icon={<Phone className="w-4 h-4" />}
             value={supportPhone}
             onChange={setSupportPhone}
+            badge="Public Helpline"
+            badgeVariant="active"
+            helperText="Configures the primary support helpline dialer across mobile and web."
           />
           <div className="md:col-span-2">
             <IconInput
@@ -256,6 +278,9 @@ function GeneralTab({ onSave }: { onSave: () => void }) {
               icon={<Mail className="w-4 h-4" />}
               value={emailConfig}
               onChange={setEmailConfig}
+              badge="Public Support Inbox"
+              badgeVariant="active"
+              helperText="Configures the primary user support and query inbox across the platform. (OTP systems remain unaffected)."
             />
           </div>
         </div>
@@ -345,10 +370,17 @@ function GeneralTab({ onSave }: { onSave: () => void }) {
 }
 
 // ─────────────────────────────────────
-// MASTER DATA TAB  (real DB)
+// MASTER DATA TAB  (real DB with Drilldown UI)
 // ─────────────────────────────────────
 
+type MasterCategoryKey = "disabilities" | "events" | "services";
+
 function MasterDataTab() {
+  const [activeMasterCat, setActiveMasterCat] = useState<MasterCategoryKey>("disabilities");
+
+  // ──────────────────────────────────────────
+  // DISABILITY TYPES STATE & HANDLERS
+  // ──────────────────────────────────────────
   const [types, setTypes] = useState<DisabilityType[]>([]);
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState("");
@@ -366,7 +398,7 @@ function MasterDataTab() {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       if (data.success) {
-        setTypes(data.types);
+        setTypes(data.types || []);
       } else {
         setFetchError(data.message || "Failed to load types");
       }
@@ -407,10 +439,41 @@ function MasterDataTab() {
     }
   };
 
+  // ──────────────────────────────────────────
+  // SERVICE CATEGORIES STATE & HANDLERS
+  // ──────────────────────────────────────────
+  const [serviceCats, setServiceCats] = useState<{ id: string; name: string; status: "Active" | "Inactive" }[]>([]);
+  const [serviceCatsLoading, setServiceCatsLoading] = useState(false);
+  const [serviceCatError, setServiceCatError] = useState("");
+  const [showAddServiceCat, setShowAddServiceCat] = useState(false);
+  const [newServiceCatName, setNewServiceCatName] = useState("");
+  const [editServiceCatId, setEditServiceCatId] = useState<string | null>(null);
+  const [editServiceCatName, setEditServiceCatName] = useState("");
+  const [serviceCatSaving, setServiceCatSaving] = useState(false);
+
+  const loadServiceCategories = async () => {
+    setServiceCatsLoading(true);
+    setServiceCatError("");
+    try {
+      const res = await fetch("/api/settings/service-categories");
+      const data = await res.json();
+      if (data.success) {
+        setServiceCats(data.categories || []);
+      } else {
+        setServiceCatError(data.message || "Failed to load service categories");
+      }
+    } catch {
+      setServiceCatError("Network error");
+    } finally {
+      setServiceCatsLoading(false);
+    }
+  };
+
   useEffect(() => {
     loadTypes();
     loadEventCategories();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    loadServiceCategories();
+  }, []);
 
   const addType = async () => {
     if (!newName.trim() || saving) return;
@@ -467,6 +530,7 @@ function MasterDataTab() {
     setTypes((prev) => prev.filter((t) => t.id !== id));
   };
 
+  // Event category handlers
   const addEventCategory = async () => {
     if (!newCatName.trim() || catSaving) return;
     setCatSaving(true);
@@ -524,254 +588,549 @@ function MasterDataTab() {
     setEventCats((prev) => prev.filter((c) => c.id !== id));
   };
 
+  // Service category handlers
+  const addServiceCategory = async () => {
+    if (!newServiceCatName.trim() || serviceCatSaving) return;
+    setServiceCatSaving(true);
+    try {
+      const res = await fetch("/api/settings/service-categories", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: newServiceCatName.trim() }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setServiceCats((prev) => [...prev, data.category]);
+        setNewServiceCatName("");
+        setShowAddServiceCat(false);
+      }
+    } finally {
+      setServiceCatSaving(false);
+    }
+  };
+
+  const saveEditServiceCategory = async (id: string) => {
+    if (!editServiceCatName.trim() || serviceCatSaving) return;
+    setServiceCatSaving(true);
+    try {
+      const res = await fetch("/api/settings/service-categories", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, name: editServiceCatName.trim() }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setServiceCats((prev) => prev.map((c) => (c.id === id ? data.category : c)));
+        setEditServiceCatId(null);
+      }
+    } finally {
+      setServiceCatSaving(false);
+    }
+  };
+
+  const toggleServiceCategoryStatus = async (cat: { id: string; name: string; status: "Active" | "Inactive" }) => {
+    const newStatus = cat.status === "Active" ? "Inactive" : "Active";
+    const res = await fetch("/api/settings/service-categories", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: cat.id, status: newStatus }),
+    });
+    const data = await res.json();
+    if (data.success) {
+      setServiceCats((prev) => prev.map((c) => (c.id === cat.id ? data.category : c)));
+    }
+  };
+
+  const deleteServiceCategory = async (id: string) => {
+    await fetch(`/api/settings/service-categories?id=${id}`, { method: "DELETE" });
+    setServiceCats((prev) => prev.filter((c) => c.id !== id));
+  };
+
+  const MASTER_DOMAINS: {
+    key: MasterCategoryKey;
+    title: string;
+    description: string;
+    count: number;
+    icon: React.ReactNode;
+  }[] = [
+    {
+      key: "disabilities",
+      title: "Disability Types",
+      description: "Recognised classifications for user profiles & accessibility support",
+      count: types.length,
+      icon: <Users className="w-5 h-5" />,
+    },
+    {
+      key: "events",
+      title: "Event Categories",
+      description: "Tags and genres for community workshops, webinars & camps",
+      count: eventCats.length,
+      icon: <CalendarIcon className="w-5 h-5" />,
+    },
+    {
+      key: "services",
+      title: "Service Categories",
+      description: "Classifications for verified therapists, vendors & care providers",
+      count: serviceCats.length,
+      icon: <Briefcase className="w-5 h-5" />,
+    },
+  ];
+
   return (
-    <div className="space-y-8">
-      {/* DISABILITY TYPES */}
-      <div className="bg-white rounded-2xl border border-[#ECE7F2] shadow-sm overflow-hidden">
-        <div className="flex items-center justify-between px-8 py-6 border-b border-[#E8E8E8]">
-          <div>
-            <h3 className="text-xl font-extrabold text-[#1A1C1C]">Disability Types</h3>
-            <p className="text-sm text-[#4B4355]/70 mt-1">
-              Master list of recognised disabilities for profiling. Changes apply to all user profile dropdowns.
-            </p>
-          </div>
-          <button
-            onClick={() => setShowAdd(true)}
-            className="h-10 px-5 rounded-xl bg-[#D2A500] hover:bg-[#b89300] transition flex items-center gap-2 font-bold text-white text-sm shadow-sm"
-          >
-            <Plus className="w-4 h-4" /> Add New
-          </button>
-        </div>
+    <div className="space-y-6">
+      {/* ── STEP 1: MAIN CATEGORIES DIRECTORY (SELECTION CARDS) ── */}
+      <div>
+        <h2 className="text-xl font-extrabold text-[#1A1C1C] mb-1">Master Data Categories</h2>
+        <p className="text-xs text-[#7D7387] mb-4">
+          Select a master data domain below to view, edit, and configure its underlying classification options.
+        </p>
 
-        {/* TABLE HEADER */}
-        <div className="grid grid-cols-[140px_1fr_160px_140px] bg-[#F7F5FA]">
-          <Th>ID</Th><Th>Category Name</Th><Th>Status</Th><Th>Actions</Th>
-        </div>
-
-        {loading ? (
-          <div className="px-8 py-8 text-sm text-slate-400 flex items-center gap-2">
-            <svg className="w-4 h-4 animate-spin text-[#7004DC]" fill="none" viewBox="0 0 24 24">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
-            </svg>
-            Loading from database…
-          </div>
-        ) : fetchError ? (
-          <div className="px-8 py-8 flex items-center gap-3">
-            <span className="text-sm text-red-500 font-semibold">Error: {fetchError}</span>
-            <button onClick={loadTypes} className="text-sm text-[#7004DC] font-bold hover:underline">Retry</button>
-          </div>
-        ) : (
-          types.map((t, i) => (
-            <div
-              key={t.id}
-              className={`grid grid-cols-[140px_1fr_160px_140px] items-center ${i < types.length - 1 ? "border-b border-[#F0F0F0]" : ""}`}
-            >
-              <Td mono>{t.code}</Td>
-              <Td>
-                {editId === t.id ? (
-                  <div className="flex items-center gap-2">
-                    <input
-                      autoFocus
-                      value={editName}
-                      onChange={(e) => setEditName(e.target.value)}
-                      onKeyDown={(e) => e.key === "Enter" && saveEdit(t.id)}
-                      className="flex-1 h-8 bg-[#F7F5FA] rounded-lg px-3 text-sm border border-[#8A38F5]/30 outline-none"
-                    />
-                    <button onClick={() => saveEdit(t.id)} disabled={saving} className="w-7 h-7 rounded-lg bg-[#7004DC] flex items-center justify-center">
-                      <Check className="w-3.5 h-3.5 text-white" />
-                    </button>
-                    <button onClick={() => setEditId(null)} className="w-7 h-7 rounded-lg bg-slate-100 flex items-center justify-center">
-                      <X className="w-3.5 h-3.5 text-slate-500" />
-                    </button>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {MASTER_DOMAINS.map((domain) => {
+            const isSelected = activeMasterCat === domain.key;
+            return (
+              <button
+                key={domain.key}
+                type="button"
+                onClick={() => setActiveMasterCat(domain.key)}
+                className={`text-left p-5 rounded-2xl border-2 transition-all relative overflow-hidden flex flex-col justify-between ${
+                  isSelected
+                    ? "bg-white border-[#7004DC] shadow-md ring-4 ring-[#7004DC]/10"
+                    : "bg-white border-[#ECE7F2] hover:border-violet-300 hover:shadow-sm"
+                }`}
+              >
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <div
+                      className={`w-10 h-10 rounded-xl flex items-center justify-center transition ${
+                        isSelected ? "bg-[#7004DC] text-white" : "bg-violet-50 text-[#7004DC]"
+                      }`}
+                    >
+                      {domain.icon}
+                    </div>
+                    <span
+                      className={`text-xs font-extrabold px-2.5 py-1 rounded-full ${
+                        isSelected
+                          ? "bg-[#F3EEFF] text-[#7004DC] border border-[#E9D9FF]"
+                          : "bg-slate-100 text-slate-600"
+                      }`}
+                    >
+                      {domain.count} Options
+                    </span>
                   </div>
-                ) : (
-                  t.name
-                )}
-              </Td>
-              <Td>
-                <button
-                  onClick={() => toggleStatus(t)}
-                  className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold transition ${t.status === "Active"
-                    ? "bg-green-100 text-green-700 hover:bg-green-200"
-                    : "bg-slate-100 text-slate-500 hover:bg-slate-200"
-                    }`}
-                >
-                  {t.status}
+                  <h3 className="font-extrabold text-base text-[#1A1C1C] mb-1">{domain.title}</h3>
+                  <p className="text-xs text-[#7D7387] line-clamp-2 leading-relaxed">{domain.description}</p>
+                </div>
+
+                <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs font-bold">
+                  <span className={isSelected ? "text-[#7004DC]" : "text-slate-400"}>
+                    {isSelected ? "● Active Field Selected" : "Click to view options"}
+                  </span>
+                  <ChevronRight className={`w-4 h-4 ${isSelected ? "text-[#7004DC]" : "text-slate-300"}`} />
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* ── STEP 2: DRILLDOWN OPTIONS TABLE FOR SELECTED FIELD ── */}
+
+      {/* 1. DISABILITY TYPES */}
+      {activeMasterCat === "disabilities" && (
+        <div className="bg-white rounded-2xl border border-[#ECE7F2] shadow-sm overflow-hidden animate-fadeIn">
+          <div className="flex items-center justify-between px-8 py-6 border-b border-[#E8E8E8] bg-slate-50/50">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-[#7004DC]" />
+                <h3 className="text-lg font-extrabold text-[#1A1C1C]">Disability Types Options</h3>
+              </div>
+              <p className="text-xs text-[#4B4355]/70 mt-1">
+                Master list of recognised disabilities for profiling. Changes apply to all user profile dropdowns.
+              </p>
+            </div>
+            <button
+              onClick={() => setShowAdd(true)}
+              className="h-10 px-5 rounded-xl bg-[#7004DC] hover:bg-[#5c03b7] transition flex items-center gap-2 font-bold text-white text-sm shadow-sm"
+            >
+              <Plus className="w-4 h-4" /> Add Option
+            </button>
+          </div>
+
+          <div className="grid grid-cols-[140px_1fr_160px_140px] bg-[#F7F5FA]">
+            <Th>CODE / ID</Th><Th>Option Name</Th><Th>Status</Th><Th>Actions</Th>
+          </div>
+
+          {loading ? (
+            <div className="px-8 py-8 text-sm text-slate-400 flex items-center gap-2">
+              <svg className="w-4 h-4 animate-spin text-[#7004DC]" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+              </svg>
+              Loading from database…
+            </div>
+          ) : fetchError ? (
+            <div className="px-8 py-8 flex items-center gap-3">
+              <span className="text-sm text-red-500 font-semibold">Error: {fetchError}</span>
+              <button onClick={loadTypes} className="text-sm text-[#7004DC] font-bold hover:underline">Retry</button>
+            </div>
+          ) : types.length === 0 ? (
+            <div className="px-8 py-12 text-center text-slate-400 text-sm">
+              No disability types configured yet. Click "+ Add Option" to create one.
+            </div>
+          ) : (
+            types.map((t, i) => (
+              <div
+                key={t.id}
+                className={`grid grid-cols-[140px_1fr_160px_140px] items-center ${i < types.length - 1 ? "border-b border-[#F0F0F0]" : ""}`}
+              >
+                <Td mono>{t.code}</Td>
+                <Td>
+                  {editId === t.id ? (
+                    <div className="flex items-center gap-2">
+                      <input
+                        autoFocus
+                        value={editName}
+                        onChange={(e) => setEditName(e.target.value)}
+                        onKeyDown={(e) => e.key === "Enter" && saveEdit(t.id)}
+                        className="flex-1 h-8 bg-[#F7F5FA] rounded-lg px-3 text-sm border border-[#8A38F5]/30 outline-none"
+                      />
+                      <button onClick={() => saveEdit(t.id)} disabled={saving} className="w-7 h-7 rounded-lg bg-[#7004DC] flex items-center justify-center">
+                        <Check className="w-3.5 h-3.5 text-white" />
+                      </button>
+                      <button onClick={() => setEditId(null)} className="w-7 h-7 rounded-lg bg-slate-100 flex items-center justify-center">
+                        <X className="w-3.5 h-3.5 text-slate-500" />
+                      </button>
+                    </div>
+                  ) : (
+                    <span className="font-bold text-sm text-[#1A1C1C]">{t.name}</span>
+                  )}
+                </Td>
+                <Td>
+                  <button
+                    onClick={() => toggleStatus(t)}
+                    className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold transition ${t.status === "Active"
+                      ? "bg-green-100 text-green-700 hover:bg-green-200"
+                      : "bg-slate-100 text-slate-500 hover:bg-slate-200"
+                      }`}
+                  >
+                    {t.status}
+                  </button>
+                </Td>
+                <div className="px-6 flex items-center gap-2">
+                  <button
+                    onClick={() => { setEditId(t.id); setEditName(t.name); }}
+                    className="w-8 h-8 rounded-lg hover:bg-violet-50 flex items-center justify-center text-[#7004DC] transition"
+                    title="Edit option"
+                  >
+                    <Pencil className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    onClick={() => deleteType(t.id)}
+                    className="w-8 h-8 rounded-lg hover:bg-red-50 flex items-center justify-center text-red-500 transition"
+                    title="Delete option"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
+
+          {showAdd && (
+            <div className="grid grid-cols-[140px_1fr_160px_140px] items-center border-t border-[#E8E8E8] bg-[#FAFAFA]">
+              <div className="px-6 py-4 text-sm font-mono text-slate-400">AUTO</div>
+              <div className="px-4 py-4">
+                <input
+                  autoFocus
+                  placeholder="Disability type name…"
+                  value={newName}
+                  onChange={(e) => setNewName(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && addType()}
+                  className="w-full h-9 bg-[#F7F5FA] rounded-lg px-3 text-sm border border-[#8A38F5]/30 outline-none"
+                />
+              </div>
+              <div className="px-4 py-4">
+                <span className="inline-flex px-3 py-1 rounded-full text-xs font-bold bg-green-100 text-green-700">Active</span>
+              </div>
+              <div className="px-6 py-4 flex items-center gap-2">
+                <button onClick={addType} disabled={saving} className="h-8 px-3 rounded-lg bg-[#7004DC] text-white text-xs font-bold hover:bg-[#5a03b0] transition">
+                  {saving ? "…" : "Add"}
                 </button>
-              </Td>
-              <div className="px-6 flex items-center gap-2">
-                <button
-                  onClick={() => { setEditId(t.id); setEditName(t.name); }}
-                  className="w-8 h-8 rounded-lg hover:bg-violet-50 flex items-center justify-center text-[#7004DC] transition"
-                >
-                  <Pencil className="w-3.5 h-3.5" />
-                </button>
-                <button
-                  onClick={() => deleteType(t.id)}
-                  className="w-8 h-8 rounded-lg hover:bg-red-50 flex items-center justify-center text-red-500 transition"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
+                <button onClick={() => setShowAdd(false)} className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center">
+                  <X className="w-3.5 h-3.5 text-slate-500" />
                 </button>
               </div>
             </div>
-          ))
-        )}
-
-        {/* ADD ROW */}
-        {showAdd && (
-          <div className="grid grid-cols-[140px_1fr_160px_140px] items-center border-t border-[#E8E8E8] bg-[#FAFAFA]">
-            <div className="px-6 py-4 text-sm font-mono text-slate-400">AUTO</div>
-            <div className="px-4 py-4">
-              <input
-                autoFocus
-                placeholder="Disability type name…"
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && addType()}
-                className="w-full h-9 bg-[#F7F5FA] rounded-lg px-3 text-sm border border-[#8A38F5]/30 outline-none"
-              />
-            </div>
-            <div className="px-4 py-4">
-              <span className="inline-flex px-3 py-1 rounded-full text-xs font-bold bg-green-100 text-green-700">Active</span>
-            </div>
-            <div className="px-6 py-4 flex items-center gap-2">
-              <button onClick={addType} disabled={saving} className="h-8 px-3 rounded-lg bg-[#7004DC] text-white text-xs font-bold hover:bg-[#5a03b0] transition">
-                {saving ? "…" : "Add"}
-              </button>
-              <button onClick={() => setShowAdd(false)} className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center">
-                <X className="w-3.5 h-3.5 text-slate-500" />
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* EVENT CATEGORIES MASTER DATA */}
-      <div className="bg-white rounded-2xl border border-[#ECE7F2] shadow-sm overflow-hidden">
-        <div className="flex items-center justify-between px-8 py-6 border-b border-[#E8E8E8]">
-          <div>
-            <h3 className="text-xl font-extrabold text-[#1A1C1C]">Event Categories</h3>
-            <p className="text-sm text-[#4B4355]/70 mt-1">
-              Master classifications for community events and workshops. Filter and creation options dynamically sync from here.
-            </p>
-          </div>
-          <button
-            onClick={() => setShowAddCat(true)}
-            className="h-10 px-5 rounded-xl bg-[#7004DC] hover:bg-[#5c03b7] transition flex items-center gap-2 font-bold text-white text-sm shadow-sm"
-          >
-            <Plus className="w-4 h-4" /> Add Category
-          </button>
+          )}
         </div>
+      )}
 
-        {/* TABLE HEADER */}
-        <div className="grid grid-cols-[140px_1fr_160px_140px] bg-[#F7F5FA]">
-          <Th>CATEGORY ID</Th><Th>Category Name</Th><Th>Status</Th><Th>Actions</Th>
-        </div>
-
-        {catsLoading && eventCats.length === 0 ? (
-          <div className="px-8 py-8 text-sm text-slate-400 flex items-center gap-2">
-            <svg className="w-4 h-4 animate-spin text-[#7004DC]" fill="none" viewBox="0 0 24 24">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
-            </svg>
-            Loading categories from database…
-          </div>
-        ) : catError ? (
-          <div className="px-8 py-8 flex items-center gap-3">
-            <span className="text-sm text-red-500 font-semibold">Error: {catError}</span>
-            <button onClick={loadEventCategories} className="text-sm text-[#7004DC] font-bold hover:underline">Retry</button>
-          </div>
-        ) : (
-          eventCats.map((cat, i) => (
-            <div
-              key={cat.id}
-              className={`grid grid-cols-[140px_1fr_160px_140px] items-center ${i < eventCats.length - 1 ? "border-b border-[#F0F0F0]" : ""}`}
+      {/* 2. EVENT CATEGORIES */}
+      {activeMasterCat === "events" && (
+        <div className="bg-white rounded-2xl border border-[#ECE7F2] shadow-sm overflow-hidden animate-fadeIn">
+          <div className="flex items-center justify-between px-8 py-6 border-b border-[#E8E8E8] bg-slate-50/50">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-[#7004DC]" />
+                <h3 className="text-lg font-extrabold text-[#1A1C1C]">Event Categories Options</h3>
+              </div>
+              <p className="text-xs text-[#4B4355]/70 mt-1">
+                Master classifications for community events and workshops. Filter and creation options dynamically sync from here.
+              </p>
+            </div>
+            <button
+              onClick={() => setShowAddCat(true)}
+              className="h-10 px-5 rounded-xl bg-[#7004DC] hover:bg-[#5c03b7] transition flex items-center gap-2 font-bold text-white text-sm shadow-sm"
             >
-              <Td mono>{cat.id.slice(0, 8)}...</Td>
-              <Td>
-                {editCatId === cat.id ? (
-                  <div className="flex items-center gap-2">
-                    <input
-                      autoFocus
-                      value={editCatName}
-                      onChange={(e) => setEditCatName(e.target.value)}
-                      onKeyDown={(e) => e.key === "Enter" && saveEditCategory(cat.id)}
-                      className="flex-1 h-8 bg-[#F7F5FA] rounded-lg px-3 text-sm border border-[#8A38F5]/30 outline-none"
-                    />
-                    <button onClick={() => saveEditCategory(cat.id)} disabled={catSaving} className="w-7 h-7 rounded-lg bg-[#7004DC] flex items-center justify-center">
-                      <Check className="w-3.5 h-3.5 text-white" />
-                    </button>
-                    <button onClick={() => setEditCatId(null)} className="w-7 h-7 rounded-lg bg-slate-100 flex items-center justify-center">
-                      <X className="w-3.5 h-3.5 text-slate-500" />
-                    </button>
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full bg-[#7004DC]" />
-                    <span className="font-bold text-sm text-[#1A1C1C]">{cat.name}</span>
-                  </div>
-                )}
-              </Td>
-              <Td>
-                <button
-                  onClick={() => toggleCategoryStatus(cat)}
-                  className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold transition ${cat.status === "Active"
-                    ? "bg-green-100 text-green-700 hover:bg-green-200"
-                    : "bg-slate-100 text-slate-500 hover:bg-slate-200"
-                    }`}
-                >
-                  {cat.status}
+              <Plus className="w-4 h-4" /> Add Option
+            </button>
+          </div>
+
+          <div className="grid grid-cols-[140px_1fr_160px_140px] bg-[#F7F5FA]">
+            <Th>CATEGORY ID</Th><Th>Category Name</Th><Th>Status</Th><Th>Actions</Th>
+          </div>
+
+          {catsLoading && eventCats.length === 0 ? (
+            <div className="px-8 py-8 text-sm text-slate-400 flex items-center gap-2">
+              <svg className="w-4 h-4 animate-spin text-[#7004DC]" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+              </svg>
+              Loading categories from database…
+            </div>
+          ) : catError ? (
+            <div className="px-8 py-8 flex items-center gap-3">
+              <span className="text-sm text-red-500 font-semibold">Error: {catError}</span>
+              <button onClick={loadEventCategories} className="text-sm text-[#7004DC] font-bold hover:underline">Retry</button>
+            </div>
+          ) : eventCats.length === 0 ? (
+            <div className="px-8 py-12 text-center text-slate-400 text-sm">
+              No event categories configured yet. Click "+ Add Option" to create one.
+            </div>
+          ) : (
+            eventCats.map((cat, i) => (
+              <div
+                key={cat.id}
+                className={`grid grid-cols-[140px_1fr_160px_140px] items-center ${i < eventCats.length - 1 ? "border-b border-[#F0F0F0]" : ""}`}
+              >
+                <Td mono>{cat.id.slice(0, 8)}...</Td>
+                <Td>
+                  {editCatId === cat.id ? (
+                    <div className="flex items-center gap-2">
+                      <input
+                        autoFocus
+                        value={editCatName}
+                        onChange={(e) => setEditCatName(e.target.value)}
+                        onKeyDown={(e) => e.key === "Enter" && saveEditCategory(cat.id)}
+                        className="flex-1 h-8 bg-[#F7F5FA] rounded-lg px-3 text-sm border border-[#8A38F5]/30 outline-none"
+                      />
+                      <button onClick={() => saveEditCategory(cat.id)} disabled={catSaving} className="w-7 h-7 rounded-lg bg-[#7004DC] flex items-center justify-center">
+                        <Check className="w-3.5 h-3.5 text-white" />
+                      </button>
+                      <button onClick={() => setEditCatId(null)} className="w-7 h-7 rounded-lg bg-slate-100 flex items-center justify-center">
+                        <X className="w-3.5 h-3.5 text-slate-500" />
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-[#7004DC]" />
+                      <span className="font-bold text-sm text-[#1A1C1C]">{cat.name}</span>
+                    </div>
+                  )}
+                </Td>
+                <Td>
+                  <button
+                    onClick={() => toggleCategoryStatus(cat)}
+                    className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold transition ${cat.status === "Active"
+                      ? "bg-green-100 text-green-700 hover:bg-green-200"
+                      : "bg-slate-100 text-slate-500 hover:bg-slate-200"
+                      }`}
+                  >
+                    {cat.status}
+                  </button>
+                </Td>
+                <div className="px-6 flex items-center gap-2">
+                  <button
+                    onClick={() => { setEditCatId(cat.id); setEditCatName(cat.name); }}
+                    className="w-8 h-8 rounded-lg hover:bg-violet-50 flex items-center justify-center text-[#7004DC] transition"
+                    title="Edit option"
+                  >
+                    <Pencil className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    onClick={() => deleteEventCategory(cat.id)}
+                    className="w-8 h-8 rounded-lg hover:bg-red-50 flex items-center justify-center text-red-500 transition"
+                    title="Delete option"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
+
+          {showAddCat && (
+            <div className="grid grid-cols-[140px_1fr_160px_140px] items-center border-t border-[#E8E8E8] bg-[#FAFAFA]">
+              <div className="px-6 py-4 text-sm font-mono text-slate-400">AUTO</div>
+              <div className="px-4 py-4">
+                <input
+                  autoFocus
+                  placeholder="New category name (e.g. Assistive Tech, Sports, Arts)..."
+                  value={newCatName}
+                  onChange={(e) => setNewCatName(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && addEventCategory()}
+                  className="w-full h-9 bg-[#F7F5FA] rounded-lg px-3 text-sm border border-[#8A38F5]/30 outline-none"
+                />
+              </div>
+              <div className="px-4 py-4">
+                <span className="inline-flex px-3 py-1 rounded-full text-xs font-bold bg-green-100 text-green-700">Active</span>
+              </div>
+              <div className="px-6 py-4 flex items-center gap-2">
+                <button onClick={addEventCategory} disabled={catSaving} className="h-8 px-3 rounded-lg bg-[#7004DC] text-white text-xs font-bold hover:bg-[#5a03b0] transition">
+                  {catSaving ? "…" : "Add"}
                 </button>
-              </Td>
-              <div className="px-6 flex items-center gap-2">
-                <button
-                  onClick={() => { setEditCatId(cat.id); setEditCatName(cat.name); }}
-                  className="w-8 h-8 rounded-lg hover:bg-violet-50 flex items-center justify-center text-[#7004DC] transition"
-                  title="Edit category"
-                >
-                  <Pencil className="w-3.5 h-3.5" />
-                </button>
-                <button
-                  onClick={() => deleteEventCategory(cat.id)}
-                  className="w-8 h-8 rounded-lg hover:bg-red-50 flex items-center justify-center text-red-500 transition"
-                  title="Delete category"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
+                <button onClick={() => setShowAddCat(false)} className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center">
+                  <X className="w-3.5 h-3.5 text-slate-500" />
                 </button>
               </div>
             </div>
-          ))
-        )}
+          )}
+        </div>
+      )}
 
-        {/* ADD CATEGORY ROW */}
-        {showAddCat && (
-          <div className="grid grid-cols-[140px_1fr_160px_140px] items-center border-t border-[#E8E8E8] bg-[#FAFAFA]">
-            <div className="px-6 py-4 text-sm font-mono text-slate-400">AUTO</div>
-            <div className="px-4 py-4">
-              <input
-                autoFocus
-                placeholder="New category name (e.g. Assistive Tech, Sports, Arts)..."
-                value={newCatName}
-                onChange={(e) => setNewCatName(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && addEventCategory()}
-                className="w-full h-9 bg-[#F7F5FA] rounded-lg px-3 text-sm border border-[#8A38F5]/30 outline-none"
-              />
+      {/* 3. SERVICE CATEGORIES */}
+      {activeMasterCat === "services" && (
+        <div className="bg-white rounded-2xl border border-[#ECE7F2] shadow-sm overflow-hidden animate-fadeIn">
+          <div className="flex items-center justify-between px-8 py-6 border-b border-[#E8E8E8] bg-slate-50/50">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-[#7004DC]" />
+                <h3 className="text-lg font-extrabold text-[#1A1C1C]">Service Categories Options</h3>
+              </div>
+              <p className="text-xs text-[#4B4355]/70 mt-1">
+                Master classifications for professional services, therapists, and equipment vendors. Automatically synced with mobile app tabs.
+              </p>
             </div>
-            <div className="px-4 py-4">
-              <span className="inline-flex px-3 py-1 rounded-full text-xs font-bold bg-green-100 text-green-700">Active</span>
-            </div>
-            <div className="px-6 py-4 flex items-center gap-2">
-              <button onClick={addEventCategory} disabled={catSaving} className="h-8 px-3 rounded-lg bg-[#7004DC] text-white text-xs font-bold hover:bg-[#5a03b0] transition">
-                {catSaving ? "…" : "Add"}
-              </button>
-              <button onClick={() => setShowAddCat(false)} className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center">
-                <X className="w-3.5 h-3.5 text-slate-500" />
-              </button>
-            </div>
+            <button
+              onClick={() => setShowAddServiceCat(true)}
+              className="h-10 px-5 rounded-xl bg-[#7004DC] hover:bg-[#5c03b7] transition flex items-center gap-2 font-bold text-white text-sm shadow-sm"
+            >
+              <Plus className="w-4 h-4" /> Add Option
+            </button>
           </div>
-        )}
-      </div>
+
+          <div className="grid grid-cols-[140px_1fr_160px_140px] bg-[#F7F5FA]">
+            <Th>CATEGORY ID</Th><Th>Category Name</Th><Th>Status</Th><Th>Actions</Th>
+          </div>
+
+          {serviceCatsLoading && serviceCats.length === 0 ? (
+            <div className="px-8 py-8 text-sm text-slate-400 flex items-center gap-2">
+              <svg className="w-4 h-4 animate-spin text-[#7004DC]" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+              </svg>
+              Loading service categories from database…
+            </div>
+          ) : serviceCatError ? (
+            <div className="px-8 py-8 flex items-center gap-3">
+              <span className="text-sm text-red-500 font-semibold">Error: {serviceCatError}</span>
+              <button onClick={loadServiceCategories} className="text-sm text-[#7004DC] font-bold hover:underline">Retry</button>
+            </div>
+          ) : serviceCats.length === 0 ? (
+            <div className="px-8 py-12 text-center text-slate-400 text-sm">
+              No service categories configured yet. Click "+ Add Option" to create one.
+            </div>
+          ) : (
+            serviceCats.map((cat, i) => (
+              <div
+                key={cat.id}
+                className={`grid grid-cols-[140px_1fr_160px_140px] items-center ${i < serviceCats.length - 1 ? "border-b border-[#F0F0F0]" : ""}`}
+              >
+                <Td mono>{cat.id.slice(0, 8)}...</Td>
+                <Td>
+                  {editServiceCatId === cat.id ? (
+                    <div className="flex items-center gap-2">
+                      <input
+                        autoFocus
+                        value={editServiceCatName}
+                        onChange={(e) => setEditServiceCatName(e.target.value)}
+                        onKeyDown={(e) => e.key === "Enter" && saveEditServiceCategory(cat.id)}
+                        className="flex-1 h-8 bg-[#F7F5FA] rounded-lg px-3 text-sm border border-[#8A38F5]/30 outline-none"
+                      />
+                      <button onClick={() => saveEditServiceCategory(cat.id)} disabled={serviceCatSaving} className="w-7 h-7 rounded-lg bg-[#7004DC] flex items-center justify-center">
+                        <Check className="w-3.5 h-3.5 text-white" />
+                      </button>
+                      <button onClick={() => setEditServiceCatId(null)} className="w-7 h-7 rounded-lg bg-slate-100 flex items-center justify-center">
+                        <X className="w-3.5 h-3.5 text-slate-500" />
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-[#7004DC]" />
+                      <span className="font-bold text-sm text-[#1A1C1C]">{cat.name}</span>
+                    </div>
+                  )}
+                </Td>
+                <Td>
+                  <button
+                    onClick={() => toggleServiceCategoryStatus(cat)}
+                    className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold transition ${cat.status === "Active"
+                      ? "bg-green-100 text-green-700 hover:bg-green-200"
+                      : "bg-slate-100 text-slate-500 hover:bg-slate-200"
+                      }`}
+                  >
+                    {cat.status}
+                  </button>
+                </Td>
+                <div className="px-6 flex items-center gap-2">
+                  <button
+                    onClick={() => { setEditServiceCatId(cat.id); setEditServiceCatName(cat.name); }}
+                    className="w-8 h-8 rounded-lg hover:bg-violet-50 flex items-center justify-center text-[#7004DC] transition"
+                    title="Edit option"
+                  >
+                    <Pencil className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    onClick={() => deleteServiceCategory(cat.id)}
+                    className="w-8 h-8 rounded-lg hover:bg-red-50 flex items-center justify-center text-red-500 transition"
+                    title="Delete option"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
+
+          {showAddServiceCat && (
+            <div className="grid grid-cols-[140px_1fr_160px_140px] items-center border-t border-[#E8E8E8] bg-[#FAFAFA]">
+              <div className="px-6 py-4 text-sm font-mono text-slate-400">AUTO</div>
+              <div className="px-4 py-4">
+                <input
+                  autoFocus
+                  placeholder="New service category (e.g. Speech Therapy, Audiology)..."
+                  value={newServiceCatName}
+                  onChange={(e) => setNewServiceCatName(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && addServiceCategory()}
+                  className="w-full h-9 bg-[#F7F5FA] rounded-lg px-3 text-sm border border-[#8A38F5]/30 outline-none"
+                />
+              </div>
+              <div className="px-4 py-4">
+                <span className="inline-flex px-3 py-1 rounded-full text-xs font-bold bg-green-100 text-green-700">Active</span>
+              </div>
+              <div className="px-6 py-4 flex items-center gap-2">
+                <button onClick={addServiceCategory} disabled={serviceCatSaving} className="h-8 px-3 rounded-lg bg-[#7004DC] text-white text-xs font-bold hover:bg-[#5a03b0] transition">
+                  {serviceCatSaving ? "…" : "Add"}
+                </button>
+                <button onClick={() => setShowAddServiceCat(false)} className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center">
+                  <X className="w-3.5 h-3.5 text-slate-500" />
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -1727,25 +2086,60 @@ function IconInput({
   value,
   onChange,
   defaultValue,
+  disabled,
+  badge,
+  badgeVariant = "info",
+  helperText,
 }: {
   label: string;
   icon: React.ReactNode;
   value?: string;
   onChange?: (val: string) => void;
   defaultValue?: string;
+  disabled?: boolean;
+  badge?: string;
+  badgeVariant?: "locked" | "active" | "info";
+  helperText?: string;
 }) {
   return (
     <div>
-      <label className="text-xs font-extrabold uppercase tracking-[0.15em] text-slate-500">{label}</label>
-      <div className="relative mt-2">
-        <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400">{icon}</div>
+      <div className="flex items-center justify-between gap-2 mb-1.5">
+        <label className="text-xs font-extrabold uppercase tracking-[0.15em] text-slate-500">{label}</label>
+        {badge && (
+          <span
+            className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
+              badgeVariant === "locked"
+                ? "bg-slate-100 text-slate-600 border border-slate-200"
+                : badgeVariant === "active"
+                ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                : "bg-violet-50 text-[#7004DC] border border-violet-200"
+            }`}
+          >
+            {badgeVariant === "locked" && <Lock className="w-2.5 h-2.5" />}
+            {badge}
+          </span>
+        )}
+      </div>
+      <div className="relative mt-1">
+        <div className={`absolute left-4 top-1/2 -translate-y-1/2 ${disabled ? "text-slate-400" : "text-slate-400"}`}>
+          {icon}
+        </div>
         <input
           value={value}
           defaultValue={defaultValue}
+          disabled={disabled}
+          readOnly={disabled}
           onChange={onChange ? (e) => onChange(e.target.value) : undefined}
-          className="w-full h-12 bg-[#F7F5FA] rounded-xl pl-10 pr-4 text-[#1A1C1C] border border-transparent focus:border-[#8A38F5]/30 focus:ring-2 focus:ring-[#8A38F5]/10 outline-none transition-all text-sm font-semibold"
+          className={`w-full h-12 rounded-xl pl-10 pr-4 transition-all text-sm font-semibold outline-none ${
+            disabled
+              ? "bg-[#EFEBF4]/70 text-[#6B6276] border border-[#DDD6E8] cursor-not-allowed select-none"
+              : "bg-[#F7F5FA] text-[#1A1C1C] border border-transparent focus:border-[#8A38F5]/40 focus:ring-2 focus:ring-[#8A38F5]/10"
+          }`}
         />
       </div>
+      {helperText && (
+        <p className="text-[11px] text-slate-400 mt-1.5 leading-normal">{helperText}</p>
+      )}
     </div>
   );
 }

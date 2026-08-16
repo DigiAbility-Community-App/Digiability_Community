@@ -4,7 +4,7 @@ import { useEffect, useState, useRef } from "react";
 import {
   Plus, Search, ChevronDown, Download, ChevronLeft, ChevronRight,
   MapPin, Clock, X, Loader2, Tag, ExternalLink, Trash2, Calendar,
-  Edit3, Upload, Image as ImageIcon, CheckCircle2,
+  Edit3, Upload, Image as ImageIcon, CheckCircle2, Eye, EyeOff,
 } from "lucide-react";
 
 interface EventType {
@@ -21,6 +21,7 @@ interface EventType {
   externalUrl: string;
   organizer: string;
   accessibility_tags: string;
+  status?: "published" | "unpublished";
 }
 
 // Static calendar widget helpers
@@ -157,6 +158,7 @@ export default function EventsPage() {
     externalUrl: "",
     organizer: "",
     accessibilityTags: "",
+    status: "published" as "published" | "unpublished",
   });
 
   const fetchEvents = async () => {
@@ -233,6 +235,7 @@ export default function EventsPage() {
       externalUrl: "",
       organizer: "",
       accessibilityTags: "",
+      status: "published",
     });
     setErrorMsg("");
     setSuccessMsg("");
@@ -273,11 +276,28 @@ export default function EventsPage() {
       externalUrl: ev.externalUrl || "",
       organizer: ev.organizer || "",
       accessibilityTags: ev.accessibility_tags || "",
+      status: ev.status || "published",
     });
     setErrorMsg("");
     setSuccessMsg("");
     setUseUrlInput(!ev.image.startsWith("data:"));
     setIsModalOpen(true);
+  };
+
+  const handleToggleStatus = async (ev: EventType) => {
+    const newStatus = ev.status === "unpublished" ? "published" : "unpublished";
+    try {
+      const res = await fetch(`/api/events/${ev.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: newStatus }),
+      });
+      if (res.ok) {
+        setEvents(prev => prev.map(e => e.id === ev.id ? { ...e, status: newStatus } : e));
+      }
+    } catch (e) {
+      console.error("Failed to toggle status:", e);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -555,12 +575,14 @@ export default function EventsPage() {
             <div className="space-y-3">
               {upcomingThisWeek.map((ev, i) => {
                 const colors = ["bg-[#7004DC]", "bg-[#D2A500]", "bg-emerald-600"];
-                const parts = ev.date.split(" ");
+                const parsed = parseEventDate(ev.date);
+                const monthLabel = parsed && MONTH_ABBREVS[parsed.month] ? MONTH_ABBREVS[parsed.month].toUpperCase() : "EVENT";
+                const dayLabel = parsed ? String(parsed.day) : String(i + 1);
                 return (
                   <div key={ev.id} className="flex items-center gap-3">
                     <div className={`w-12 h-12 rounded-xl ${colors[i % colors.length]} flex flex-col items-center justify-center text-white shrink-0`}>
-                      <span className="text-[9px] font-bold uppercase leading-none">{parts[1] || "DAY"}</span>
-                      <span className="text-base font-extrabold leading-none">{parts[0] || String(i + 1)}</span>
+                      <span className="text-[9px] font-bold uppercase leading-none">{monthLabel}</span>
+                      <span className="text-base font-extrabold leading-none mt-0.5">{dayLabel}</span>
                     </div>
                     <div className="min-w-0">
                       <p className="text-sm font-bold text-[#1A1C1C] truncate">{ev.title}</p>
@@ -626,7 +648,8 @@ export default function EventsPage() {
                     <th className="px-5 py-4 text-[10px] font-bold uppercase tracking-[0.12em] text-[#7D7387] min-w-[130px]">Date &amp; Time</th>
                     <th className="px-5 py-4 text-[10px] font-bold uppercase tracking-[0.12em] text-[#7D7387] min-w-[130px]">City</th>
                     <th className="px-5 py-4 text-[10px] font-bold uppercase tracking-[0.12em] text-[#7D7387] min-w-[80px]">Spots</th>
-                    <th className="px-5 py-4 text-[10px] font-bold uppercase tracking-[0.12em] text-[#7D7387] text-right pr-6 min-w-[100px]">Actions</th>
+                    <th className="px-5 py-4 text-[10px] font-bold uppercase tracking-[0.12em] text-[#7D7387] min-w-[110px]">Status</th>
+                    <th className="px-5 py-4 text-[10px] font-bold uppercase tracking-[0.12em] text-[#7D7387] text-right pr-6 min-w-[120px]">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
@@ -649,8 +672,20 @@ export default function EventsPage() {
                       </td>
                       <td className="px-5 py-4 text-sm text-[#4B4355] whitespace-nowrap">{ev.location}</td>
                       <td className="px-5 py-4 text-sm font-bold text-[#1A1C1C] whitespace-nowrap">{ev.spots}</td>
+                      <td className="px-5 py-4 whitespace-nowrap">
+                        <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold ${ev.status === "unpublished" ? "bg-slate-100 text-slate-600 border border-slate-200" : "bg-green-100 text-green-700 border border-green-200"}`}>
+                          {ev.status === "unpublished" ? "Unpublished" : "Published"}
+                        </span>
+                      </td>
                       <td className="px-5 py-4 text-right pr-6 whitespace-nowrap">
                         <div className="flex items-center justify-end gap-1.5">
+                          <button
+                            onClick={() => handleToggleStatus(ev)}
+                            className={`w-8 h-8 rounded-lg flex items-center justify-center transition ${ev.status === "unpublished" ? "text-slate-400 hover:text-green-600 hover:bg-green-50" : "text-green-600 hover:text-slate-500 hover:bg-slate-100"}`}
+                            title={ev.status === "unpublished" ? "Publish Event" : "Unpublish Event"}
+                          >
+                            {ev.status === "unpublished" ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                          </button>
                           <button onClick={() => handleOpenEdit(ev)} className="w-8 h-8 rounded-lg text-[#7004DC] hover:bg-violet-100/70 flex items-center justify-center transition" title="Edit Event"><Edit3 className="w-4 h-4" /></button>
                           <button onClick={() => handleDelete(ev.id, ev.title)} className="w-8 h-8 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 flex items-center justify-center transition" title="Delete Event"><Trash2 className="w-4 h-4" /></button>
                         </div>
@@ -941,6 +976,28 @@ export default function EventsPage() {
                     placeholder="e.g. Wheelchair Accessible, Sign Language, Braille Kits, Free Entry"
                     className="w-full h-11 rounded-xl border border-slate-200 px-4 text-sm outline-none focus:border-[#8A38F5]"
                   />
+                </div>
+
+                <div className="md:col-span-2">
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">
+                    Publish Status
+                  </label>
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setFormData(prev => ({ ...prev, status: "published" }))}
+                      className={`h-11 rounded-xl text-xs font-bold border flex items-center justify-center gap-2 transition ${formData.status === "published" ? "bg-green-50 text-green-700 border-green-500 shadow-sm" : "bg-white text-slate-500 border-slate-200 hover:bg-slate-50"}`}
+                    >
+                      <Eye className="w-4 h-4" /> Published (Live on App)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFormData(prev => ({ ...prev, status: "unpublished" }))}
+                      className={`h-11 rounded-xl text-xs font-bold border flex items-center justify-center gap-2 transition ${formData.status === "unpublished" ? "bg-amber-50 text-amber-700 border-amber-500 shadow-sm" : "bg-white text-slate-500 border-slate-200 hover:bg-slate-50"}`}
+                    >
+                      <EyeOff className="w-4 h-4" /> Unpublished (Draft / Hidden)
+                    </button>
+                  </div>
                 </div>
               </div>
 

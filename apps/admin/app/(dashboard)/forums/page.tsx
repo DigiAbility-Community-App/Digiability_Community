@@ -1,39 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import {
-  Search, ChevronDown, X, Shield, Trash2,
-  RefreshCw, AlertTriangle, Users, MessageSquare, CheckCircle2,
-  MoreHorizontal, Star, ChevronRight, Ban, Calendar, User, Send,
+  Search, ChevronDown, X, Trash2,
+  RefreshCw, Users, MessageSquare, CheckCircle2,
+  Calendar, User, Send, Plus, Download, Edit3,
+  Eye, EyeOff, Upload, Phone, Mail, Globe, MapPin,
+  Clock, ShieldCheck, Tag, Loader2, Image as ImageIcon,
 } from "lucide-react";
-
-// ─────────────────────────────────────────────
-// TYPES
-// ─────────────────────────────────────────────
-interface Report {
-  id: string;
-  reason: string;
-  createdAt: string;
-  type: "question" | "answer";
-  questionId: string | null;
-  answerId: string | null;
-  questionTitle: string | null;
-  answerContent: string | null;
-  reporterName: string;
-  reporterEmail: string;
-}
-
-interface Group {
-  id: string;
-  name: string | null;
-  description: string | null;
-  subType: "GENERAL" | "CARE_CIRCLE" | null;
-  createdAt: string;
-  lastMessageAt: string | null;
-  lastMessageText: string | null;
-  maxMembers: number;
-  memberCount: string;
-}
 
 // ─────────────────────────────────────────────
 // FORUM QUESTION TYPES
@@ -67,31 +41,49 @@ interface ForumQuestionDetail {
   answers: ForumAnswer[];
 }
 
-const SUCCESS_STORIES = [
-  { id: "s1", img: "https://images.unsplash.com/photo-1523050854058-8df90110c9f1?w=400&q=80", banner: "PENDING REVIEW", bannerColor: "bg-[#D2A500]", category: "EDUCATION MILESTONE", categoryColor: "bg-[#7004DC]", author: "Liam Peterson", role: "PWD·STUDENT", title: "Overcoming Barriers: My Graduation Day Journey", desc: "After four years of dedicated study and navigating complex accessibility challenges, I finally...", time: "Submitted 2 days ago", celebrates: "245 Celebrates", status: "pending" },
-  { id: "s2", img: "https://images.unsplash.com/photo-1504868584819-f8e8b4b6d7e3?w=400&q=80", banner: "PUBLISHED", bannerColor: "bg-green-500", category: "EMPLOYMENT", categoryColor: "bg-green-600", author: "Sarah Jenkins", role: "EDUCATOR", title: "Finding My Voice through Digital Design", desc: "Adaptive tools changed everything for Sarah. Learn how she secured her first full-time role as a junior...", time: "Published 1 week ago", celebrates: "1.2k Celebrates", status: "published" },
-  { id: "s3", img: "https://images.unsplash.com/photo-1529156069898-49953e39b3ac?w=400&q=80", banner: "REJECTED", bannerColor: "bg-red-500", category: "COMMUNITY", categoryColor: "bg-orange-500", author: "Mike Chen", role: "CAREGIVER", title: "Lessons in Group Support Dynamics", desc: "While the support group was helpful, there were some significant hurdles we faced in organizing the...", time: "Rejected 3 days ago", celebrates: "", status: "rejected", rejectionReason: "Reason: Promotional Content" },
-  { id: "s4", img: "https://images.unsplash.com/photo-1556909114-f6e7ad7d3136?w=400&q=80", banner: "PENDING REVIEW", bannerColor: "bg-[#D2A500]", category: "INDEPENDENCE", categoryColor: "bg-[#7004DC]", author: "Emma Wilson", role: "PWD·SELF-ADVOCATE", title: "Mastering My Kitchen: My First Independent Meal", desc: "It started with a simple grilled cheese, but for me, it was a massive victory. After months of...", time: "Submitted 5 hours ago", celebrates: "89 Celebrates", status: "pending" },
-];
+// ─────────────────────────────────────────────
+// SERVICE DIRECTORY TYPES
+// ─────────────────────────────────────────────
+interface ServiceItem {
+  id: string;
+  name: string;
+  type: string;
+  category: string;
+  logo: string | null;
+  image: string | null;
+  description: string;
+  location: string;
+  contactPhone: string | null;
+  contactEmail: string | null;
+  contactUrl: string | null;
+  price: string;
+  availability: string;
+  rating: number;
+  reviews: number;
+  verified: boolean;
+  status: "published" | "unpublished";
+  createdAt?: string;
+  updatedAt?: string;
+}
 
-const GROUP_CARDS = [
-  { id: "g1", bg: "bg-gradient-to-br from-[#7004DC] to-[#4a0099]", icon: "🧠", name: "Neuro-Inclusion Network", category: "Support", desc: "A peer support group focusing on navigating corporate...", members: "1,248", postsToday: "42", status: "Active" },
-  { id: "g2", bg: "bg-gradient-to-br from-slate-600 to-slate-800", icon: "</>", name: "Accessible Coding", category: "Education", desc: "Learning and sharing best practices for WCAG 2.2...", members: "856", postsToday: "15", status: "Active" },
-  { id: "g3", bg: "bg-gradient-to-br from-red-400 to-orange-300", icon: "📢", name: "Advocacy Leaders", category: "Community", desc: "Global advocacy group organizing digital awareness...", members: "3,412", postsToday: "118", status: "Under Review" },
-  { id: "g4", bg: "bg-gradient-to-br from-violet-400 to-purple-300", icon: "🏋", name: "Adaptive Sports Hub", category: "Social", desc: "Connecting athletes of all abilities to find local teams,...", members: "529", postsToday: "8", status: "Active" },
-  { id: "g5", bg: "bg-gradient-to-br from-slate-300 to-slate-400", icon: "🕐", name: "Archived Tech 2022", category: "Archive", desc: "Former group for legacy system support. This group is currently...", members: "241", postsToday: "0", status: "Inactive" },
-  { id: "g6", bg: "bg-gradient-to-br from-slate-400 to-slate-500", icon: "🎓", name: "Mentorship Circle", category: "Education", desc: "One-on-one and group mentoring for junior developers", members: "192", postsToday: "12", status: "Active" },
+const SERVICE_CATEGORIES = [
+  { id: "all", label: "All Categories" },
+  { id: "therapists", label: "Therapists" },
+  { id: "equipment", label: "Equipment" },
+  { id: "care", label: "Respite Care" },
+  { id: "legal", label: "Legal Services" },
+  { id: "transport", label: "Transportation" },
+  { id: "medical", label: "Medical Support" },
 ];
 
 // ─────────────────────────────────────────────
 // MAIN COMPONENT
 // ─────────────────────────────────────────────
 export default function CommunityPage() {
-  const [activeTab, setActiveTab] = useState<"Forums" | "Success Stories">("Forums");
+  const [activeTab, setActiveTab] = useState<"Forums" | "Services">("Forums");
   const [search, setSearch] = useState("");
 
-
-  // Forum data — real questions from DB
+  // ── Forum data ──
   const [questions, setQuestions] = useState<ForumQuestion[]>([]);
   const [questionsLoading, setQuestionsLoading] = useState(false);
   const [forumStats, setForumStats] = useState({ total: 0, solved: 0, unsolved: 0, totalViews: 0, totalAnswers: 0 });
@@ -100,29 +92,35 @@ export default function CommunityPage() {
   const [replyText, setReplyText] = useState("");
   const [replyPosting, setReplyPosting] = useState(false);
 
-  // Suspend Group modal
-  const [suspendGroup, setSuspendGroup] = useState<(typeof GROUP_CARDS)[0] | null>(null);
-  const [suspendReason, setSuspendReason] = useState("Spam/Harassment");
-  const [suspendNote, setSuspendNote] = useState("");
+  // ── Services data ──
+  const [services, setServices] = useState<ServiceItem[]>([]);
+  const [servicesLoading, setServicesLoading] = useState(false);
+  const [serviceCategory, setServiceCategory] = useState("all");
+  const [serviceStatusFilter, setServiceStatusFilter] = useState("all");
+  const [serviceMasterCategories, setServiceMasterCategories] = useState<{ id: string; name: string }[]>([]);
+  const [isServiceModalOpen, setIsServiceModalOpen] = useState(false);
+  const [editingServiceId, setEditingServiceId] = useState<string | null>(null);
+  const [serviceErrorMsg, setServiceErrorMsg] = useState("");
+  const [serviceSuccessMsg, setServiceSuccessMsg] = useState("");
+  const [serviceSubmitting, setServiceSubmitting] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Send Message modal
-  const [messageGroup, setMessageGroup] = useState<typeof GROUP_CARDS[0] | null>(null);
-  const [msgSubject, setMsgSubject] = useState("");
-  const [msgBody, setMsgBody] = useState("");
-  const [msgType, setMsgType] = useState("General Update");
-  const [msgSendTo, setMsgSendTo] = useState<string[]>(["All Members"]);
-
-  // Story modals
-  const [approveStory, setApproveStory] = useState<typeof SUCCESS_STORIES[0] | null>(null);
-  const [rejectStory, setRejectStory] = useState<typeof SUCCESS_STORIES[0] | null>(null);
-  const [featureStory, setFeatureStory] = useState<typeof SUCCESS_STORIES[0] | null>(null);
-  const [rejectReason, setRejectReason] = useState("Other");
-  const [rejectNote, setRejectNote] = useState("");
-  const [featureDuration, setFeatureDuration] = useState(14);
-
-  // Stories state
-  const [stories, setStories] = useState(SUCCESS_STORIES);
-  const [storyFilter, setStoryFilter] = useState("All Stories");
+  const [serviceFormData, setServiceFormData] = useState({
+    name: "",
+    type: "Occupational Therapist",
+    category: "Therapists",
+    logo: "🏢",
+    image: "",
+    description: "",
+    location: "",
+    contactPhone: "",
+    contactEmail: "",
+    contactUrl: "",
+    price: "$80 - $150 / session",
+    availability: "Next available: Tomorrow",
+    verified: true,
+    status: "published" as "published" | "unpublished",
+  });
 
   const fetchQuestions = async () => {
     setQuestionsLoading(true);
@@ -136,6 +134,38 @@ export default function CommunityPage() {
     } catch (e) { console.error(e); }
     finally { setQuestionsLoading(false); }
   };
+
+  const fetchServiceCategories = async () => {
+    try {
+      const res = await fetch("/api/settings/service-categories");
+      const data = await res.json();
+      if (data.success && data.categories) {
+        setServiceMasterCategories(data.categories);
+      }
+    } catch (e) {
+      console.error("Failed to load service categories:", e);
+    }
+  };
+
+  const fetchServices = async () => {
+    setServicesLoading(true);
+    try {
+      const res = await fetch("/api/services");
+      const data = await res.json();
+      if (data.success) {
+        setServices(data.services || []);
+      }
+    } catch (e) { console.error("Failed to load services:", e); }
+    finally { setServicesLoading(false); }
+  };
+
+  useEffect(() => {
+    if (activeTab === "Forums") fetchQuestions();
+    if (activeTab === "Services") {
+      fetchServices();
+      fetchServiceCategories();
+    }
+  }, [activeTab]);
 
   const openQuestion = async (id: string) => {
     setQuestionDetailLoading(true);
@@ -186,24 +216,213 @@ export default function CommunityPage() {
     }
   };
 
-  useEffect(() => {
-    if (activeTab === "Forums") fetchQuestions();
-  }, [activeTab]);
+  // ── Services Handlers ──
+  const handleToggleServiceStatus = async (srv: ServiceItem) => {
+    const newStatus = srv.status === "unpublished" ? "published" : "unpublished";
+    try {
+      const res = await fetch(`/api/services/${srv.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: newStatus }),
+      });
+      if (res.ok) {
+        setServices(prev => prev.map(s => s.id === srv.id ? { ...s, status: newStatus } : s));
+      }
+    } catch (e) {
+      console.error("Failed to toggle service status:", e);
+    }
+  };
 
+  const handleOpenCreateService = () => {
+    setEditingServiceId(null);
+    setServiceFormData({
+      name: "",
+      type: "Occupational Therapist",
+      category: "therapists",
+      logo: "👩‍⚕️",
+      image: "",
+      description: "",
+      location: "",
+      contactPhone: "",
+      contactEmail: "",
+      contactUrl: "",
+      price: "$80 - $150 / session",
+      availability: "Next available: Tomorrow",
+      verified: true,
+      status: "published",
+    });
+    setServiceErrorMsg("");
+    setServiceSuccessMsg("");
+    setIsServiceModalOpen(true);
+  };
 
-  const TABS = ["Forums", "Success Stories"] as const;
+  const handleOpenEditService = (srv: ServiceItem) => {
+    setEditingServiceId(srv.id);
+    setServiceFormData({
+      name: srv.name || "",
+      type: srv.type || "",
+      category: srv.category || "therapists",
+      logo: srv.logo || "🏢",
+      image: srv.image || "",
+      description: srv.description || "",
+      location: srv.location || "",
+      contactPhone: srv.contactPhone || "",
+      contactEmail: srv.contactEmail || "",
+      contactUrl: srv.contactUrl || "",
+      price: srv.price || "$80 - $150 / session",
+      availability: srv.availability || "Next available: Tomorrow",
+      verified: srv.verified !== undefined ? srv.verified : true,
+      status: srv.status || "published",
+    });
+    setServiceErrorMsg("");
+    setServiceSuccessMsg("");
+    setIsServiceModalOpen(true);
+  };
+
+  const handleImageFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 5 * 1024 * 1024) {
+      setServiceErrorMsg("Image size exceeds 5MB. Please choose a smaller file.");
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (uploadEvent) => {
+      const base64 = uploadEvent.target?.result as string;
+      setServiceFormData(prev => ({ ...prev, image: base64 }));
+      setServiceErrorMsg("");
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleSaveService = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!serviceFormData.name.trim() || !serviceFormData.description.trim() || !serviceFormData.location.trim()) {
+      setServiceErrorMsg("Please fill in all required fields (Name, Description, Location).");
+      return;
+    }
+
+    setServiceSubmitting(true);
+    setServiceErrorMsg("");
+    setServiceSuccessMsg("");
+
+    try {
+      const isEdit = Boolean(editingServiceId);
+      const url = isEdit ? `/api/services/${editingServiceId}` : "/api/services";
+      const method = isEdit ? "PATCH" : "POST";
+
+      const res = await fetch(url, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(serviceFormData),
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        setServiceSuccessMsg(isEdit ? "Service updated successfully!" : "Service published successfully!");
+        setTimeout(() => {
+          setIsServiceModalOpen(false);
+          fetchServices();
+        }, 600);
+      } else {
+        setServiceErrorMsg(data.message || "Failed to save service");
+      }
+    } catch (err: any) {
+      setServiceErrorMsg(err.message || "An unexpected error occurred");
+    } finally {
+      setServiceSubmitting(false);
+    }
+  };
+
+  const handleDeleteService = async (id: string, name: string) => {
+    if (!confirm(`Are you sure you want to delete service "${name}"?`)) return;
+    try {
+      const res = await fetch(`/api/services/${id}`, { method: "DELETE" });
+      const data = await res.json();
+      if (data.success) {
+        setServices(prev => prev.filter(s => s.id !== id));
+      } else {
+        alert(data.message || "Failed to delete service");
+      }
+    } catch (e) {
+      console.error(e);
+      alert("Failed to delete service");
+    }
+  };
+
+  const handleExportServicesCsv = () => {
+    if (services.length === 0) return;
+    const headers = ["ID", "Name", "Type", "Category", "Location", "Phone", "Email", "Price", "Availability", "Rating", "Reviews", "Status"];
+    const rows = services.map(s => [
+      `"${s.id}"`,
+      `"${s.name.replace(/"/g, '""')}"`,
+      `"${s.type.replace(/"/g, '""')}"`,
+      `"${s.category}"`,
+      `"${s.location.replace(/"/g, '""')}"`,
+      `"${s.contactPhone || ""}"`,
+      `"${s.contactEmail || ""}"`,
+      `"${s.price.replace(/"/g, '""')}"`,
+      `"${s.availability.replace(/"/g, '""')}"`,
+      s.rating,
+      s.reviews,
+      `"${s.status}"`,
+    ]);
+    const csvContent = [headers.join(","), ...rows.map(r => r.join(","))].join("\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `services-directory-${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const TABS = ["Forums", "Services"] as const;
+
+  const filteredServices = services.filter(s => {
+    const matchesSearch = !search ||
+      s.name.toLowerCase().includes(search.toLowerCase()) ||
+      s.type.toLowerCase().includes(search.toLowerCase()) ||
+      s.location.toLowerCase().includes(search.toLowerCase()) ||
+      s.description.toLowerCase().includes(search.toLowerCase());
+    const matchesCat = serviceCategory === "all" || s.category.toLowerCase() === serviceCategory.toLowerCase();
+    const matchesStatus = serviceStatusFilter === "all" || s.status === serviceStatusFilter;
+    return matchesSearch && matchesCat && matchesStatus;
+  });
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full bg-[#FAFAFA]">
 
       {/* TOP HEADER */}
       <div className="flex items-center justify-between px-8 py-5 border-b border-gray-100 bg-white">
-        <h1 className="text-xl font-extrabold text-[#1A1C1C]">Community Management</h1>
-        {activeTab === "Forums" && (
-          <button onClick={fetchQuestions} className="h-10 px-4 rounded-xl border border-gray-200 text-[#4B4355] font-bold text-sm flex items-center gap-2 transition hover:bg-gray-50">
-            <RefreshCw className="w-4 h-4" /> Refresh
-          </button>
-        )}
+        <div>
+          <h1 className="text-xl font-extrabold text-[#1A1C1C]">
+            {activeTab === "Forums" ? "Discussions & Q&A" : "Professional Services Directory"}
+          </h1>
+          <p className="text-xs text-[#7D7387] mt-0.5">
+            {activeTab === "Forums" ? "Monitor questions, provide verified answers, and moderate discussion content" : "Manage verified service providers, therapists, and equipment vendors for the mobile app"}
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          {activeTab === "Forums" && (
+            <button onClick={fetchQuestions} className="h-10 px-4 rounded-xl border border-gray-200 text-[#4B4355] font-bold text-sm flex items-center gap-2 transition hover:bg-gray-50">
+              <RefreshCw className="w-4 h-4" /> Refresh
+            </button>
+          )}
+          {activeTab === "Services" && (
+            <>
+              <button onClick={handleExportServicesCsv} disabled={services.length === 0} className="h-10 px-4 rounded-xl border border-gray-200 text-[#4B4355] font-bold text-sm flex items-center gap-2 transition hover:bg-gray-50 disabled:opacity-40">
+                <Download className="w-4 h-4" /> Export CSV
+              </button>
+              <button onClick={handleOpenCreateService} className="h-10 px-5 rounded-xl bg-[#7004DC] hover:bg-[#5c03b7] text-white font-bold text-sm flex items-center gap-2 transition shadow-sm">
+                <Plus className="w-4 h-4" /> Add New Service
+              </button>
+            </>
+          )}
+        </div>
       </div>
 
       {/* TABS */}
@@ -211,23 +430,50 @@ export default function CommunityPage() {
         {TABS.map(tab => (
           <button
             key={tab}
-            onClick={() => setActiveTab(tab)}
+            onClick={() => { setActiveTab(tab); setSearch(""); }}
             className={`mr-8 py-4 text-sm font-semibold border-b-2 transition -mb-px ${activeTab === tab ? "border-[#7004DC] text-[#7004DC]" : "border-transparent text-[#7D7387] hover:text-[#1A1C1C]"}`}
           >
-            {tab}
+            {tab === "Forums" ? "Discussions & Q&A" : "Services"}
           </button>
         ))}
       </div>
 
       {/* FILTER BAR */}
-      <div className="flex items-center gap-3 px-8 py-4 bg-white border-b border-gray-100">
-        <div className="relative flex-1 max-w-xs">
+      <div className="flex items-center gap-3 px-8 py-4 bg-white border-b border-gray-100 flex-wrap">
+        <div className="relative flex-1 min-w-[240px] max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#7D7387]" />
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search reported posts or users..." className="w-full h-9 rounded-xl bg-[#F7F5FA] pl-9 pr-3 text-sm outline-none border border-transparent focus:border-[#8A38F5]" />
+          <input
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder={activeTab === "Forums" ? "Search questions or authors..." : "Search services, providers, locations..."}
+            className="w-full h-9 rounded-xl bg-[#F7F5FA] pl-9 pr-3 text-sm outline-none border border-transparent focus:border-[#8A38F5]"
+          />
         </div>
-        <button className="h-9 px-3 rounded-lg border border-gray-200 text-xs font-semibold text-[#4B4355] flex items-center gap-1.5">All Status <ChevronDown className="w-3 h-3" /></button>
-        <button className="h-9 px-3 rounded-lg border border-gray-200 text-xs font-semibold text-[#4B4355] flex items-center gap-1.5">Content Type <ChevronDown className="w-3 h-3" /></button>
-        <button className="h-9 px-3 rounded-lg border border-gray-200 text-xs font-semibold text-[#4B4355] flex items-center gap-1.5"><Calendar className="w-3.5 h-3.5" /> Date Range</button>
+
+        {activeTab === "Services" && (
+          <>
+            <select
+              value={serviceCategory}
+              onChange={e => setServiceCategory(e.target.value)}
+              className="h-9 px-3 rounded-lg border border-gray-200 text-xs font-semibold text-[#4B4355] bg-white outline-none focus:border-[#7004DC]"
+            >
+              <option value="all">All Categories</option>
+              {serviceMasterCategories.length > 0
+                ? serviceMasterCategories.map(c => <option key={c.id} value={c.name.toLowerCase()}>{c.name}</option>)
+                : SERVICE_CATEGORIES.filter(c => c.id !== "all").map(c => <option key={c.id} value={c.id}>{c.label}</option>)}
+            </select>
+
+            <select
+              value={serviceStatusFilter}
+              onChange={e => setServiceStatusFilter(e.target.value)}
+              className="h-9 px-3 rounded-lg border border-gray-200 text-xs font-semibold text-[#4B4355] bg-white outline-none focus:border-[#7004DC]"
+            >
+              <option value="all">All Status</option>
+              <option value="published">Published</option>
+              <option value="unpublished">Unpublished</option>
+            </select>
+          </>
+        )}
       </div>
 
       {/* CONTENT */}
@@ -298,107 +544,160 @@ export default function CommunityPage() {
             </div>
           )}
 
-
-          {/* ── SUCCESS STORIES TAB ── */}
-          {activeTab === "Success Stories" && (
+          {/* ── SERVICES TAB ── */}
+          {activeTab === "Services" && (
             <div>
-              {/* SUB-TABS */}
-              <div className="flex items-center gap-2 mb-4">
-                {["All Stories", "Pending", "Approved", "Rejected"].map(f => (
-                  <button
-                    key={f}
-                    onClick={() => setStoryFilter(f)}
-                    className={`h-9 px-4 rounded-xl text-sm font-bold transition ${storyFilter === f ? "bg-[#1A1C1C] text-white" : "bg-[#F3F3F3] text-[#4B4355] hover:bg-[#EBEBEB]"}`}
-                  >
-                    {f}
-                    {f === "Pending" && <span className="ml-1.5 w-5 h-5 rounded-full bg-red-500 text-white text-[9px] font-bold inline-flex items-center justify-center">5</span>}
-                  </button>
+              {/* Stats Row */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                {[
+                  { label: "Total Services", value: services.length, color: "text-[#7004DC]" },
+                  { label: "Published on App", value: services.filter(s => s.status !== "unpublished").length, color: "text-green-600" },
+                  { label: "Unpublished / Draft", value: services.filter(s => s.status === "unpublished").length, color: "text-amber-500" },
+                  { label: "Verified Providers", value: services.filter(s => s.verified).length, color: "text-blue-600" },
+                ].map(({ label, value, color }) => (
+                  <div key={label} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">{label}</p>
+                    <p className={`text-2xl font-extrabold ${color}`}>{value}</p>
+                  </div>
                 ))}
-                <div className="ml-auto flex gap-2">
-                  <button className="h-9 px-3 rounded-xl border border-gray-200 text-xs font-semibold text-slate-400 flex items-center gap-1"><CheckCircle2 className="w-3.5 h-3.5" /> Batch Approve</button>
-                  <button className="h-9 px-3 rounded-xl border border-gray-200 text-xs font-semibold text-slate-400 flex items-center gap-1"><Star className="w-3.5 h-3.5" /> Batch Feature</button>
+              </div>
+
+              {servicesLoading ? (
+                <div className="flex items-center justify-center py-20">
+                  <Loader2 className="w-8 h-8 animate-spin text-[#7004DC]" />
                 </div>
-              </div>
-
-              {/* FILTERS */}
-              <div className="flex items-center gap-3 mb-5">
-                <button className="h-8 px-3 rounded-lg border border-gray-200 text-xs font-semibold text-[#4B4355] flex items-center gap-1.5">Category: All Milestones <ChevronDown className="w-3 h-3" /></button>
-                <button className="h-8 px-3 rounded-lg border border-gray-200 text-xs font-semibold text-[#4B4355] flex items-center gap-1.5"><Calendar className="w-3.5 h-3.5" /> Date: This Month</button>
-                <button className="h-8 px-3 rounded-lg border border-gray-200 text-xs font-semibold text-[#4B4355] flex items-center gap-1.5"><User className="w-3.5 h-3.5" /> Author: All Roles</button>
-                <button className="ml-auto text-xs font-bold text-[#7004DC] hover:underline">Clear all filters</button>
-              </div>
-
-              {/* STORY CARDS */}
-              {(() => {
-                const filtered = stories.filter(s => {
-                  if (storyFilter === "Pending") return s.status === "pending";
-                  if (storyFilter === "Approved") return s.status === "published";
-                  if (storyFilter === "Rejected") return s.status === "rejected";
-                  return true;
-                });
-                if (filtered.length === 0) return (
-                  <div className="col-span-3 flex flex-col items-center justify-center py-16 text-slate-400 gap-3">
-                    <Star className="w-10 h-10 text-slate-300" />
-                    <p className="font-semibold">No stories in this category</p>
+              ) : filteredServices.length === 0 ? (
+                <div className="bg-white rounded-2xl border border-gray-100 p-12 text-center shadow-sm">
+                  <div className="w-16 h-16 rounded-2xl bg-violet-50 text-[#7004DC] flex items-center justify-center mx-auto mb-4 text-2xl">
+                    🏢
                   </div>
-                );
-                return null;
-              })()}
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
-                {stories.filter(s => {
-                  if (storyFilter === "Pending") return s.status === "pending";
-                  if (storyFilter === "Approved") return s.status === "published";
-                  if (storyFilter === "Rejected") return s.status === "rejected";
-                  return true;
-                }).map(story => (
-                  <div key={story.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-                    {/* IMAGE */}
-                    <div className="relative">
-                      <img src={story.img} alt={story.title} className="w-full h-44 object-cover" onError={e => { (e.target as HTMLImageElement).src = "https://images.unsplash.com/photo-1517245386807?w=400&q=80"; }} />
-                      <div className={`absolute top-3 right-3 px-2.5 py-1 rounded-full text-[9px] font-bold uppercase text-white ${story.bannerColor}`}>{story.banner}</div>
-                      <div className={`absolute bottom-3 left-3 px-2 py-1 rounded-md text-[9px] font-bold uppercase text-white ${story.categoryColor}`}>{story.category}</div>
-                    </div>
-                    {/* CONTENT */}
-                    <div className="p-4">
-                      <div className="flex items-center gap-2 mb-2">
-                        <div className="w-7 h-7 rounded-full bg-[#EDDCFF] flex items-center justify-center text-[#7004DC] text-xs font-bold">{story.author[0]}</div>
-                        <div><p className="text-xs font-bold text-[#1A1C1C]">{story.author}</p><p className="text-[9px] text-[#7D7387]">{story.role}</p></div>
-                      </div>
-                      <h3 className="font-extrabold text-sm text-[#1A1C1C] mb-1 line-clamp-2">{story.title}</h3>
-                      <p className="text-xs text-[#7D7387] line-clamp-2 mb-2">{story.desc}</p>
-                      <div className="flex items-center gap-3 text-xs text-slate-400 mb-3">
-                        <span>{story.time}</span>
-                        {story.celebrates && <span>🎉 {story.celebrates}</span>}
-                        {story.rejectionReason && <span className="text-red-500 font-semibold">{story.rejectionReason}</span>}
-                      </div>
-                      {/* ACTIONS */}
-                      {story.status === "pending" && (
-                        <div className="flex gap-2">
-                          <button onClick={() => setApproveStory(story)} className="flex-1 h-8 rounded-xl bg-green-500 hover:bg-green-600 text-white text-xs font-bold transition">Approve</button>
-                          <button onClick={() => setRejectStory(story)} className="flex-1 h-8 rounded-xl bg-red-500 hover:bg-red-600 text-white text-xs font-bold transition">Reject</button>
-                          <button className="w-8 h-8 rounded-xl border border-gray-200 flex items-center justify-center text-slate-400 hover:bg-gray-50"><MoreHorizontal className="w-4 h-4" /></button>
-                        </div>
-                      )}
-                      {story.status === "published" && (
-                        <div className="flex gap-2">
-                          <button className="flex-1 h-8 rounded-xl border border-[#7004DC] text-[#7004DC] text-xs font-bold hover:bg-violet-50 transition">View</button>
-                          <button onClick={() => setFeatureStory(story)} className="flex-1 h-8 rounded-xl border border-[#D2A500] text-[#755B00] text-xs font-bold hover:bg-yellow-50 transition flex items-center justify-center gap-1"><Star className="w-3.5 h-3.5" /> Feature</button>
-                          <button className="w-8 h-8 rounded-xl border border-gray-200 flex items-center justify-center text-slate-400 hover:bg-gray-50"><MoreHorizontal className="w-4 h-4" /></button>
-                        </div>
-                      )}
-                      {story.status === "rejected" && (
-                        <div className="flex gap-2">
-                          <button className="flex-1 h-8 rounded-xl border border-gray-200 text-[#4B4355] text-xs font-bold hover:bg-gray-50 transition">Restore</button>
-                          <button className="flex-1 h-8 rounded-xl border border-gray-200 text-[#4B4355] text-xs font-bold hover:bg-gray-50 transition">Edit Note</button>
-                          <button className="w-8 h-8 rounded-xl border border-red-200 text-red-400 hover:bg-red-50 flex items-center justify-center"><Trash2 className="w-3.5 h-3.5" /></button>
-                        </div>
-                      )}
-                    </div>
+                  <h3 className="text-base font-extrabold text-[#1A1C1C]">No services found</h3>
+                  <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
+                    Try adjusting your filters or click "+ Add New Service" to publish a new provider.
+                  </p>
+                  <button onClick={handleOpenCreateService} className="mt-4 px-4 py-2 bg-[#7004DC] text-white text-xs font-bold rounded-xl hover:bg-[#5c03b7] transition">
+                    + Add First Service
+                  </button>
+                </div>
+              ) : (
+                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse">
+                      <thead className="bg-[#F7F5FA] border-b border-gray-100">
+                        <tr>
+                          <th className="px-5 py-4 text-[10px] font-bold uppercase tracking-[0.12em] text-[#7D7387] min-w-[260px]">Service &amp; Provider</th>
+                          <th className="px-5 py-4 text-[10px] font-bold uppercase tracking-[0.12em] text-[#7D7387] min-w-[140px]">Category &amp; Type</th>
+                          <th className="px-5 py-4 text-[10px] font-bold uppercase tracking-[0.12em] text-[#7D7387] min-w-[160px]">Location &amp; Address</th>
+                          <th className="px-5 py-4 text-[10px] font-bold uppercase tracking-[0.12em] text-[#7D7387] min-w-[170px]">Contact Info</th>
+                          <th className="px-5 py-4 text-[10px] font-bold uppercase tracking-[0.12em] text-[#7D7387] min-w-[140px]">Pricing &amp; Availability</th>
+                          <th className="px-5 py-4 text-[10px] font-bold uppercase tracking-[0.12em] text-[#7D7387] min-w-[110px]">Status</th>
+                          <th className="px-5 py-4 text-[10px] font-bold uppercase tracking-[0.12em] text-[#7D7387] text-right pr-6 min-w-[120px]">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {filteredServices.map(srv => (
+                          <tr key={srv.id} className="hover:bg-[#FAFAFA] transition">
+                            <td className="px-5 py-4">
+                              <div className="flex items-center gap-3">
+                                {srv.image && srv.image.startsWith("http") ? (
+                                  <img src={srv.image} alt={srv.name} className="w-10 h-10 rounded-xl object-cover shrink-0 border border-gray-100 shadow-sm" />
+                                ) : (
+                                  <div className="w-10 h-10 rounded-xl bg-violet-50 flex items-center justify-center shrink-0 text-xl border border-violet-100">
+                                    {srv.logo || "🏢"}
+                                  </div>
+                                )}
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-1.5">
+                                    <p className="text-sm font-bold text-[#1A1C1C] line-clamp-1">{srv.name}</p>
+                                    {srv.verified && (
+                                      <span title="Verified Provider">
+                                        <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+                                      </span>
+                                    )}
+                                  </div>
+                                  <p className="text-xs text-[#7D7387] line-clamp-1 mt-0.5">{srv.description}</p>
+                                </div>
+                              </div>
+                            </td>
+
+                            <td className="px-5 py-4 whitespace-nowrap">
+                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-lg text-xs font-bold bg-[#F3EEFF] text-[#7004DC] border border-[#E9D9FF] mb-1">
+                                {srv.category.toUpperCase()}
+                              </span>
+                              <p className="text-xs text-[#4B4355] font-semibold">{srv.type}</p>
+                            </td>
+
+                            <td className="px-5 py-4">
+                              <div className="flex items-start gap-1.5 text-xs text-[#4B4355]">
+                                <MapPin className="w-3.5 h-3.5 text-amber-600 shrink-0 mt-0.5" />
+                                <span className="line-clamp-2">{srv.location}</span>
+                              </div>
+                            </td>
+
+                            <td className="px-5 py-4 whitespace-nowrap text-xs text-[#4B4355] space-y-1">
+                              {srv.contactPhone && (
+                                <div className="flex items-center gap-1.5">
+                                  <Phone className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                                  <span>{srv.contactPhone}</span>
+                                </div>
+                              )}
+                              {srv.contactEmail && (
+                                <div className="flex items-center gap-1.5">
+                                  <Mail className="w-3.5 h-3.5 text-sky-600 shrink-0" />
+                                  <span className="truncate max-w-[140px]">{srv.contactEmail}</span>
+                                </div>
+                              )}
+                              {srv.contactUrl && (
+                                <div className="flex items-center gap-1.5">
+                                  <Globe className="w-3.5 h-3.5 text-[#7004DC] shrink-0" />
+                                  <a href={srv.contactUrl} target="_blank" rel="noreferrer" className="text-[#7004DC] hover:underline truncate max-w-[140px]">
+                                    Booking Link ↗
+                                  </a>
+                                </div>
+                              )}
+                            </td>
+
+                            <td className="px-5 py-4 whitespace-nowrap">
+                              <p className="text-xs font-bold text-[#1A1C1C]">{srv.price}</p>
+                              <div className="flex items-center gap-1 text-[11px] text-[#7D7387] mt-0.5">
+                                <Clock className="w-3 h-3" />
+                                <span>{srv.availability}</span>
+                              </div>
+                            </td>
+
+                            <td className="px-5 py-4 whitespace-nowrap">
+                              <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold ${srv.status === "unpublished" ? "bg-slate-100 text-slate-600 border border-slate-200" : "bg-green-100 text-green-700 border border-green-200"}`}>
+                                {srv.status === "unpublished" ? "Unpublished" : "Published"}
+                              </span>
+                            </td>
+
+                            <td className="px-5 py-4 text-right pr-6 whitespace-nowrap">
+                              <div className="flex items-center justify-end gap-1.5">
+                                <button
+                                  onClick={() => handleToggleServiceStatus(srv)}
+                                  className={`w-8 h-8 rounded-lg flex items-center justify-center transition ${srv.status === "unpublished" ? "text-slate-400 hover:text-green-600 hover:bg-green-50" : "text-green-600 hover:text-slate-500 hover:bg-slate-100"}`}
+                                  title={srv.status === "unpublished" ? "Publish Service" : "Unpublish Service"}
+                                >
+                                  {srv.status === "unpublished" ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                                </button>
+                                <button onClick={() => handleOpenEditService(srv)} className="w-8 h-8 rounded-lg text-[#7004DC] hover:bg-violet-100/70 flex items-center justify-center transition" title="Edit Service">
+                                  <Edit3 className="w-4 h-4" />
+                                </button>
+                                <button onClick={() => handleDeleteService(srv.id, srv.name)} className="w-8 h-8 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 flex items-center justify-center transition" title="Delete Service">
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
-                ))}
-              </div>
+                </div>
+              )}
             </div>
           )}
+
         </div>
 
         {/* ── QUESTION DETAIL + REPLY PANEL ── */}
@@ -415,7 +714,6 @@ export default function CommunityPage() {
               </div>
             ) : selectedQuestion && (
               <div className="flex flex-col flex-1 overflow-hidden">
-                {/* Question */}
                 <div className="p-5 border-b border-gray-100 shrink-0 space-y-3">
                   <div className="flex items-start gap-2">
                     <span className={`shrink-0 mt-0.5 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${selectedQuestion.question.isDeleted ? "bg-red-100 text-red-600" : selectedQuestion.question.status === "SOLVED" ? "bg-green-100 text-green-700" : "bg-orange-100 text-orange-600"}`}>
@@ -442,7 +740,6 @@ export default function CommunityPage() {
                   )}
                 </div>
 
-                {/* Answers */}
                 <div className="flex-1 overflow-y-auto p-5 space-y-4">
                   <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
                     {selectedQuestion.answers.length} {selectedQuestion.answers.length === 1 ? "ANSWER" : "ANSWERS"}
@@ -476,7 +773,6 @@ export default function CommunityPage() {
                   ))}
                 </div>
 
-                {/* Admin Reply Box */}
                 {!selectedQuestion.question.isDeleted && (
                   <div className="p-5 border-t border-gray-100 shrink-0 space-y-3">
                     <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">ADMIN REPLY</p>
@@ -501,229 +797,298 @@ export default function CommunityPage() {
           </div>
         )}
 
+      </div>{/* end content wrapper */}
 
-      </div>{/* end flex-1 overflow-hidden content wrapper */}
-
-      {/* ────────────────── MODALS ────────────────── */}
-
-
-      {/* SUSPEND GROUP MODAL */}
-      {suspendGroup && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-          <div className="bg-white rounded-[24px] w-full max-w-md shadow-2xl overflow-hidden">
-            <div className="px-7 py-6">
-              <div className="flex items-center gap-2 mb-5">
-                <AlertTriangle className="w-5 h-5 text-red-600" />
-                <h3 className="text-xl font-extrabold text-red-600">Suspend This Group?</h3>
-              </div>
-              <div className="bg-[#F7F5FA] rounded-xl p-4 flex items-center gap-3 mb-5">
-                <div className="w-10 h-10 rounded-xl bg-[#EDDCFF] flex items-center justify-center text-lg">{suspendGroup.icon}</div>
-                <div>
-                  <p className="font-bold text-sm text-[#1A1C1C]">{suspendGroup.name}</p>
-                  <p className="text-xs text-[#7D7387]">{suspendGroup.members} members</p>
-                </div>
-              </div>
-              <div className="mb-5">
-                <p className="text-sm font-semibold text-[#1A1C1C] mb-3">When you suspend a group:</p>
-                <div className="space-y-2">
-                  {["Members cannot post new messages", "New members cannot join", "Existing content remains visible", "Moderators can still manage content", "Group can be reactivated anytime"].map(item => (
-                    <div key={item} className="flex items-center gap-2 text-sm text-[#4B4355]">
-                      <CheckCircle2 className="w-4 h-4 text-slate-400 shrink-0" /> {item}
-                    </div>
-                  ))}
-                </div>
-              </div>
-              <div className="mb-4">
-                <label className="block text-sm font-semibold text-[#1A1C1C] mb-2">Reason for Suspension</label>
-                <div className="relative">
-                  <select value={suspendReason} onChange={e => setSuspendReason(e.target.value)} className="w-full h-11 rounded-xl border border-gray-200 px-4 text-sm outline-none focus:border-red-400 bg-white appearance-none pr-8">
-                    {["Spam/Harassment", "Misinformation", "Community Violation", "Inactive", "Other"].map(r => <option key={r}>{r}</option>)}
-                  </select>
-                  <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-                </div>
-              </div>
-              <div className="mb-6">
-                <label className="block text-sm font-semibold text-[#1A1C1C] mb-2">Add optional note (visible to moderators only)</label>
-                <textarea value={suspendNote} onChange={e => setSuspendNote(e.target.value)} rows={3} placeholder="Why is this group being suspended?" className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm outline-none focus:border-red-400 resize-none" />
-              </div>
-              <div className="flex gap-3">
-                <button onClick={() => setSuspendGroup(null)} className="flex-1 h-12 rounded-xl border border-gray-200 text-[#4B4355] font-semibold text-sm hover:bg-gray-50">Cancel</button>
-                <button onClick={() => setSuspendGroup(null)} className="flex-1 h-12 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-sm transition">Suspend Group</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* SEND MESSAGE MODAL */}
-      {messageGroup && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-          <div className="bg-white rounded-[24px] w-full max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between px-7 py-5 border-b border-gray-100">
+      {/* ────────────────── CREATE / EDIT SERVICE MODAL ────────────────── */}
+      {isServiceModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+          <div className="bg-white rounded-3xl w-full max-w-2xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden">
+            {/* Header */}
+            <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50">
               <div>
-                <h3 className="text-xl font-extrabold text-[#1A1C1C]">Send Message to Group</h3>
-                <p className="text-xs text-[#7D7387] mt-0.5">Notify all {messageGroup.members} members in the community</p>
+                <h3 className="text-lg font-extrabold text-[#1A1C1C]">
+                  {editingServiceId ? "Edit Professional Service" : "Publish New Professional Service"}
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  {editingServiceId ? "Modify verified provider and contact details" : "Add a new therapist, vendor, or support provider for mobile community users"}
+                </p>
               </div>
-              <button onClick={() => setMessageGroup(null)} className="w-8 h-8 rounded-full hover:bg-gray-100 flex items-center justify-center"><X className="w-4 h-4 text-slate-500" /></button>
+              <button
+                onClick={() => setIsServiceModalOpen(false)}
+                className="w-8 h-8 rounded-full hover:bg-gray-200 flex items-center justify-center transition"
+              >
+                <X className="w-4 h-4 text-slate-500" />
+              </button>
             </div>
-            <div className="px-7 py-6 space-y-5">
-              <div>
-                <label className="block text-sm font-semibold text-[#1A1C1C] mb-2">Subject</label>
-                <input value={msgSubject} onChange={e => setMsgSubject(e.target.value)} placeholder="Enter message subject..." className="w-full h-12 rounded-xl bg-[#F7F5FA] px-4 text-sm outline-none border border-transparent focus:border-[#8A38F5]" />
-              </div>
-              <div>
-                <label className="block text-sm font-semibold text-[#1A1C1C] mb-2">Message</label>
-                <textarea value={msgBody} onChange={e => setMsgBody(e.target.value)} rows={5} placeholder="Write your message to group members..." className="w-full rounded-xl bg-[#F7F5FA] px-4 py-3 text-sm outline-none border border-transparent focus:border-[#8A38F5] resize-none" />
-              </div>
-              <div className="grid grid-cols-2 gap-6">
-                <div>
-                  <p className="text-sm font-semibold text-[#1A1C1C] mb-3">Message Type</p>
-                  <div className="space-y-2">
-                    {["General Update", "Urgent Alert", "Announcement"].map(type => (
-                      <label key={type} className="flex items-center gap-2 cursor-pointer">
-                        <div onClick={() => setMsgType(type)} className={`w-4 h-4 rounded-full border-2 flex items-center justify-center cursor-pointer ${msgType === type ? "border-[#7004DC]" : "border-gray-300"}`}>
-                          {msgType === type && <div className="w-2 h-2 rounded-full bg-[#7004DC]" />}
-                        </div>
-                        <span className="text-sm text-[#4B4355]">{type}</span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-                <div>
-                  <p className="text-sm font-semibold text-[#1A1C1C] mb-3">Send To</p>
-                  <div className="space-y-2">
-                    {["All Members", "Active Members Only", "Moderators Only"].map(opt => (
-                      <label key={opt} className="flex items-center gap-2 cursor-pointer">
-                        <input type="checkbox" checked={msgSendTo.includes(opt)} onChange={e => setMsgSendTo(prev => e.target.checked ? [...prev, opt] : prev.filter(x => x !== opt))} className="w-4 h-4 rounded accent-[#7004DC]" />
-                        <span className="text-sm text-[#4B4355]">{opt}</span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              </div>
 
-              {/* PREVIEW */}
-              <div>
-                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">MESSAGE PREVIEW:</p>
-                <div className="bg-[#F7F5FA] rounded-xl p-4 flex items-start gap-3">
-                  <div className="w-9 h-9 rounded-full bg-[#7004DC] flex items-center justify-center text-white shrink-0">📢</div>
-                  <div className="flex-1">
-                    <div className="flex items-center justify-between">
-                      <p className="text-sm font-bold text-[#1A1C1C]">{msgSubject || "Important Group Update"}</p>
-                      <span className="text-xs text-slate-400">Just now</span>
-                    </div>
-                    <p className="text-xs text-[#7D7387] mt-1">{msgBody || "Preview your message here as you type in the fields above..."}</p>
-                    <span className="inline-block mt-2 px-2 py-0.5 rounded bg-[#D2A500] text-[#4F3D00] text-[9px] font-bold uppercase">{msgType.split(" ")[0]}</span>
-                    <span className="ml-2 text-[10px] text-slate-400">via DigiAbility Admin</span>
-                  </div>
+            {/* Form */}
+            <form onSubmit={handleSaveService} className="flex-1 overflow-y-auto p-6 space-y-5">
+              {serviceErrorMsg && (
+                <div className="p-3.5 bg-red-50 border border-red-200 text-red-600 rounded-xl text-sm font-semibold">
+                  {serviceErrorMsg}
                 </div>
-              </div>
-
-              <div className="flex gap-3 pt-2 border-t border-gray-100">
-                <button onClick={() => setMessageGroup(null)} className="flex-1 h-12 rounded-xl border border-gray-200 text-[#4B4355] font-semibold text-sm hover:bg-gray-50">Cancel</button>
-                <button onClick={() => setMessageGroup(null)} disabled={!msgSubject.trim() || !msgBody.trim()} className="flex-1 h-12 rounded-xl bg-[#7004DC] hover:bg-[#5c03b7] disabled:bg-violet-200 text-white font-bold text-sm transition flex items-center justify-center gap-2">
-                  <Send className="w-4 h-4" /> Send Message
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* APPROVE STORY MODAL */}
-      {approveStory && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-          <div className="bg-white rounded-[24px] w-full max-w-md shadow-2xl overflow-hidden">
-            <div className="px-7 py-6">
-              <h3 className="text-xl font-extrabold text-[#1A1C1C] mb-4">Approve Story?</h3>
-              <div className="bg-[#F7F5FA] rounded-xl p-4 mb-5">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="px-2 py-0.5 rounded bg-violet-100 text-[#7004DC] text-[9px] font-bold uppercase">NEW SUBMISSION</span>
-                  <span className="text-xs text-slate-400">{approveStory.time}</span>
+              )}
+              {serviceSuccessMsg && (
+                <div className="p-3.5 bg-green-50 border border-green-200 text-green-700 rounded-xl text-sm font-semibold flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4" /> {serviceSuccessMsg}
                 </div>
-                <h4 className="font-bold text-sm text-[#1A1C1C] mb-1">{approveStory.title}</h4>
-                <p className="text-xs text-[#7D7387]">Author: {approveStory.author}</p>
-                <p className="text-xs text-[#7D7387] mt-1 line-clamp-2">{approveStory.desc}</p>
-              </div>
-              <div className="flex items-center gap-2 mb-5 text-sm text-green-600 font-semibold">
-                <CheckCircle2 className="w-4 h-4" /> Standard compliance check passed
-              </div>
-              <div className="flex gap-3">
-                <button onClick={() => setApproveStory(null)} className="flex-1 h-12 rounded-xl border border-gray-200 text-[#4B4355] font-semibold text-sm hover:bg-gray-50">Cancel</button>
-                <button onClick={() => { setStories(prev => prev.map(s => s.id === approveStory.id ? { ...s, status: "published", banner: "PUBLISHED", bannerColor: "bg-green-500" } : s)); setApproveStory(null); }} className="flex-1 h-12 rounded-xl bg-green-500 hover:bg-green-600 text-white font-bold text-sm transition">Approve & Publish</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+              )}
 
-      {/* REJECT STORY MODAL */}
-      {rejectStory && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-          <div className="bg-white rounded-[24px] w-full max-w-md shadow-2xl overflow-hidden">
-            <div className="flex items-center justify-between px-7 py-5 border-b border-gray-100">
-              <h3 className="text-xl font-extrabold text-[#1A1C1C]">Reject Story</h3>
-              <button onClick={() => setRejectStory(null)} className="w-8 h-8 rounded-full hover:bg-gray-100 flex items-center justify-center"><X className="w-4 h-4 text-slate-500" /></button>
-            </div>
-            <div className="px-7 py-6 space-y-4">
+              {/* COVER IMAGE OR LOGO */}
               <div>
-                <p className="text-sm font-semibold text-[#1A1C1C] mb-3">Reason for Rejection</p>
-                <div className="space-y-2">
-                  {["Inappropriate Content", "Promotional/Spam", "Offensive Language", "False Information", "Other"].map(r => (
-                    <label key={r} className="flex items-center gap-2 cursor-pointer">
-                      <div onClick={() => setRejectReason(r)} className={`w-4 h-4 rounded-full border-2 flex items-center justify-center cursor-pointer ${rejectReason === r ? "border-[#7004DC]" : "border-gray-300"}`}>
-                        {rejectReason === r && <div className="w-2 h-2 rounded-full bg-[#7004DC]" />}
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-2">
+                  Provider Image / Logo <span className="normal-case font-normal text-slate-400">(Upload from Device)</span>
+                </label>
+
+                {serviceFormData.image ? (
+                  <div className="relative rounded-2xl border-2 border-violet-200 overflow-hidden bg-slate-50 p-2 flex items-center gap-4">
+                    <img
+                      src={serviceFormData.image}
+                      alt="Provider Preview"
+                      className="w-20 h-20 rounded-xl object-cover border border-slate-200 shadow-sm"
+                    />
+                    <div className="flex-1">
+                      <p className="text-xs font-bold text-[#1A1C1C]">Image attached</p>
+                      <p className="text-[11px] text-slate-500 mt-0.5">Displays in the mobile services feed</p>
+                      <div className="flex items-center gap-2 mt-2">
+                        <button
+                          type="button"
+                          onClick={() => fileInputRef.current?.click()}
+                          className="px-3 py-1 bg-white border border-slate-300 hover:border-[#7004DC] rounded-lg text-xs font-bold text-[#7004DC] transition"
+                        >
+                          Replace Image
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setServiceFormData(prev => ({ ...prev, image: "" }))}
+                          className="px-3 py-1 bg-red-50 text-red-600 hover:bg-red-100 rounded-lg text-xs font-bold transition"
+                        >
+                          Remove
+                        </button>
                       </div>
-                      <span className="text-sm text-[#4B4355]">{r}</span>
-                    </label>
-                  ))}
-                </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div
+                    onClick={() => fileInputRef.current?.click()}
+                    className="border-2 border-dashed border-slate-300 hover:border-[#7004DC] rounded-2xl p-5 text-center cursor-pointer bg-[#FBF9FE] transition group"
+                  >
+                    <div className="w-10 h-10 rounded-xl bg-white shadow-sm flex items-center justify-center mx-auto mb-2 text-[#7004DC] group-hover:scale-110 transition">
+                      <Upload className="w-5 h-5" />
+                    </div>
+                    <p className="text-xs font-bold text-[#1A1C1C]">Click to upload provider photo or logo</p>
+                    <p className="text-[11px] text-slate-400 mt-0.5">PNG, JPG, WEBP up to 5MB</p>
+                  </div>
+                )}
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleImageFileChange}
+                  className="hidden"
+                />
               </div>
-              <div>
-                <label className="block text-sm font-semibold text-[#1A1C1C] mb-2">Author Note</label>
-                <textarea value={rejectNote} onChange={e => setRejectNote(e.target.value)} rows={3} placeholder="Explain why the story was rejected..." className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm outline-none focus:border-red-400 resize-none" />
-              </div>
-              <div className="flex gap-3 pt-2 border-t border-gray-100">
-                <button onClick={() => setRejectStory(null)} className="flex-1 h-12 rounded-xl border border-gray-200 text-[#4B4355] font-semibold text-sm hover:bg-gray-50">Cancel</button>
-                <button onClick={() => { setStories(prev => prev.map(s => s.id === rejectStory.id ? { ...s, status: "rejected", banner: "REJECTED", bannerColor: "bg-red-500", rejectionReason: `Reason: ${rejectReason}` } : s)); setRejectStory(null); }} className="flex-1 h-12 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-sm transition">Reject</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
-      {/* FEATURE STORY MODAL */}
-      {featureStory && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-          <div className="bg-white rounded-[24px] w-full max-w-sm shadow-2xl overflow-hidden">
-            <div className="px-6 py-5">
-              <h3 className="text-xl font-extrabold text-[#1A1C1C] mb-4">Feature This Story</h3>
-              <div className="relative mb-4">
-                <img src={featureStory.img} alt="" className="w-full h-40 object-cover rounded-xl" />
-                <span className="absolute top-2 left-2 px-2 py-1 rounded bg-[#D2A500] text-[#4F3D00] text-[9px] font-bold uppercase">PREMIUM SPOT</span>
-              </div>
-              <div className="mb-4">
-                <p className="text-sm font-semibold text-[#1A1C1C] mb-3">Feature Duration</p>
-                <div className="grid grid-cols-3 gap-2">
-                  {[7, 14, 30].map(d => (
-                    <button key={d} onClick={() => setFeatureDuration(d)} className={`h-14 rounded-xl border-2 text-sm font-bold transition ${featureDuration === d ? "border-[#7004DC] bg-violet-50 text-[#7004DC]" : "border-gray-200 text-[#4B4355] hover:border-gray-300"}`}>
-                      <div className="text-xl font-extrabold">{d}</div>
-                      <div className="text-[9px] uppercase tracking-wider">DAYS</div>
+              {/* TWO COLUMN GRID */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">
+                    Provider / Service Name *
+                  </label>
+                  <input
+                    name="name"
+                    required
+                    value={serviceFormData.name}
+                    onChange={e => setServiceFormData(prev => ({ ...prev, name: e.target.value }))}
+                    placeholder="e.g. Dr. Sarah Jenkins"
+                    className="w-full h-11 rounded-xl border border-slate-200 px-4 text-sm outline-none focus:border-[#7004DC]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">
+                    Service Category *
+                  </label>
+                  <select
+                    value={serviceFormData.category}
+                    onChange={e => setServiceFormData(prev => ({ ...prev, category: e.target.value }))}
+                    className="w-full h-11 rounded-xl border border-slate-200 px-4 text-sm outline-none focus:border-[#7004DC] bg-white"
+                  >
+                    {serviceMasterCategories.length > 0
+                      ? serviceMasterCategories.map(c => <option key={c.id} value={c.name}>{c.name}</option>)
+                      : [
+                          "Therapists",
+                          "Equipment Vendor",
+                          "Respite Care",
+                          "Legal Services",
+                          "Transportation",
+                          "Medical Support",
+                        ].map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
+
+                <div className="md:col-span-2">
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">
+                    Professional Title / Sub-type *
+                  </label>
+                  <input
+                    name="type"
+                    required
+                    value={serviceFormData.type}
+                    onChange={e => setServiceFormData(prev => ({ ...prev, type: e.target.value }))}
+                    placeholder="e.g. Pediatric Occupational Therapist, Custom Wheelchair Specialist"
+                    className="w-full h-11 rounded-xl border border-slate-200 px-4 text-sm outline-none focus:border-[#7004DC]"
+                  />
+                </div>
+
+                <div className="md:col-span-2">
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">
+                    Location &amp; Service Address *
+                  </label>
+                  <input
+                    required
+                    value={serviceFormData.location}
+                    onChange={e => setServiceFormData(prev => ({ ...prev, location: e.target.value }))}
+                    placeholder="e.g. Downtown Clinic & Home Visits, Westside Hub"
+                    className="w-full h-11 rounded-xl border border-slate-200 px-4 text-sm outline-none focus:border-[#7004DC]"
+                  />
+                </div>
+
+                <div className="md:col-span-2">
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">
+                    Description &amp; Specialties *
+                  </label>
+                  <textarea
+                    required
+                    rows={3}
+                    value={serviceFormData.description}
+                    onChange={e => setServiceFormData(prev => ({ ...prev, description: e.target.value }))}
+                    placeholder="Specialized in pediatric therapy, accessibility fittings, legal counsel..."
+                    className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-[#7004DC] resize-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">
+                    Pricing / Rate *
+                  </label>
+                  <input
+                    required
+                    value={serviceFormData.price}
+                    onChange={e => setServiceFormData(prev => ({ ...prev, price: e.target.value }))}
+                    placeholder="e.g. $80 - $150 / session, Free consultation"
+                    className="w-full h-11 rounded-xl border border-slate-200 px-4 text-sm outline-none focus:border-[#7004DC]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">
+                    Availability *
+                  </label>
+                  <input
+                    required
+                    value={serviceFormData.availability}
+                    onChange={e => setServiceFormData(prev => ({ ...prev, availability: e.target.value }))}
+                    placeholder="e.g. Next available: Tomorrow, Open 9AM - 6PM"
+                    className="w-full h-11 rounded-xl border border-slate-200 px-4 text-sm outline-none focus:border-[#7004DC]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">
+                    Contact Phone <span className="normal-case font-normal">(optional)</span>
+                  </label>
+                  <input
+                    type="tel"
+                    value={serviceFormData.contactPhone}
+                    onChange={e => setServiceFormData(prev => ({ ...prev, contactPhone: e.target.value }))}
+                    placeholder="+1 (555) 234-5678"
+                    className="w-full h-11 rounded-xl border border-slate-200 px-4 text-sm outline-none focus:border-[#7004DC]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">
+                    Contact Email <span className="normal-case font-normal">(optional)</span>
+                  </label>
+                  <input
+                    type="email"
+                    value={serviceFormData.contactEmail}
+                    onChange={e => setServiceFormData(prev => ({ ...prev, contactEmail: e.target.value }))}
+                    placeholder="provider@example.com"
+                    className="w-full h-11 rounded-xl border border-slate-200 px-4 text-sm outline-none focus:border-[#7004DC]"
+                  />
+                </div>
+
+                <div className="md:col-span-2">
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">
+                    Website / Booking URL <span className="normal-case font-normal">(optional)</span>
+                  </label>
+                  <input
+                    type="url"
+                    value={serviceFormData.contactUrl}
+                    onChange={e => setServiceFormData(prev => ({ ...prev, contactUrl: e.target.value }))}
+                    placeholder="https://services.digiability.org/booking"
+                    className="w-full h-11 rounded-xl border border-slate-200 px-4 text-sm outline-none focus:border-[#7004DC]"
+                  />
+                </div>
+
+                <div className="md:col-span-2 flex items-center gap-2 pt-1">
+                  <input
+                    type="checkbox"
+                    id="verified"
+                    checked={serviceFormData.verified}
+                    onChange={e => setServiceFormData(prev => ({ ...prev, verified: e.target.checked }))}
+                    className="w-4 h-4 rounded accent-[#7004DC] cursor-pointer"
+                  />
+                  <label htmlFor="verified" className="text-xs font-bold text-[#1A1C1C] cursor-pointer flex items-center gap-1">
+                    <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                    Verified Provider Badge (Recommended)
+                  </label>
+                </div>
+
+                <div className="md:col-span-2">
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">
+                    Publish Status
+                  </label>
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setServiceFormData(prev => ({ ...prev, status: "published" }))}
+                      className={`h-11 rounded-xl text-xs font-bold border flex items-center justify-center gap-2 transition ${serviceFormData.status === "published" ? "bg-green-50 text-green-700 border-green-500 shadow-sm" : "bg-white text-slate-500 border-slate-200 hover:bg-slate-50"}`}
+                    >
+                      <Eye className="w-4 h-4" /> Published (Live on App)
                     </button>
-                  ))}
+                    <button
+                      type="button"
+                      onClick={() => setServiceFormData(prev => ({ ...prev, status: "unpublished" }))}
+                      className={`h-11 rounded-xl text-xs font-bold border flex items-center justify-center gap-2 transition ${serviceFormData.status === "unpublished" ? "bg-amber-50 text-amber-700 border-amber-500 shadow-sm" : "bg-white text-slate-500 border-slate-200 hover:bg-slate-50"}`}
+                    >
+                      <EyeOff className="w-4 h-4" /> Unpublished (Draft / Hidden)
+                    </button>
+                  </div>
                 </div>
               </div>
-              <div className="bg-yellow-50 rounded-xl p-3 border border-yellow-200 mb-5 flex gap-2">
-                <Star className="w-4 h-4 text-[#D2A500] shrink-0 mt-0.5" />
-                <p className="text-xs text-[#755B00]">Featured stories get highlighted in the success stories carousel at the top of the community homepage.</p>
-              </div>
-              <div className="flex gap-3">
-                <button onClick={() => setFeatureStory(null)} className="flex-1 h-11 rounded-xl border border-gray-200 text-[#4B4355] font-semibold text-sm hover:bg-gray-50">Cancel</button>
-                <button onClick={() => setFeatureStory(null)} className="flex-1 h-11 rounded-xl bg-[#D2A500] hover:bg-[#b89300] text-[#4F3D00] font-bold text-sm flex items-center justify-center gap-1.5">
-                  <Star className="w-4 h-4" /> Feature Story
+
+              {/* Modal Footer */}
+              <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setIsServiceModalOpen(false)}
+                  className="px-5 py-2.5 rounded-xl border border-slate-200 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={serviceSubmitting}
+                  className="px-6 py-2.5 rounded-xl bg-[#7004DC] text-white text-sm font-bold hover:bg-[#5c03b7] transition flex items-center gap-2 disabled:opacity-50"
+                >
+                  {serviceSubmitting && <Loader2 className="w-4 h-4 animate-spin" />}
+                  {editingServiceId ? "Save Changes" : "Publish Service"}
                 </button>
               </div>
-            </div>
+            </form>
           </div>
         </div>
       )}

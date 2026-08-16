@@ -7,6 +7,7 @@ import {
   ArrowLeft, Users, Heart, Settings, Trash2, UserPlus,
   CheckCircle2, AlertTriangle, ChevronDown, X, Loader2,
   Search, Shield, MessageSquare, ChevronRight, Pencil, Save,
+  Ban, Send, Clock, BellRing,
 } from "lucide-react";
 
 interface GroupDetail {
@@ -81,6 +82,28 @@ export default function GroupDetailPage() {
   const [deleting,     setDeleting]     = useState(false);
   const [deleteError,  setDeleteError]  = useState("");
   const [actionMsg,    setActionMsg]    = useState("");
+
+  // Message modal state
+  const [showMessageModal, setShowMessageModal] = useState(false);
+  const [msgSubject, setMsgSubject] = useState("");
+  const [msgBody, setMsgBody] = useState("");
+  const [msgType, setMsgType] = useState("General Update");
+  const [msgSendTo, setMsgSendTo] = useState<string[]>(["All Members"]);
+  const [sendingMsg, setSendingMsg] = useState(false);
+
+  // Suspension state
+  const [showSuspendModal, setShowSuspendModal] = useState(false);
+  const [suspendPeriod, setSuspendPeriod] = useState("14 Days");
+  const [suspendReason, setSuspendReason] = useState("Community Guidelines Violation");
+  const [suspendNote, setSuspendNote] = useState("");
+  const [suspending, setSuspending] = useState(false);
+  const [suspensionInfo, setSuspensionInfo] = useState<{
+    isSuspended: boolean;
+    period?: string;
+    reason?: string;
+    suspendedAt?: string;
+    note?: string;
+  } | null>(null);
 
   // ── fetch group ──
   const fetchGroup = async () => {
@@ -187,6 +210,98 @@ export default function GroupDetailPage() {
       setDeleteError("Network error — could not reach the server.");
       setShowDelete(false);
     } finally { setDeleting(false); }
+  };
+
+  // ── send message ──
+  const handleSendMessage = async () => {
+    if (!msgSubject.trim() || !msgBody.trim()) return;
+    setSendingMsg(true);
+    try {
+      const res = await fetch(`/api/groups/${id}/message`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          subject: msgSubject.trim(),
+          message: msgBody.trim(),
+          messageType: msgType,
+          sendTo: msgSendTo,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setActionMsg("Message broadcasted to group members successfully.");
+        setShowMessageModal(false);
+        setMsgSubject("");
+        setMsgBody("");
+      } else {
+        setActionMsg(data.message || "Failed to send message.");
+      }
+    } catch {
+      setActionMsg("Network error — could not send message.");
+    } finally {
+      setSendingMsg(false);
+    }
+  };
+
+  // ── suspend group ──
+  const handleSuspend = async () => {
+    setSuspending(true);
+    try {
+      const res = await fetch(`/api/groups/${id}/suspend`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "suspend",
+          period: suspendPeriod,
+          reason: suspendReason,
+          note: suspendNote.trim(),
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setSuspensionInfo({
+          isSuspended: true,
+          period: suspendPeriod,
+          reason: suspendReason,
+          suspendedAt: new Date().toLocaleDateString("en-GB"),
+          note: suspendNote.trim(),
+        });
+        setActionMsg(`Group suspended for ${suspendPeriod}.`);
+        setShowSuspendModal(false);
+        fetchGroup();
+      } else {
+        setActionMsg(data.message || "Failed to suspend group.");
+      }
+    } catch {
+      setActionMsg("Network error while suspending group.");
+    } finally {
+      setSuspending(false);
+    }
+  };
+
+  // ── unsuspend group ──
+  const handleUnsuspend = async () => {
+    if (!confirm("Are you sure you want to reactivate and unsuspend this group?")) return;
+    setSuspending(true);
+    try {
+      const res = await fetch(`/api/groups/${id}/suspend`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "unsuspend" }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setSuspensionInfo(null);
+        setActionMsg("Group reactivated successfully.");
+        fetchGroup();
+      } else {
+        setActionMsg(data.message || "Failed to unsuspend group.");
+      }
+    } catch {
+      setActionMsg("Network error while unsuspending group.");
+    } finally {
+      setSuspending(false);
+    }
   };
 
   const filteredUsers = allUsers.filter(u =>
@@ -358,6 +473,74 @@ export default function GroupDetailPage() {
             </div>
           </div>
 
+          {/* ── SEND MESSAGE CARD ── */}
+          <div className="bg-white rounded-2xl p-5 shadow-sm border border-violet-100">
+            <div className="flex items-center gap-2 mb-2">
+              <MessageSquare className="w-4 h-4 text-[#7004DC]" />
+              <h4 className="text-sm font-extrabold text-[#1A1C1C]">Group Communication</h4>
+            </div>
+            <p className="text-xs text-[#7D7387] mb-3">Broadcast announcements or important updates directly to all active members of this group.</p>
+            <button
+              onClick={() => { setShowMessageModal(true); setMsgSubject(""); setMsgBody(""); }}
+              className="w-full h-10 rounded-xl bg-[#7004DC] hover:bg-[#5c03b7] text-white text-sm font-bold transition flex items-center justify-center gap-2 shadow-sm"
+            >
+              <Send className="w-4 h-4" /> Send Message to Group
+            </button>
+          </div>
+
+          {/* ── SUSPENSION & WARNING CARD ── */}
+          <div className={`rounded-2xl p-5 shadow-sm border ${suspensionInfo?.isSuspended ? "bg-amber-50/80 border-amber-200" : "bg-white border-orange-100"}`}>
+            <div className="flex items-center gap-2 mb-2">
+              <Ban className={`w-4 h-4 ${suspensionInfo?.isSuspended ? "text-amber-700" : "text-orange-600"}`} />
+              <h4 className={`text-sm font-extrabold ${suspensionInfo?.isSuspended ? "text-amber-900" : "text-[#1A1C1C]"}`}>
+                Group Suspension Controls
+              </h4>
+            </div>
+
+            {/* LIVE WARNING NOTICE IF SUSPENDED */}
+            {suspensionInfo?.isSuspended ? (
+              <div className="space-y-3">
+                <div className="bg-white/90 border border-amber-300 rounded-xl p-3.5 space-y-2">
+                  <div className="flex items-center gap-2 text-amber-800 font-extrabold text-xs uppercase tracking-wider">
+                    <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                    Warning: Group Is Currently Suspended
+                  </div>
+                  <p className="text-xs text-amber-900 leading-5">
+                    This group has been suspended for <strong className="underline decoration-amber-500 font-bold">{suspensionInfo.period}</strong>.
+                  </p>
+                  <p className="text-xs text-amber-800 bg-amber-100/70 rounded-lg p-2 font-medium">
+                    <strong>Reason:</strong> {suspensionInfo.reason}
+                    {suspensionInfo.note ? ` (${suspensionInfo.note})` : ""}
+                  </p>
+                  <p className="text-[11px] text-[#7D7387]">
+                    While suspended, members cannot post new messages, create polls, or join the group.
+                  </p>
+                </div>
+
+                <button
+                  onClick={handleUnsuspend}
+                  disabled={suspending}
+                  className="w-full h-10 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-300 text-white text-sm font-bold transition flex items-center justify-center gap-2 shadow-sm"
+                >
+                  {suspending ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+                  Reactivate / Unsuspend Group
+                </button>
+              </div>
+            ) : (
+              <div>
+                <p className="text-xs text-[#7D7387] mb-3 leading-4">
+                  Temporarily disable member interactions and posting with an explicit warning duration and reason.
+                </p>
+                <button
+                  onClick={() => { setShowSuspendModal(true); setSuspendNote(""); }}
+                  className="w-full h-10 rounded-xl border-2 border-orange-200 text-orange-600 hover:bg-orange-50 text-sm font-bold transition flex items-center justify-center gap-2"
+                >
+                  <Ban className="w-4 h-4" /> Suspend Group
+                </button>
+              </div>
+            )}
+          </div>
+
           {/* DANGER ZONE */}
           <div className="bg-white rounded-2xl p-5 shadow-sm border border-red-100">
             <h4 className="text-sm font-extrabold text-red-600 mb-3">Danger Zone</h4>
@@ -521,6 +704,183 @@ export default function GroupDetailPage() {
       {/* DROPDOWN BACKDROP */}
       {userDropOpen && (
         <div className="fixed inset-0 z-40" onClick={() => setUserDropOpen(false)} />
+      )}
+
+      {/* ── SEND MESSAGE TO GROUP MODAL ── */}
+      {showMessageModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+          <div className="bg-white rounded-[24px] w-full max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between px-7 py-5 border-b border-gray-100">
+              <div>
+                <h3 className="text-xl font-extrabold text-[#1A1C1C]">Send Message to Group</h3>
+                <p className="text-xs text-[#7D7387] mt-0.5">Notify {group.memberCount} members in <strong className="text-[#1A1C1C]">{group.name}</strong></p>
+              </div>
+              <button onClick={() => setShowMessageModal(false)} className="w-8 h-8 rounded-full hover:bg-gray-100 flex items-center justify-center transition"><X className="w-4 h-4 text-slate-500" /></button>
+            </div>
+            <div className="px-7 py-6 space-y-5">
+              <div>
+                <label className="block text-sm font-semibold text-[#1A1C1C] mb-2">Subject *</label>
+                <input value={msgSubject} onChange={e => setMsgSubject(e.target.value)} placeholder="e.g. Important Community Update" className="w-full h-12 rounded-xl bg-[#F7F5FA] px-4 text-sm outline-none border border-transparent focus:border-[#8A38F5] transition" />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-[#1A1C1C] mb-2">Message *</label>
+                <textarea value={msgBody} onChange={e => setMsgBody(e.target.value)} rows={4} placeholder="Write announcement or notification to group members..." className="w-full rounded-xl bg-[#F7F5FA] px-4 py-3 text-sm outline-none border border-transparent focus:border-[#8A38F5] resize-none transition" />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Message Type</p>
+                  <div className="space-y-2">
+                    {["General Update", "Urgent Alert", "Announcement"].map(type => (
+                      <label key={type} className="flex items-center gap-2 cursor-pointer text-xs font-medium text-[#4B4355]">
+                        <input type="radio" name="msgType" checked={msgType === type} onChange={() => setMsgType(type)} className="accent-[#7004DC]" />
+                        {type}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Target Audience</p>
+                  <div className="space-y-2">
+                    {["All Members", "Active Members", "Moderators Only"].map(opt => (
+                      <label key={opt} className="flex items-center gap-2 cursor-pointer text-xs font-medium text-[#4B4355]">
+                        <input type="checkbox" checked={msgSendTo.includes(opt)} onChange={e => setMsgSendTo(prev => e.target.checked ? [...prev, opt] : prev.filter(x => x !== opt))} className="accent-[#7004DC] rounded" />
+                        {opt}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* LIVE MESSAGE PREVIEW */}
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">LIVE PREVIEW:</p>
+                <div className="bg-[#F7F5FA] rounded-xl p-4 flex items-start gap-3 border border-[#E9E4F0]">
+                  <div className="w-9 h-9 rounded-full bg-[#7004DC] flex items-center justify-center text-white shrink-0">📢</div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm font-bold text-[#1A1C1C] truncate">{msgSubject || "Important Group Update"}</p>
+                      <span className="text-[11px] text-slate-400 shrink-0">Just now</span>
+                    </div>
+                    <p className="text-xs text-[#7D7387] mt-1 line-clamp-3">{msgBody || "Type your message above to see how it will appear to members in the mobile app..."}</p>
+                    <span className="inline-block mt-2 px-2 py-0.5 rounded bg-[#D2A500] text-[#4F3D00] text-[9px] font-bold uppercase">{msgType}</span>
+                    <span className="ml-2 text-[10px] text-slate-400">via DigiAbility Admin</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex gap-3 pt-3 border-t border-gray-100">
+                <button onClick={() => setShowMessageModal(false)} className="flex-1 h-12 rounded-xl border border-gray-200 text-[#4B4355] font-semibold text-sm hover:bg-gray-50 transition">Cancel</button>
+                <button onClick={handleSendMessage} disabled={!msgSubject.trim() || !msgBody.trim() || sendingMsg} className="flex-1 h-12 rounded-xl bg-[#7004DC] hover:bg-[#5c03b7] disabled:bg-violet-200 text-white font-bold text-sm transition flex items-center justify-center gap-2">
+                  {sendingMsg ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />} Send Message
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── SUSPEND GROUP MODAL WITH PERIOD & REASON WARNING ── */}
+      {showSuspendModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+          <div className="bg-white rounded-[24px] w-full max-w-md shadow-2xl overflow-hidden">
+            <div className="px-7 py-6">
+              <div className="flex items-center gap-2 mb-4">
+                <AlertTriangle className="w-5 h-5 text-red-600" />
+                <h3 className="text-xl font-extrabold text-red-600">Suspend Group</h3>
+              </div>
+
+              <div className="bg-[#F7F5FA] rounded-xl p-3.5 flex items-center gap-3 mb-4">
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${group.subType === "CARE_CIRCLE" ? "bg-pink-100 text-pink-600" : "bg-violet-100 text-violet-600"}`}>
+                  {group.subType === "CARE_CIRCLE" ? <Heart className="w-5 h-5" /> : <Users className="w-5 h-5" />}
+                </div>
+                <div>
+                  <p className="font-bold text-sm text-[#1A1C1C]">{group.name}</p>
+                  <p className="text-xs text-[#7D7387]">{group.memberCount} active members</p>
+                </div>
+              </div>
+
+              {/* SUSPENSION DURATION SELECTION */}
+              <div className="mb-4">
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">
+                  Suspension Period / Duration *
+                </label>
+                <div className="relative">
+                  <select
+                    value={suspendPeriod}
+                    onChange={e => setSuspendPeriod(e.target.value)}
+                    className="w-full h-11 rounded-xl border border-gray-200 px-4 text-sm font-semibold outline-none focus:border-red-400 bg-white appearance-none pr-8"
+                  >
+                    {["24 Hours", "3 Days", "7 Days", "14 Days", "30 Days", "90 Days", "Indefinite / Until Review"].map(p => (
+                      <option key={p} value={p}>{p}</option>
+                    ))}
+                  </select>
+                  <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                </div>
+              </div>
+
+              {/* REASON SELECTION */}
+              <div className="mb-4">
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">
+                  Reason for Suspension *
+                </label>
+                <div className="relative">
+                  <select
+                    value={suspendReason}
+                    onChange={e => setSuspendReason(e.target.value)}
+                    className="w-full h-11 rounded-xl border border-gray-200 px-4 text-sm font-semibold outline-none focus:border-red-400 bg-white appearance-none pr-8"
+                  >
+                    {[
+                      "Community Guidelines Violation",
+                      "Spam / Harassment",
+                      "Inappropriate / Offensive Content",
+                      "Misinformation",
+                      "Terms of Service Violation",
+                      "Inactive / Abandoned Group",
+                      "Other",
+                    ].map(r => (
+                      <option key={r} value={r}>{r}</option>
+                    ))}
+                  </select>
+                  <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                </div>
+              </div>
+
+              {/* OPTIONAL NOTE */}
+              <div className="mb-4">
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">
+                  Moderator Note (Optional)
+                </label>
+                <textarea
+                  value={suspendNote}
+                  onChange={e => setSuspendNote(e.target.value)}
+                  rows={2}
+                  placeholder="Additional context or investigation notes..."
+                  className="w-full rounded-xl border border-gray-200 px-3 py-2 text-xs outline-none focus:border-red-400 resize-none"
+                />
+              </div>
+
+              {/* WARNING BOX PREVIEW */}
+              <div className="bg-red-50 border border-red-200 rounded-xl p-3 mb-5">
+                <p className="text-[11px] font-bold text-red-700 flex items-center gap-1.5 mb-1">
+                  <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                  Warning to Group:
+                </p>
+                <p className="text-xs text-red-800 leading-4">
+                  "This group will be suspended for <strong>{suspendPeriod}</strong> due to <strong>{suspendReason}</strong>. Members cannot post new messages during this period."
+                </p>
+              </div>
+
+              <div className="flex gap-3">
+                <button onClick={() => setShowSuspendModal(false)} className="flex-1 h-11 rounded-xl border border-gray-200 text-[#4B4355] font-semibold text-sm hover:bg-gray-50 transition">
+                  Cancel
+                </button>
+                <button onClick={handleSuspend} disabled={suspending} className="flex-1 h-11 rounded-xl bg-red-600 hover:bg-red-700 disabled:bg-red-300 text-white font-bold text-sm transition flex items-center justify-center gap-2">
+                  {suspending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Ban className="w-4 h-4" />} Confirm Suspension
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

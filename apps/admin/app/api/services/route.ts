@@ -1,0 +1,241 @@
+import { NextRequest, NextResponse } from "next/server";
+import { dbPool } from "@/lib/db";
+import { requireAdminAuth } from "@/lib/auth";
+
+async function ensureServicesTable() {
+  await dbPool.query(`
+    CREATE TABLE IF NOT EXISTS services (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      type TEXT NOT NULL,
+      category TEXT NOT NULL,
+      logo TEXT,
+      image TEXT,
+      description TEXT NOT NULL,
+      location TEXT NOT NULL,
+      "contactPhone" TEXT,
+      "contactEmail" TEXT,
+      "contactUrl" TEXT,
+      price TEXT NOT NULL DEFAULT 'Contact for pricing',
+      availability TEXT NOT NULL DEFAULT 'By appointment',
+      rating NUMERIC(3,2) NOT NULL DEFAULT 4.9,
+      reviews INTEGER NOT NULL DEFAULT 12,
+      verified BOOLEAN NOT NULL DEFAULT true,
+      status TEXT NOT NULL DEFAULT 'published',
+      "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+
+  // Seed default items if empty
+  const countRes = await dbPool.query(`SELECT COUNT(*) FROM services`);
+  if (parseInt(countRes.rows[0].count, 10) === 0) {
+    const defaultServices = [
+      {
+        id: "srv-1",
+        name: "Dr. Sarah Jenkins",
+        type: "Occupational Therapist",
+        category: "therapists",
+        logo: "👩‍⚕️",
+        image: "https://images.unsplash.com/photo-1559839734-2b71ea197ec2?w=400&q=80",
+        description: "Specialized in pediatric occupational therapy and sensory integration for children with autism and developmental delays.",
+        location: "Downtown Clinic & Home Visits",
+        contactPhone: "+1 (555) 234-5678",
+        contactEmail: "sarah.jenkins@therapy.org",
+        contactUrl: "https://services.digiability.org/sarah-jenkins",
+        price: "$80 - $150 / session",
+        availability: "Next available: Tomorrow",
+        rating: 4.9,
+        reviews: 124,
+        verified: true,
+        status: "published",
+      },
+      {
+        id: "srv-2",
+        name: "Mobility Solutions Inc.",
+        type: "Equipment Vendor",
+        category: "equipment",
+        logo: "🦽",
+        image: "https://images.unsplash.com/photo-1584515979956-d9f6e5d09982?w=400&q=80",
+        description: "Rental and purchase of wheelchairs, walkers, and custom-fitted seating systems. Same-day delivery available.",
+        location: "Westside Hub",
+        contactPhone: "+1 (555) 876-5432",
+        contactEmail: "info@mobilitysolutions.com",
+        contactUrl: "https://services.digiability.org/mobility-solutions",
+        price: "Varies by equipment",
+        availability: "Open 9AM - 6PM",
+        rating: 4.7,
+        reviews: 89,
+        verified: true,
+        status: "published",
+      },
+      {
+        id: "srv-3",
+        name: "CareBridge Support",
+        type: "Respite Care",
+        category: "care",
+        logo: "🤝",
+        image: "https://images.unsplash.com/photo-1576765608535-5f04d1e3f289?w=400&q=80",
+        description: "Professional respite care providers offering short-term relief for primary caregivers. Background-checked and certified.",
+        location: "All City Areas",
+        contactPhone: "+1 (555) 345-6789",
+        contactEmail: "contact@carebridge.org",
+        contactUrl: "https://services.digiability.org/carebridge",
+        price: "$25 - $40 / hour",
+        availability: "24/7 Availability",
+        rating: 4.8,
+        reviews: 210,
+        verified: true,
+        status: "published",
+      },
+      {
+        id: "srv-4",
+        name: "Legal Advocates for Disability",
+        type: "Legal Services",
+        category: "legal",
+        logo: "⚖️",
+        image: "https://images.unsplash.com/photo-1589829545856-d10d557cf95f?w=400&q=80",
+        description: "Assistance with disability claims, appeals, and educational advocacy (IEP meetings).",
+        location: "City Center",
+        contactPhone: "+1 (555) 901-2345",
+        contactEmail: "legal@disabilityadvocates.org",
+        contactUrl: "https://services.digiability.org/legal-advocates",
+        price: "Free consultation",
+        availability: "By appointment",
+        rating: 4.6,
+        reviews: 45,
+        verified: true,
+        status: "published",
+      },
+      {
+        id: "srv-5",
+        name: "Accessible Transit Co.",
+        type: "Transportation",
+        category: "transport",
+        logo: "🚐",
+        image: "https://images.unsplash.com/photo-1544620347-c4fd4a3d5957?w=400&q=80",
+        description: "Wheelchair-accessible vans and specialized transport services for medical appointments and daily commuting.",
+        location: "Metro Area",
+        contactPhone: "+1 (555) 456-7890",
+        contactEmail: "dispatch@accessibletransit.com",
+        contactUrl: "https://services.digiability.org/accessible-transit",
+        price: "$2.50 / mile",
+        availability: "Book 24h in advance",
+        rating: 4.9,
+        reviews: 312,
+        verified: true,
+        status: "published",
+      },
+    ];
+
+    for (const s of defaultServices) {
+      await dbPool.query(`
+        INSERT INTO services (
+          id, name, type, category, logo, image, description,
+          location, "contactPhone", "contactEmail", "contactUrl",
+          price, availability, rating, reviews, verified, status,
+          "createdAt", "updatedAt"
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, NOW(), NOW())
+        ON CONFLICT (id) DO NOTHING
+      `, [
+        s.id, s.name, s.type, s.category, s.logo, s.image, s.description,
+        s.location, s.contactPhone, s.contactEmail, s.contactUrl,
+        s.price, s.availability, s.rating, s.reviews, s.verified, s.status,
+      ]);
+    }
+  }
+}
+
+export async function GET(request: NextRequest) {
+  try {
+    await ensureServicesTable();
+    const result = await dbPool.query(`
+      SELECT * FROM services ORDER BY "createdAt" DESC
+    `);
+    
+    return NextResponse.json({
+      success: true,
+      services: result.rows,
+    });
+  } catch (error) {
+    console.error("Failed to fetch services:", error);
+    return NextResponse.json(
+      { success: false, message: "Failed to fetch services" },
+      { status: 500 }
+    );
+  }
+}
+
+export async function POST(request: NextRequest) {
+  const authError = await requireAdminAuth(request);
+  if (authError) return authError;
+
+  try {
+    await ensureServicesTable();
+    const body = await request.json();
+    const {
+      name,
+      type,
+      category,
+      logo,
+      image,
+      description,
+      location,
+      contactPhone,
+      contactEmail,
+      contactUrl,
+      price,
+      availability,
+      verified,
+      status,
+    } = body;
+
+    if (!name || !type || !category || !description || !location) {
+      return NextResponse.json(
+        { success: false, message: "Missing required fields (name, type, category, description, location)" },
+        { status: 400 }
+      );
+    }
+
+    const id = `srv-${crypto.randomUUID().slice(0, 8)}`;
+
+    const result = await dbPool.query(`
+      INSERT INTO services (
+        id, name, type, category, logo, image, description,
+        location, "contactPhone", "contactEmail", "contactUrl",
+        price, availability, rating, reviews, verified, status,
+        "createdAt", "updatedAt"
+      )
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,5.0,0,$14,$15,NOW(),NOW())
+      RETURNING *
+    `, [
+      id,
+      name,
+      type,
+      category,
+      logo || "🏢",
+      image || "",
+      description,
+      location,
+      contactPhone || null,
+      contactEmail || null,
+      contactUrl || null,
+      price || "Contact for pricing",
+      availability || "By appointment",
+      verified !== undefined ? verified : true,
+      status || "published",
+    ]);
+
+    return NextResponse.json({
+      success: true,
+      service: result.rows[0],
+    });
+  } catch (error) {
+    console.error("Failed to create service:", error);
+    return NextResponse.json(
+      { success: false, message: "Failed to create service" },
+      { status: 500 }
+    );
+  }
+}

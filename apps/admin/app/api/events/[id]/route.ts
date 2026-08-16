@@ -26,7 +26,7 @@ export async function PATCH(
   try {
     const { id } = await params;
     const body = await request.json();
-    const { title, category, location, date, time, image, description, spots, buttonType, externalUrl, organizer, accessibilityTags } = body;
+    const { title, category, location, date, time, image, description, spots, buttonType, externalUrl, organizer, accessibilityTags, status } = body;
 
     const result = await dbPool.query(`
       UPDATE events SET
@@ -42,13 +42,15 @@ export async function PATCH(
         "externalUrl" = COALESCE($10, "externalUrl"),
         organizer = COALESCE($11, organizer),
         accessibility_tags = COALESCE($12, accessibility_tags),
+        status = COALESCE($13, status),
         "updatedAt" = NOW()
-      WHERE id = $13
+      WHERE id = $14
       RETURNING *
     `, [
       title, category, location, date, time ?? null,
       image, description, spots ? parseInt(spots, 10) : null,
-      buttonType, externalUrl, organizer, accessibilityTags, id
+      buttonType, externalUrl, organizer, accessibilityTags,
+      status, id
     ]);
 
     if (result.rows.length === 0) {
