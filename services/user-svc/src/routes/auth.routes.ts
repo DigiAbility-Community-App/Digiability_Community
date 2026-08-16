@@ -15,6 +15,7 @@ import {
   searchUsersHandler,
   registerDeviceTokenHandler,
   removeDeviceTokenHandler,
+  checkMaintenanceHandler,
 } from "../controllers/auth.controller";
 import { authenticate } from "../middleware/auth.middleware";
 import { validate } from "../middleware/validate.middleware";
@@ -42,6 +43,7 @@ import {
 const router = Router();
 
 // ── Public Routes ─────────────────────────────────────
+router.get("/maintenance",                                                             checkMaintenanceHandler);
 router.post("/register",       registerLimiter,      validate(RegisterSchema),       register);
 router.post("/login",          loginLimiter,          validate(LoginSchema),          login);
 router.post("/refresh",                                                                refresh);

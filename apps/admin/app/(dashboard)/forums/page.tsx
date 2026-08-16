@@ -87,17 +87,9 @@ const GROUP_CARDS = [
 // MAIN COMPONENT
 // ─────────────────────────────────────────────
 export default function CommunityPage() {
-  const [activeTab, setActiveTab] = useState<"Forums" | "Reported Content" | "Groups" | "Success Stories">("Forums");
+  const [activeTab, setActiveTab] = useState<"Forums" | "Success Stories">("Forums");
   const [search, setSearch] = useState("");
 
-  // Reports data
-  const [reports, setReports] = useState<Report[]>([]);
-  const [reportsLoading, setReportsLoading] = useState(false);
-  const [selectedReport, setSelectedReport] = useState<Report | null>(null);
-
-  // Groups data
-  const [groups, setGroups] = useState<Group[]>([]);
-  const [groupsLoading, setGroupsLoading] = useState(false);
 
   // Forum data — real questions from DB
   const [questions, setQuestions] = useState<ForumQuestion[]>([]);
@@ -131,26 +123,6 @@ export default function CommunityPage() {
   // Stories state
   const [stories, setStories] = useState(SUCCESS_STORIES);
   const [storyFilter, setStoryFilter] = useState("All Stories");
-
-  const fetchReports = async () => {
-    setReportsLoading(true);
-    try {
-      const res = await fetch("/api/moderation");
-      const data = await res.json();
-      if (data.success) setReports(data.reports);
-    } catch (e) { console.error(e); }
-    finally { setReportsLoading(false); }
-  };
-
-  const fetchGroups = async () => {
-    setGroupsLoading(true);
-    try {
-      const res = await fetch("/api/groups");
-      const data = await res.json();
-      if (data.success) setGroups(data.groups);
-    } catch (e) { console.error(e); }
-    finally { setGroupsLoading(false); }
-  };
 
   const fetchQuestions = async () => {
     setQuestionsLoading(true);
@@ -215,22 +187,11 @@ export default function CommunityPage() {
   };
 
   useEffect(() => {
-    if (activeTab === "Reported Content") fetchReports();
-    if (activeTab === "Groups") fetchGroups();
     if (activeTab === "Forums") fetchQuestions();
   }, [activeTab]);
 
-  const handleReportAction = async (action: string, report: Report) => {
-    await fetch("/api/moderation", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action, reportId: report.id, questionId: report.questionId }),
-    });
-    fetchReports();
-    setSelectedReport(null);
-  };
 
-  const TABS = ["Forums", "Reported Content", "Groups", "Success Stories"] as const;
+  const TABS = ["Forums", "Success Stories"] as const;
 
   return (
     <div className="flex flex-col h-full">
@@ -271,7 +232,7 @@ export default function CommunityPage() {
 
       {/* CONTENT */}
       <div className="flex flex-1 overflow-hidden">
-        <div className={`flex-1 overflow-y-auto p-8 ${(selectedQuestion || selectedReport) ? "xl:mr-[440px]" : ""}`}>
+        <div className={`flex-1 overflow-y-auto p-8 ${selectedQuestion ? "xl:mr-[440px]" : ""}`}>
 
           {/* ── FORUMS TAB ── */}
           {activeTab === "Forums" && (
@@ -337,116 +298,6 @@ export default function CommunityPage() {
             </div>
           )}
 
-          {/* ── REPORTED CONTENT TAB ── */}
-          {activeTab === "Reported Content" && (
-            <div>
-              {reportsLoading ? (
-                <div className="flex items-center justify-center py-20"><div className="w-8 h-8 border-4 border-[#7004DC] border-t-transparent rounded-full animate-spin" /></div>
-              ) : (
-                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-                  <div className="grid grid-cols-[2fr_3fr_1fr_120px] bg-[#F7F5FA] border-b border-gray-100">
-                    {["REPORTER", "CONTENT PREVIEW", "REASON", "DATE"].map(h => (
-                      <div key={h} className="px-5 py-3 text-[10px] font-bold uppercase tracking-[0.12em] text-[#7D7387]">{h}</div>
-                    ))}
-                  </div>
-                  {reports.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center py-16 text-slate-400">
-                      <Shield className="w-12 h-12 mb-3 text-slate-300" />
-                      <p className="font-semibold">No reported content</p>
-                    </div>
-                  ) : reports.filter(r => !search || r.reporterName.toLowerCase().includes(search.toLowerCase()) || (r.questionTitle || "").toLowerCase().includes(search.toLowerCase())).map(report => (
-                    <div
-                      key={report.id}
-                      onClick={() => setSelectedReport(selectedReport?.id === report.id ? null : report)}
-                      className={`grid grid-cols-[2fr_3fr_1fr_120px] items-center border-b border-gray-100 cursor-pointer transition ${selectedReport?.id === report.id ? "bg-violet-50" : "hover:bg-[#FAFAFA]"}`}
-                    >
-                      <div className="px-5 py-4 flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-full bg-[#EDDCFF] text-[#7004DC] flex items-center justify-center text-xs font-bold shrink-0">
-                          {(report.reporterName || "?").charAt(0)}
-                        </div>
-                        <span className="text-sm font-semibold text-[#1A1C1C] truncate">
-                          {(report.reporterName || "Unknown").split(" ")[0]}{" "}
-                          {(report.reporterName || "").split(" ")[1]?.[0] ? `${(report.reporterName || "").split(" ")[1][0]}.` : ""}
-                        </span>
-                      </div>
-                      <div className="px-5 py-4 text-sm text-[#4B4355] truncate">
-                        "{(report.questionTitle || report.answerContent || "Content").substring(0, 40)}..."
-                      </div>
-                      <div className="px-5 py-4">
-                        <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase ${report.reason.toLowerCase().includes("spam") ? "bg-yellow-100 text-yellow-700" : report.reason.toLowerCase().includes("harassment") ? "bg-red-100 text-red-700" : "bg-orange-100 text-orange-700"}`}>
-                          {report.reason.substring(0, 12)}
-                        </span>
-                      </div>
-                      <div className="px-5 py-4 text-xs text-[#7D7387]">{report.createdAt}</div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* ── GROUPS TAB ── */}
-          {activeTab === "Groups" && (
-            <div>
-              {groupsLoading ? (
-                <div className="flex items-center justify-center py-20"><div className="w-8 h-8 border-4 border-[#7004DC] border-t-transparent rounded-full animate-spin" /></div>
-              ) : (
-                <>
-                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
-                    {(groups.length > 0 ? groups.map((g, i) => ({
-                      id: g.id,
-                      bg: ["bg-gradient-to-br from-[#7004DC] to-[#4a0099]", "bg-gradient-to-br from-slate-600 to-slate-800", "bg-gradient-to-br from-red-400 to-orange-300", "bg-gradient-to-br from-violet-400 to-purple-300", "bg-gradient-to-br from-slate-300 to-slate-400", "bg-gradient-to-br from-slate-400 to-slate-500"][i % 6],
-                      icon: ["🧠", "</>", "📢", "🏋", "🕐", "🎓"][i % 6],
-                      name: g.name || "Group",
-                      category: g.subType === "CARE_CIRCLE" ? "Care Circle" : "General",
-                      desc: g.description || "Community group",
-                      members: g.memberCount,
-                      postsToday: "—",
-                      status: "Active",
-                    })) : GROUP_CARDS).filter(g => !search || g.name.toLowerCase().includes(search.toLowerCase())).map(g => (
-                      <div key={g.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-                        <div className={`h-24 ${g.bg} flex items-center justify-center relative`}>
-                          <span className="text-4xl">{g.icon}</span>
-                          <button className="absolute top-2 right-2 w-7 h-7 rounded-full bg-white/20 flex items-center justify-center text-white hover:bg-white/30">
-                            <MoreHorizontal className="w-4 h-4" />
-                          </button>
-                        </div>
-                        <div className="p-4">
-                          <div className="flex items-start justify-between mb-1">
-                            <h3 className="font-extrabold text-sm text-[#1A1C1C]">{g.name}</h3>
-                            <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase ml-2 shrink-0 ${g.status === "Active" ? "bg-green-100 text-green-700" : g.status === "Inactive" ? "bg-gray-100 text-gray-500" : "bg-orange-100 text-orange-700"}`}>
-                              {g.status}
-                            </span>
-                          </div>
-                          <span className="inline-block px-2 py-0.5 rounded-full bg-[#F3F3F3] text-[9px] font-bold uppercase text-[#4B4355] mb-2">{g.category}</span>
-                          <p className="text-xs text-[#7D7387] line-clamp-2 mb-3">{g.desc}</p>
-                          <div className="flex items-center gap-4 text-xs text-[#7D7387] mb-4">
-                            <div><p className="text-[9px] font-bold uppercase tracking-wider">MEMBERS</p><p className="font-bold text-[#1A1C1C]">{g.members}</p></div>
-                            <div><p className="text-[9px] font-bold uppercase tracking-wider">POSTS TODAY</p><p className="font-bold text-[#1A1C1C]">{g.postsToday}</p></div>
-                          </div>
-                          <div className="flex gap-2">
-                            <button onClick={() => setMessageGroup(g as any)} className="flex-1 h-9 rounded-xl border border-[#7004DC] text-[#7004DC] text-xs font-bold hover:bg-violet-50 transition flex items-center justify-center gap-1.5">
-                              <MessageSquare className="w-3.5 h-3.5" /> Message
-                            </button>
-                            {g.status === "Inactive" ? (
-                              <button className="flex-1 h-9 rounded-xl bg-[#7004DC] text-white text-xs font-bold hover:bg-[#5c03b7] transition flex items-center justify-center gap-1.5">
-                                <RefreshCw className="w-3.5 h-3.5" /> Restore
-                              </button>
-                            ) : (
-                              <button onClick={() => setSuspendGroup(g as any)} className="flex-1 h-9 rounded-xl border border-red-200 text-red-500 text-xs font-bold hover:bg-red-50 transition flex items-center justify-center gap-1.5">
-                                <Ban className="w-3.5 h-3.5" /> Suspend
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                  <p className="text-sm text-[#7D7387] mt-5">Showing 1–{Math.min(6, (groups.length || GROUP_CARDS.length))} of {groups.length || GROUP_CARDS.length} groups</p>
-                </>
-              )}
-            </div>
-          )}
 
           {/* ── SUCCESS STORIES TAB ── */}
           {activeTab === "Success Stories" && (
@@ -650,65 +501,11 @@ export default function CommunityPage() {
           </div>
         )}
 
-        {/* ── CONTENT REVIEW PANEL ── */}
-        {selectedReport && activeTab === "Reported Content" && (
-          <div className="fixed right-0 top-0 h-full w-[360px] bg-white border-l border-gray-100 shadow-2xl z-40 overflow-y-auto">
-            <div className="flex items-center justify-between p-5 border-b border-gray-100">
-              <div>
-                <h3 className="font-extrabold text-base text-[#1A1C1C]">Content Review</h3>
-                <p className="text-xs text-[#7D7387] mt-0.5">Report ID: #{selectedReport.id.slice(-4)}</p>
-              </div>
-              <button onClick={() => setSelectedReport(null)} className="w-8 h-8 rounded-full hover:bg-gray-100 flex items-center justify-center"><X className="w-4 h-4 text-slate-500" /></button>
-            </div>
-            <div className="p-5 space-y-4">
-              <span className="px-3 py-1 rounded-full bg-orange-50 text-orange-600 border border-orange-200 text-[10px] font-bold uppercase">PENDING REVIEW</span>
-              <div className="flex items-center gap-2 text-xs text-[#7D7387]">
-                <span>📄</span> Content type: {selectedReport.type === "question" ? "Post" : "Answer"}
-              </div>
-              <div className="bg-[#F7F5FA] rounded-xl p-4">
-                <p className="text-sm text-[#1A1C1C] leading-5">"{selectedReport.questionTitle || selectedReport.answerContent || "Reported content"}"</p>
-                <button className="text-xs font-bold text-[#7004DC] mt-2 hover:underline">View full content ↓</button>
-              </div>
-              <div className="bg-[#F7F5FA] rounded-xl p-3 flex items-center gap-3">
-                <div className="w-8 h-8 rounded-full bg-[#EDDCFF] flex items-center justify-center text-[#7004DC] text-xs font-bold">{selectedReport.reporterName?.[0]}</div>
-                <div>
-                  <p className="text-sm font-bold text-[#1A1C1C]">{selectedReport.reporterName}</p>
-                  <p className="text-xs text-green-600 font-semibold" style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><CheckCircle2 className="w-3.5 h-3.5" /> Trustworthy</p>
-                </div>
-              </div>
-              <span className={`inline-block px-3 py-1 rounded-full text-[10px] font-bold uppercase ${selectedReport.reason.toLowerCase().includes("spam") ? "bg-orange-100 text-orange-700" : "bg-red-100 text-red-700"}`}>
-                {selectedReport.reason}
-              </span>
-              <div className="text-sm text-[#7D7387]">User reported potential violation of community guidelines.</div>
-              <div className="bg-[#F7F5FA] rounded-xl p-3">
-                <p className="text-xs font-bold text-[#1A1C1C]">{selectedReport.reporterName}</p>
-                <p className="text-xs text-[#7D7387]">Community Member • Reporter</p>
-              </div>
-              <div className="space-y-2 pt-2">
-                <div className="grid grid-cols-2 gap-2">
-                  <button onClick={() => handleReportAction("dismiss", selectedReport)} className="h-11 rounded-xl bg-green-500 hover:bg-green-600 text-white font-bold text-sm transition flex items-center justify-center gap-2"><CheckCircle2 className="w-4 h-4" /> Approve</button>
-                  <button onClick={() => handleReportAction("delete_post", selectedReport)} className="h-11 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-sm transition flex items-center justify-center gap-2"><Trash2 className="w-4 h-4" /> Remove</button>
-                </div>
-                <button className="w-full h-11 rounded-xl bg-[#D2A500] hover:bg-[#b89300] text-[#4F3D00] font-bold text-sm transition flex items-center justify-center gap-2">
-                  <AlertTriangle className="w-4 h-4" /> Warn User
-                </button>
-                <button onClick={() => handleReportAction("dismiss", selectedReport)} className="w-full h-11 rounded-xl border border-gray-200 text-[#4B4355] font-bold text-sm hover:bg-gray-50 transition">
-                  No Action Required
-                </button>
-                <button className="w-full h-11 rounded-xl bg-[#1A1C1C] hover:bg-black text-white font-bold text-sm transition flex items-center justify-center gap-2">
-                  <Ban className="w-4 h-4" /> Ban User Account
-                </button>
-              </div>
-              <div className="bg-violet-50 rounded-xl p-4 border border-violet-100">
-                <p className="text-[10px] font-bold uppercase tracking-wider text-[#7004DC] mb-1">MODERATION TIP</p>
-                <p className="text-xs text-[#4B4355] leading-4">Accounts with more than 3 warnings in a 30-day period are automatically flagged for permanent suspension.</p>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
+
+      </div>{/* end flex-1 overflow-hidden content wrapper */}
 
       {/* ────────────────── MODALS ────────────────── */}
+
 
       {/* SUSPEND GROUP MODAL */}
       {suspendGroup && (
