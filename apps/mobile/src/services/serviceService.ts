@@ -1,3 +1,4 @@
+import axios from 'axios';
 import apiClient from './apiClient';
 
 export interface ServiceModel {
@@ -22,18 +23,43 @@ export interface ServiceModel {
   updatedAt?: string;
 }
 
+const ADMIN_BASE_URL =
+  (process.env.EXPO_PUBLIC_ADMIN_BASE_URL as string | undefined) ??
+  (process.env.EXPO_PUBLIC_API_BASE_URL
+    ? process.env.EXPO_PUBLIC_API_BASE_URL.replace(/:30501$/, ':30504').replace(/:4001$/, ':3001')
+    : 'http://10.0.2.2:3001');
+
 /**
  * Fetch all published services from backend
  */
 export async function fetchPublishedServices(): Promise<ServiceModel[]> {
+  // 1. Try Admin portal endpoint directly (where services are managed & published)
   try {
-    const response = await apiClient.get<{ success: boolean; services: ServiceModel[] }>('/api/services');
-    if (response.data?.success && Array.isArray(response.data.services)) {
-      return response.data.services.filter(s => s.status !== 'unpublished');
+    const adminRes = await axios.get<{ success: boolean; services?: ServiceModel[]; data?: ServiceModel[] }>(
+      `${ADMIN_BASE_URL}/api/services`,
+      { timeout: 5000 }
+    );
+    const list = adminRes.data?.services || adminRes.data?.data;
+    if (Array.isArray(list) && list.length > 0) {
+      return list.filter((s) => s.status !== 'unpublished');
     }
-    return [];
-  } catch (error) {
-    console.error('Failed to fetch services:', error);
-    return [];
+  } catch (adminErr) {
+    // Admin direct call failed, proceed to fallback
   }
+
+  // 2. Try user-svc apiClient endpoint
+  try {
+    const response = await apiClient.get<{ success: boolean; services?: ServiceModel[]; data?: ServiceModel[] }>(
+      '/api/services',
+      { timeout: 5000 }
+    );
+    const list = response.data?.services || response.data?.data;
+    if (Array.isArray(list) && list.length > 0) {
+      return list.filter((s) => s.status !== 'unpublished');
+    }
+  } catch (apiErr) {
+    // apiClient call failed
+  }
+
+  return [];
 }
