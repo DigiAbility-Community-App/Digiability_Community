@@ -16,6 +16,7 @@ import { AccessibleButton } from "../../components/shared/AccessibleButton";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { registerForEvent } from "../../services/eventService";
+import { formatEventDateDisplay } from "../../utils/dateHelpers";
 
 export default function LeavePortalScreen() {
   const route = useRoute<any>();
@@ -90,7 +91,7 @@ export default function LeavePortalScreen() {
               <View style={styles.eventCardMeta}>
                 <Calendar color={colors.subtext} size={14} style={{ marginRight: 6 }} />
                 <AccessibleText variant="body" style={{ color: colors.subtext, fontSize: 13 }}>
-                  {eventDate}
+                  {formatEventDateDisplay(eventDate)}
                 </AccessibleText>
               </View>
             ) : null}

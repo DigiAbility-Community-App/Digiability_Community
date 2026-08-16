@@ -23,6 +23,7 @@ import { useTheme } from "../../theme/ThemeContext";
 import { AccessibleText } from "../../components/shared/AccessibleText";
 import { AccessibleButton } from "../../components/shared/AccessibleButton";
 import { fetchAllEvents, EventModel, parseAccessibilityTags } from "../../services/eventService";
+import { formatEventDateDisplay } from "../../utils/dateHelpers";
 
 const CATEGORY_FILTERS = [
   { label: "All",        value: "All" },
@@ -244,7 +245,7 @@ export default function EventsScreen() {
                       variant="body"
                       style={[styles.infoText, { color: colors.subtext }]}
                     >
-                      {event.date} {event.time ? `• ${event.time}` : ""}
+                      {formatEventDateDisplay(event.date)} {event.time ? `• ${event.time}` : ""}
                     </AccessibleText>
                   </View>
                 </View>

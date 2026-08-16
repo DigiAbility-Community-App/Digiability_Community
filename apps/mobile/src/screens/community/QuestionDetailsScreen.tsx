@@ -61,6 +61,16 @@ function isValidAltText(alt?: string | null): boolean {
   return trimmed !== "" && trimmed !== "nothing" && trimmed !== "null" && trimmed !== "undefined" && trimmed !== "none";
 }
 
+function formatPostDate(dateInput: any): string {
+  if (!dateInput) return "";
+  const d = new Date(dateInput);
+  if (isNaN(d.getTime())) return String(dateInput);
+  const day = String(d.getDate()).padStart(2, "0");
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const year = d.getFullYear();
+  return `${day}/${month}/${year}`;
+}
+
 const QuestionDetailsScreen = () => {
   const route = useRoute<any>();
   const navigation = useNavigation<any>();
@@ -330,7 +340,7 @@ const QuestionDetailsScreen = () => {
             </View>
             <AccessibleText variant="caption" style={[styles.authorMeta, { color: colors.subtext }]}>
               {currentQuestion.author.role?.toUpperCase()} •{" "}
-              {new Date(currentQuestion.createdAt).toLocaleDateString()}
+              {formatPostDate(currentQuestion.createdAt)}
             </AccessibleText>
           </View>
         </View>
@@ -638,7 +648,7 @@ const QuestionDetailsScreen = () => {
                 </View>
                 <AccessibleText variant="caption" style={[styles.answerTime, { color: colors.subtext }]}>
                   {item.author.role?.toUpperCase()} •{" "}
-                  {new Date(item.createdAt).toLocaleDateString()}
+                  {formatPostDate(item.createdAt)}
                 </AccessibleText>
               </View>
 
