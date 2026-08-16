@@ -41,7 +41,9 @@ const ALLOWED_CATEGORIES = [
   'Legal Help',
   'Assistive Technology',
   'Caregiver Support',
-  'Community'
+  'Community',
+  'Document',
+  'Others'
 ];
 
 const getImageUrl = (req: Request, filename?: string) => {

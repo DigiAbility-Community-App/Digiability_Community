@@ -590,6 +590,7 @@ const styles = StyleSheet.create({
 
   emptyEmoji: {
     fontSize: 40,
+    lineHeight: 52,
     marginBottom: 12,
   },
 

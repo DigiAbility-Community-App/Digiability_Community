@@ -85,12 +85,12 @@ export const chatService = {
     });
   },
 
-  // Upload a chat attachment (image or voice note). Returns the public URL.
+  // Upload a chat attachment (image, voice note, or video). Returns the public URL.
   uploadMedia: async (
     file: Blob,
-    field: 'image' | 'audio',
+    field: 'image' | 'audio' | 'video',
     filename: string
-  ): Promise<{ url: string; kind: 'IMAGE' | 'AUDIO'; mimeType: string; size: number }> => {
+  ): Promise<{ url: string; kind: 'IMAGE' | 'AUDIO' | 'VIDEO'; mimeType: string; size: number }> => {
     const form = new FormData();
     form.append(field, file, filename);
     const res = await apiClient.post(`${CHAT_BASE_URL}/api/media/upload`, form, {

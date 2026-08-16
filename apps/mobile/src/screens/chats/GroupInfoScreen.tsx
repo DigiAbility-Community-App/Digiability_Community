@@ -55,16 +55,9 @@ const GroupInfoScreen = ({ navigation, route }: Props) => {
     ? { borderWidth: 2, borderColor: "#000000" }
     : { borderWidth: 1, borderColor: "rgba(0,0,0,0.05)" };
 
-  if (!conversation) {
-    return (
-      <ScreenWrapper>
-        <AccessibleText variant="body" style={{ padding: 20, textAlign: "center" }}>Group not found</AccessibleText>
-      </ScreenWrapper>
-    );
-  }
-
-  const isCareCircle = conversation.subType === "CARE_CIRCLE";
-  const myParticipant = conversation.participants.find((p) => p.userId === user?.id);
+  // ── Derived State (Safe for undefined conversation) ───────────
+  const isCareCircle = conversation?.subType === "CARE_CIRCLE";
+  const myParticipant = conversation?.participants?.find((p) => p.userId === user?.id);
   const myRole = myParticipant?.role;
   const isOwner = myRole === "OWNER";
 
@@ -72,8 +65,55 @@ const GroupInfoScreen = ({ navigation, route }: Props) => {
     ? myRole === "OWNER" || myRole === "CAREGIVER"
     : myRole === "OWNER" || myRole === "ADMIN";
 
-  const canEditInfo = conversation.editGroupInfo === "ALL_MEMBERS" || hasAdminRights;
-  const canAddMembers = conversation.addMembers === "ALL_MEMBERS" || hasAdminRights;
+  const canEditInfo = conversation?.editGroupInfo === "ALL_MEMBERS" || hasAdminRights;
+  const canAddMembers = conversation?.addMembers === "ALL_MEMBERS" || hasAdminRights;
+
+  // ── Join requests (admin approval) Hooks ──────────────────────
+  const [pendingRequests, setPendingRequests] = useState<any[]>([]);
+  const [processingRequestId, setProcessingRequestId] = useState<string | null>(null);
+
+  const loadPendingRequests = useCallback(async () => {
+    if (!hasAdminRights) return;
+    try {
+      const invites = await chatService.getGroupInvites(conversationId);
+      setPendingRequests(invites.filter((i: any) => i.status === "AWAITING_APPROVAL"));
+    } catch (err) {
+      console.error("Failed to load join requests", err);
+    }
+  }, [conversationId, hasAdminRights]);
+
+  useEffect(() => {
+    loadPendingRequests();
+  }, [loadPendingRequests]);
+
+  const handleMemberSearchChange = useCallback((text: string) => {
+    setMemberSearch(text);
+    if (searchTimeout.current) clearTimeout(searchTimeout.current);
+    if (text.trim().length < 1) {
+      setMemberSearchResults([]);
+      return;
+    }
+    searchTimeout.current = setTimeout(async () => {
+      setIsSearchingMembers(true);
+      try {
+        const results = await chatService.searchUsers(text.trim());
+        const existingIds = new Set(conversation?.participants?.map((p) => p.userId) || []);
+        setMemberSearchResults(results.filter((r) => !existingIds.has(r.id)));
+      } catch {
+        setMemberSearchResults([]);
+      } finally {
+        setIsSearchingMembers(false);
+      }
+    }, 400);
+  }, [conversation?.participants]);
+
+  if (!conversation) {
+    return (
+      <ScreenWrapper>
+        <AccessibleText variant="body" style={{ padding: 20, textAlign: "center" }}>Group not found</AccessibleText>
+      </ScreenWrapper>
+    );
+  }
 
   // ── Settings Toggles ──────────────────────────────────────────
   const handleToggleSetting = async (
@@ -115,23 +155,7 @@ const GroupInfoScreen = ({ navigation, route }: Props) => {
     }
   };
 
-  // ── Join requests (admin approval) ───────────────────────────
-  const [pendingRequests, setPendingRequests] = useState<any[]>([]);
-  const [processingRequestId, setProcessingRequestId] = useState<string | null>(null);
 
-  const loadPendingRequests = useCallback(async () => {
-    if (!hasAdminRights) return;
-    try {
-      const invites = await chatService.getGroupInvites(conversationId);
-      setPendingRequests(invites.filter((i: any) => i.status === "AWAITING_APPROVAL"));
-    } catch (err) {
-      console.error("Failed to load join requests", err);
-    }
-  }, [conversationId, hasAdminRights]);
-
-  useEffect(() => {
-    loadPendingRequests();
-  }, [loadPendingRequests]);
 
   const handleRespondToRequest = async (inviteId: string, approve: boolean) => {
     setProcessingRequestId(inviteId);
@@ -243,27 +267,7 @@ const GroupInfoScreen = ({ navigation, route }: Props) => {
     );
   };
 
-  // ── Add Member Search ─────────────────────────────────────────
-  const handleMemberSearchChange = useCallback((text: string) => {
-    setMemberSearch(text);
-    if (searchTimeout.current) clearTimeout(searchTimeout.current);
-    if (text.trim().length < 1) {
-      setMemberSearchResults([]);
-      return;
-    }
-    searchTimeout.current = setTimeout(async () => {
-      setIsSearchingMembers(true);
-      try {
-        const results = await chatService.searchUsers(text.trim());
-        const existingIds = new Set(conversation.participants.map((p) => p.userId));
-        setMemberSearchResults(results.filter((r) => !existingIds.has(r.id)));
-      } catch {
-        setMemberSearchResults([]);
-      } finally {
-        setIsSearchingMembers(false);
-      }
-    }, 400);
-  }, [conversation.participants]);
+
 
   const handleInviteMember = async (member: { id: string; name: string }) => {
     try {

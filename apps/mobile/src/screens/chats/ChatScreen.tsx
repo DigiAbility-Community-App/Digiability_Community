@@ -21,6 +21,7 @@ import * as Speech from "expo-speech";
 import { generateUUID } from "../../utils/uuid";
 import { useChatMedia } from "@hooks/useChatMedia";
 import { MessageMedia } from "../../components/chat/MessageMedia";
+import { MediaViewer } from "../../components/chat/MediaViewer";
 import { AltTextModal } from "../../components/chat/AltTextModal";
 import { ActionSheet, ActionSheetOption } from "../../components/chat/ActionSheet";
 import { ConfirmDialog } from "../../components/chat/ConfirmDialog";
@@ -29,6 +30,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Send, ArrowLeft, MoreVertical, Paperclip, Mic, Image as ImageIcon, Smile, Check, CheckCheck, Plus, Square, Phone, Trash2, Volume2, Flag, Ban, CircleCheck, TriangleAlert, User } from "lucide-react-native";
 import { useTheme } from "../../theme/ThemeContext";
 import { AccessibleText } from "../../components/shared/AccessibleText";
+import { LinkifiedText } from "../../components/shared/LinkifiedText";
+import { istDateKey, formatDateLabel } from "../../utils/dateHelpers";
 
 // ─────────────────────────────────────────────────────────
 // 1:1 Chat Screen — Direct Message Thread
@@ -48,86 +51,6 @@ type Props = {
   navigation: NativeStackNavigationProp<ChatsStackParamList, "Chat">;
   route: RouteProp<ChatsStackParamList, "Chat">;
 };
-
-interface Message {
-  id: string;
-  content: string;
-  senderId: string;
-  timestamp: string;
-  status: "sent" | "delivered" | "read";
-  type: "TEXT" | "IMAGE" | "FILE";
-  isDateSeparator?: boolean;
-}
-
-const CURRENT_USER_ID = "me";
-
-const DEMO_MESSAGES: Message[] = [
-  {
-    id: "date-1",
-    content: "Today",
-    senderId: "",
-    timestamp: "",
-    status: "read",
-    type: "TEXT",
-    isDateSeparator: true,
-  },
-  {
-    id: "m1",
-    content: "Hi Dr. Sharma! I wanted to ask about the new therapy plan you mentioned.",
-    senderId: CURRENT_USER_ID,
-    timestamp: "10:30 AM",
-    status: "read",
-    type: "TEXT",
-  },
-  {
-    id: "m2",
-    content: "Hello! Yes, I've prepared a customized mobility plan based on your last assessment. Let me share the details.",
-    senderId: "other",
-    timestamp: "10:32 AM",
-    status: "read",
-    type: "TEXT",
-  },
-  {
-    id: "m3",
-    content: "The plan includes daily stretching exercises, weekly physiotherapy sessions, and some assistive device recommendations.",
-    senderId: "other",
-    timestamp: "10:33 AM",
-    status: "read",
-    type: "TEXT",
-  },
-  {
-    id: "m4",
-    content: "That sounds comprehensive! How long should each stretching session be?",
-    senderId: CURRENT_USER_ID,
-    timestamp: "10:35 AM",
-    status: "read",
-    type: "TEXT",
-  },
-  {
-    id: "m5",
-    content: "I recommend 15-20 minutes in the morning. Start gently and increase intensity gradually. I'll send you a video guide as well.",
-    senderId: "other",
-    timestamp: "10:37 AM",
-    status: "read",
-    type: "TEXT",
-  },
-  {
-    id: "m6",
-    content: "Thank you so much! This is really helpful 🙏",
-    senderId: CURRENT_USER_ID,
-    timestamp: "10:38 AM",
-    status: "delivered",
-    type: "TEXT",
-  },
-  {
-    id: "m7",
-    content: "Your therapy plan is ready! Check it when you get a chance. I've also added some resources for adaptive equipment.",
-    senderId: "other",
-    timestamp: "10:40 AM",
-    status: "read",
-    type: "TEXT",
-  },
-];
 
 // Format a presence "last seen" ISO timestamp into a short relative string.
 function formatLastSeen(iso: string): string {
@@ -170,6 +93,14 @@ const ChatScreen = ({ navigation, route }: Props) => {
   const [messageText, setMessageText] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const [mediaViewer, setMediaViewer] = useState<{ src: string; alt: string; isVideo: boolean } | null>(null);
+
+  const openMediaViewer = useCallback((src: string, alt: string, isVideo: boolean) => {
+    setMediaViewer({ src, alt, isVideo });
+  }, []);
+  const closeMediaViewer = useCallback(() => {
+    setMediaViewer(null);
+  }, []);
 
   // Peer presence — resolve the other DM participant, then read live presence.
   const peerId = useMemo(
@@ -278,6 +209,8 @@ const ChatScreen = ({ navigation, route }: Props) => {
       (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
     );
   }, [storeMessages]);
+
+  const listData = useMemo(() => [...dedupedMessages].reverse(), [dedupedMessages]);
 
   useEffect(() => {
     const loadMessages = async () => {
@@ -500,35 +433,43 @@ const ChatScreen = ({ navigation, route }: Props) => {
     return opts;
   })();
 
-  const renderMessage = ({ item }: { item: ChatMessage | Message }) => {
-    // Date separator logic kept for demo types
-    if ((item as Message).isDateSeparator) {
-      return (
-        <View style={styles.dateSeparator}>
-          <View style={[styles.dateLine, { backgroundColor: dateLineColor }]} />
-          <AccessibleText
-            variant="caption"
-            style={[styles.dateText, { color: colors.primary, backgroundColor: colors.surface }, cardBorder]}
-          >
-            {(item as Message).content}
-          </AccessibleText>
-          <View style={[styles.dateLine, { backgroundColor: dateLineColor }]} />
-        </View>
-      );
-    }
-
-    const isMine = item.senderId === user?.id || item.senderId === CURRENT_USER_ID;
-    const timeString = 'createdAt' in item 
+  const renderMessage = ({ item, index }: { item: ChatMessage; index: number }) => {
+    const isMine = item.senderId === user?.id;
+    const timeString = item.createdAt 
       ? new Date(item.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-      : (item as Message).timestamp;
+      : "";
+
+    // The list is inverted (newest first).
+    // The previous message chronologically is at index + 1 (the one "above" visually).
+    // Show date separator below the message (visually above) if date key changes.
+    const msgDateKey = item.createdAt ? istDateKey(new Date(item.createdAt)) : "";
+    const prevMsg = listData[index + 1];
+    const prevMsgDateKey = prevMsg?.createdAt ? istDateKey(new Date(prevMsg.createdAt)) : "";
+    
+    // We show a separator if there is no previous message (it's the first message ever),
+    // or if the previous message has a different date.
+    const showDateSep = msgDateKey && (!prevMsg || msgDateKey !== prevMsgDateKey);
 
     return (
-      <View
-        style={[
-          styles.messageBubbleContainer,
-          isMine ? styles.myBubbleContainer : styles.theirBubbleContainer,
-        ]}
-      >
+      <View>
+        {showDateSep && (
+          <View style={styles.dateSeparator}>
+            <View style={[styles.dateLine, { backgroundColor: dateLineColor }]} />
+            <AccessibleText
+              variant="caption"
+              style={[styles.dateText, { color: colors.primary, backgroundColor: colors.surface }, cardBorder]}
+            >
+              {formatDateLabel(msgDateKey)}
+            </AccessibleText>
+            <View style={[styles.dateLine, { backgroundColor: dateLineColor }]} />
+          </View>
+        )}
+        <View
+          style={[
+            styles.messageBubbleContainer,
+            isMine ? styles.myBubbleContainer : styles.theirBubbleContainer,
+          ]}
+        >
         <TouchableOpacity
           activeOpacity={0.8}
           onLongPress={() => handleMessageLongPress(item as ChatMessage)}
@@ -545,18 +486,18 @@ const ChatScreen = ({ navigation, route }: Props) => {
             !isMine && cardBorder,
           ]}
         >
-          {item.type === "IMAGE" || item.type === "AUDIO" ? (
-            <MessageMedia message={item as ChatMessage} isMine={isMine} />
+          {item.type === "IMAGE" || item.type === "VIDEO" || item.type === "AUDIO" ? (
+            <MessageMedia message={item} isMine={isMine} onOpenViewer={openMediaViewer} />
           ) : (
-            <AccessibleText
+            <LinkifiedText
               variant="body"
+              text={item.content}
               style={[
                 styles.messageText,
                 { color: isMine ? colors.white : colors.text },
               ]}
-            >
-              {item.content}
-            </AccessibleText>
+              linkStyle={{ color: isMine ? "rgba(255,255,255,0.9)" : colors.primary }}
+            />
           )}
           <View style={styles.messageFooter}>
             <AccessibleText
@@ -571,6 +512,7 @@ const ChatScreen = ({ navigation, route }: Props) => {
             {isMine && renderStatusIcon(item.status)}
           </View>
         </TouchableOpacity>
+        </View>
       </View>
     );
   };
@@ -667,7 +609,7 @@ const ChatScreen = ({ navigation, route }: Props) => {
             {/* iOS wrapper */}
             <FlatList
               ref={flatListRef}
-              data={[...dedupedMessages].reverse()}
+              data={listData}
               inverted
               keyExtractor={(item, index) => item.id ? `${item.id}-${index}` : `msg-${index}`}
               renderItem={renderMessage}
@@ -709,7 +651,7 @@ const ChatScreen = ({ navigation, route }: Props) => {
               <View style={[styles.composerCard, { backgroundColor: colors.card, shadowColor: colors.secondary }, cardBorder]}>
                 <TouchableOpacity
                   style={styles.plusBtn}
-                  onPress={media.pickImage}
+                  onPress={media.pickMedia}
                   disabled={media.isUploading}
                   accessibilityRole="button"
                   accessibilityLabel="Attach image"
@@ -765,7 +707,7 @@ const ChatScreen = ({ navigation, route }: Props) => {
           <>
             <FlatList
               ref={flatListRef}
-              data={[...dedupedMessages].reverse()}
+              data={listData}
               inverted
               keyExtractor={(item, index) => item.id ? `${item.id}-${index}` : `msg-${index}`}
               renderItem={renderMessage}
@@ -807,7 +749,7 @@ const ChatScreen = ({ navigation, route }: Props) => {
               <View style={[styles.composerCard, { backgroundColor: colors.card, shadowColor: colors.secondary }, cardBorder]}>
                 <TouchableOpacity
                   style={styles.plusBtn}
-                  onPress={media.pickImage}
+                  onPress={media.pickMedia}
                   disabled={media.isUploading}
                   accessibilityRole="button"
                   accessibilityLabel="Attach image"
@@ -914,6 +856,16 @@ const ChatScreen = ({ navigation, route }: Props) => {
         onConfirm={() => confirmState?.onConfirm()}
         onCancel={() => setConfirmState(null)}
       />
+      {/* Full-screen Media Viewer */}
+      {mediaViewer && (
+        <MediaViewer
+          visible={!!mediaViewer}
+          src={mediaViewer.src}
+          alt={mediaViewer.alt}
+          isVideo={mediaViewer.isVideo}
+          onClose={closeMediaViewer}
+        />
+      )}
     </ScreenWrapper>
   );
 };

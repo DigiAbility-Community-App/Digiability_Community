@@ -30,7 +30,9 @@ const ALLOWED_CATEGORIES = [
   { label: "Legal Help ⚖️", value: "Legal Help" },
   { label: "Assistive Technology 💻", value: "Assistive Technology" },
   { label: "Caregiver Support 🤝", value: "Caregiver Support" },
-  { label: "Community 👥", value: "Community" }
+  { label: "Community 👥", value: "Community" },
+  { label: "Document 📄", value: "Document" },
+  { label: "Others 📌", value: "Others" }
 ];
 
 const AskQuestionScreen = () => {
@@ -82,6 +84,16 @@ const AskQuestionScreen = () => {
   const checkAndSubmit = async () => {
     if (!title.trim() || !category || !description.trim()) {
       Alert.alert("Missing Fields", "Please enter a Title, Category, and Description.");
+      return;
+    }
+
+    if (title.trim().length < 5) {
+      Alert.alert("Title Too Short", "Your title must be at least 5 characters long.");
+      return;
+    }
+
+    if (description.trim().length < 10) {
+      Alert.alert("Description Too Short", "Your description must be at least 10 characters long.");
       return;
     }
 

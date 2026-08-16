@@ -205,7 +205,7 @@ const styles = StyleSheet.create({
   },
   messageText: { fontSize: 14, fontStyle: "italic" },
   actionRow: { flexDirection: "row", gap: 12 },
-  btn: { flex: 1, height: 44, borderRadius: 12, justifyContent: "center", alignItems: "center" },
+  btn: { flex: 1, minHeight: 48, borderRadius: 12, justifyContent: "center", alignItems: "center", paddingVertical: 10 },
   btnDisabled: { opacity: 0.6 },
   // Colors are now owned by AccessibleButton's variant ("danger" / "primary");
   // these stay as empty composition slots for layout-only overrides.

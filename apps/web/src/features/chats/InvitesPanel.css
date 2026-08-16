@@ -88,12 +88,7 @@
   border-color: var(--color-primary);
 }
 
-.ip-invite-icon {
-  font-size: 28px;
-  flex-shrink: 0;
-  line-height: 1;
-  margin-top: 2px;
-}
+
 
 .ip-invite-info {
   flex: 1;
@@ -130,19 +125,25 @@
 
 .ip-invite-actions {
   display: flex;
-  flex-direction: column;
-  gap: 6px;
+  flex-direction: row;
+  gap: 8px;
   flex-shrink: 0;
+  align-self: center;
 }
 
 .ip-btn {
-  width: 34px;
-  height: 34px;
-  border-radius: var(--radius-sm);
-  display: flex;
-  justify-content: center;
+  display: inline-flex;
   align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 6px 14px;
+  border-radius: var(--radius-full);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
   transition: all 0.2s;
+  cursor: pointer;
 }
 
 .ip-btn:disabled {
@@ -158,6 +159,7 @@
 
 .ip-btn-accept:hover:not(:disabled) {
   background-color: #6ee7b7;
+  color: #064e3b;
 }
 
 .ip-btn-decline {
@@ -168,4 +170,19 @@
 
 .ip-btn-decline:hover:not(:disabled) {
   background-color: #fca5a5;
+  color: #7f1d1d;
+}
+
+/* Fix icon vertical alignment inside buttons */
+.ip-btn svg {
+  flex-shrink: 0;
+}
+
+/* Ensure invite card icon has a visible color */
+.ip-invite-icon {
+  font-size: 28px;
+  flex-shrink: 0;
+  line-height: 1;
+  margin-top: 2px;
+  color: var(--color-primary);
 }
