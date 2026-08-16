@@ -21,6 +21,8 @@ interface MaintenanceScreenProps {
 export default function MaintenanceScreen({ onRetry }: MaintenanceScreenProps) {
   const { colors, highContrast } = useTheme();
   const checkMaintenanceStatus = useSystemStore((s) => s.checkMaintenanceStatus);
+  const supportEmail = useSystemStore((s) => s.supportEmail) || 'support@digiability.org';
+  const supportPhone = useSystemStore((s) => s.supportPhone) || '+91 88000 12345';
   const [checking, setChecking] = useState(false);
 
   const handleRefresh = async () => {
@@ -37,7 +39,7 @@ export default function MaintenanceScreen({ onRetry }: MaintenanceScreenProps) {
   };
 
   const handleSupportEmail = () => {
-    Linking.openURL('mailto:support@digiability.org?subject=Maintenance%20Query').catch(() => {});
+    Linking.openURL(`mailto:${supportEmail}?subject=Maintenance%20Query`).catch(() => {});
   };
 
   return (

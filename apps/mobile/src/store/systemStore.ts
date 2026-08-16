@@ -14,6 +14,8 @@ const ADMIN_BASE_URL =
 interface SystemState {
   isMaintenanceMode: boolean;
   isCheckingMaintenance: boolean;
+  supportPhone: string;
+  supportEmail: string;
   setMaintenanceMode: (inMaintenance: boolean) => void;
   checkMaintenanceStatus: () => Promise<boolean>;
 }
@@ -21,6 +23,8 @@ interface SystemState {
 export const useSystemStore = create<SystemState>((set) => ({
   isMaintenanceMode: false,
   isCheckingMaintenance: false,
+  supportPhone: '+91 88000 12345',
+  supportEmail: 'support@digiability.org',
   setMaintenanceMode: (inMaintenance) => set({ isMaintenanceMode: inMaintenance }),
   checkMaintenanceStatus: async () => {
     try {
@@ -28,28 +32,36 @@ export const useSystemStore = create<SystemState>((set) => ({
 
       // 1. First try user-svc /api/auth/maintenance
       try {
-        const res = await axios.get<{ success: boolean; inMaintenance: boolean }>(
+        const res = await axios.get<{ success: boolean; inMaintenance: boolean; supportPhone?: string; supportEmail?: string }>(
           `${API_BASE_URL}/api/auth/maintenance`,
           { timeout: 4000 }
         );
         if (res.data && typeof res.data.inMaintenance === 'boolean') {
           const inMaintenance = res.data.inMaintenance;
-          set({ isMaintenanceMode: inMaintenance });
+          set({
+            isMaintenanceMode: inMaintenance,
+            ...(res.data.supportPhone ? { supportPhone: res.data.supportPhone } : {}),
+            ...(res.data.supportEmail ? { supportEmail: res.data.supportEmail } : {}),
+          });
           return inMaintenance;
         }
       } catch (userSvcErr: any) {
-        // If user-svc returned 404 (e.g. live container is still the older image), fallback to admin endpoint
+        // Fallback to admin endpoint
       }
 
       // 2. Fallback: check Admin /api/maintenance endpoint directly
       try {
-        const adminRes = await axios.get<{ success: boolean; inMaintenance: boolean }>(
+        const adminRes = await axios.get<{ success: boolean; inMaintenance: boolean; supportPhone?: string; supportEmail?: string }>(
           `${ADMIN_BASE_URL}/api/maintenance`,
           { timeout: 4000 }
         );
         if (adminRes.data && typeof adminRes.data.inMaintenance === 'boolean') {
           const inMaintenance = adminRes.data.inMaintenance;
-          set({ isMaintenanceMode: inMaintenance });
+          set({
+            isMaintenanceMode: inMaintenance,
+            ...(adminRes.data.supportPhone ? { supportPhone: adminRes.data.supportPhone } : {}),
+            ...(adminRes.data.supportEmail ? { supportEmail: adminRes.data.supportEmail } : {}),
+          });
           return inMaintenance;
         }
       } catch (adminErr) {

@@ -10,7 +10,11 @@ import {
   Modal,
   TextInput,
   Dimensions,
-  ScrollView
+  ScrollView,
+  KeyboardAvoidingView,
+  Platform,
+  TouchableWithoutFeedback,
+  Keyboard
 } from "react-native";
 import { useRoute, useNavigation } from "@react-navigation/native";
 import {
@@ -43,6 +47,19 @@ import { AccessibleText } from "../../components/shared/AccessibleText";
 import { AccessibleButton } from "../../components/shared/AccessibleButton";
 
 const { height: SCREEN_HEIGHT } = Dimensions.get("window");
+
+function isValidImageUrl(url?: string | null): boolean {
+  if (!url || typeof url !== "string") return false;
+  const trimmed = url.trim().toLowerCase();
+  if (trimmed === "" || trimmed === "null" || trimmed === "undefined" || trimmed === "nothing" || trimmed.length < 8) return false;
+  return trimmed.startsWith("http://") || trimmed.startsWith("https://") || trimmed.startsWith("data:image/") || trimmed.startsWith("file://");
+}
+
+function isValidAltText(alt?: string | null): boolean {
+  if (!alt || typeof alt !== "string") return false;
+  const trimmed = alt.trim().toLowerCase();
+  return trimmed !== "" && trimmed !== "nothing" && trimmed !== "null" && trimmed !== "undefined" && trimmed !== "none";
+}
 
 const QuestionDetailsScreen = () => {
   const route = useRoute<any>();
@@ -374,15 +391,15 @@ const QuestionDetailsScreen = () => {
       )}
 
       {/* QUESTION IMAGE */}
-      {currentQuestion.imageUrl && (
+      {isValidImageUrl(currentQuestion.imageUrl) && (
         <View>
           <Image
-            source={{ uri: currentQuestion.imageUrl }}
+            source={{ uri: currentQuestion.imageUrl as string }}
             style={styles.questionImage}
             accessible={true}
-            accessibilityLabel={currentQuestion.altText || "Uploaded question image"}
+            accessibilityLabel={isValidAltText(currentQuestion.altText) ? currentQuestion.altText! : "Uploaded question image"}
           />
-          {currentQuestion.altText && (
+          {isValidAltText(currentQuestion.altText) && (
             <AccessibleText variant="caption" style={[styles.altTextHint, { color: colors.subtext }]}>
               Alt text: {currentQuestion.altText}
             </AccessibleText>
@@ -391,15 +408,17 @@ const QuestionDetailsScreen = () => {
       )}
 
       {/* QUESTION FOOTER / TAGS */}
-      <View style={styles.tagsContainer}>
-        {currentQuestion.tags.map((tag) => (
-          <View key={tag.id} style={[styles.tagBadge, { backgroundColor: colors.surface }]}>
-            <AccessibleText variant="caption" style={[styles.tagText, { color: colors.secondary }]}>
-              #{tag.name.toLowerCase()}
-            </AccessibleText>
-          </View>
-        ))}
-      </View>
+      {Array.isArray(currentQuestion.tags) && currentQuestion.tags.length > 0 && (
+        <View style={styles.tagsContainer}>
+          {currentQuestion.tags.map((tag) => (
+            <View key={tag.id} style={[styles.tagBadge, { backgroundColor: colors.surface }]}>
+              <AccessibleText variant="caption" style={[styles.tagText, { color: colors.secondary }]}>
+                #{tag.name.toLowerCase()}
+              </AccessibleText>
+            </View>
+          ))}
+        </View>
+      )}
 
       {/* VIEW COUNT & VIEWS */}
       <View style={[styles.statRow, { borderTopColor: colors.border }]}>
@@ -665,15 +684,15 @@ const QuestionDetailsScreen = () => {
             )}
 
             {/* IMAGE */}
-            {item.imageUrl && (
+            {isValidImageUrl(item.imageUrl) && (
               <View>
                 <Image
-                  source={{ uri: item.imageUrl }}
+                  source={{ uri: item.imageUrl as string }}
                   style={styles.answerImage}
                   accessible={true}
-                  accessibilityLabel={item.altText || "Answer image"}
+                  accessibilityLabel={isValidAltText(item.altText) ? item.altText! : "Answer image"}
                 />
-                {item.altText && (
+                {isValidAltText(item.altText) && (
                   <AccessibleText variant="caption" style={[styles.altTextHint, { color: colors.subtext }]}>
                     Alt text: {item.altText}
                   </AccessibleText>
@@ -839,54 +858,64 @@ const QuestionDetailsScreen = () => {
         transparent
         animationType="fade"
         onRequestClose={() => setReportModalVisible(false)}
+        statusBarTranslucent
       >
-        <View style={styles.reportOverlay}>
-          <View style={[styles.reportContent, { backgroundColor: colors.card }]}>
-            <AccessibleText variant="title" style={[styles.reportTitle, { color: colors.text }]}>
-              Report Content
-            </AccessibleText>
-            <AccessibleText variant="body" style={[styles.reportSubtitle, { color: colors.subtext }]}>
-              Why are you reporting this {reportTarget?.type}? Please provide a reason:
-            </AccessibleText>
+        <TouchableWithoutFeedback onPress={() => setReportModalVisible(false)}>
+          <View style={styles.reportOverlay}>
+            <KeyboardAvoidingView
+              behavior={Platform.OS === "ios" ? "padding" : "height"}
+              style={{ width: "100%", alignItems: "center" }}
+            >
+              <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+                <View style={[styles.reportContent, { backgroundColor: colors.card }]}>
+                  <AccessibleText variant="title" style={[styles.reportTitle, { color: colors.text }]}>
+                    Report Content
+                  </AccessibleText>
+                  <AccessibleText variant="body" style={[styles.reportSubtitle, { color: colors.subtext }]}>
+                    Why are you reporting this {reportTarget?.type}? Please provide a reason:
+                  </AccessibleText>
 
-            <TextInput
-              style={[
-                styles.reportInput,
-                { backgroundColor: colors.surface, color: colors.text },
-                highContrast && { borderWidth: 1, borderColor: "#000000" },
-              ]}
-              placeholder="e.g. Abusive behavior, spam, misinformation..."
-              placeholderTextColor={colors.subtext}
-              value={reportReason}
-              onChangeText={setReportReason}
-              multiline
-              numberOfLines={4}
-              textAlignVertical="top"
-              accessibilityLabel="Report reason"
-              accessibilityHint="Explain why you are reporting this content"
-            />
+                  <TextInput
+                    style={[
+                      styles.reportInput,
+                      { backgroundColor: colors.surface, color: colors.text },
+                      highContrast && { borderWidth: 1, borderColor: "#000000" },
+                    ]}
+                    placeholder="e.g. Abusive behavior, spam, misinformation..."
+                    placeholderTextColor={colors.subtext}
+                    value={reportReason}
+                    onChangeText={setReportReason}
+                    multiline
+                    numberOfLines={4}
+                    textAlignVertical="top"
+                    accessibilityLabel="Report reason"
+                    accessibilityHint="Explain why you are reporting this content"
+                  />
 
-            <View style={styles.reportActions}>
-              <AccessibleButton
-                variant="outline"
-                accessibilityLabel="Cancel report"
-                style={styles.reportBtn}
-                onPress={() => setReportModalVisible(false)}
-              >
-                Cancel
-              </AccessibleButton>
+                  <View style={styles.reportActions}>
+                    <AccessibleButton
+                      variant="outline"
+                      accessibilityLabel="Cancel report"
+                      style={styles.reportBtn}
+                      onPress={() => setReportModalVisible(false)}
+                    >
+                      Cancel
+                    </AccessibleButton>
 
-              <AccessibleButton
-                variant="danger"
-                accessibilityLabel="Submit report"
-                style={styles.reportBtn}
-                onPress={handleReportSubmit}
-              >
-                Submit Report
-              </AccessibleButton>
-            </View>
+                    <AccessibleButton
+                      variant="danger"
+                      accessibilityLabel="Submit report"
+                      style={styles.reportBtn}
+                      onPress={handleReportSubmit}
+                    >
+                      Submit Report
+                    </AccessibleButton>
+                  </View>
+                </View>
+              </TouchableWithoutFeedback>
+            </KeyboardAvoidingView>
           </View>
-        </View>
+        </TouchableWithoutFeedback>
       </Modal>
     </View>
   );

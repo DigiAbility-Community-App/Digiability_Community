@@ -7,7 +7,12 @@ import {
   TouchableOpacity,
   Image,
   ActivityIndicator,
-  Alert
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  TouchableWithoutFeedback,
+  Keyboard
 } from "react-native";
 import { Camera, X } from "lucide-react-native";
 import * as ImagePicker from "expo-image-picker";
@@ -65,100 +70,128 @@ const CreateAnswerModal = ({
   };
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <View style={styles.overlay}>
-        <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
-          {/* HEADER */}
-          <View style={[styles.header, { borderBottomColor: colors.border }]}>
-            <AccessibleText variant="title" style={[styles.title, { color: colors.text }]}>
-              Post an Answer
-            </AccessibleText>
-            <TouchableOpacity
-              onPress={onClose}
-              disabled={loading}
-              style={styles.closeBtn}
-              accessibilityRole="button"
-              accessibilityLabel="Close"
-              accessibilityHint="Closes this dialog without posting an answer"
-            >
-              <X size={20} color={colors.subtext} />
-            </TouchableOpacity>
-          </View>
+    <Modal
+      visible={visible}
+      transparent
+      animationType="slide"
+      onRequestClose={onClose}
+      statusBarTranslucent
+    >
+      <TouchableWithoutFeedback onPress={onClose}>
+        <View style={styles.overlay}>
+          <KeyboardAvoidingView
+            behavior={Platform.OS === "ios" ? "padding" : "height"}
+            style={styles.keyboardAvoidingView}
+            keyboardVerticalOffset={Platform.OS === "ios" ? 10 : 0}
+          >
+            <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+              <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
+                {/* DRAG HANDLE */}
+                <View style={styles.dragHandleContainer}>
+                  <View style={[styles.dragHandle, { backgroundColor: colors.border || "#E2E8F0" }]} />
+                </View>
 
-          {/* INPUT */}
-          <TextInput
-            style={[
-              styles.textArea,
-              { backgroundColor: colors.surface, color: colors.text },
-              highContrast && { borderWidth: 1, borderColor: "#000000" },
-            ]}
-            placeholder="Write your advice, solution, or experience..."
-            placeholderTextColor={colors.subtext}
-            value={content}
-            onChangeText={setContent}
-            multiline
-            numberOfLines={5}
-            textAlignVertical="top"
-            editable={!loading}
-            accessibilityLabel="Write your answer"
-          />
+                {/* HEADER */}
+                <View style={[styles.header, { borderBottomColor: colors.border }]}>
+                  <AccessibleText variant="title" style={[styles.title, { color: colors.text }]}>
+                    Post an Answer
+                  </AccessibleText>
+                  <TouchableOpacity
+                    onPress={onClose}
+                    disabled={loading}
+                    style={styles.closeBtn}
+                    accessibilityRole="button"
+                    accessibilityLabel="Close"
+                    accessibilityHint="Closes this dialog without posting an answer"
+                  >
+                    <X size={20} color={colors.subtext} />
+                  </TouchableOpacity>
+                </View>
 
-          {/* IMAGE ATTACHMENT */}
-          {imageUri ? (
-            <View style={styles.imagePreviewContainer}>
-              <Image source={{ uri: imageUri }} style={styles.imagePreview} />
-              <TouchableOpacity
-                style={styles.removeImageBtn}
-                onPress={handleClearImage}
-                disabled={loading}
-                accessibilityRole="button"
-                accessibilityLabel="Remove attached image"
-              >
-                <X size={14} color="#FFFFFF" />
-              </TouchableOpacity>
-            </View>
-          ) : (
-            <TouchableOpacity
-              style={[styles.attachImageBtn, { backgroundColor: colors.surface }]}
-              onPress={handlePickImage}
-              disabled={loading}
-              accessibilityRole="button"
-              accessibilityLabel="Attach photo"
-              accessibilityHint="Opens your photo library to attach an image to your answer"
-            >
-              <Camera size={20} color={colors.subtext} style={{ marginRight: 8 }} />
-              <AccessibleText variant="caption" style={[styles.attachImageText, { color: colors.subtext }]}>
-                Attach photo
-              </AccessibleText>
-            </TouchableOpacity>
-          )}
+                <ScrollView
+                  bounces={false}
+                  keyboardShouldPersistTaps="handled"
+                  showsVerticalScrollIndicator={false}
+                  contentContainerStyle={styles.scrollBody}
+                >
+                  {/* INPUT */}
+                  <TextInput
+                    style={[
+                      styles.textArea,
+                      { backgroundColor: colors.surface, color: colors.text },
+                      highContrast && { borderWidth: 1, borderColor: "#000000" },
+                    ]}
+                    placeholder="Write your advice, solution, or experience..."
+                    placeholderTextColor={colors.subtext}
+                    value={content}
+                    onChangeText={setContent}
+                    multiline
+                    numberOfLines={4}
+                    textAlignVertical="top"
+                    editable={!loading}
+                    accessibilityLabel="Write your answer"
+                  />
 
-          {/* ACTIONS */}
-          <View style={styles.actions}>
-            <AccessibleButton
-              variant="outline"
-              accessibilityLabel="Cancel"
-              accessibilityHint="Closes this dialog without posting an answer"
-              style={styles.btn}
-              onPress={onClose}
-              disabled={loading}
-            >
-              Cancel
-            </AccessibleButton>
+                  {/* IMAGE ATTACHMENT */}
+                  {imageUri ? (
+                    <View style={styles.imagePreviewContainer}>
+                      <Image source={{ uri: imageUri }} style={styles.imagePreview} />
+                      <TouchableOpacity
+                        style={styles.removeImageBtn}
+                        onPress={handleClearImage}
+                        disabled={loading}
+                        accessibilityRole="button"
+                        accessibilityLabel="Remove attached image"
+                      >
+                        <X size={14} color="#FFFFFF" />
+                      </TouchableOpacity>
+                    </View>
+                  ) : (
+                    <TouchableOpacity
+                      style={[styles.attachImageBtn, { backgroundColor: colors.surface }]}
+                      onPress={handlePickImage}
+                      disabled={loading}
+                      accessibilityRole="button"
+                      accessibilityLabel="Attach photo"
+                      accessibilityHint="Opens your photo library to attach an image to your answer"
+                    >
+                      <Camera size={20} color={colors.subtext} style={{ marginRight: 8 }} />
+                      <AccessibleText variant="caption" style={[styles.attachImageText, { color: colors.subtext }]}>
+                        Attach photo
+                      </AccessibleText>
+                    </TouchableOpacity>
+                  )}
 
-            <AccessibleButton
-              variant="primary"
-              accessibilityLabel="Submit answer"
-              accessibilityHint="Posts your answer to this discussion"
-              style={styles.btn}
-              onPress={handleSend}
-              disabled={loading}
-            >
-              {loading ? <ActivityIndicator size="small" color="#FFFFFF" /> : "Submit Answer"}
-            </AccessibleButton>
-          </View>
+                  {/* ACTIONS */}
+                  <View style={styles.actions}>
+                    <AccessibleButton
+                      variant="outline"
+                      accessibilityLabel="Cancel"
+                      accessibilityHint="Closes this dialog without posting an answer"
+                      style={styles.btn}
+                      onPress={onClose}
+                      disabled={loading}
+                    >
+                      Cancel
+                    </AccessibleButton>
+
+                    <AccessibleButton
+                      variant="primary"
+                      accessibilityLabel="Submit answer"
+                      accessibilityHint="Posts your answer to this discussion"
+                      style={styles.btn}
+                      onPress={handleSend}
+                      disabled={loading}
+                    >
+                      {loading ? <ActivityIndicator size="small" color="#FFFFFF" /> : "Submit Answer"}
+                    </AccessibleButton>
+                  </View>
+                </ScrollView>
+              </View>
+            </TouchableWithoutFeedback>
+          </KeyboardAvoidingView>
         </View>
-      </View>
+      </TouchableWithoutFeedback>
     </Modal>
   );
 };
@@ -171,12 +204,27 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(0, 0, 0, 0.5)",
     justifyContent: "flex-end"
   },
+  keyboardAvoidingView: {
+    width: "100%",
+    justifyContent: "flex-end"
+  },
   modalContent: {
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
-    padding: 24,
-    paddingBottom: 40,
-    maxHeight: "80%"
+    paddingHorizontal: 24,
+    paddingTop: 10,
+    paddingBottom: Platform.OS === "ios" ? 36 : 24,
+    maxHeight: "88%"
+  },
+  dragHandleContainer: {
+    alignItems: "center",
+    paddingVertical: 6,
+    marginBottom: 4
+  },
+  dragHandle: {
+    width: 40,
+    height: 4,
+    borderRadius: 2
   },
   header: {
     flexDirection: "row",
@@ -193,10 +241,13 @@ const styles = StyleSheet.create({
   closeBtn: {
     padding: 4
   },
+  scrollBody: {
+    paddingBottom: 8
+  },
   textArea: {
     borderRadius: 14,
     padding: 16,
-    height: 120,
+    height: 110,
     fontSize: 15,
     fontWeight: "500",
     marginBottom: 16
