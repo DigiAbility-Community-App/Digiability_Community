@@ -17,6 +17,8 @@ import {
   Keyboard
 } from "react-native";
 import { useRoute, useNavigation } from "@react-navigation/native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import ScreenWrapper from "../../components/layout/ScreenWrapper";
 import {
   ArrowLeft,
   CheckCircle2,
@@ -50,9 +52,23 @@ const { height: SCREEN_HEIGHT } = Dimensions.get("window");
 
 function isValidImageUrl(url?: string | null): boolean {
   if (!url || typeof url !== "string") return false;
-  const trimmed = url.trim().toLowerCase();
-  if (trimmed === "" || trimmed === "null" || trimmed === "undefined" || trimmed === "nothing" || trimmed.length < 8) return false;
-  return trimmed.startsWith("http://") || trimmed.startsWith("https://") || trimmed.startsWith("data:image/") || trimmed.startsWith("file://");
+  const trimmed = url.trim();
+  if (
+    trimmed === "" ||
+    trimmed.toLowerCase() === "null" ||
+    trimmed.toLowerCase() === "undefined" ||
+    trimmed.toLowerCase() === "nothing" ||
+    trimmed.toLowerCase() === "none" ||
+    trimmed.length < 10
+  ) {
+    return false;
+  }
+  return (
+    trimmed.startsWith("http://") ||
+    trimmed.startsWith("https://") ||
+    trimmed.startsWith("data:image/") ||
+    trimmed.startsWith("file://")
+  );
 }
 
 function isValidAltText(alt?: string | null): boolean {
@@ -77,6 +93,7 @@ const QuestionDetailsScreen = () => {
   const { questionId } = route.params;
 
   const { colors, highContrast } = useTheme();
+  const insets = useSafeAreaInsets();
   const user = useAuthStore((s) => s.user);
   const {
     currentQuestion,
@@ -107,6 +124,7 @@ const QuestionDetailsScreen = () => {
   const [dyslexiaMode, setDyslexiaMode] = useState(false);
   const [showSummaryDrawer, setShowSummaryDrawer] = useState(false);
   const [loadingSummary, setLoadingSummary] = useState(false);
+  const [failedImages, setFailedImages] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     fetchQuestionDetails(questionId);
@@ -293,13 +311,16 @@ const QuestionDetailsScreen = () => {
     body: {
       color: dyslexia ? "#000000" : colors.text,
       fontSize: dyslexia ? 16 : 14,
-      lineHeight: dyslexia ? 28 : 20,
-      letterSpacing: dyslexia ? 1.6 : 0,
+      lineHeight: dyslexia ? 24 : 20,
+      letterSpacing: dyslexia ? 1.4 : 0,
       fontWeight: dyslexia ? ("700" as const) : ("400" as const),
+      margin: 0,
+      padding: 0,
     },
     paragraph: {
-      marginBottom: 10,
-    }
+      marginTop: 2,
+      marginBottom: 6,
+    },
   });
 
   const textStyle = dyslexiaMode
@@ -308,272 +329,279 @@ const QuestionDetailsScreen = () => {
 
   const cardBorder = highContrast
     ? { borderWidth: 2, borderColor: "#000000" as const }
-    : { borderWidth: 1, borderColor: "rgba(0,0,0,0.05)" as const };
+    : { borderWidth: 1, borderColor: "rgba(0,0,0,0.06)" as const };
 
   const renderQuestionHeader = () => (
-    <View style={[styles.questionSection, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
-      {/* AUTHOR DETAILS */}
-      <View style={styles.authorRow}>
-        <View style={styles.authorLeft}>
-          <View style={[styles.avatar, { backgroundColor: colors.secondary }]}>
-            <AccessibleText style={styles.avatarText}>
-              {currentQuestion.author.name.charAt(0).toUpperCase()}
-            </AccessibleText>
-          </View>
-          <View>
-            <View style={styles.authorNameContainer}>
-              <AccessibleText style={[styles.authorName, { color: colors.text }, textStyle]}>
-                {currentQuestion.author.name}
+    <View style={styles.headerContainer}>
+      <View style={[styles.questionCard, { backgroundColor: colors.card }, cardBorder]}>
+        {/* AUTHOR DETAILS */}
+        <View style={styles.authorRow}>
+          <View style={styles.authorLeft}>
+            <View style={[styles.avatar, { backgroundColor: colors.secondary }]}>
+              <AccessibleText style={styles.avatarText}>
+                {currentQuestion.author.name.charAt(0).toUpperCase()}
               </AccessibleText>
-              {currentQuestion.author.forumStats && currentQuestion.author.forumStats.reputation > 0 && (
-                <View
-                  style={[
-                    styles.repBadge,
-                    { backgroundColor: highContrast ? "#FFFFFF" : "#FFFBEB", borderColor: colors.badge },
-                  ]}
-                >
-                  <AccessibleText variant="overline" style={[styles.repText, { color: colors.badge }]}>
-                    ★ {currentQuestion.author.forumStats.reputation}
-                  </AccessibleText>
-                </View>
-              )}
             </View>
-            <AccessibleText variant="caption" style={[styles.authorMeta, { color: colors.subtext }]}>
-              {currentQuestion.author.role?.toUpperCase()} •{" "}
-              {formatPostDate(currentQuestion.createdAt)}
-            </AccessibleText>
+            <View>
+              <View style={styles.authorNameContainer}>
+                <AccessibleText style={[styles.authorName, { color: colors.text }, textStyle]}>
+                  {currentQuestion.author.name}
+                </AccessibleText>
+                {currentQuestion.author.forumStats && currentQuestion.author.forumStats.reputation > 0 && (
+                  <View
+                    style={[
+                      styles.repBadge,
+                      { backgroundColor: highContrast ? "#FFFFFF" : "#FFFBEB", borderColor: colors.badge },
+                    ]}
+                  >
+                    <AccessibleText variant="overline" style={[styles.repText, { color: colors.badge }]}>
+                      ★ {currentQuestion.author.forumStats.reputation}
+                    </AccessibleText>
+                  </View>
+                )}
+              </View>
+              <AccessibleText variant="caption" style={[styles.authorMeta, { color: colors.subtext }]}>
+                {currentQuestion.author.role?.toUpperCase()} •{" "}
+                {formatPostDate(currentQuestion.createdAt)}
+              </AccessibleText>
+            </View>
+          </View>
+
+          {/* OPTIONS Row */}
+          <View style={styles.optionsRow}>
+            <TouchableOpacity
+              onPress={() => handleSpeakText(currentQuestion.title + ". " + (currentQuestion.description || ""), currentQuestion.id)}
+              style={styles.optionIcon}
+              accessibilityRole="button"
+              accessibilityLabel={speakingId === currentQuestion.id ? "Stop reading question aloud" : "Read question aloud"}
+              accessibilityHint="Uses text-to-speech to read the question title and description"
+            >
+              {speakingId === currentQuestion.id ? (
+                <VolumeX size={20} color={colors.error} />
+              ) : (
+                <Volume2 size={20} color={colors.subtext} />
+              )}
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={handleToggleBookmark}
+              style={styles.optionIcon}
+              accessibilityRole="button"
+              accessibilityLabel={isBookmarked ? "Remove bookmark" : "Bookmark this discussion"}
+              accessibilityState={{ selected: isBookmarked }}
+            >
+              <Bookmark size={20} color={isBookmarked ? colors.badge : colors.subtext} fill={isBookmarked ? colors.badge : "none"} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => openReportModal("question", currentQuestion.id)}
+              style={styles.optionIcon}
+              accessibilityRole="button"
+              accessibilityLabel="Report this question"
+            >
+              <Flag size={18} color={colors.subtext} />
+            </TouchableOpacity>
+            {isOwner && (
+              <TouchableOpacity
+                onPress={handleDeleteQuestion}
+                style={styles.optionIcon}
+                accessibilityRole="button"
+                accessibilityLabel="Delete this question"
+              >
+                <Trash2 size={18} color={colors.error} />
+              </TouchableOpacity>
+            )}
           </View>
         </View>
 
-        {/* OPTIONS Row */}
-        <View style={styles.optionsRow}>
-          <TouchableOpacity
-            onPress={() => handleSpeakText(currentQuestion.title + ". " + (currentQuestion.description || ""), currentQuestion.id)}
-            style={styles.optionIcon}
-            accessibilityRole="button"
-            accessibilityLabel={speakingId === currentQuestion.id ? "Stop reading question aloud" : "Read question aloud"}
-            accessibilityHint="Uses text-to-speech to read the question title and description"
-          >
-            {speakingId === currentQuestion.id ? (
-              <VolumeX size={20} color={colors.error} />
-            ) : (
-              <Volume2 size={20} color={colors.subtext} />
+        {/* QUESTION TITLE */}
+        <AccessibleText variant="title" style={[styles.questionTitle, { color: colors.text }, textStyle]}>
+          {currentQuestion.title}
+        </AccessibleText>
+
+        {/* QUESTION DESCRIPTION */}
+        {currentQuestion.description ? (
+          <View style={styles.descriptionWrapper}>
+            <Markdown style={getMarkdownStyles(dyslexiaMode)}>
+              {currentQuestion.description}
+            </Markdown>
+          </View>
+        ) : null}
+
+        {/* QUESTION IMAGE */}
+        {!failedImages[currentQuestion.id] && isValidImageUrl(currentQuestion.imageUrl) && (
+          <View style={styles.imageContainer}>
+            <Image
+              source={{ uri: currentQuestion.imageUrl as string }}
+              style={styles.questionImage}
+              resizeMode="cover"
+              onError={() => setFailedImages((prev) => ({ ...prev, [currentQuestion.id]: true }))}
+              accessible={true}
+              accessibilityLabel={isValidAltText(currentQuestion.altText) ? currentQuestion.altText! : "Uploaded question image"}
+            />
+            {isValidAltText(currentQuestion.altText) && (
+              <AccessibleText variant="caption" style={[styles.altTextHint, { color: colors.subtext }]}>
+                Alt text: {currentQuestion.altText}
+              </AccessibleText>
             )}
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={handleToggleBookmark}
-            style={styles.optionIcon}
-            accessibilityRole="button"
-            accessibilityLabel={isBookmarked ? "Remove bookmark" : "Bookmark this discussion"}
-            accessibilityState={{ selected: isBookmarked }}
-          >
-            <Bookmark size={20} color={isBookmarked ? colors.badge : colors.subtext} fill={isBookmarked ? colors.badge : "none"} />
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => openReportModal("question", currentQuestion.id)}
-            style={styles.optionIcon}
-            accessibilityRole="button"
-            accessibilityLabel="Report this question"
-          >
-            <Flag size={18} color={colors.subtext} />
-          </TouchableOpacity>
-          {isOwner && (
+          </View>
+        )}
+
+        {/* QUESTION FOOTER / TAGS */}
+        {Array.isArray(currentQuestion.tags) && currentQuestion.tags.length > 0 && (
+          <View style={styles.tagsContainer}>
+            {currentQuestion.tags.map((tag) => (
+              <View key={tag.id} style={[styles.tagBadge, { backgroundColor: colors.surface }]}>
+                <AccessibleText variant="caption" style={[styles.tagText, { color: colors.secondary }]}>
+                  #{tag.name.toLowerCase()}
+                </AccessibleText>
+              </View>
+            ))}
+          </View>
+        )}
+
+        {/* VIEW COUNT & VIEWS */}
+        <View style={[styles.statRow, { borderTopColor: colors.border }]}>
+          <View style={styles.statItem}>
+            <Eye size={14} color={colors.subtext} />
+            <AccessibleText variant="caption" style={[styles.statText, { color: colors.subtext }]}>
+              {currentQuestion.views} Views
+            </AccessibleText>
+          </View>
+          <View style={styles.statItem}>
+            <MessageCircle size={14} color={colors.subtext} />
+            <AccessibleText variant="caption" style={[styles.statText, { color: colors.subtext }]}>
+              {currentQuestion.answerCount} Answers
+            </AccessibleText>
+          </View>
+
+          {/* AI SUMMARY ACTION */}
+          {hasAnswers && (
             <TouchableOpacity
-              onPress={handleDeleteQuestion}
-              style={styles.optionIcon}
+              style={[
+                styles.aiSummaryBadge,
+                { backgroundColor: highContrast ? "#FFFFFF" : "#FAF5FF", borderColor: colors.secondary },
+              ]}
+              onPress={handleOpenSummary}
               accessibilityRole="button"
-              accessibilityLabel="Delete this question"
+              accessibilityLabel="View AI summary of this discussion"
             >
-              <Trash2 size={18} color={colors.error} />
+              <Sparkles size={13} color={colors.secondary} style={{ marginRight: 4 }} />
+              <AccessibleText variant="caption" style={[styles.aiSummaryBadgeText, { color: colors.secondary }]}>
+                AI Summary
+              </AccessibleText>
             </TouchableOpacity>
           )}
         </View>
-      </View>
 
-      {/* QUESTION BODY */}
-      <AccessibleText variant="title" style={[styles.questionTitle, { color: colors.text }, textStyle]}>
-        {currentQuestion.title}
-      </AccessibleText>
-      {currentQuestion.description && (
-        <Markdown style={getMarkdownStyles(dyslexiaMode)}>
-          {currentQuestion.description}
-        </Markdown>
-      )}
-
-      {/* QUESTION IMAGE */}
-      {isValidImageUrl(currentQuestion.imageUrl) && (
-        <View>
-          <Image
-            source={{ uri: currentQuestion.imageUrl as string }}
-            style={styles.questionImage}
-            accessible={true}
-            accessibilityLabel={isValidAltText(currentQuestion.altText) ? currentQuestion.altText! : "Uploaded question image"}
-          />
-          {isValidAltText(currentQuestion.altText) && (
-            <AccessibleText variant="caption" style={[styles.altTextHint, { color: colors.subtext }]}>
-              Alt text: {currentQuestion.altText}
-            </AccessibleText>
-          )}
-        </View>
-      )}
-
-      {/* QUESTION FOOTER / TAGS */}
-      {Array.isArray(currentQuestion.tags) && currentQuestion.tags.length > 0 && (
-        <View style={styles.tagsContainer}>
-          {currentQuestion.tags.map((tag) => (
-            <View key={tag.id} style={[styles.tagBadge, { backgroundColor: colors.surface }]}>
-              <AccessibleText variant="caption" style={[styles.tagText, { color: colors.secondary }]}>
-                #{tag.name.toLowerCase()}
-              </AccessibleText>
-            </View>
-          ))}
-        </View>
-      )}
-
-      {/* VIEW COUNT & VIEWS */}
-      <View style={[styles.statRow, { borderTopColor: colors.border }]}>
-        <View style={styles.statItem}>
-          <Eye size={14} color={colors.subtext} />
-          <AccessibleText variant="caption" style={[styles.statText, { color: colors.subtext }]}>
-            {currentQuestion.views} Views
-          </AccessibleText>
-        </View>
-        <View style={styles.statItem}>
-          <MessageCircle size={14} color={colors.subtext} />
-          <AccessibleText variant="caption" style={[styles.statText, { color: colors.subtext }]}>
-            {currentQuestion.answerCount} Answers
-          </AccessibleText>
-        </View>
-
-        {/* AI SUMMARY ACTION */}
-        {hasAnswers && (
+        {/* OWNER REOPEN CONTROLLER */}
+        {isOwner && isSolved && (
           <TouchableOpacity
             style={[
-              styles.aiSummaryBadge,
-              { backgroundColor: highContrast ? "#FFFFFF" : "#FAF5FF", borderColor: colors.secondary },
+              styles.reopenButton,
+              { backgroundColor: highContrast ? "#FFFFFF" : "#F3E8FF" },
+              highContrast && { borderWidth: 1, borderColor: "#000000" },
             ]}
-            onPress={handleOpenSummary}
+            onPress={handleReopen}
             accessibilityRole="button"
-            accessibilityLabel="View AI summary of this discussion"
+            accessibilityLabel="Reopen discussion"
+            accessibilityHint="Allows members to post new answers again"
           >
-            <Sparkles size={13} color={colors.secondary} style={{ marginRight: 4 }} />
-            <AccessibleText variant="caption" style={[styles.aiSummaryBadgeText, { color: colors.secondary }]}>
-              AI Summary
+            <RotateCcw size={16} color={colors.secondary} style={{ marginRight: 6 }} />
+            <AccessibleText variant="caption" style={[styles.reopenButtonText, { color: colors.secondary }]}>
+              Reopen Discussion
             </AccessibleText>
           </TouchableOpacity>
         )}
+
+        {/* SATISFACTION SURVEY PROMPT */}
+        {isOwner && !isSolved && hasAnswers && (
+          <View
+            style={[
+              styles.satisfactionCard,
+              { backgroundColor: highContrast ? "#FFFFFF" : "#F5F3FF" },
+              { borderColor: highContrast ? "#000000" : "#C084FC" },
+            ]}
+          >
+            {!satisfactionFlow ? (
+              <>
+                <HelpCircle size={20} color={colors.secondary} style={{ marginRight: 10 }} />
+                <View style={{ flex: 1 }}>
+                  <AccessibleText variant="body" style={[styles.satisfactionTitle, { color: colors.primary }]}>
+                    Did this solve your problem?
+                  </AccessibleText>
+                  <AccessibleText variant="caption" style={[styles.satisfactionSubtitle, { color: colors.secondary }]}>
+                    Help others in the community by highlighting the answer.
+                  </AccessibleText>
+                </View>
+                <View style={styles.satisfactionButtons}>
+                  <TouchableOpacity
+                    style={[
+                      styles.satBtn,
+                      { backgroundColor: colors.surface },
+                      highContrast && { borderWidth: 1, borderColor: "#000000" },
+                    ]}
+                    onPress={() => Alert.alert("Tip", "You can wait for more replies from other community members!")}
+                    accessibilityRole="button"
+                    accessibilityLabel="No, this did not solve my problem"
+                  >
+                    <AccessibleText variant="caption" style={[styles.satBtnNoText, { color: colors.subtext }]}>
+                      No
+                    </AccessibleText>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.satBtn, { backgroundColor: colors.secondary }]}
+                    onPress={() => setSatisfactionFlow(true)}
+                    accessibilityRole="button"
+                    accessibilityLabel="Yes, this solved my problem"
+                  >
+                    <AccessibleText variant="caption" style={styles.satBtnYesText}>
+                      Yes
+                    </AccessibleText>
+                  </TouchableOpacity>
+                </View>
+              </>
+            ) : (
+              <View style={{ flex: 1 }}>
+                <View style={styles.satHeaderRow}>
+                  <CheckCircle2 size={18} color="#16A34A" style={{ marginRight: 8 }} />
+                  <AccessibleText variant="body" style={styles.satSelectTitle}>
+                    Which answer solved your issue?
+                  </AccessibleText>
+                </View>
+                <AccessibleText variant="caption" style={[styles.satSelectDesc, { color: colors.text }]}>
+                  Scroll down and tap the checkmark icon (<Check size={12} color={colors.subtext} />) on the answer that helped you.
+                </AccessibleText>
+                <TouchableOpacity
+                  style={styles.satCancelLink}
+                  onPress={() => setSatisfactionFlow(false)}
+                  accessibilityRole="button"
+                  accessibilityLabel="Cancel marking an answer as accepted"
+                >
+                  <AccessibleText variant="caption" style={[styles.satCancelLinkText, { color: colors.error }]}>
+                    Cancel
+                  </AccessibleText>
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
+        )}
+
+        {/* RESOLVED STATE BANNER */}
+        {isSolved && (
+          <View style={styles.resolvedBanner}>
+            <CheckCircle2 size={18} color="#16A34A" style={{ marginRight: 8 }} />
+            <AccessibleText variant="body" style={styles.resolvedBannerText}>
+              This discussion has been resolved.
+            </AccessibleText>
+          </View>
+        )}
       </View>
 
-      {/* OWNER REOPEN CONTROLLER */}
-      {isOwner && isSolved && (
-        <TouchableOpacity
-          style={[
-            styles.reopenButton,
-            { backgroundColor: highContrast ? "#FFFFFF" : "#F3E8FF" },
-            highContrast && { borderWidth: 1, borderColor: "#000000" },
-          ]}
-          onPress={handleReopen}
-          accessibilityRole="button"
-          accessibilityLabel="Reopen discussion"
-          accessibilityHint="Allows members to post new answers again"
-        >
-          <RotateCcw size={16} color={colors.secondary} style={{ marginRight: 6 }} />
-          <AccessibleText variant="caption" style={[styles.reopenButtonText, { color: colors.secondary }]}>
-            Reopen Discussion
-          </AccessibleText>
-        </TouchableOpacity>
-      )}
-
-      {/* SATISFACTION SURVEY PROMPT */}
-      {isOwner && !isSolved && hasAnswers && (
-        <View
-          style={[
-            styles.satisfactionCard,
-            { backgroundColor: highContrast ? "#FFFFFF" : "#F5F3FF" },
-            { borderColor: highContrast ? "#000000" : "#C084FC" },
-          ]}
-        >
-          {!satisfactionFlow ? (
-            <>
-              <HelpCircle size={20} color={colors.secondary} style={{ marginRight: 10 }} />
-              <View style={{ flex: 1 }}>
-                <AccessibleText variant="body" style={[styles.satisfactionTitle, { color: colors.primary }]}>
-                  Did this solve your problem?
-                </AccessibleText>
-                <AccessibleText variant="caption" style={[styles.satisfactionSubtitle, { color: colors.secondary }]}>
-                  Help others in the community by highlighting the answer.
-                </AccessibleText>
-              </View>
-              <View style={styles.satisfactionButtons}>
-                <TouchableOpacity
-                  style={[
-                    styles.satBtn,
-                    { backgroundColor: colors.surface },
-                    highContrast && { borderWidth: 1, borderColor: "#000000" },
-                  ]}
-                  onPress={() => Alert.alert("Tip", "You can wait for more replies from other community members!")}
-                  accessibilityRole="button"
-                  accessibilityLabel="No, this did not solve my problem"
-                >
-                  <AccessibleText variant="caption" style={[styles.satBtnNoText, { color: colors.subtext }]}>
-                    No
-                  </AccessibleText>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.satBtn, { backgroundColor: colors.secondary }]}
-                  onPress={() => setSatisfactionFlow(true)}
-                  accessibilityRole="button"
-                  accessibilityLabel="Yes, this solved my problem"
-                >
-                  <AccessibleText variant="caption" style={styles.satBtnYesText}>
-                    Yes
-                  </AccessibleText>
-                </TouchableOpacity>
-              </View>
-            </>
-          ) : (
-            <View style={{ flex: 1 }}>
-              <View style={styles.satHeaderRow}>
-                <CheckCircle2 size={18} color="#16A34A" style={{ marginRight: 8 }} />
-                <AccessibleText variant="body" style={styles.satSelectTitle}>
-                  Which answer solved your issue?
-                </AccessibleText>
-              </View>
-              <AccessibleText variant="caption" style={[styles.satSelectDesc, { color: colors.text }]}>
-                Scroll down and tap the checkmark icon (<Check size={12} color={colors.subtext} />) on the answer that helped you.
-              </AccessibleText>
-              <TouchableOpacity
-                style={styles.satCancelLink}
-                onPress={() => setSatisfactionFlow(false)}
-                accessibilityRole="button"
-                accessibilityLabel="Cancel marking an answer as accepted"
-              >
-                <AccessibleText variant="caption" style={[styles.satCancelLinkText, { color: colors.error }]}>
-                  Cancel
-                </AccessibleText>
-              </TouchableOpacity>
-            </View>
-          )}
-        </View>
-      )}
-
-      {/* RESOLVED STATE BANNER */}
-      {/* Note: this success-state green is a semantic status color with no
-          equivalent slot in ThemeColors, so it is intentionally left as a
-          literal (consistent with how other converted screens treat
-          success/error accent colors that fall outside the palette). */}
-      {isSolved && (
-        <View style={styles.resolvedBanner}>
-          <CheckCircle2 size={18} color="#16A34A" style={{ marginRight: 8 }} />
-          <AccessibleText variant="body" style={styles.resolvedBannerText}>
-            This discussion has been resolved.
-          </AccessibleText>
-        </View>
-      )}
-
-      <AccessibleText variant="title" style={[styles.answersListHeader, { color: colors.text }]}>
-        Answers ({currentQuestion.answers?.length ?? 0})
-      </AccessibleText>
+      {/* SECTION TITLE: Answers (N) */}
+      <View style={styles.answersSectionHeader}>
+        <AccessibleText variant="title" style={[styles.answersListHeader, { color: colors.text }]}>
+          Answers ({currentQuestion.answers?.length ?? 0})
+        </AccessibleText>
+      </View>
     </View>
   );
 
@@ -694,11 +722,13 @@ const QuestionDetailsScreen = () => {
             )}
 
             {/* IMAGE */}
-            {isValidImageUrl(item.imageUrl) && (
-              <View>
+            {!failedImages[item.id] && isValidImageUrl(item.imageUrl) && (
+              <View style={styles.imageContainer}>
                 <Image
                   source={{ uri: item.imageUrl as string }}
                   style={styles.answerImage}
+                  resizeMode="cover"
+                  onError={() => setFailedImages((prev) => ({ ...prev, [item.id]: true }))}
                   accessible={true}
                   accessibilityLabel={isValidAltText(item.altText) ? item.altText! : "Answer image"}
                 />
@@ -737,9 +767,18 @@ const QuestionDetailsScreen = () => {
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
+    <ScreenWrapper statusBarStyle="dark" withBottomSafeArea={false}>
       {/* HEADER */}
-      <View style={[styles.header, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
+      <View
+        style={[
+          styles.header,
+          {
+            backgroundColor: colors.card,
+            borderBottomColor: colors.border,
+            paddingTop: Math.max(insets.top, 10),
+          },
+        ]}
+      >
         <TouchableOpacity
           onPress={() => navigation.goBack()}
           style={styles.backButton}
@@ -747,7 +786,7 @@ const QuestionDetailsScreen = () => {
           accessibilityLabel="Go back"
           accessibilityHint="Returns to the previous screen"
         >
-          <ArrowLeft size={24} color={colors.text} />
+          <ArrowLeft size={22} color={colors.text} />
         </TouchableOpacity>
         <AccessibleText variant="title" style={[styles.headerTitle, { color: colors.text }]}>
           Discussion Details
@@ -762,7 +801,11 @@ const QuestionDetailsScreen = () => {
           ]}
           accessibilityRole="button"
           accessibilityLabel="Toggle dyslexia layout helper"
-          accessibilityHint={dyslexiaMode ? "Turns off the dyslexia-friendly reading mode" : "Turns on the dyslexia-friendly reading mode"}
+          accessibilityHint={
+            dyslexiaMode
+              ? "Turns off the dyslexia-friendly reading mode"
+              : "Turns on the dyslexia-friendly reading mode"
+          }
           accessibilityState={{ selected: dyslexiaMode }}
         >
           <Type size={18} color={dyslexiaMode ? "#FFFFFF" : colors.subtext} />
@@ -775,7 +818,7 @@ const QuestionDetailsScreen = () => {
         keyExtractor={(item) => item.id}
         renderItem={renderAnswerCard}
         ListHeaderComponent={renderQuestionHeader}
-        contentContainerStyle={styles.listContent}
+        contentContainerStyle={[styles.listContent, { paddingBottom: Math.max(insets.bottom + 80, 100) }]}
         ListEmptyComponent={
           <View style={styles.emptyAnswers}>
             <MessageCircle size={32} color={colors.subtext} style={{ marginBottom: 8 }} />
@@ -790,19 +833,15 @@ const QuestionDetailsScreen = () => {
       />
 
       {/* FLOAT REPLY BUTTON */}
-      {/* The absolute positioning lives on this wrapper View, NOT on the
-          AccessibleButton: AccessibleButton applies its `style` to an inner
-          Animated.View, so position:absolute there collapses the outer
-          Pressable (the touch target) to 0×0 and taps do nothing. */}
       {!isSolved && (
-        <View style={styles.replyFabWrapper} pointerEvents="box-none">
+        <View style={[styles.replyFabWrapper, { bottom: Math.max(insets.bottom + 16, 24) }]} pointerEvents="box-none">
           <AccessibleButton
             variant="primary"
             accessibilityLabel="Post your answer"
             style={[styles.replyFab, { shadowColor: colors.primary }]}
             onPress={() => setIsAnswerModalOpen(true)}
           >
-            <Plus size={24} color="#FFFFFF" style={{ marginRight: 6 }} />
+            <Plus size={22} color="#FFFFFF" style={{ marginRight: 6 }} />
             <AccessibleText variant="button" style={styles.replyFabText}>
               Answer
             </AccessibleText>
@@ -927,7 +966,7 @@ const QuestionDetailsScreen = () => {
           </View>
         </TouchableWithoutFeedback>
       </Modal>
-    </View>
+    </ScreenWrapper>
   );
 };
 
@@ -984,15 +1023,25 @@ const styles = StyleSheet.create({
   listContent: {
     paddingBottom: 100
   },
-  questionSection: {
-    padding: 20,
-    borderBottomWidth: 1
+  headerContainer: {
+    paddingBottom: 2,
+  },
+  questionCard: {
+    borderRadius: 20,
+    padding: 18,
+    marginHorizontal: 16,
+    marginTop: 14,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 2,
   },
   authorRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 16
+    marginBottom: 12
   },
   authorLeft: {
     flexDirection: "row",
@@ -1045,26 +1094,31 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: "800",
     lineHeight: 24,
-    marginBottom: 10
+    marginBottom: 6,
+    marginTop: 2
+  },
+  descriptionWrapper: {
+    marginBottom: 8,
+  },
+  imageContainer: {
+    marginVertical: 8,
   },
   questionImage: {
     width: "100%",
-    height: 200,
-    borderRadius: 16,
-    resizeMode: "cover",
-    marginBottom: 8,
-    marginTop: 10
+    height: 180,
+    borderRadius: 14,
+    marginBottom: 4,
   },
   altTextHint: {
     fontSize: 11,
     fontStyle: "italic",
-    marginBottom: 14
+    marginBottom: 8
   },
   tagsContainer: {
     flexDirection: "row",
     flexWrap: "wrap",
-    marginBottom: 14,
-    marginTop: 8
+    marginTop: 4,
+    marginBottom: 10
   },
   tagBadge: {
     borderRadius: 6,
@@ -1191,10 +1245,14 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     fontSize: 13
   },
+  answersSectionHeader: {
+    marginHorizontal: 20,
+    marginTop: 18,
+    marginBottom: 4,
+  },
   answersListHeader: {
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: "800",
-    marginTop: 24
   },
   answerCard: {
     borderRadius: 18,
