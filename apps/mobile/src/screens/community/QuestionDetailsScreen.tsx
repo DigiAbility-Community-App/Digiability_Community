@@ -118,6 +118,8 @@ const QuestionDetailsScreen = () => {
   const [reportModalVisible, setReportModalVisible] = useState(false);
   const [reportTarget, setReportTarget] = useState<{ type: "question" | "answer"; id: string } | null>(null);
   const [reportReason, setReportReason] = useState("");
+  const [reportDetails, setReportDetails] = useState("");
+  const [reportSubmitting, setReportSubmitting] = useState(false);
 
   const [satisfactionFlow, setSatisfactionFlow] = useState(false);
   const [speakingId, setSpeakingId] = useState<string | null>(null);
@@ -245,20 +247,35 @@ const QuestionDetailsScreen = () => {
     ]);
   };
 
+  const REPORT_REASONS = [
+    { key: "SPAM", label: "Spam" },
+    { key: "HARASSMENT", label: "Harassment" },
+    { key: "HATE_SPEECH", label: "Hate Speech" },
+    { key: "INAPPROPRIATE_CONTENT", label: "Inappropriate Content" },
+    { key: "MISINFORMATION", label: "Misinformation" },
+    { key: "OTHER", label: "Other" },
+  ];
+
   const openReportModal = (type: "question" | "answer", id: string) => {
     setReportTarget({ type, id });
     setReportReason("");
+    setReportDetails("");
     setReportModalVisible(true);
   };
 
   const handleReportSubmit = async () => {
-    if (!reportReason.trim()) {
-      Alert.alert("Reason Required", "Please specify why you are reporting this content.");
+    if (!reportReason) {
+      Alert.alert("Reason Required", "Please select a reason for reporting this content.");
       return;
     }
+    if (reportSubmitting) return;
 
+    setReportSubmitting(true);
     try {
-      const payload: any = { reason: reportReason.trim() };
+      const fullReason = reportDetails.trim()
+        ? `${reportReason}: ${reportDetails.trim()}`
+        : reportReason;
+      const payload: any = { reason: fullReason };
       if (reportTarget) {
         if (reportTarget.type === "question") {
           payload.questionId = reportTarget.id;
@@ -271,7 +288,9 @@ const QuestionDetailsScreen = () => {
       setReportModalVisible(false);
       Alert.alert("Thank You", "Your report has been submitted to the moderation team.");
     } catch (e: any) {
-      Alert.alert("Error", "Failed to submit report.");
+      Alert.alert("Error", "Failed to submit report. Please try again.");
+    } finally {
+      setReportSubmitting(false);
     }
   };
 
@@ -918,27 +937,60 @@ const QuestionDetailsScreen = () => {
               <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
                 <View style={[styles.reportContent, { backgroundColor: colors.card }]}>
                   <AccessibleText variant="title" style={[styles.reportTitle, { color: colors.text }]}>
-                    Report Content
+                    Report {reportTarget?.type === "answer" ? "Answer" : "Post"}
                   </AccessibleText>
                   <AccessibleText variant="body" style={[styles.reportSubtitle, { color: colors.subtext }]}>
-                    Why are you reporting this {reportTarget?.type}? Please provide a reason:
+                    Select a reason for reporting this content:
                   </AccessibleText>
 
+                  {/* Predefined reason chips */}
+                  <View style={styles.reportReasonGrid}>
+                    {REPORT_REASONS.map((r) => (
+                      <TouchableOpacity
+                        key={r.key}
+                        style={[
+                          styles.reportReasonChip,
+                          { borderColor: reportReason === r.key ? colors.primary : colors.border,
+                            backgroundColor: reportReason === r.key
+                              ? (highContrast ? "#000" : "#F3E8FF")
+                              : colors.surface },
+                        ]}
+                        onPress={() => setReportReason(r.key)}
+                        accessibilityRole="radio"
+                        accessibilityState={{ checked: reportReason === r.key }}
+                        accessibilityLabel={r.label}
+                      >
+                        <AccessibleText
+                          variant="caption"
+                          style={{
+                            color: reportReason === r.key
+                              ? (highContrast ? "#fff" : colors.primary)
+                              : colors.text,
+                            fontWeight: reportReason === r.key ? "700" : "400",
+                          }}
+                        >
+                          {r.label}
+                        </AccessibleText>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+
+                  {/* Optional details input */}
                   <TextInput
                     style={[
                       styles.reportInput,
-                      { backgroundColor: colors.surface, color: colors.text },
+                      { backgroundColor: colors.surface, color: colors.text, marginTop: 12 },
                       highContrast && { borderWidth: 1, borderColor: "#000000" },
                     ]}
-                    placeholder="e.g. Abusive behavior, spam, misinformation..."
+                    placeholder="Additional details (optional)"
                     placeholderTextColor={colors.subtext}
-                    value={reportReason}
-                    onChangeText={setReportReason}
+                    value={reportDetails}
+                    onChangeText={setReportDetails}
                     multiline
-                    numberOfLines={4}
+                    numberOfLines={3}
                     textAlignVertical="top"
-                    accessibilityLabel="Report reason"
-                    accessibilityHint="Explain why you are reporting this content"
+                    accessibilityLabel="Additional details"
+                    accessibilityHint="Optionally add more context about this report"
                   />
 
                   <View style={styles.reportActions}>
@@ -956,8 +1008,9 @@ const QuestionDetailsScreen = () => {
                       accessibilityLabel="Submit report"
                       style={styles.reportBtn}
                       onPress={handleReportSubmit}
+                      disabled={reportSubmitting || !reportReason}
                     >
-                      Submit Report
+                      {reportSubmitting ? "Submitting..." : "Submit Report"}
                     </AccessibleButton>
                   </View>
                 </View>
@@ -1459,10 +1512,22 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     marginBottom: 12
   },
+  reportReasonGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginBottom: 4,
+  },
+  reportReasonChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 20,
+    borderWidth: 1.5,
+  },
   reportInput: {
     borderRadius: 10,
     padding: 12,
-    height: 80,
+    height: 72,
     fontSize: 14,
     marginBottom: 16
   },

@@ -20,6 +20,7 @@ import SearchScreen from '@screens/community/SearchScreen';
 import EventsScreen from '@screens/events/EventsScreen';
 import EventDetailsScreen from '@screens/events/EventDetailScreen';
 import LeavePortalScreen from '@screens/events/LeavePortalScreen';
+import ContactSupportScreen from '@screens/profile/ContactSupportScreen';
 import { useAuthStore } from '@store/authStore';
 import { hasCompletedAccessibility } from '@services/storageService';
 
@@ -43,6 +44,7 @@ export type MainStackParamList = {
   Events: undefined;
   EventDetails: { eventId: string };
   LeavePortal: { eventId: string; externalUrl: string; eventTitle: string; eventDate?: string; eventLocation?: string; organizer?: string };
+  ContactSupport: undefined;
 };
 
 const Stack = createNativeStackNavigator<MainStackParamList>();
@@ -182,6 +184,7 @@ const MainNavigator = () => {
       <Stack.Screen name="Events" component={EventsScreen} />
       <Stack.Screen name="EventDetails" component={EventDetailsScreen} />
       <Stack.Screen name="LeavePortal" component={LeavePortalScreen} />
+      <Stack.Screen name="ContactSupport" component={ContactSupportScreen} />
     </Stack.Navigator>
   );
 };

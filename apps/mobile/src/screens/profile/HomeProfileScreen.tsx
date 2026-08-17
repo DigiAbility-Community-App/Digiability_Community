@@ -351,21 +351,19 @@ const HomeProfileScreen = () => {
                 <View style={[styles.sectionCard, { backgroundColor: colors.surface }, cardBorder]}>
                     <MenuItem
                         icon="❓"
-                        title="Help Center"
-                        onPress={() => comingSoonAlert("Help Center")}
+                        title="Help Center & FAQs"
+                        onPress={() => navigation.navigate("ContactSupport" as any)}
                         colors={colors}
                         highContrast={highContrast}
                         cardBorder={cardBorder}
-                        comingSoon
                     />
                     <MenuItem
                         icon="📞"
                         title="Contact Support"
-                        onPress={() => comingSoonAlert("Contact Support")}
+                        onPress={() => navigation.navigate("ContactSupport" as any)}
                         colors={colors}
                         highContrast={highContrast}
                         cardBorder={cardBorder}
-                        comingSoon
                     />
                 </View>
 

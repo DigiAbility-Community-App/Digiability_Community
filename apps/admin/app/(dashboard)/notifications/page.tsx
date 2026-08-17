@@ -110,7 +110,7 @@ export default function NotificationsPage() {
   const typeInfo      = TYPE_OPTIONS.find(t => t.value === type);
 
   return (
-    <div className="px-8 py-8 space-y-8 max-w-[1300px]">
+    <div className="px-4 sm:px-6 lg:px-8 py-6 space-y-6 w-full max-w-full overflow-x-hidden">
 
       {/* HEADER */}
       <div>

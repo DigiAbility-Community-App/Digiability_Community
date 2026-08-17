@@ -4,12 +4,12 @@ import axios from 'axios';
 // Base URL for user-svc
 const API_BASE_URL =
   (process.env.EXPO_PUBLIC_API_BASE_URL as string | undefined) ??
-  'http://10.0.2.2:4001';
+  'http://187.127.191.28:30501';
 
-// Base URL for Admin portal (fallback for maintenance checks)
+// Base URLs for Admin portal (live remote + local fallbacks)
 const ADMIN_BASE_URL =
   (process.env.EXPO_PUBLIC_ADMIN_API_URL as string | undefined) ??
-  'http://192.168.1.11:3001';
+  'http://187.127.191.28:30504';
 
 interface SystemState {
   isMaintenanceMode: boolean;
@@ -30,45 +30,64 @@ export const useSystemStore = create<SystemState>((set) => ({
     try {
       set({ isCheckingMaintenance: true });
 
-      // 1. First try user-svc /api/auth/maintenance
+      let foundSupportInfo = false;
+      let maintenanceResult = false;
+
+      // 1. Check Admin API endpoint first for direct live settings
+      const adminEndpoints = [
+        `${ADMIN_BASE_URL}/api/maintenance`,
+        'http://187.127.191.28:30504/api/maintenance',
+        'http://192.168.1.11:3001/api/maintenance',
+        'http://localhost:3001/api/maintenance',
+        'http://10.0.2.2:3001/api/maintenance',
+      ];
+
+      for (const endpoint of adminEndpoints) {
+        try {
+          const adminRes = await axios.get<{
+            success: boolean;
+            inMaintenance: boolean;
+            supportPhone?: string;
+            supportEmail?: string;
+          }>(endpoint, { timeout: 2500 });
+
+          if (adminRes.data && adminRes.data.success) {
+            maintenanceResult = Boolean(adminRes.data.inMaintenance);
+            set({
+              isMaintenanceMode: maintenanceResult,
+              ...(adminRes.data.supportPhone ? { supportPhone: adminRes.data.supportPhone } : {}),
+              ...(adminRes.data.supportEmail ? { supportEmail: adminRes.data.supportEmail } : {}),
+            });
+            foundSupportInfo = true;
+            break;
+          }
+        } catch {
+          // Try next endpoint
+        }
+      }
+
+      // 2. Also check user-svc /api/auth/maintenance
       try {
-        const res = await axios.get<{ success: boolean; inMaintenance: boolean; supportPhone?: string; supportEmail?: string }>(
-          `${API_BASE_URL}/api/auth/maintenance`,
-          { timeout: 4000 }
-        );
+        const res = await axios.get<{
+          success: boolean;
+          inMaintenance: boolean;
+          supportPhone?: string;
+          supportEmail?: string;
+        }>(`${API_BASE_URL}/api/auth/maintenance`, { timeout: 3000 });
+
         if (res.data && typeof res.data.inMaintenance === 'boolean') {
-          const inMaintenance = res.data.inMaintenance;
+          maintenanceResult = res.data.inMaintenance;
           set({
-            isMaintenanceMode: inMaintenance,
+            isMaintenanceMode: maintenanceResult,
             ...(res.data.supportPhone ? { supportPhone: res.data.supportPhone } : {}),
             ...(res.data.supportEmail ? { supportEmail: res.data.supportEmail } : {}),
           });
-          return inMaintenance;
         }
-      } catch (userSvcErr: any) {
-        // Fallback to admin endpoint
+      } catch {
+        // user-svc unreachable
       }
 
-      // 2. Fallback: check Admin /api/maintenance endpoint directly
-      try {
-        const adminRes = await axios.get<{ success: boolean; inMaintenance: boolean; supportPhone?: string; supportEmail?: string }>(
-          `${ADMIN_BASE_URL}/api/maintenance`,
-          { timeout: 4000 }
-        );
-        if (adminRes.data && typeof adminRes.data.inMaintenance === 'boolean') {
-          const inMaintenance = adminRes.data.inMaintenance;
-          set({
-            isMaintenanceMode: inMaintenance,
-            ...(adminRes.data.supportPhone ? { supportPhone: adminRes.data.supportPhone } : {}),
-            ...(adminRes.data.supportEmail ? { supportEmail: adminRes.data.supportEmail } : {}),
-          });
-          return inMaintenance;
-        }
-      } catch (adminErr) {
-        // Both unreachable or network error
-      }
-
-      return false;
+      return maintenanceResult;
     } catch {
       return false;
     } finally {
@@ -76,4 +95,3 @@ export const useSystemStore = create<SystemState>((set) => ({
     }
   },
 }));
-
