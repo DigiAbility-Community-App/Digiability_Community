@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import {
   View,
   StyleSheet,
@@ -17,6 +17,11 @@ import { AccessibleButton } from "../../components/shared/AccessibleButton";
 import { Input } from "../../components/shared/Input";
 import ScreenWrapper from "../../components/layout/ScreenWrapper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+
+// -------------------------------------------------------------------
+// Resend OTP cooldown in seconds
+// -------------------------------------------------------------------
+const RESEND_COOLDOWN_SECONDS = 60;
 
 type Props = {
   navigation: NativeStackNavigationProp<AuthStackParamList, "ForgotPassword">;
@@ -37,8 +42,34 @@ const ForgotPasswordScreen = ({ navigation }: Props) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Resend OTP rate-limiting
+  const [resendCooldown, setResendCooldown] = useState(0);
+  const cooldownRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (cooldownRef.current) clearInterval(cooldownRef.current);
+    };
+  }, []);
+
+  const startCooldown = () => {
+    setResendCooldown(RESEND_COOLDOWN_SECONDS);
+    cooldownRef.current = setInterval(() => {
+      setResendCooldown((prev) => {
+        if (prev <= 1) {
+          clearInterval(cooldownRef.current!);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+  };
+
   const clearError = () => setError(null);
 
+  // ------------------------------------------------------------------
+  // Step 1 — Request OTP
+  // ------------------------------------------------------------------
   const handleRequestReset = async () => {
     clearError();
     const trimmedEmail = email.trim().toLowerCase();
@@ -53,11 +84,19 @@ const ForgotPasswordScreen = ({ navigation }: Props) => {
       return;
     }
 
+    // Guard: prevent spamming Resend while cooldown is active
+    if (resendCooldown > 0) {
+      setError(`Please wait ${resendCooldown}s before requesting a new code.`);
+      return;
+    }
+
     setLoading(true);
     try {
       await forgotPassword({ email: trimmedEmail });
-      // Always show step 2 regardless of whether the email exists (safe message)
+      // Always move to step 2 regardless of whether the email is registered
+      // (prevents email enumeration attacks)
       setStep(2);
+      startCooldown();
     } catch {
       setError("Something went wrong. Please try again.");
     } finally {
@@ -65,6 +104,9 @@ const ForgotPasswordScreen = ({ navigation }: Props) => {
     }
   };
 
+  // ------------------------------------------------------------------
+  // Step 2 — Submit OTP + new password
+  // ------------------------------------------------------------------
   const handleResetPassword = async () => {
     clearError();
 
@@ -90,7 +132,11 @@ const ForgotPasswordScreen = ({ navigation }: Props) => {
 
     setLoading(true);
     try {
-      await resetPassword({ email: email.trim().toLowerCase(), otp: otp.trim(), password: newPassword });
+      await resetPassword({
+        email: email.trim().toLowerCase(),
+        otp: otp.trim(),
+        password: newPassword,
+      });
       Alert.alert(
         "Password Reset",
         "Your password has been reset successfully. Please log in with your new password.",
@@ -104,6 +150,42 @@ const ForgotPasswordScreen = ({ navigation }: Props) => {
     }
   };
 
+  // ------------------------------------------------------------------
+  // Resend OTP — clear stale OTP/password inputs, apply cooldown
+  // ------------------------------------------------------------------
+  const handleResend = async () => {
+    clearError();
+
+    if (resendCooldown > 0) {
+      setError(`Please wait ${resendCooldown}s before requesting a new code.`);
+      return;
+    }
+
+    // Clear Step 2 fields so user doesn't accidentally submit an old OTP
+    setOtp("");
+    setNewPassword("");
+    setConfirmPassword("");
+
+    await handleRequestReset();
+  };
+
+  // ------------------------------------------------------------------
+  // Back — step 2 → step 1 (also clear stale fields)
+  // ------------------------------------------------------------------
+  const handleBack = () => {
+    if (step === 2) {
+      setOtp("");
+      setNewPassword("");
+      setConfirmPassword("");
+      clearError();
+      setStep(1);
+    } else {
+      navigation.goBack();
+    }
+  };
+
+  const canResend = !loading && resendCooldown === 0;
+
   return (
     <ScreenWrapper statusBarStyle="light">
       {/* HEADER */}
@@ -115,7 +197,7 @@ const ForgotPasswordScreen = ({ navigation }: Props) => {
       >
         <TouchableOpacity
           style={styles.backBtn}
-          onPress={() => (step === 2 ? setStep(1) : navigation.goBack())}
+          onPress={handleBack}
           accessibilityRole="button"
           accessibilityLabel="Go back"
         >
@@ -125,7 +207,11 @@ const ForgotPasswordScreen = ({ navigation }: Props) => {
         <AccessibleText variant="heroTitle" color="#fff" style={styles.headerTitle}>
           {step === 1 ? "Forgot Password" : "Reset Password"}
         </AccessibleText>
-        <AccessibleText variant="subtitle" color="rgba(255,255,255,0.8)" style={styles.headerSubtitle}>
+        <AccessibleText
+          variant="subtitle"
+          color="rgba(255,255,255,0.8)"
+          style={styles.headerSubtitle}
+        >
           {step === 1
             ? "Enter your email to receive a reset OTP"
             : "Enter the OTP from your email and your new password"}
@@ -133,7 +219,7 @@ const ForgotPasswordScreen = ({ navigation }: Props) => {
       </LinearGradient>
 
       {/* FORM CARD */}
-      <View style={styles.bottomCard}>
+      <View style={[styles.bottomCard, { backgroundColor: colors.card }]}>
         <KeyboardAwareScrollView
           contentContainerStyle={styles.bottomContent}
           keyboardShouldPersistTaps="handled"
@@ -141,8 +227,22 @@ const ForgotPasswordScreen = ({ navigation }: Props) => {
         >
           {/* Error */}
           {error ? (
-            <View style={[styles.errorBox, { borderLeftColor: colors.error }, highContrast && { backgroundColor: "#FFFFFF", borderWidth: 2, borderColor: "#000000" }]}>
-              <AccessibleText variant="body" color={colors.error} accessibilityRole="alert">
+            <View
+              style={[
+                styles.errorBox,
+                { borderLeftColor: colors.error },
+                highContrast && {
+                  backgroundColor: "#FFFFFF",
+                  borderWidth: 2,
+                  borderColor: "#000000",
+                },
+              ]}
+            >
+              <AccessibleText
+                variant="body"
+                color={colors.error}
+                accessibilityRole="alert"
+              >
                 {error}
               </AccessibleText>
             </View>
@@ -150,10 +250,15 @@ const ForgotPasswordScreen = ({ navigation }: Props) => {
 
           {step === 1 ? (
             <>
-              <AccessibleText variant="label" style={styles.fieldLabel}>Email Address</AccessibleText>
+              <AccessibleText variant="label" style={styles.fieldLabel}>
+                Email Address
+              </AccessibleText>
               <Input
                 value={email}
-                onChangeText={(t) => { setEmail(t); clearError(); }}
+                onChangeText={(t) => {
+                  setEmail(t);
+                  clearError();
+                }}
                 placeholder="you@example.com"
                 keyboardType="email-address"
                 autoCapitalize="none"
@@ -174,10 +279,29 @@ const ForgotPasswordScreen = ({ navigation }: Props) => {
             </>
           ) : (
             <>
-              <AccessibleText variant="label" style={styles.fieldLabel}>Reset Code</AccessibleText>
+              {/* Contextual info: which email was used */}
+              <View style={[styles.emailInfoBox, { backgroundColor: highContrast ? colors.surface : "#F5F3FF" }]}>
+                <AccessibleText
+                  variant="caption"
+                  style={[styles.emailInfoText, { color: colors.secondary }]}
+                >
+                  We sent a 6-digit code to{" "}
+                  <AccessibleText variant="caption" style={{ fontWeight: "800", color: colors.secondary }}>
+                    {email.trim().toLowerCase()}
+                  </AccessibleText>
+                  . Check your spam folder if you don't see it.
+                </AccessibleText>
+              </View>
+
+              <AccessibleText variant="label" style={styles.fieldLabel}>
+                Reset Code
+              </AccessibleText>
               <Input
                 value={otp}
-                onChangeText={(t) => { setOtp(t.replace(/[^0-9]/g, "")); clearError(); }}
+                onChangeText={(t) => {
+                  setOtp(t.replace(/[^0-9]/g, ""));
+                  clearError();
+                }}
                 placeholder="6-digit code"
                 keyboardType="number-pad"
                 maxLength={6}
@@ -187,26 +311,40 @@ const ForgotPasswordScreen = ({ navigation }: Props) => {
                 accessibilityHint="Enter the 6-digit code from the reset email"
               />
 
-              <AccessibleText variant="label" style={[styles.fieldLabel, { marginTop: spacing.md }]}>
+              <AccessibleText
+                variant="label"
+                style={[styles.fieldLabel, { marginTop: spacing.md }]}
+              >
                 New Password
               </AccessibleText>
               <Input
                 value={newPassword}
-                onChangeText={(t) => { setNewPassword(t); clearError(); }}
+                onChangeText={(t) => {
+                  setNewPassword(t);
+                  clearError();
+                }}
                 placeholder="Minimum 8 characters"
                 secureTextEntry
+                showPasswordToggle
                 accessibilityLabel="New password"
                 accessibilityHint="At least 8 characters with uppercase, lowercase, and a number"
               />
 
-              <AccessibleText variant="label" style={[styles.fieldLabel, { marginTop: spacing.md }]}>
+              <AccessibleText
+                variant="label"
+                style={[styles.fieldLabel, { marginTop: spacing.md }]}
+              >
                 Confirm Password
               </AccessibleText>
               <Input
                 value={confirmPassword}
-                onChangeText={(t) => { setConfirmPassword(t); clearError(); }}
+                onChangeText={(t) => {
+                  setConfirmPassword(t);
+                  clearError();
+                }}
                 placeholder="Repeat new password"
                 secureTextEntry
+                showPasswordToggle
                 accessibilityLabel="Confirm new password"
                 accessibilityHint="Re-enter your new password to confirm"
               />
@@ -222,13 +360,24 @@ const ForgotPasswordScreen = ({ navigation }: Props) => {
               </AccessibleButton>
 
               <TouchableOpacity
-                onPress={handleRequestReset}
-                style={styles.resendBtn}
+                onPress={handleResend}
+                disabled={!canResend}
+                style={[styles.resendBtn, !canResend && styles.resendDisabled]}
                 accessibilityRole="button"
-                accessibilityLabel="Resend OTP"
+                accessibilityLabel={
+                  resendCooldown > 0
+                    ? `Resend OTP available in ${resendCooldown} seconds`
+                    : "Resend OTP"
+                }
+                accessibilityState={{ disabled: !canResend }}
               >
-                <AccessibleText variant="body" color={colors.primary}>
-                  Didn't receive the OTP? Resend
+                <AccessibleText
+                  variant="body"
+                  color={canResend ? colors.primary : colors.subtext}
+                >
+                  {resendCooldown > 0
+                    ? `Resend OTP in ${resendCooldown}s`
+                    : "Didn't receive the OTP? Resend"}
                 </AccessibleText>
               </TouchableOpacity>
             </>
@@ -259,7 +408,6 @@ const styles = StyleSheet.create({
   },
   bottomCard: {
     flex: 1,
-    backgroundColor: "#fff",
     marginTop: -24,
     borderTopLeftRadius: 32,
     borderTopRightRadius: 32,
@@ -277,6 +425,14 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     borderLeftWidth: 4,
   },
+  emailInfoBox: {
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 20,
+  },
+  emailInfoText: {
+    lineHeight: 20,
+  },
   fieldLabel: {
     marginBottom: 6,
     fontWeight: "600",
@@ -287,5 +443,8 @@ const styles = StyleSheet.create({
   resendBtn: {
     marginTop: 16,
     alignItems: "center",
+  },
+  resendDisabled: {
+    opacity: 0.5,
   },
 });

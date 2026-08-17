@@ -75,7 +75,7 @@ export default function AdminSettingsPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#F4F1F8]">
+    <div className="min-h-screen bg-[#F4F1F8] w-full max-w-full overflow-x-hidden">
       {/* SAVE TOAST */}
       {saved && (
         <div className="fixed top-6 right-6 z-50 flex items-center gap-3 bg-green-600 text-white px-5 py-3 rounded-xl shadow-lg font-semibold text-sm">
@@ -83,7 +83,7 @@ export default function AdminSettingsPage() {
         </div>
       )}
 
-      <div className="px-10 py-8 max-w-[1450px] mx-auto">
+      <div className="px-4 sm:px-6 lg:px-8 py-6 max-w-full w-full mx-auto">
         <div className="grid grid-cols-1 xl:grid-cols-[280px_minmax(0,1fr)] gap-6 items-start">
 
           {/* LEFT PANEL */}

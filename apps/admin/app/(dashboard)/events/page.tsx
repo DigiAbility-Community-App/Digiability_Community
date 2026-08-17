@@ -447,7 +447,7 @@ export default function EventsPage() {
   const upcomingThisWeek = sortedByDate.slice(0, 5);
 
   return (
-    <div className="px-8 py-7 min-h-screen space-y-6">
+    <div className="px-4 sm:px-6 lg:px-8 py-6 min-h-screen space-y-6 w-full max-w-full overflow-x-hidden">
 
       {/* HEADER */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">

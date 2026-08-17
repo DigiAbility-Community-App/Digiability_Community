@@ -394,10 +394,10 @@ export default function CommunityPage() {
   });
 
   return (
-    <div className="flex flex-col h-full bg-[#FAFAFA]">
+    <div className="flex flex-col h-full bg-[#FAFAFA] w-full max-w-full overflow-x-hidden">
 
       {/* TOP HEADER */}
-      <div className="flex items-center justify-between px-8 py-5 border-b border-gray-100 bg-white">
+      <div className="flex items-center justify-between px-4 sm:px-6 lg:px-8 py-5 border-b border-gray-100 bg-white">
         <div>
           <h1 className="text-xl font-extrabold text-[#1A1C1C]">
             {activeTab === "Forums" ? "Discussions & Q&A" : "Professional Services Directory"}

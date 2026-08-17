@@ -243,12 +243,30 @@ export const removeDeviceTokenHandler = asyncHandler(async (req: Request, res: R
 // Returns the current platform maintenance mode status.
 export const checkMaintenanceHandler = asyncHandler(async (_req: Request, res: Response) => {
   try {
-    const result: Array<{ maintenance_mode: boolean }> = await prisma.$queryRaw`
-      SELECT maintenance_mode FROM admin_general_settings WHERE id = 'default' LIMIT 1
+    const result: Array<{ maintenance_mode: boolean; support_phone?: string; email_config?: string }> = await prisma.$queryRaw`
+      SELECT maintenance_mode, support_phone, email_config FROM admin_general_settings WHERE id = 'default' LIMIT 1
     `;
-    const inMaintenance = result.length > 0 ? Boolean(result[0].maintenance_mode) : false;
-    res.status(200).json({ success: true, inMaintenance });
+    if (result.length > 0) {
+      const row = result[0];
+      return res.status(200).json({
+        success: true,
+        inMaintenance: Boolean(row.maintenance_mode),
+        supportPhone: row.support_phone || "+91 88000 12345",
+        supportEmail: row.email_config || "support@digiability.org",
+      });
+    }
+    res.status(200).json({
+      success: true,
+      inMaintenance: false,
+      supportPhone: "+91 88000 12345",
+      supportEmail: "support@digiability.org",
+    });
   } catch {
-    res.status(200).json({ success: true, inMaintenance: false });
+    res.status(200).json({
+      success: true,
+      inMaintenance: false,
+      supportPhone: "+91 88000 12345",
+      supportEmail: "support@digiability.org",
+    });
   }
 });
