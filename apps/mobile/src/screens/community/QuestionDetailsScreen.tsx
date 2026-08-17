@@ -931,7 +931,7 @@ const QuestionDetailsScreen = () => {
         <TouchableWithoutFeedback onPress={() => setReportModalVisible(false)}>
           <View style={styles.reportOverlay}>
             <KeyboardAvoidingView
-              behavior={Platform.OS === "ios" ? "padding" : "height"}
+              behavior={Platform.OS === "ios" ? "padding" : undefined}
               style={{ width: "100%", alignItems: "center" }}
             >
               <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
