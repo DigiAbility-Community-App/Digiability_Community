@@ -207,11 +207,6 @@ const QuestionDetailsScreen = () => {
   };
 
   const handleReportSubmit = async () => {
-    if (!reportReason.trim()) {
-      Alert.alert("Reason Required", "Please specify why you are reporting this content.");
-      return;
-    }
-
     try {
       const payload: any = { reason: reportReason.trim() };
       if (reportTarget) {
@@ -840,13 +835,21 @@ const QuestionDetailsScreen = () => {
         animationType="fade"
         onRequestClose={() => setReportModalVisible(false)}
       >
-        <View style={styles.reportOverlay}>
-          <View style={[styles.reportContent, { backgroundColor: colors.card }]}>
+        <TouchableOpacity 
+          style={styles.reportOverlay} 
+          activeOpacity={1} 
+          onPress={() => setReportModalVisible(false)}
+        >
+          <TouchableOpacity 
+            activeOpacity={1} 
+            style={[styles.reportContent, { backgroundColor: colors.card }]}
+            onPress={() => {}}
+          >
             <AccessibleText variant="title" style={[styles.reportTitle, { color: colors.text }]}>
               Report Content
             </AccessibleText>
             <AccessibleText variant="body" style={[styles.reportSubtitle, { color: colors.subtext }]}>
-              Why are you reporting this {reportTarget?.type}? Please provide a reason:
+              Why are you reporting this {reportTarget?.type}? Please provide a reason (optional):
             </AccessibleText>
 
             <TextInput
@@ -885,8 +888,8 @@ const QuestionDetailsScreen = () => {
                 Submit Report
               </AccessibleButton>
             </View>
-          </View>
-        </View>
+          </TouchableOpacity>
+        </TouchableOpacity>
       </Modal>
     </View>
   );
@@ -1371,11 +1374,12 @@ const styles = StyleSheet.create({
   },
   reportActions: {
     flexDirection: "row",
-    gap: 10
+    justifyContent: "space-between",
+    marginTop: 8
   },
   reportBtn: {
-    flex: 1,
-    height: 44,
+    flex: 0.48,
+    minHeight: 44,
     borderRadius: 10,
     justifyContent: "center",
     alignItems: "center"

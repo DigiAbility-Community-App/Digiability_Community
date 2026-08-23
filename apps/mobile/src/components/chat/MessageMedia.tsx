@@ -58,9 +58,10 @@ interface MessageMediaProps {
   message: ChatMessage;
   isMine: boolean;
   onOpenViewer?: (src: string, alt: string, isVideo: boolean) => void;
+  onLongPress?: () => void;
 }
 
-export function MessageMedia({ message, isMine, onOpenViewer }: MessageMediaProps) {
+export function MessageMedia({ message, isMine, onOpenViewer, onLongPress }: MessageMediaProps) {
   const meta = parseMeta(message.metadata);
   const mediaSrc = resolveMediaUrl(message.content);
 
@@ -80,6 +81,7 @@ export function MessageMedia({ message, isMine, onOpenViewer }: MessageMediaProp
           <TouchableOpacity
             activeOpacity={0.85}
             onPress={handlePress}
+            onLongPress={onLongPress}
             accessibilityRole="button"
             accessibilityLabel="Play video"
             accessibilityHint="Opens video in full-screen player"
@@ -120,6 +122,7 @@ export function MessageMedia({ message, isMine, onOpenViewer }: MessageMediaProp
         <TouchableOpacity
           activeOpacity={0.85}
           onPress={handlePress}
+          onLongPress={onLongPress}
           accessibilityRole="button"
           accessibilityLabel={altText}
           accessibilityHint="Tap to view full-screen"
@@ -143,13 +146,13 @@ export function MessageMedia({ message, isMine, onOpenViewer }: MessageMediaProp
 
   // ── AUDIO ──
   if (message.type === "AUDIO") {
-    return <AudioBubble uri={mediaSrc} durationMs={meta.durationMs} isMine={isMine} />;
+    return <AudioBubble uri={mediaSrc} durationMs={meta.durationMs} isMine={isMine} onLongPress={onLongPress} />;
   }
 
   return null;
 }
 
-function AudioBubble({ uri, durationMs, isMine }: { uri: string; durationMs?: number; isMine: boolean }) {
+function AudioBubble({ uri, durationMs, isMine, onLongPress }: { uri: string; durationMs?: number; isMine: boolean, onLongPress?: () => void }) {
   const soundRef = useRef<Audio.Sound | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -196,6 +199,7 @@ function AudioBubble({ uri, durationMs, isMine }: { uri: string; durationMs?: nu
     <TouchableOpacity
       style={styles.audioRow}
       onPress={toggle}
+      onLongPress={onLongPress}
       accessibilityRole="button"
       accessibilityLabel={isPlaying ? "Pause voice message" : "Play voice message"}
     >

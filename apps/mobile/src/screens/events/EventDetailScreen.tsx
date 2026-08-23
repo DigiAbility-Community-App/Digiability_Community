@@ -27,6 +27,7 @@ import { useTheme } from "../../theme/ThemeContext";
 import { AccessibleText } from "../../components/shared/AccessibleText";
 import { AccessibleButton } from "../../components/shared/AccessibleButton";
 import { fetchEventById, EventModel, parseAccessibilityTags } from "../../services/eventService";
+import { MediaViewer } from "../../components/chat/MediaViewer";
 
 export default function EventDetailScreen() {
   const route = useRoute<any>();
@@ -38,6 +39,7 @@ export default function EventDetailScreen() {
   const [loading, setLoading] = useState(true);
   const [bookmarked, setBookmarked] = useState(false);
   const [error, setError] = useState(false);
+  const [mediaViewerOpen, setMediaViewerOpen] = useState(false);
 
   useEffect(() => {
     if (eventId) loadEventDetails();
@@ -159,8 +161,8 @@ export default function EventDetailScreen() {
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
         {/* HERO IMAGE + TAG PILLS */}
-        <View style={styles.imageContainer}>
-          <Image source={{ uri: event.image }} style={styles.bannerImage} />
+        <TouchableOpacity style={styles.imageContainer} activeOpacity={0.9} onPress={() => setMediaViewerOpen(true)}>
+          <Image source={{ uri: event.image }} style={[styles.bannerImage, { backgroundColor: '#000' }]} resizeMode="contain" />
           {/* Category overlay bottom-left */}
           <View style={[styles.categoryOverlay, { backgroundColor: highContrast ? "#000" : colors.primary }]}>
             <AccessibleText style={styles.categoryOverlayText}>{event.category.toUpperCase()}</AccessibleText>
@@ -177,7 +179,7 @@ export default function EventDetailScreen() {
               ))}
             </View>
           )}
-        </View>
+        </TouchableOpacity>
 
         {/* TITLE + ORGANIZER */}
         <View style={styles.titleSection}>
@@ -301,6 +303,16 @@ export default function EventDetailScreen() {
 
         <View style={{ height: 140 }} />
       </ScrollView>
+
+      {mediaViewerOpen && event?.image && (
+        <MediaViewer
+          visible={mediaViewerOpen}
+          src={event.image}
+          alt={event.title}
+          isVideo={false}
+          onClose={() => setMediaViewerOpen(false)}
+        />
+      )}
 
       <AppFooter activeTab="Home" />
     </ScreenWrapper>

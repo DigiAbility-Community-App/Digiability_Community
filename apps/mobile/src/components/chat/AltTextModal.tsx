@@ -36,34 +36,40 @@ export function AltTextModal({
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onCancel}>
-      <KeyboardAvoidingView
+      <TouchableOpacity
         style={styles.backdrop}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        activeOpacity={1}
+        onPress={onCancel}
       >
-        <View style={styles.card}>
-          <Text style={styles.title}>Share image</Text>
-          {imageUri ? <Image source={{ uri: imageUri }} style={styles.preview} resizeMode="cover" /> : null}
-          <Text style={styles.label}>Describe this image (for screen readers)</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="e.g. My new wheelchair ramp at the entrance"
-            placeholderTextColor="#999"
-            value={altText}
-            onChangeText={setAltText}
-            multiline
-            maxLength={300}
-            accessibilityLabel="Image description"
-          />
-          <View style={styles.actions}>
-            <TouchableOpacity style={styles.cancelBtn} onPress={onCancel}>
-              <Text style={styles.cancelText}>Cancel</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.sendBtn} onPress={() => onSend(altText)}>
-              <Text style={styles.sendText}>Send</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </KeyboardAvoidingView>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          style={{ width: "100%", justifyContent: "flex-end", flex: 1 }}
+        >
+          <TouchableOpacity activeOpacity={1} style={styles.card} onPress={() => {}}>
+            <Text style={styles.title}>Share image</Text>
+            {imageUri ? <Image source={{ uri: imageUri }} style={styles.preview} resizeMode="cover" /> : null}
+            <Text style={styles.label}>Describe this image (for screen readers)</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="e.g. My new wheelchair ramp at the entrance"
+              placeholderTextColor="#999"
+              value={altText}
+              onChangeText={setAltText}
+              multiline
+              maxLength={300}
+              accessibilityLabel="Image description"
+            />
+            <View style={styles.actions}>
+              <TouchableOpacity style={styles.cancelBtn} onPress={onCancel}>
+                <Text style={styles.cancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.sendBtn} onPress={() => onSend(altText)}>
+                <Text style={styles.sendText}>Send</Text>
+              </TouchableOpacity>
+            </View>
+          </TouchableOpacity>
+        </KeyboardAvoidingView>
+      </TouchableOpacity>
     </Modal>
   );
 }

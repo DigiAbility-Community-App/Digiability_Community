@@ -9,7 +9,9 @@ import {
   Platform,
   ActivityIndicator,
   Keyboard,
+  Animated,
 } from "react-native";
+import { Swipeable } from "react-native-gesture-handler";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { RouteProp } from "@react-navigation/native";
 import { ChatsStackParamList } from "@navigation/ChatsStack";
@@ -27,7 +29,7 @@ import { ActionSheet, ActionSheetOption } from "../../components/chat/ActionShee
 import { ConfirmDialog } from "../../components/chat/ConfirmDialog";
 import ScreenWrapper from "../../components/layout/ScreenWrapper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Send, ArrowLeft, MoreVertical, Paperclip, Mic, Image as ImageIcon, Smile, Check, CheckCheck, Plus, Square, Phone, Trash2, Volume2, Flag, Ban, CircleCheck, TriangleAlert, User } from "lucide-react-native";
+import { Send, ArrowLeft, MoreVertical, Paperclip, Mic, Image as ImageIcon, Smile, Check, CheckCheck, Plus, Square, Phone, Trash2, Volume2, Flag, Ban, CircleCheck, TriangleAlert, User, CornerUpLeft, X } from "lucide-react-native";
 import { useTheme } from "../../theme/ThemeContext";
 import { AccessibleText } from "../../components/shared/AccessibleText";
 import { LinkifiedText } from "../../components/shared/LinkifiedText";
@@ -94,6 +96,8 @@ const ChatScreen = ({ navigation, route }: Props) => {
   const [isLoading, setIsLoading] = useState(true);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [mediaViewer, setMediaViewer] = useState<{ src: string; alt: string; isVideo: boolean } | null>(null);
+  const [replyingTo, setReplyingTo] = useState<ChatMessage | null>(null);
+  const [speakingId, setSpeakingId] = useState<string | null>(null);
 
   const openMediaViewer = useCallback((src: string, alt: string, isVideo: boolean) => {
     setMediaViewer({ src, alt, isVideo });
@@ -163,7 +167,7 @@ const ChatScreen = ({ navigation, route }: Props) => {
 
   useEffect(() => {
     if (Platform.OS !== "android") return;
-    const showSub = Keyboard.addListener("keyboardDidShow", (e) => {
+    const showSub = Keyboard.addListener("keyboardDidShow", (e: any) => {
       setKeyboardHeight(e.endCoordinates.height);
     });
     const hideSub = Keyboard.addListener("keyboardDidHide", () => {
@@ -252,6 +256,16 @@ const ChatScreen = ({ navigation, route }: Props) => {
     const content = messageText.trim();
     const clientMessageId = generateUUID();
 
+    const metadataObj: any = {};
+    if (replyingTo) {
+      metadataObj.replyTo = {
+        id: replyingTo.id,
+        content: replyingTo.content,
+        senderName: replyingTo.senderId === user.id ? "You" : recipientName
+      };
+    }
+    const metadata = Object.keys(metadataObj).length > 0 ? JSON.stringify(metadataObj) : undefined;
+
     const newMsg: ChatMessage = {
       id: clientMessageId,
       clientMessageId,
@@ -261,11 +275,14 @@ const ChatScreen = ({ navigation, route }: Props) => {
       type: "TEXT",
       status: "sent",
       createdAt: new Date().toISOString(),
+      metadata,
     };
 
     addMessage(newMsg);
     setMessageText("");
     emitTypingStop();
+
+    setReplyingTo(null);
 
     sendSocketMessage("message.send", {
       conversationId,
@@ -273,6 +290,7 @@ const ChatScreen = ({ navigation, route }: Props) => {
       type: "TEXT",
       clientMessageId,
       senderName: user?.name,
+      metadata,
     });
 
     // Re-enable after a brief debounce
@@ -412,8 +430,24 @@ const ChatScreen = ({ navigation, route }: Props) => {
     const item = messageMenu;
     const isMine = item.senderId === user?.id;
     const opts: ActionSheetOption[] = [];
+    opts.push({ label: "Reply", icon: CornerUpLeft, onPress: () => setReplyingTo(item) });
     if (item.type === "TEXT" && item.content?.trim()) {
-      opts.push({ label: "Read aloud", icon: Volume2, onPress: () => Speech.speak(item.content) });
+      if (speakingId === item.id) {
+        opts.push({ label: "Stop reading aloud", icon: Volume2, onPress: () => {
+          Speech.stop();
+          setSpeakingId(null);
+        }});
+      } else {
+        opts.push({ label: "Read aloud", icon: Volume2, onPress: () => {
+          Speech.stop();
+          setSpeakingId(item.id);
+          Speech.speak(item.content, {
+            onDone: () => setSpeakingId(null),
+            onStopped: () => setSpeakingId(null),
+            onError: () => setSpeakingId(null),
+          });
+        }});
+      }
     }
     if (!isMine) {
       opts.push({
@@ -464,13 +498,14 @@ const ChatScreen = ({ navigation, route }: Props) => {
             <View style={[styles.dateLine, { backgroundColor: dateLineColor }]} />
           </View>
         )}
-        <View
-          style={[
-            styles.messageBubbleContainer,
-            isMine ? styles.myBubbleContainer : styles.theirBubbleContainer,
-          ]}
-        >
-        <TouchableOpacity
+        <SwipeableMessageRow onReply={() => setReplyingTo(item)} colors={colors}>
+          <View
+            style={[
+              styles.messageBubbleContainer,
+              isMine ? styles.myBubbleContainer : styles.theirBubbleContainer,
+            ]}
+          >
+          <TouchableOpacity
           activeOpacity={0.8}
           onLongPress={() => handleMessageLongPress(item as ChatMessage)}
           delayLongPress={300}
@@ -486,8 +521,24 @@ const ChatScreen = ({ navigation, route }: Props) => {
             !isMine && cardBorder,
           ]}
         >
+          {(() => {
+            const meta = item.metadata ? JSON.parse(item.metadata) : null;
+            if (meta?.replyTo) {
+              return (
+                <View style={{ backgroundColor: 'rgba(0,0,0,0.1)', padding: 8, borderRadius: 8, marginBottom: 6, borderLeftWidth: 3, borderLeftColor: isMine ? '#fff' : colors.primary }}>
+                  <AccessibleText variant="caption" style={{ color: isMine ? '#fff' : colors.primary, fontWeight: 'bold', marginBottom: 2 }}>
+                    {meta.replyTo.senderName}
+                  </AccessibleText>
+                  <AccessibleText variant="caption" numberOfLines={1} style={{ color: isMine ? 'rgba(255,255,255,0.9)' : colors.text }}>
+                    {meta.replyTo.content}
+                  </AccessibleText>
+                </View>
+              );
+            }
+            return null;
+          })()}
           {item.type === "IMAGE" || item.type === "VIDEO" || item.type === "AUDIO" ? (
-            <MessageMedia message={item} isMine={isMine} onOpenViewer={openMediaViewer} />
+            <MessageMedia message={item} isMine={isMine} onOpenViewer={openMediaViewer} onLongPress={() => handleMessageLongPress(item)} />
           ) : (
             <LinkifiedText
               variant="body"
@@ -513,6 +564,7 @@ const ChatScreen = ({ navigation, route }: Props) => {
           </View>
         </TouchableOpacity>
         </View>
+        </SwipeableMessageRow>
       </View>
     );
   };
@@ -647,6 +699,21 @@ const ChatScreen = ({ navigation, route }: Props) => {
                 </TouchableOpacity>
               </View>
             )}
+            {replyingTo && (
+              <View style={{ marginHorizontal: 12, marginBottom: 8, backgroundColor: colors.surface, borderRadius: 12, padding: 12, flexDirection: 'row', alignItems: 'center', borderLeftWidth: 4, borderLeftColor: colors.primary }}>
+                <View style={{ flex: 1 }}>
+                  <AccessibleText variant="caption" style={{ color: colors.primary, fontWeight: 'bold', marginBottom: 4 }}>
+                    Replying to {replyingTo.senderId === user?.id ? "Yourself" : recipientName}
+                  </AccessibleText>
+                  <AccessibleText variant="caption" numberOfLines={1} style={{ color: colors.subtext }}>
+                    {replyingTo.content}
+                  </AccessibleText>
+                </View>
+                <TouchableOpacity onPress={() => setReplyingTo(null)} style={{ padding: 4 }}>
+                  <X size={20} color={colors.subtext} />
+                </TouchableOpacity>
+              </View>
+            )}
             <View style={[styles.composer, { paddingBottom: Math.max(insets.bottom, 10) }]}>
               <View style={[styles.composerCard, { backgroundColor: colors.card, shadowColor: colors.secondary }, cardBorder]}>
                 <TouchableOpacity
@@ -659,7 +726,7 @@ const ChatScreen = ({ navigation, route }: Props) => {
                 >
                   {media.isUploading
                     ? <ActivityIndicator size="small" color={colors.primary} />
-                    : <Plus size={24} color={colors.primary} strokeWidth={2.5} />}
+                    : <ImageIcon size={24} color={colors.primary} strokeWidth={2} />}
                 </TouchableOpacity>
 
                 <View style={[styles.inputPill, { backgroundColor: colors.surface }, cardBorder]}>
@@ -745,6 +812,21 @@ const ChatScreen = ({ navigation, route }: Props) => {
                 </TouchableOpacity>
               </View>
             )}
+            {replyingTo && (
+              <View style={{ marginHorizontal: 12, marginBottom: 8, backgroundColor: colors.surface, borderRadius: 12, padding: 12, flexDirection: 'row', alignItems: 'center', borderLeftWidth: 4, borderLeftColor: colors.primary }}>
+                <View style={{ flex: 1 }}>
+                  <AccessibleText variant="caption" style={{ color: colors.primary, fontWeight: 'bold', marginBottom: 4 }}>
+                    Replying to {replyingTo.senderId === user?.id ? "Yourself" : recipientName}
+                  </AccessibleText>
+                  <AccessibleText variant="caption" numberOfLines={1} style={{ color: colors.subtext }}>
+                    {replyingTo.content}
+                  </AccessibleText>
+                </View>
+                <TouchableOpacity onPress={() => setReplyingTo(null)} style={{ padding: 4 }}>
+                  <X size={20} color={colors.subtext} />
+                </TouchableOpacity>
+              </View>
+            )}
             <View style={[styles.composer, { paddingBottom: Math.max(insets.bottom, 10) }]}>
               <View style={[styles.composerCard, { backgroundColor: colors.card, shadowColor: colors.secondary }, cardBorder]}>
                 <TouchableOpacity
@@ -757,7 +839,7 @@ const ChatScreen = ({ navigation, route }: Props) => {
                 >
                   {media.isUploading
                     ? <ActivityIndicator size="small" color={colors.primary} />
-                    : <Plus size={24} color={colors.primary} strokeWidth={2.5} />}
+                    : <ImageIcon size={24} color={colors.primary} strokeWidth={2} />}
                 </TouchableOpacity>
 
                 <View style={[styles.inputPill, { backgroundColor: colors.surface }, cardBorder]}>
@@ -869,6 +951,40 @@ const ChatScreen = ({ navigation, route }: Props) => {
     </ScreenWrapper>
   );
 };
+
+const SwipeableMessageRow = React.memo(({ children, onReply, colors }: any) => {
+  const swipeableRef = useRef<Swipeable>(null);
+
+  const renderLeftActions = (progress: Animated.AnimatedInterpolation<number>, dragX: Animated.AnimatedInterpolation<number>) => {
+    const scale = dragX.interpolate({
+      inputRange: [0, 50],
+      outputRange: [0, 1],
+      extrapolate: 'clamp',
+    });
+    return (
+      <View style={{ justifyContent: 'center', alignItems: 'center', width: 60 }}>
+        <Animated.View style={{ transform: [{ scale }] }}>
+          <CornerUpLeft color={colors.primary} size={24} />
+        </Animated.View>
+      </View>
+    );
+  };
+
+  return (
+    <Swipeable
+      ref={swipeableRef}
+      renderLeftActions={renderLeftActions}
+      onSwipeableOpen={() => {
+        onReply();
+        swipeableRef.current?.close();
+      }}
+      friction={2}
+      leftThreshold={40}
+    >
+      {children}
+    </Swipeable>
+  );
+});
 
 export default ChatScreen;
 

@@ -69,6 +69,8 @@ export function useChatMedia(conversationId: string, senderId: string | undefine
         Alert.alert("Microphone needed", "Please allow microphone access to record a voice note.");
         return;
       }
+      // Reset audio mode first to clear any stale session from a previous recording
+      await Audio.setAudioModeAsync({ allowsRecordingIOS: false });
       await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
       const recording = new Audio.Recording();
       await recording.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);

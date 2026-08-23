@@ -315,8 +315,8 @@ const WelcomeScreen = ({ navigation }: Props) => {
               label="Full Name"
               placeholder="Enter your full name"
               value={name}
-              onChangeText={setName}
-              accessibilityHint="Enter your first and last name"
+              onChangeText={(v) => setName(v.replace(/[0-9]/g, ''))}
+              accessibilityHint="Enter your first and last name (letters only)"
             />
 
             <Input
@@ -529,6 +529,7 @@ const styles = StyleSheet.create({
   // HEADER
   header: {
     height: "38%",
+    minHeight: 220,
     justifyContent: "center",
     alignItems: "center",
     paddingHorizontal: 24,

@@ -8,9 +8,11 @@ import {
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
-  Keyboard,
   Alert,
+  Animated,
+  Keyboard,
 } from "react-native";
+import { Swipeable } from "react-native-gesture-handler";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { RouteProp, useFocusEffect } from "@react-navigation/native";
 import { ChatsStackParamList } from "@navigation/ChatsStack";
@@ -32,7 +34,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   Check, CheckCheck, Plus, Mic, Send, Square,
   ArrowLeft, Settings, Trash2, Volume2, Users, Accessibility, Heart, HeartHandshake,
-  Flag, CircleCheck, TriangleAlert,
+  Flag, CircleCheck, TriangleAlert, CornerUpLeft, X
 } from "lucide-react-native";
 import { useTheme } from "../../theme/ThemeContext";
 import { AccessibleText } from "../../components/shared/AccessibleText";
@@ -84,13 +86,22 @@ const GroupChatScreen = ({ navigation, route }: Props) => {
 
   // Opening the group marks it read: clear the local badge + advance read cursor.
   useEffect(() => {
+    if (!conversation) return;
     clearUnreadCount(conversationId);
     const msgs = useChatStore.getState().messages[conversationId] || [];
     const lastFromOther = [...msgs].reverse().find((m) => m.senderId !== user?.id);
     if (lastFromOther?.id) {
       sendSocketMessage("message.read", { messageId: lastFromOther.id, conversationId });
     }
-  }, [conversationId, storeMessages.length]);
+  }, [conversationId, storeMessages.length, conversation]);
+
+  // Auto-dismiss if group is deleted
+  useEffect(() => {
+    if (!isLoading && !conversation) {
+      Alert.alert("Group Deleted", "This group is no longer available.");
+      navigation.popToTop();
+    }
+  }, [conversation, isLoading, navigation]);
 
   // Admin rights for force-deleting others' messages
   const myRole = conversation?.participants?.find((p) => p.userId === user?.id)?.role;
@@ -108,6 +119,8 @@ const GroupChatScreen = ({ navigation, route }: Props) => {
   const [isLoading, setIsLoading] = useState(true);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [mediaViewer, setMediaViewer] = useState<{ src: string; alt: string; isVideo: boolean } | null>(null);
+  const [replyingTo, setReplyingTo] = useState<ChatMessage | null>(null);
+  const [speakingId, setSpeakingId] = useState<string | null>(null);
 
   const openMediaViewer = useCallback((src: string, alt: string, isVideo: boolean) => {
     setMediaViewer({ src, alt, isVideo });
@@ -148,7 +161,7 @@ const GroupChatScreen = ({ navigation, route }: Props) => {
 
   useEffect(() => {
     if (Platform.OS !== "android") return;
-    const showSub = Keyboard.addListener("keyboardDidShow", (e) => {
+    const showSub = Keyboard.addListener("keyboardDidShow", (e: any) => {
       setKeyboardHeight(e.endCoordinates.height);
     });
     const hideSub = Keyboard.addListener("keyboardDidHide", () => {
@@ -279,6 +292,16 @@ const GroupChatScreen = ({ navigation, route }: Props) => {
     const content = messageText.trim();
     const clientMessageId = generateUUID();
 
+    const metadataObj: any = {};
+    if (replyingTo) {
+      metadataObj.replyTo = {
+        id: replyingTo.id,
+        content: replyingTo.content,
+        senderName: replyingTo.senderId === user.id ? "You" : (nameMap[replyingTo.senderId] || "Unknown")
+      };
+    }
+    const metadata = Object.keys(metadataObj).length > 0 ? JSON.stringify(metadataObj) : undefined;
+
     // Optimistic update
     const newMsg: ChatMessage = {
       id: clientMessageId,
@@ -289,11 +312,14 @@ const GroupChatScreen = ({ navigation, route }: Props) => {
       type: "TEXT",
       status: "sent",
       createdAt: new Date().toISOString(),
+      metadata,
     };
 
     addMessage(newMsg);
     setMessageText("");
     emitTypingStop();
+
+    setReplyingTo(null);
 
     // Send via WebSocket
     sendSocketMessage("message.send", {
@@ -302,6 +328,7 @@ const GroupChatScreen = ({ navigation, route }: Props) => {
       type: "TEXT",
       clientMessageId,
       senderName: user.name,
+      metadata,
     });
   }, [messageText, conversationId, user]);
 
@@ -461,8 +488,24 @@ const GroupChatScreen = ({ navigation, route }: Props) => {
     const isMine = item.senderId === user?.id;
     const canDeleteForEveryone = isMine || hasAdminRights;
     const opts: ActionSheetOption[] = [];
+    opts.push({ label: "Reply", icon: CornerUpLeft, onPress: () => setReplyingTo(item) });
     if (item.type === "TEXT" && item.content?.trim()) {
-      opts.push({ label: "Read aloud", icon: Volume2, onPress: () => Speech.speak(item.content) });
+      if (speakingId === item.id) {
+        opts.push({ label: "Stop reading aloud", icon: Volume2, onPress: () => {
+          Speech.stop();
+          setSpeakingId(null);
+        }});
+      } else {
+        opts.push({ label: "Read aloud", icon: Volume2, onPress: () => {
+          Speech.stop();
+          setSpeakingId(item.id);
+          Speech.speak(item.content, {
+            onDone: () => setSpeakingId(null),
+            onStopped: () => setSpeakingId(null),
+            onError: () => setSpeakingId(null),
+          });
+        }});
+      }
     }
     if (!isMine) {
       opts.push({
@@ -535,7 +578,8 @@ const GroupChatScreen = ({ navigation, route }: Props) => {
           </View>
         )}
 
-        <View style={[styles.bubbleWrapper, isMine && { alignItems: "flex-end" }]}>
+        <SwipeableMessageRow onReply={() => setReplyingTo(item)} colors={colors}>
+          <View style={[styles.bubbleWrapper, isMine && { alignItems: "flex-end" }]}>
           {/* Sender name */}
           {showSender && (
             <AccessibleText variant="caption" style={[styles.senderName, { color: senderColor }]}>
@@ -559,8 +603,24 @@ const GroupChatScreen = ({ navigation, route }: Props) => {
               !isMine && cardBorder,
             ]}
           >
+            {(() => {
+              const meta = item.metadata ? JSON.parse(item.metadata) : null;
+              if (meta?.replyTo) {
+                return (
+                  <View style={{ backgroundColor: 'rgba(0,0,0,0.1)', padding: 8, borderRadius: 8, marginBottom: 6, borderLeftWidth: 3, borderLeftColor: isMine ? '#fff' : colors.primary }}>
+                    <AccessibleText variant="caption" style={{ color: isMine ? '#fff' : colors.primary, fontWeight: 'bold', marginBottom: 2 }}>
+                      {meta.replyTo.senderName}
+                    </AccessibleText>
+                    <AccessibleText variant="caption" numberOfLines={1} style={{ color: isMine ? 'rgba(255,255,255,0.9)' : colors.text }}>
+                      {meta.replyTo.content}
+                    </AccessibleText>
+                  </View>
+                );
+              }
+              return null;
+            })()}
             {item.type === "IMAGE" || item.type === "VIDEO" || item.type === "AUDIO" ? (
-              <MessageMedia message={item} isMine={isMine} onOpenViewer={openMediaViewer} />
+              <MessageMedia message={item} isMine={isMine} onOpenViewer={openMediaViewer} onLongPress={() => handleMessageLongPress(item)} />
             ) : (
               <LinkifiedText
                 variant="body"
@@ -597,7 +657,8 @@ const GroupChatScreen = ({ navigation, route }: Props) => {
               )}
             </View>
           </TouchableOpacity>
-        </View>
+          </View>
+        </SwipeableMessageRow>
         </View>
       </View>
     );
@@ -745,10 +806,25 @@ const GroupChatScreen = ({ navigation, route }: Props) => {
                 >
                   <AccessibleText variant="body" style={[styles.recordingCancel, { color: colors.subtext }]}>Cancel</AccessibleText>
                 </TouchableOpacity>
+            </View>
+          )}
+          {replyingTo && (
+            <View style={{ marginHorizontal: 12, marginBottom: 8, backgroundColor: colors.surface, borderRadius: 12, padding: 12, flexDirection: 'row', alignItems: 'center', borderLeftWidth: 4, borderLeftColor: colors.primary }}>
+              <View style={{ flex: 1 }}>
+                <AccessibleText variant="caption" style={{ color: colors.primary, fontWeight: 'bold', marginBottom: 4 }}>
+                  Replying to {replyingTo.senderId === user?.id ? "Yourself" : (nameMap[replyingTo.senderId] || "Unknown")}
+                </AccessibleText>
+                <AccessibleText variant="caption" numberOfLines={1} style={{ color: colors.subtext }}>
+                  {replyingTo.content}
+                </AccessibleText>
               </View>
-            )}
-            <View style={[styles.composer, { paddingBottom: Math.max(insets.bottom, 10) }]}>
-              <View style={[styles.composerCard, { backgroundColor: colors.card, shadowColor: colors.secondary }, cardBorder]}>
+              <TouchableOpacity onPress={() => setReplyingTo(null)} style={{ padding: 4 }}>
+                <X size={20} color={colors.subtext} />
+              </TouchableOpacity>
+            </View>
+          )}
+          <View style={[styles.composer, { paddingBottom: Math.max(insets.bottom, 10) }]}>
+            <View style={[styles.composerCard, { backgroundColor: colors.card, shadowColor: colors.secondary }, cardBorder]}>
                 <TouchableOpacity
                   style={styles.plusBtn}
                   onPress={media.pickMedia}
@@ -834,6 +910,21 @@ const GroupChatScreen = ({ navigation, route }: Props) => {
                   accessibilityLabel="Cancel recording"
                 >
                   <AccessibleText variant="body" style={[styles.recordingCancel, { color: colors.subtext }]}>Cancel</AccessibleText>
+                </TouchableOpacity>
+              </View>
+            )}
+            {replyingTo && (
+              <View style={{ marginHorizontal: 12, marginBottom: 8, backgroundColor: colors.surface, borderRadius: 12, padding: 12, flexDirection: 'row', alignItems: 'center', borderLeftWidth: 4, borderLeftColor: colors.primary }}>
+                <View style={{ flex: 1 }}>
+                  <AccessibleText variant="caption" style={{ color: colors.primary, fontWeight: 'bold', marginBottom: 4 }}>
+                    Replying to {replyingTo.senderId === user?.id ? "Yourself" : (nameMap[replyingTo.senderId] || "Unknown")}
+                  </AccessibleText>
+                  <AccessibleText variant="caption" numberOfLines={1} style={{ color: colors.subtext }}>
+                    {replyingTo.content}
+                  </AccessibleText>
+                </View>
+                <TouchableOpacity onPress={() => setReplyingTo(null)} style={{ padding: 4 }}>
+                  <X size={20} color={colors.subtext} />
                 </TouchableOpacity>
               </View>
             )}
@@ -947,6 +1038,40 @@ const GroupChatScreen = ({ navigation, route }: Props) => {
     </ScreenWrapper>
   );
 };
+
+const SwipeableMessageRow = React.memo(({ children, onReply, colors }: any) => {
+  const swipeableRef = useRef<Swipeable>(null);
+
+  const renderLeftActions = (progress: Animated.AnimatedInterpolation<number>, dragX: Animated.AnimatedInterpolation<number>) => {
+    const scale = dragX.interpolate({
+      inputRange: [0, 50],
+      outputRange: [0, 1],
+      extrapolate: 'clamp',
+    });
+    return (
+      <View style={{ justifyContent: 'center', alignItems: 'center', width: 60 }}>
+        <Animated.View style={{ transform: [{ scale }] }}>
+          <CornerUpLeft color={colors.primary} size={24} />
+        </Animated.View>
+      </View>
+    );
+  };
+
+  return (
+    <Swipeable
+      ref={swipeableRef}
+      renderLeftActions={renderLeftActions}
+      onSwipeableOpen={() => {
+        onReply();
+        swipeableRef.current?.close();
+      }}
+      friction={2}
+      leftThreshold={40}
+    >
+      {children}
+    </Swipeable>
+  );
+});
 
 export default GroupChatScreen;
 

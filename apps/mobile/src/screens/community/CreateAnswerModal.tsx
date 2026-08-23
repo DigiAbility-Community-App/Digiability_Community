@@ -66,8 +66,8 @@ const CreateAnswerModal = ({
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <View style={styles.overlay}>
-        <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
+      <TouchableOpacity style={styles.overlay} activeOpacity={1} onPress={onClose}>
+        <TouchableOpacity activeOpacity={1} style={[styles.modalContent, { backgroundColor: colors.card }]} onPress={() => {}}>
           {/* HEADER */}
           <View style={[styles.header, { borderBottomColor: colors.border }]}>
             <AccessibleText variant="title" style={[styles.title, { color: colors.text }]}>
@@ -157,8 +157,8 @@ const CreateAnswerModal = ({
               {loading ? <ActivityIndicator size="small" color="#FFFFFF" /> : "Submit Answer"}
             </AccessibleButton>
           </View>
-        </View>
-      </View>
+        </TouchableOpacity>
+      </TouchableOpacity>
     </Modal>
   );
 };
