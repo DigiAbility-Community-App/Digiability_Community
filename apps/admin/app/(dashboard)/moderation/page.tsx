@@ -169,7 +169,13 @@ export default function ModerationPage() {
     const effectiveAction = action === "dismiss" && report.source === "chat" ? "dismiss_chat" : action;
     setActionLoading(report.id + action);
     try {
-      await postAction({ action: effectiveAction, reportId: report.id, questionId: report.questionId });
+      await postAction({
+        action: effectiveAction,
+        reportId: report.id,
+        questionId: report.questionId,
+        answerId: report.answerId,
+        messageId: report.messageId,
+      });
       await fetchData();
       if (selected?.id === report.id) setSelected(null);
     } finally { setActionLoading(null); }
@@ -304,7 +310,13 @@ export default function ModerationPage() {
             </div>
             <div className="flex gap-3">
               <button onClick={() => setShowWorkflow(false)} className="flex-1 h-11 rounded-xl border border-gray-200 text-[#4B4355] font-semibold text-sm hover:bg-gray-50">Cancel</button>
-              <button onClick={() => { handleAction("delete_post", workflowReport); setShowWorkflow(false); }} disabled={!workflowReport.questionId} className="flex-1 h-11 rounded-xl bg-red-600 hover:bg-red-700 disabled:bg-red-200 disabled:cursor-not-allowed text-white font-bold text-sm transition">Remove Content</button>
+              <button
+                onClick={() => { handleAction("delete_post", workflowReport); setShowWorkflow(false); }}
+                disabled={!workflowReport.questionId && !workflowReport.answerId && !workflowReport.messageId}
+                className="flex-1 h-11 rounded-xl bg-red-600 hover:bg-red-700 disabled:bg-red-200 disabled:cursor-not-allowed text-white font-bold text-sm transition"
+              >
+                Remove Content
+              </button>
             </div>
           </div>
 
@@ -434,7 +446,7 @@ export default function ModerationPage() {
   }
 
   return (
-    <div className="px-8 py-8">
+    <div className="px-4 sm:px-6 lg:px-8 py-6 space-y-6 w-full max-w-full overflow-x-hidden">
 
       {/* HEADER */}
       <div className="flex items-center justify-between mb-5">
@@ -721,7 +733,7 @@ export default function ModerationPage() {
                 </button>
                 <button
                   onClick={() => handleAction("delete_post", selected)}
-                  disabled={actionLoading === selected.id + "delete_post" || !selected.questionId}
+                  disabled={actionLoading === selected.id + "delete_post" || (!selected.questionId && !selected.answerId && !selected.messageId)}
                   className="h-11 rounded-xl bg-red-600 hover:bg-red-700 disabled:bg-red-200 text-white font-bold text-sm transition flex items-center justify-center gap-2"
                 >
                   <Trash2 className="w-4 h-4" /> Remove

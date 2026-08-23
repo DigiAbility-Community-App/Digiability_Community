@@ -4,8 +4,10 @@ import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 import AuthNavigator from './AuthNavigator';
 import MainNavigator from './MainNavigator';
+import MaintenanceScreen from '@screens/MaintenanceScreen';
 import { useAuthStore } from '@store/authStore';
 import { useAccessibilityStore } from '@store/accessibilityStore';
+import { useSystemStore } from '@store/systemStore';
 import { getMe } from '@services/authService';
 import { REFRESH_TOKEN_KEY } from '@services/apiClient';
 import { initSocket, closeSocket } from '@services/socketService';
@@ -14,12 +16,7 @@ import { registerForPushNotifications, saveDeviceToken } from '@services/notific
 
 // ─────────────────────────────────────────────────────────
 // RootNavigator
-// Reactively switches between Auth and Main stacks based on
-// in-memory auth state (Zustand). When isAuthenticated flips
-// to true (after login/signup) the user goes directly to the
-// Main stack where the onboarding flow begins:
-//   Accessibility → RoleSelection → Profile → ProfileDetails
-//   → CareCircle → Home
+// Reactively switches between Auth, Main, and Maintenance screens.
 // ─────────────────────────────────────────────────────────
 
 export type RootStackParamList = {
@@ -33,10 +30,23 @@ const RootNavigator = () => {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const user = useAuthStore((s) => s.user);
   const setUser = useAuthStore((s) => s.setUser);
+  const isMaintenanceMode = useSystemStore((s) => s.isMaintenanceMode);
+  const checkMaintenanceStatus = useSystemStore((s) => s.checkMaintenanceStatus);
   const [isRestoringSession, setIsRestoringSession] = useState(true);
 
   const loadAccessibilityPreferences = useAccessibilityStore((s) => s.loadPreferences);
   const pushNotifEnabled = useAccessibilityStore((s) => s.preferences.pushNotif);
+
+  // Check maintenance status on mount and periodically every 30s
+  useEffect(() => {
+    checkMaintenanceStatus();
+
+    const interval = setInterval(() => {
+      checkMaintenanceStatus();
+    }, 30_000);
+
+    return () => clearInterval(interval);
+  }, [checkMaintenanceStatus]);
 
   useEffect(() => {
     if (user?.id) {
@@ -58,20 +68,10 @@ const RootNavigator = () => {
 
       try {
         const restoredUser = await getMe();
-        // H12: Only update the store if the component is still mounted AND
-        // the user hasn't already logged out during the async getMe() call.
-        // Check isAuthenticated from store to detect concurrent logout.
-        if (isMounted && !useAuthStore.getState().user === false) {
-          setUser(restoredUser);
-        } else if (isMounted) {
+        if (isMounted) {
           setUser(restoredUser);
         }
       } catch (err: any) {
-        // Only discard the stored refresh token on a DEFINITIVE auth rejection
-        // (the interceptor already tried /refresh and still got 401/403 — the
-        // token is truly invalid). On a network error / cold-start blip there's
-        // no response; keep the token so the next launch can retry instead of
-        // silently logging the user out (which stranded unverified signups).
         const status = err?.response?.status;
         if (status === 401 || status === 403) {
           await SecureStore.deleteItemAsync(REFRESH_TOKEN_KEY).catch(() => {});
@@ -92,31 +92,23 @@ const RootNavigator = () => {
 
   // Manage WebSocket connection lifecycle
   useEffect(() => {
-    if (isAuthenticated && !isRestoringSession) {
+    if (isAuthenticated && !isRestoringSession && !isMaintenanceMode) {
       initSocket();
       forumSocketService.connect();
-    } else if (!isAuthenticated && !isRestoringSession) {
+    } else {
       closeSocket();
       forumSocketService.disconnect();
     }
-    
-    return () => {
-      // Don't close on every unmount, only when auth state changes
-    };
-  }, [isAuthenticated, isRestoringSession]);
+  }, [isAuthenticated, isRestoringSession, isMaintenanceMode]);
 
-  // Register for push notifications only once actually logged in — never
-  // pre-login, since /api/auth/device-token requires an authenticated
-  // request. Covers both fresh logins and restored sessions. Skipped
-  // entirely when the user's Push Notifications accessibility preference
-  // is off.
+  // Register for push notifications once logged in
   useEffect(() => {
-    if (isAuthenticated && !isRestoringSession && pushNotifEnabled) {
+    if (isAuthenticated && !isRestoringSession && !isMaintenanceMode && pushNotifEnabled) {
       registerForPushNotifications().then((token) => {
         if (token) saveDeviceToken(token);
       });
     }
-  }, [isAuthenticated, isRestoringSession, pushNotifEnabled]);
+  }, [isAuthenticated, isRestoringSession, isMaintenanceMode, pushNotifEnabled]);
 
   if (isRestoringSession) {
     return (
@@ -124,6 +116,11 @@ const RootNavigator = () => {
         <ActivityIndicator size="large" color="#500088" />
       </View>
     );
+  }
+
+  // If system is currently undergoing maintenance, display maintenance screen
+  if (isMaintenanceMode) {
+    return <MaintenanceScreen onRetry={checkMaintenanceStatus} />;
   }
 
   return (

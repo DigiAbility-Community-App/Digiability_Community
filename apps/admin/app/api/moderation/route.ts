@@ -223,15 +223,37 @@ export async function POST(request: NextRequest) {
     } else if (action === "dismiss_chat" && reportId) {
       await dbPool.query(`UPDATE chat.reports SET status = 'DISMISSED' WHERE id = $1`, [reportId]);
       await writeAudit({ action: "report_dismiss", reason: `chat report ${reportId}` });
-    } else if (action === "delete_post" && questionId) {
-      await dbPool.query(
-        `UPDATE forum_questions SET "deletedAt" = NOW() WHERE id = $1`,
-        [questionId]
-      );
-      await dbPool.query(`DELETE FROM forum_reports WHERE "questionId" = $1`, [
-        questionId,
-      ]);
-      await writeAudit({ action: "delete_post", reason: `question ${questionId}` });
+    } else if (action === "delete_post" && (questionId || body.answerId || body.messageId)) {
+      if (questionId) {
+        await dbPool.query(
+          `UPDATE forum_questions SET "deletedAt" = NOW() WHERE id = $1`,
+          [questionId]
+        );
+        await dbPool.query(`DELETE FROM forum_reports WHERE "questionId" = $1`, [
+          questionId,
+        ]);
+        await writeAudit({ action: "delete_post", reason: `question ${questionId}` });
+      }
+      if (body.answerId) {
+        await dbPool.query(
+          `UPDATE forum_answers SET "deletedAt" = NOW() WHERE id = $1`,
+          [body.answerId]
+        );
+        await dbPool.query(`DELETE FROM forum_reports WHERE "answerId" = $1`, [
+          body.answerId,
+        ]);
+        await writeAudit({ action: "delete_post", reason: `answer ${body.answerId}` });
+      }
+      if (body.messageId) {
+        await dbPool.query(
+          `UPDATE chat.messages SET status = 'DELETED', "deletedAt" = NOW() WHERE id = $1`,
+          [body.messageId]
+        );
+        if (reportId) {
+          await dbPool.query(`UPDATE chat.reports SET status = 'ACTIONED' WHERE id = $1`, [reportId]);
+        }
+        await writeAudit({ action: "delete_post", reason: `chat message ${body.messageId}` });
+      }
     } else if (action === "unsuspend" && userId) {
       await dbPool.query(
         `UPDATE users SET "isSuspended" = false, "suspendedUntil" = NULL, "suspensionReason" = NULL WHERE id = $1`,

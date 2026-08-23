@@ -14,6 +14,7 @@ export interface EventModel {
   externalUrl: string;
   organizer: string;
   accessibility_tags: string;
+  status?: "published" | "unpublished";
   createdAt: string;
   updatedAt: string;
 }
@@ -39,3 +40,15 @@ export async function fetchEventById(id: string): Promise<EventModel> {
   const response = await apiClient.get<{ success: boolean; data: EventModel }>(`/api/events/${id}`);
   return response.data.data;
 }
+
+/**
+ * Register / count attendance for an event when redirecting to external link
+ */
+export async function registerForEvent(id: string): Promise<void> {
+  try {
+    await apiClient.post(`/api/events/${id}/register`);
+  } catch {
+    // Graceful fallback if offline/mock
+  }
+}
+

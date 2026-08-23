@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import {
   Users, Heart, MessageCircle, RefreshCw, Search,
   Clock, Plus, X, ChevronDown, Loader2, CheckCircle2,
-  AlertTriangle, Settings,
+  AlertTriangle, Settings, MessageSquare, Ban, Send,
 } from "lucide-react";
 
 interface Group {
@@ -49,6 +49,18 @@ export default function GroupsPage() {
   const [typeFilter, setTypeFilter] = useState<"ALL"|"GENERAL"|"CARE_CIRCLE">("ALL");
   const [showCreate, setShowCreate] = useState(false);
 
+  // Message modal state
+  const [messageGroup, setMessageGroup] = useState<Group | null>(null);
+  const [msgSubject, setMsgSubject] = useState("");
+  const [msgBody, setMsgBody] = useState("");
+  const [msgType, setMsgType] = useState("General Update");
+  const [msgSendTo, setMsgSendTo] = useState<string[]>(["All Members"]);
+
+  // Suspend modal state
+  const [suspendGroup, setSuspendGroup] = useState<Group | null>(null);
+  const [suspendReason, setSuspendReason] = useState("Spam/Harassment");
+  const [suspendNote, setSuspendNote] = useState("");
+
   // ── fetch groups ──
   const fetchGroups = async () => {
     setLoading(true);
@@ -77,20 +89,20 @@ export default function GroupsPage() {
   ];
 
   return (
-    <div className="px-8 py-8 space-y-6">
+    <div className="px-4 sm:px-6 lg:px-8 py-6 space-y-6 w-full max-w-full overflow-x-hidden">
       {/* HEADER */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-4xl font-extrabold tracking-tight text-[#1A1C1C]">Groups & Communities</h1>
-          <p className="text-sm text-[#7D7387] mt-2">Monitor and manage community groups and care circles</p>
+          <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-[#1A1C1C]">Groups & Communities</h1>
+          <p className="text-xs sm:text-sm text-[#7D7387] mt-1">Monitor and manage community groups and care circles</p>
         </div>
         <div className="flex items-center gap-3">
-          <button onClick={fetchGroups} className="h-11 px-4 rounded-xl bg-[#F3F3F3] hover:bg-[#EBEBEB] transition flex items-center gap-2 text-sm font-semibold text-[#4B4355]">
+          <button onClick={fetchGroups} className="h-10 px-4 rounded-xl bg-[#F3F3F3] hover:bg-[#EBEBEB] transition flex items-center gap-2 text-sm font-semibold text-[#4B4355]">
             <RefreshCw className="w-4 h-4" /> Refresh
           </button>
           <button
             onClick={() => setShowCreate(true)}
-            className="h-11 px-5 rounded-xl bg-[#D2A500] hover:bg-[#b89300] text-white font-bold text-sm flex items-center gap-2 shadow-md transition"
+            className="h-10 px-5 rounded-xl bg-[#D2A500] hover:bg-[#b89300] text-white font-bold text-sm flex items-center gap-2 shadow-md transition"
           >
             <Plus className="w-4 h-4" /> Create Group
           </button>
@@ -98,13 +110,15 @@ export default function GroupsPage() {
       </div>
 
       {/* STATS */}
-      <div className="grid grid-cols-2 xl:grid-cols-4 gap-5">
+      <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
         {statsCards.map((card, i) => (
-          <div key={i} className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 flex items-center gap-4">
-            <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${card.bg} ${card.text}`}>{card.icon}</div>
+          <div key={i} className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 flex items-center gap-4">
+            <div className={`w-11 h-11 rounded-xl flex items-center justify-center ${card.bg} ${card.text} shrink-0`}>
+              {card.icon}
+            </div>
             <div>
-              <p className="text-xs font-semibold text-[#7D7387] uppercase tracking-wide">{card.label}</p>
-              <h2 className="text-3xl font-extrabold text-[#1A1C1C] mt-1">{card.value}</h2>
+              <p className="text-xs text-[#7D7387]">{card.label}</p>
+              <h2 className="text-2xl font-extrabold text-[#1A1C1C] mt-0.5">{card.value}</h2>
             </div>
           </div>
         ))}
@@ -114,11 +128,11 @@ export default function GroupsPage() {
       <div className="bg-[#F3F3F3] rounded-2xl p-4 flex flex-wrap items-center gap-4">
         <div className="relative flex-1 min-w-[220px]">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-[#7D7387]" />
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search groups..." className="w-full h-11 rounded-xl bg-white pl-11 pr-4 text-sm outline-none border border-transparent focus:border-[#8A38F5]" />
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search groups..." className="w-full h-10 rounded-xl bg-white pl-11 pr-4 text-sm outline-none border border-transparent focus:border-[#8A38F5]" />
         </div>
         <div className="flex gap-2">
           {(["ALL","GENERAL","CARE_CIRCLE"] as const).map(t => (
-            <button key={t} onClick={() => setTypeFilter(t)} className={`h-11 px-4 rounded-xl text-sm font-bold transition ${typeFilter===t ? "bg-[#7004DC] text-white" : "bg-white text-[#4B4355] border border-gray-200/50"}`}>
+            <button key={t} onClick={() => setTypeFilter(t)} className={`h-10 px-4 rounded-xl text-xs sm:text-sm font-bold transition ${typeFilter===t ? "bg-[#7004DC] text-white" : "bg-white text-[#4B4355] border border-gray-200/50"}`}>
               {t === "ALL" ? "All" : t === "CARE_CIRCLE" ? "Care Circles" : "General"}
             </button>
           ))}
@@ -129,62 +143,66 @@ export default function GroupsPage() {
       {loading ? (
         <div className="flex items-center justify-center h-64"><div className="w-10 h-10 border-4 border-[#7004DC] border-t-transparent rounded-full animate-spin" /></div>
       ) : (
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-          <div className="grid grid-cols-[2fr_140px_100px_120px_160px_140px] bg-[#F3F3F3] border-b border-gray-100">
-            {["Group","Type","Members","Max","Last Activity","Actions"].map(h => (
-              <div key={h} className="px-6 py-4 text-[11px] font-bold uppercase tracking-[0.15em] text-[#7D7387]">{h}</div>
-            ))}
-          </div>
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden w-full">
+          <div className="overflow-x-auto w-full">
+            <div className="min-w-[720px] lg:min-w-full">
+              <div className="grid grid-cols-[2fr_140px_100px_120px_160px_180px] bg-[#F3F3F3] border-b border-gray-100">
+                {["Group","Type","Members","Max","Last Activity","Actions"].map(h => (
+                  <div key={h} className="px-6 py-4 text-[11px] font-bold uppercase tracking-[0.15em] text-[#7D7387]">{h}</div>
+                ))}
+              </div>
 
-          {filtered.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-20 gap-3 text-slate-400">
-              <Users className="w-12 h-12" />
-              <p className="font-semibold">{groups.length === 0 ? "No groups created yet — create your first group above" : "No groups match your filters"}</p>
-            </div>
-          ) : filtered.map(group => (
-            <div key={group.id} className="grid grid-cols-[2fr_140px_100px_120px_160px_140px] items-center border-b border-gray-100 hover:bg-[#FAFAFA] transition">
-              {/* NAME */}
-              <div className="px-6 py-5 flex items-center gap-3">
-                <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-sm shrink-0 ${group.subType==="CARE_CIRCLE" ? "bg-pink-100 text-pink-600" : "bg-violet-100 text-violet-600"}`}>
-                  {group.subType === "CARE_CIRCLE" ? <Heart className="w-4 h-4" /> : <Users className="w-4 h-4" />}
+              {filtered.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-20 gap-3 text-slate-400">
+                  <Users className="w-12 h-12" />
+                  <p className="font-semibold">{groups.length === 0 ? "No groups created yet — create your first group above" : "No groups match your filters"}</p>
                 </div>
-                <div>
-                  <p className="font-semibold text-sm text-[#1A1C1C]">{group.name || "Unnamed Group"}</p>
-                  {group.description && <p className="text-xs text-[#7D7387] mt-0.5 line-clamp-1">{group.description}</p>}
-                  <p className="text-xs text-slate-400 mt-0.5">Created {group.createdAt}</p>
-                </div>
-              </div>
-              {/* TYPE */}
-              <div className="px-6 py-5">
-                <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase ${group.subType==="CARE_CIRCLE" ? "bg-pink-100 text-pink-700" : "bg-violet-100 text-violet-700"}`}>
-                  {group.subType === "CARE_CIRCLE" ? "Care Circle" : "General"}
-                </span>
-              </div>
-              {/* MEMBER COUNT */}
-              <div className="px-6 py-5">
-                <div className="flex items-center gap-1.5 font-bold text-sm text-[#1A1C1C]">
-                  <Users className="w-3.5 h-3.5 text-slate-400" />{group.memberCount}
-                </div>
-              </div>
-              {/* MAX */}
-              <div className="px-6 py-5 text-sm text-[#4B4355]">{group.maxMembers}</div>
-              {/* LAST ACTIVITY */}
-              <div className="px-6 py-5">
-                {group.lastMessageAt ? (
-                  <div>
-                    <div className="flex items-center gap-1.5 text-xs text-[#7D7387]"><Clock className="w-3 h-3" />{group.lastMessageAt}</div>
-                    {group.lastMessageText && <p className="text-xs text-slate-400 mt-0.5 line-clamp-1">{group.lastMessageText}</p>}
+              ) : filtered.map(group => (
+                <div key={group.id} className="grid grid-cols-[2fr_140px_100px_120px_160px_180px] items-center border-b border-gray-100 hover:bg-[#FAFAFA] transition">
+                  {/* NAME */}
+                  <div className="px-6 py-5 flex items-center gap-3">
+                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-sm shrink-0 ${group.subType==="CARE_CIRCLE" ? "bg-pink-100 text-pink-600" : "bg-violet-100 text-violet-600"}`}>
+                      {group.subType === "CARE_CIRCLE" ? <Heart className="w-4 h-4" /> : <Users className="w-4 h-4" />}
+                    </div>
+                    <div>
+                      <p className="font-semibold text-sm text-[#1A1C1C]">{group.name || "Unnamed Group"}</p>
+                      {group.description && <p className="text-xs text-[#7D7387] mt-0.5 line-clamp-1">{group.description}</p>}
+                      <p className="text-xs text-slate-400 mt-0.5">Created {group.createdAt}</p>
+                    </div>
                   </div>
-                ) : <span className="text-xs text-slate-400">No messages yet</span>}
-              </div>
-              {/* ACTIONS */}
-              <div className="px-6 py-5 flex items-center gap-2">
-                <button onClick={() => router.push(`/groups/${group.id}`)} className="h-9 px-4 rounded-xl bg-[#7004DC] hover:bg-[#5c03b7] text-white text-xs font-bold flex items-center gap-1.5 transition">
-                  <Settings className="w-3.5 h-3.5" /> Manage
-                </button>
-              </div>
+                  {/* TYPE */}
+                  <div className="px-6 py-5">
+                    <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase ${group.subType==="CARE_CIRCLE" ? "bg-pink-100 text-pink-700" : "bg-violet-100 text-violet-700"}`}>
+                      {group.subType === "CARE_CIRCLE" ? "Care Circle" : "General"}
+                    </span>
+                  </div>
+                  {/* MEMBER COUNT */}
+                  <div className="px-6 py-5">
+                    <div className="flex items-center gap-1.5 font-bold text-sm text-[#1A1C1C]">
+                      <Users className="w-3.5 h-3.5 text-slate-400" />{group.memberCount}
+                    </div>
+                  </div>
+                  {/* MAX */}
+                  <div className="px-6 py-5 text-sm text-[#4B4355]">{group.maxMembers}</div>
+                  {/* LAST ACTIVITY */}
+                  <div className="px-6 py-5">
+                    {group.lastMessageAt ? (
+                      <div>
+                        <div className="flex items-center gap-1.5 text-xs text-[#7D7387]"><Clock className="w-3 h-3" />{group.lastMessageAt}</div>
+                        {group.lastMessageText && <p className="text-xs text-slate-400 mt-0.5 line-clamp-1">{group.lastMessageText}</p>}
+                      </div>
+                    ) : <span className="text-xs text-slate-400">No messages yet</span>}
+                  </div>
+                  {/* ACTIONS */}
+                  <div className="px-6 py-5 flex items-center gap-2">
+                    <button onClick={() => router.push(`/groups/${group.id}`)} className="h-9 px-4 rounded-xl bg-[#7004DC] hover:bg-[#5c03b7] text-white text-xs font-bold flex items-center gap-1.5 transition">
+                      <Settings className="w-3.5 h-3.5" /> Manage
+                    </button>
+                  </div>
+                </div>
+              ))}
             </div>
-          ))}
+          </div>
         </div>
       )}
 
@@ -194,6 +212,130 @@ export default function GroupsPage() {
           onClose={() => setShowCreate(false)}
           onCreated={() => { setShowCreate(false); fetchGroups(); }}
         />
+      )}
+
+      {/* SUSPEND GROUP MODAL */}
+      {suspendGroup && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+          <div className="bg-white rounded-[24px] w-full max-w-md shadow-2xl overflow-hidden">
+            <div className="px-7 py-6">
+              <div className="flex items-center gap-2 mb-5">
+                <AlertTriangle className="w-5 h-5 text-red-600" />
+                <h3 className="text-xl font-extrabold text-red-600">Suspend This Group?</h3>
+              </div>
+              <div className="bg-[#F7F5FA] rounded-xl p-4 flex items-center gap-3 mb-5">
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${suspendGroup.subType === "CARE_CIRCLE" ? "bg-pink-100 text-pink-600" : "bg-violet-100 text-violet-600"}`}>
+                  {suspendGroup.subType === "CARE_CIRCLE" ? <Heart className="w-5 h-5" /> : <Users className="w-5 h-5" />}
+                </div>
+                <div>
+                  <p className="font-bold text-sm text-[#1A1C1C]">{suspendGroup.name || "Unnamed Group"}</p>
+                  <p className="text-xs text-[#7D7387]">{suspendGroup.memberCount} members</p>
+                </div>
+              </div>
+              <div className="mb-5">
+                <p className="text-sm font-semibold text-[#1A1C1C] mb-3">When you suspend a group:</p>
+                <div className="space-y-2">
+                  {["Members cannot post new messages","New members cannot join","Existing content remains visible","Moderators can still manage content","Group can be reactivated anytime"].map(item => (
+                    <div key={item} className="flex items-center gap-2 text-sm text-[#4B4355]">
+                      <CheckCircle2 className="w-4 h-4 text-slate-400 shrink-0" /> {item}
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="mb-4">
+                <label className="block text-sm font-semibold text-[#1A1C1C] mb-2">Reason for Suspension</label>
+                <div className="relative">
+                  <select value={suspendReason} onChange={e => setSuspendReason(e.target.value)} className="w-full h-11 rounded-xl border border-gray-200 px-4 text-sm outline-none focus:border-red-400 bg-white appearance-none pr-8">
+                    {["Spam/Harassment","Misinformation","Community Violation","Inactive","Other"].map(r => <option key={r}>{r}</option>)}
+                  </select>
+                  <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                </div>
+              </div>
+              <div className="mb-6">
+                <label className="block text-sm font-semibold text-[#1A1C1C] mb-2">Add optional note (visible to moderators only)</label>
+                <textarea value={suspendNote} onChange={e => setSuspendNote(e.target.value)} rows={3} placeholder="Why is this group being suspended?" className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm outline-none focus:border-red-400 resize-none" />
+              </div>
+              <div className="flex gap-3">
+                <button onClick={() => setSuspendGroup(null)} className="flex-1 h-12 rounded-xl border border-gray-200 text-[#4B4355] font-semibold text-sm hover:bg-gray-50">Cancel</button>
+                <button onClick={() => setSuspendGroup(null)} className="flex-1 h-12 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-sm transition flex items-center justify-center gap-2">
+                  <Ban className="w-4 h-4" /> Suspend Group
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* SEND MESSAGE TO GROUP MODAL */}
+      {messageGroup && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+          <div className="bg-white rounded-[24px] w-full max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between px-7 py-5 border-b border-gray-100">
+              <div>
+                <h3 className="text-xl font-extrabold text-[#1A1C1C]">Send Message to Group</h3>
+                <p className="text-xs text-[#7D7387] mt-0.5">Notify {messageGroup.memberCount} members in <span className="font-bold text-[#1A1C1C]">{messageGroup.name}</span></p>
+              </div>
+              <button onClick={() => setMessageGroup(null)} className="w-8 h-8 rounded-full hover:bg-gray-100 flex items-center justify-center"><X className="w-4 h-4 text-slate-500" /></button>
+            </div>
+            <div className="px-7 py-6 space-y-5">
+              <div>
+                <label className="block text-sm font-semibold text-[#1A1C1C] mb-2">Subject</label>
+                <input value={msgSubject} onChange={e => setMsgSubject(e.target.value)} placeholder="Enter message subject..." className="w-full h-12 rounded-xl bg-[#F7F5FA] px-4 text-sm outline-none border border-transparent focus:border-[#8A38F5]" />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-[#1A1C1C] mb-2">Message</label>
+                <textarea value={msgBody} onChange={e => setMsgBody(e.target.value)} rows={5} placeholder="Write your message to group members..." className="w-full rounded-xl bg-[#F7F5FA] px-4 py-3 text-sm outline-none border border-transparent focus:border-[#8A38F5] resize-none" />
+              </div>
+              <div className="grid grid-cols-2 gap-6">
+                <div>
+                  <p className="text-sm font-semibold text-[#1A1C1C] mb-3">Message Type</p>
+                  <div className="space-y-2">
+                    {["General Update","Urgent Alert","Announcement"].map(type => (
+                      <label key={type} className="flex items-center gap-2 cursor-pointer">
+                        <div onClick={() => setMsgType(type)} className={`w-4 h-4 rounded-full border-2 flex items-center justify-center cursor-pointer ${msgType === type ? "border-[#7004DC]" : "border-gray-300"}`}>
+                          {msgType === type && <div className="w-2 h-2 rounded-full bg-[#7004DC]" />}
+                        </div>
+                        <span className="text-sm text-[#4B4355]">{type}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-[#1A1C1C] mb-3">Send To</p>
+                  <div className="space-y-2">
+                    {["All Members","Active Members Only","Moderators Only"].map(opt => (
+                      <label key={opt} className="flex items-center gap-2 cursor-pointer">
+                        <input type="checkbox" checked={msgSendTo.includes(opt)} onChange={e => setMsgSendTo(prev => e.target.checked ? [...prev, opt] : prev.filter(x => x !== opt))} className="w-4 h-4 rounded accent-[#7004DC]" />
+                        <span className="text-sm text-[#4B4355]">{opt}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              </div>
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">MESSAGE PREVIEW:</p>
+                <div className="bg-[#F7F5FA] rounded-xl p-4 flex items-start gap-3">
+                  <div className="w-9 h-9 rounded-full bg-[#7004DC] flex items-center justify-center text-white shrink-0">📢</div>
+                  <div className="flex-1">
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm font-bold text-[#1A1C1C]">{msgSubject || "Important Group Update"}</p>
+                      <span className="text-xs text-slate-400">Just now</span>
+                    </div>
+                    <p className="text-xs text-[#7D7387] mt-1">{msgBody || "Preview your message here as you type..."}</p>
+                    <span className="inline-block mt-2 px-2 py-0.5 rounded bg-[#D2A500] text-[#4F3D00] text-[9px] font-bold uppercase">{msgType.split(" ")[0]}</span>
+                    <span className="ml-2 text-[10px] text-slate-400">via DigiAbility Admin</span>
+                  </div>
+                </div>
+              </div>
+              <div className="flex gap-3 pt-2 border-t border-gray-100">
+                <button onClick={() => setMessageGroup(null)} className="flex-1 h-12 rounded-xl border border-gray-200 text-[#4B4355] font-semibold text-sm hover:bg-gray-50">Cancel</button>
+                <button onClick={() => setMessageGroup(null)} disabled={!msgSubject.trim() || !msgBody.trim()} className="flex-1 h-12 rounded-xl bg-[#7004DC] hover:bg-[#5c03b7] disabled:bg-violet-200 text-white font-bold text-sm transition flex items-center justify-center gap-2">
+                  <Send className="w-4 h-4" /> Send Message
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

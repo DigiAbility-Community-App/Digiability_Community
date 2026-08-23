@@ -49,7 +49,7 @@ export default function UserDetailPage() {
   const [user, setUser] = useState<UserDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
-  const [activeTab, setActiveTab] = useState<"Profile" | "Activity" | "Applications" | "Care Circle" | "Reports">("Profile");
+  const [activeTab, setActiveTab] = useState<"Profile" | "Activity" | "Care Circles & Groups" | "Reports">("Profile");
   const [showEditModal, setShowEditModal] = useState(false);
   const [showSuspendModal, setShowSuspendModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -104,7 +104,7 @@ export default function UserDetailPage() {
     Active: "bg-green-600", Inactive: "bg-gray-400", Suspended: "bg-red-600",
   };
 
-  const TABS = ["Profile", "Activity", "Applications", "Care Circle", "Reports"] as const;
+  const TABS = ["Profile", "Activity", "Care Circles & Groups", "Reports"] as const;
 
   const handleSuspend = async (reason: string, duration: string, message: string) => {
     const res = await fetch(`/api/users/${id}`, {
@@ -284,8 +284,7 @@ export default function UserDetailPage() {
           <div className="p-7">
             {activeTab === "Profile" && <ProfileTab user={user} />}
             {activeTab === "Activity" && <ActivityTab userId={user.id} />}
-            {activeTab === "Applications" && <PlaceholderTab label="Applications" />}
-            {activeTab === "Care Circle" && <PlaceholderTab label="Care Circle" />}
+            {activeTab === "Care Circles & Groups" && <CareCirclesTab userId={user.id} />}
             {activeTab === "Reports" && <ReportsTab userId={user.id} />}
           </div>
         </div>
@@ -346,7 +345,7 @@ function ProfileTab({ user }: { user: UserDetail }) {
           <InfoItem label="DATE OF BIRTH" value={(() => {
             if (!user.dob) return "—";
             const d = new Date(user.dob);
-            return isNaN(d.getTime()) ? "—" : d.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
+            return isNaN(d.getTime()) ? "—" : d.toLocaleDateString("en-GB").replace(/\//g, "/");
           })()} />
           <InfoItem label="GENDER" value={user.gender || "—"} />
           <InfoItem label="PRIMARY LANGUAGE" value="Telugu, English" />
@@ -448,165 +447,425 @@ function ProfileTab({ user }: { user: UserDetail }) {
 }
 
 // ─────────────────────────────────────────────
-// PLACEHOLDER TAB
 // ─────────────────────────────────────────────
-function PlaceholderTab({ label }: { label: string }) {
-  return (
-    <div className="flex flex-col items-center justify-center py-20 text-center">
-      <div className="w-16 h-16 rounded-full bg-[#F3F0FF] flex items-center justify-center mb-4">
-        <Clock className="w-7 h-7 text-[#7004DC]" />
-      </div>
-      <h3 className="text-base font-semibold text-[#1A1C1C] mb-1">{label} — Coming Soon</h3>
-      <p className="text-sm text-[#7D7387]">This section is under development and will be available soon.</p>
-    </div>
-  );
-}
-
+// CARE CIRCLES & GROUPS TAB — real data
 // ─────────────────────────────────────────────
-// ACTIVITY TAB — real data
-// ─────────────────────────────────────────────
-interface ActivityItem {
-  type: "question" | "answer";
+interface UserGroupItem {
   id: string;
-  title?: string;
-  category?: string;
-  views?: number;
-  answerCount?: number;
-  status?: string;
-  isDeleted?: boolean;
-  content?: string | null;
-  questionId?: string;
-  questionTitle?: string;
-  questionCategory?: string;
-  isAccepted?: boolean;
-  upvotes?: number;
-  time: string;
+  name: string;
+  description: string;
+  subType: "CARE_CIRCLE" | "GENERAL";
+  userRole: string;
+  memberCount: number;
+  joinedAt: string;
 }
 
-function ActivityTab({ userId }: { userId: string }) {
-  const [activities, setActivities] = useState<ActivityItem[]>([]);
+interface UserGroupsData {
+  total: number;
+  careCirclesCount: number;
+  generalGroupsCount: number;
+  careCircles: UserGroupItem[];
+  generalGroups: UserGroupItem[];
+  allGroups: UserGroupItem[];
+}
+
+function CareCirclesTab({ userId }: { userId: string }) {
+  const [data, setData] = useState<UserGroupsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
-  const [typeFilter, setTypeFilter] = useState<"all" | "question" | "answer">("all");
+  const [filter, setFilter] = useState<"ALL" | "CARE_CIRCLE" | "GENERAL">("ALL");
 
   useEffect(() => {
     setLoading(true);
     setError(false);
-    fetch(`/api/users/${userId}/activity`)
-      .then(r => r.json())
-      .then(data => {
-        if (data.success) setActivities(data.activities);
+    fetch(`/api/users/${userId}/groups`)
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.success) setData(d);
         else setError(true);
       })
       .catch(() => setError(true))
       .finally(() => setLoading(false));
   }, [userId]);
 
-  const filtered = typeFilter === "all" ? activities : activities.filter(a => a.type === typeFilter);
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <div className="w-8 h-8 border-4 border-[#7004DC] border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
 
-  if (loading) return (
-    <div className="flex items-center justify-center py-20">
-      <div className="w-8 h-8 border-4 border-[#7004DC] border-t-transparent rounded-full animate-spin" />
+  if (error || !data) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 text-center">
+        <AlertTriangle className="w-8 h-8 text-red-400 mb-3" />
+        <p className="text-sm font-semibold text-slate-600">Failed to load care circles and groups</p>
+      </div>
+    );
+  }
+
+  const displayedGroups =
+    filter === "ALL"
+      ? data.allGroups
+      : filter === "CARE_CIRCLE"
+      ? data.careCircles
+      : data.generalGroups;
+
+  return (
+    <div className="space-y-6">
+      {/* SUMMARY STATS */}
+      <div className="grid grid-cols-3 gap-4">
+        <div className="bg-white rounded-2xl border border-gray-100 p-4 shadow-sm">
+          <p className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 mb-1">Total Memberships</p>
+          <p className="text-2xl font-extrabold text-[#7004DC]">{data.total}</p>
+        </div>
+        <div className="bg-white rounded-2xl border border-gray-100 p-4 shadow-sm">
+          <p className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 mb-1">Care Circles</p>
+          <p className="text-2xl font-extrabold text-pink-600">{data.careCirclesCount}</p>
+        </div>
+        <div className="bg-white rounded-2xl border border-gray-100 p-4 shadow-sm">
+          <p className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 mb-1">Community Groups</p>
+          <p className="text-2xl font-extrabold text-violet-600">{data.generalGroupsCount}</p>
+        </div>
+      </div>
+
+      {/* FILTER PILLS */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          {(
+            [
+              { key: "ALL", label: `All Groups (${data.total})` },
+              { key: "CARE_CIRCLE", label: `Care Circles (${data.careCirclesCount})` },
+              { key: "GENERAL", label: `Community Groups (${data.generalGroupsCount})` },
+            ] as const
+          ).map((t) => (
+            <button
+              key={t.key}
+              onClick={() => setFilter(t.key)}
+              className={`h-9 px-4 rounded-xl text-xs font-bold transition ${
+                filter === t.key
+                  ? "bg-[#7004DC] text-white shadow-sm"
+                  : "bg-[#F7F5FA] text-[#4B4355] hover:bg-violet-100/50"
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+        <p className="text-xs text-slate-400 font-semibold">{displayedGroups.length} shown</p>
+      </div>
+
+      {/* GROUPS LIST */}
+      {displayedGroups.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-16 text-center border border-dashed border-gray-200 rounded-2xl bg-[#FAF9FC]">
+          <div className="w-14 h-14 rounded-2xl bg-violet-100 flex items-center justify-center mb-3 text-[#7004DC]">
+            <Heart className="w-6 h-6" />
+          </div>
+          <h4 className="text-sm font-extrabold text-[#1A1C1C] mb-1">
+            No {filter === "CARE_CIRCLE" ? "Care Circles" : filter === "GENERAL" ? "Community Groups" : "Memberships"} Found
+          </h4>
+          <p className="text-xs text-[#7D7387] max-w-sm">
+            This user has not joined or been assigned to any {filter === "CARE_CIRCLE" ? "care circles" : filter === "GENERAL" ? "community groups" : "groups"} yet.
+          </p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {displayedGroups.map((group) => {
+            const isCareCircle = group.subType === "CARE_CIRCLE";
+            return (
+              <div
+                key={group.id}
+                className="bg-white rounded-2xl border border-gray-100 p-5 shadow-sm hover:border-violet-200 transition flex flex-col justify-between"
+              >
+                <div>
+                  <div className="flex items-start justify-between gap-3 mb-3">
+                    <div className="flex items-center gap-3">
+                      <div
+                        className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 ${
+                          isCareCircle ? "bg-pink-100 text-pink-600" : "bg-violet-100 text-violet-600"
+                        }`}
+                      >
+                        {isCareCircle ? <Heart className="w-5 h-5" /> : <Users className="w-5 h-5" />}
+                      </div>
+                      <div>
+                        <h4 className="font-extrabold text-sm text-[#1A1C1C] line-clamp-1">{group.name}</h4>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <span
+                            className={`px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase ${
+                              isCareCircle ? "bg-pink-100 text-pink-700" : "bg-violet-100 text-violet-700"
+                            }`}
+                          >
+                            {isCareCircle ? "Care Circle" : "General Group"}
+                          </span>
+                          <span className="px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase bg-slate-100 text-slate-600 border border-slate-200">
+                            Role: {group.userRole}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {group.description ? (
+                    <p className="text-xs text-[#7D7387] line-clamp-2 mb-3 leading-relaxed">{group.description}</p>
+                  ) : null}
+                </div>
+
+                <div className="pt-3 border-t border-gray-100 flex items-center justify-between text-xs text-[#7D7387]">
+                  <div className="flex items-center gap-1.5 font-medium">
+                    <Users className="w-3.5 h-3.5 text-slate-400" />
+                    <span>{group.memberCount} members</span>
+                    <span className="mx-1">·</span>
+                    <span>Joined {group.joinedAt}</span>
+                  </div>
+
+                  <Link
+                    href={`/groups/${group.id}`}
+                    className="inline-flex items-center gap-1 text-xs font-bold text-[#7004DC] hover:underline"
+                  >
+                    View Group <ChevronRight className="w-3.5 h-3.5" />
+                  </Link>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
+}
 
-  if (error) return (
-    <div className="flex flex-col items-center justify-center py-20 text-center">
-      <AlertTriangle className="w-8 h-8 text-red-400 mb-3" />
-      <p className="text-sm font-semibold text-slate-600">Failed to load activity</p>
-    </div>
-  );
+// ─────────────────────────────────────────────
+// ACTIVITY TAB — comprehensive real timeline
+// ─────────────────────────────────────────────
+interface ActivityItem {
+  id: string;
+  type: "question" | "answer" | "care_circle_joined" | "group_joined" | "account_created" | "email_verified";
+  title?: string;
+  content?: string;
+  category?: string;
+  time: string;
+  views?: number;
+  answerCount?: number;
+  status?: string;
+  isAccepted?: boolean;
+  upvotes?: number;
+  downvotes?: number;
+  questionTitle?: string;
+  questionId?: string;
+  groupId?: string;
+  isDeleted?: boolean;
+}
+
+function ActivityTab({ userId }: { userId: string }) {
+  const [activities, setActivities] = useState<ActivityItem[]>([]);
+  const [counts, setCounts] = useState({ all: 0, questions: 0, answers: 0, groups: 0, account: 0 });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+  const [typeFilter, setTypeFilter] = useState<"all" | "question" | "answer" | "groups" | "account">("all");
+
+  useEffect(() => {
+    setLoading(true);
+    setError(false);
+    fetch(`/api/users/${userId}/activity`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.success) {
+          setActivities(data.activities || []);
+          if (data.counts) setCounts(data.counts);
+        } else {
+          setError(true);
+        }
+      })
+      .catch(() => setError(true))
+      .finally(() => setLoading(false));
+  }, [userId]);
+
+  const filtered = activities.filter((a) => {
+    if (typeFilter === "all") return true;
+    if (typeFilter === "question") return a.type === "question";
+    if (typeFilter === "answer") return a.type === "answer";
+    if (typeFilter === "groups") return a.type === "care_circle_joined" || a.type === "group_joined";
+    if (typeFilter === "account") return a.type === "account_created" || a.type === "email_verified";
+    return true;
+  });
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <div className="w-8 h-8 border-4 border-[#7004DC] border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 text-center">
+        <AlertTriangle className="w-8 h-8 text-red-400 mb-3" />
+        <p className="text-sm font-semibold text-slate-600">Failed to load activity timeline</p>
+      </div>
+    );
+  }
 
   return (
     <div>
       {/* FILTERS */}
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-2">
-          {(["all", "question", "answer"] as const).map(f => (
+      <div className="flex items-center justify-between mb-6 flex-wrap gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          {(
+            [
+              { key: "all", label: `All Activities (${counts.all || activities.length})` },
+              { key: "question", label: `Questions (${counts.questions})` },
+              { key: "answer", label: `Answers (${counts.answers})` },
+              { key: "groups", label: `Groups & Circles (${counts.groups})` },
+              { key: "account", label: `Account Events (${counts.account})` },
+            ] as const
+          ).map((f) => (
             <button
-              key={f}
-              onClick={() => setTypeFilter(f)}
-              className={`h-9 px-4 rounded-lg text-xs font-bold transition ${
-                typeFilter === f ? "bg-[#7004DC] text-white" : "bg-[#F3F3F3] text-[#4B4355] hover:bg-[#E8E8E8]"
+              key={f.key}
+              onClick={() => setTypeFilter(f.key)}
+              className={`h-9 px-4 rounded-xl text-xs font-bold transition ${
+                typeFilter === f.key
+                  ? "bg-[#7004DC] text-white shadow-sm"
+                  : "bg-[#F7F5FA] text-[#4B4355] hover:bg-violet-100/50"
               }`}
             >
-              {f === "all" ? "All Activities" : f === "question" ? "Questions" : "Answers"}
+              {f.label}
             </button>
           ))}
         </div>
-        <p className="text-sm text-[#7D7387]">{filtered.length} {filtered.length === 1 ? "item" : "items"}</p>
+        <p className="text-xs text-slate-400 font-semibold">{filtered.length} items</p>
       </div>
 
       {filtered.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-20 text-center">
-          <div className="w-16 h-16 rounded-full bg-[#F3F0FF] flex items-center justify-center mb-4">
-            <MessageSquare className="w-7 h-7 text-[#7004DC]" />
+        <div className="flex flex-col items-center justify-center py-20 text-center border border-dashed border-gray-200 rounded-2xl bg-[#FAF9FC]">
+          <div className="w-16 h-16 rounded-full bg-[#F3F0FF] flex items-center justify-center mb-4 text-[#7004DC]">
+            <Clock className="w-7 h-7" />
           </div>
-          <h3 className="text-base font-semibold text-[#1A1C1C] mb-1">No activity found</h3>
-          <p className="text-sm text-[#7D7387]">This user hasn't posted any {typeFilter === "all" ? "questions or answers" : typeFilter + "s"} yet.</p>
+          <h3 className="text-base font-extrabold text-[#1A1C1C] mb-1">No activities found</h3>
+          <p className="text-xs text-[#7D7387] max-w-sm">
+            No activity records matching this filter category were found for this user.
+          </p>
         </div>
       ) : (
         /* TIMELINE */
         <div className="space-y-4">
-          {filtered.map((item) => (
-            <div
-              key={item.id}
-              className={`bg-white rounded-2xl border p-5 flex items-start gap-4 ${
-                item.isDeleted ? "border-red-100 bg-red-50/20 opacity-70" : "border-gray-100"
-              }`}
-            >
-              <div className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 mt-0.5 ${
-                item.type === "question" ? "bg-[#7004DC]" : item.isAccepted ? "bg-green-500" : "bg-blue-500"
-              }`}>
-                {item.type === "question" ? (
-                  <MessageSquare className="w-4 h-4 text-white" />
-                ) : (
-                  <CheckCircle2 className="w-4 h-4 text-white" />
-                )}
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center justify-between gap-3">
-                  <p className="text-sm font-semibold text-[#1A1C1C]">
-                    {item.type === "question" ? "Posted a question" : "Answered a question"}
-                  </p>
-                  <div className="flex items-center gap-2 shrink-0">
-                    {item.type === "question" && item.status === "SOLVED" && (
-                      <span className="px-2 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wide bg-green-100 text-green-700">SOLVED</span>
+          {filtered.map((item) => {
+            const isQuestion = item.type === "question";
+            const isAnswer = item.type === "answer";
+            const isCareCircle = item.type === "care_circle_joined";
+            const isGroup = item.type === "group_joined";
+            const isAccount = item.type === "account_created" || item.type === "email_verified";
+
+            return (
+              <div
+                key={item.id}
+                className={`bg-white rounded-2xl border p-5 flex items-start gap-4 transition shadow-sm ${
+                  item.isDeleted ? "border-red-100 bg-red-50/20 opacity-70" : "border-gray-100 hover:border-violet-200"
+                }`}
+              >
+                <div
+                  className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 mt-0.5 ${
+                    isQuestion
+                      ? "bg-[#7004DC] text-white"
+                      : isAnswer
+                      ? item.isAccepted
+                        ? "bg-green-500 text-white"
+                        : "bg-blue-500 text-white"
+                      : isCareCircle
+                      ? "bg-pink-100 text-pink-600"
+                      : isGroup
+                      ? "bg-violet-100 text-violet-600"
+                      : "bg-emerald-100 text-emerald-700"
+                  }`}
+                >
+                  {isQuestion && <MessageSquare className="w-4 h-4" />}
+                  {isAnswer && <CheckCircle2 className="w-4 h-4" />}
+                  {isCareCircle && <Heart className="w-4 h-4" />}
+                  {isGroup && <Users className="w-4 h-4" />}
+                  {isAccount && <Shield className="w-4 h-4" />}
+                </div>
+
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-bold text-[#1A1C1C]">
+                        {isQuestion
+                          ? "Posted a forum question"
+                          : isAnswer
+                          ? "Answered a forum question"
+                          : isCareCircle
+                          ? "Joined a Care Circle"
+                          : isGroup
+                          ? "Joined a Community Group"
+                          : item.title || "Account Milestone"}
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      {isQuestion && item.status === "SOLVED" && (
+                        <span className="px-2 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wide bg-green-100 text-green-700">
+                          SOLVED
+                        </span>
+                      )}
+                      {isAnswer && item.isAccepted && (
+                        <span className="px-2 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wide bg-green-100 text-green-700">
+                          ✓ ACCEPTED
+                        </span>
+                      )}
+                      {item.isDeleted && (
+                        <span className="px-2 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wide bg-red-100 text-red-700">
+                          REMOVED
+                        </span>
+                      )}
+                      <span className="text-xs text-slate-400 whitespace-nowrap">{item.time}</span>
+                    </div>
+                  </div>
+
+                  {isQuestion && item.content && (
+                    <p className="text-sm text-[#4B4355] mt-1 font-semibold line-clamp-2">{item.content}</p>
+                  )}
+
+                  {isAnswer && item.questionTitle && (
+                    <p className="text-sm text-[#7004DC] mt-1 font-medium line-clamp-1">On: "{item.questionTitle}"</p>
+                  )}
+
+                  {isAnswer && item.content && (
+                    <p className="text-xs text-[#7D7387] mt-1.5 italic bg-[#FAF9FC] p-2.5 rounded-xl border border-gray-100 line-clamp-2">
+                      "{item.content}"
+                    </p>
+                  )}
+
+                  {(isCareCircle || isGroup) && (
+                    <div className="mt-1 flex items-center gap-2">
+                      <span className="text-sm font-semibold text-[#1A1C1C]">{item.title}</span>
+                      <span className="text-xs text-slate-400">({item.content})</span>
+                    </div>
+                  )}
+
+                  {isAccount && item.content && (
+                    <p className="text-xs text-[#7D7387] mt-1">{item.content}</p>
+                  )}
+
+                  <div className="flex items-center gap-4 mt-2.5 flex-wrap">
+                    {item.category && (
+                      <span className="text-[10px] font-bold uppercase tracking-wide bg-[#F3F0FF] text-[#7004DC] px-2.5 py-0.5 rounded-md">
+                        {item.category}
+                      </span>
                     )}
-                    {item.isAccepted && (
-                      <span className="px-2 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wide bg-green-100 text-green-700">✓ ACCEPTED</span>
+                    {isQuestion && item.views !== undefined && (
+                      <span className="text-xs text-slate-400">
+                        👁 {item.views} views · 💬 {item.answerCount} answers
+                      </span>
                     )}
-                    {item.isDeleted && (
-                      <span className="px-2 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wide bg-red-100 text-red-700">REMOVED</span>
+                    {isAnswer && item.upvotes !== undefined && (
+                      <span className="text-xs text-slate-400">👍 {item.upvotes} upvotes</span>
                     )}
-                    <span className="text-xs text-slate-400 whitespace-nowrap">{item.time}</span>
                   </div>
                 </div>
-                {item.type === "question" && item.title && (
-                  <p className="text-sm text-[#4B4355] mt-1 font-medium">{item.title}</p>
-                )}
-                {item.type === "answer" && item.questionTitle && (
-                  <p className="text-sm text-[#7004DC] mt-1 font-medium">{item.questionTitle}</p>
-                )}
-                {item.content && (
-                  <p className="text-xs text-[#7D7387] mt-1.5 italic">"{item.content}"</p>
-                )}
-                <div className="flex items-center gap-4 mt-2">
-                  {item.category && (
-                    <span className="text-[10px] font-bold uppercase tracking-wide bg-[#F3F0FF] text-[#7004DC] px-2 py-0.5 rounded-md">
-                      {item.category}
-                    </span>
-                  )}
-                  {item.type === "question" && item.views !== undefined && (
-                    <span className="text-xs text-slate-400">{item.views} views · {item.answerCount} answers</span>
-                  )}
-                  {item.type === "answer" && item.upvotes !== undefined && (
-                    <span className="text-xs text-slate-400">▲ {item.upvotes} upvotes</span>
-                  )}
-                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

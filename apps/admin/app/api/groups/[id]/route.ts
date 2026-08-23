@@ -118,29 +118,51 @@ export async function DELETE(
     const chatSvcUrl = process.env.CHAT_SVC_URL;
     const internalSecret = process.env.INTERNAL_API_SECRET;
 
+    let deletedViaService = false;
     if (chatSvcUrl && internalSecret) {
-      const res = await fetch(`${chatSvcUrl}/api/internal/conversations/${id}`, {
-        method: "DELETE",
-        headers: { "x-internal-secret": internalSecret },
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        return NextResponse.json(
-          { success: false, message: body.message || "Failed to delete group" },
-          { status: res.status }
+      try {
+        const res = await fetch(`${chatSvcUrl}/api/internal/conversations/${id}`, {
+          method: "DELETE",
+          headers: {
+            "x-internal-secret": internalSecret,
+            "x-internal-ts": String(Date.now()),  // required by internalAuth replay-protection
+          },
+        });
+        if (res.ok) {
+          deletedViaService = true;
+        } else {
+          console.warn(
+            `chat-svc internal delete returned status ${res.status}, falling back to direct DB soft-delete.`
+          );
+        }
+      } catch (svcErr) {
+        console.warn(
+          "Failed to reach chat-svc for internal delete, falling back to direct DB soft-delete:",
+          svcErr
         );
       }
-    } else {
-      console.warn(
-        "CHAT_SVC_URL/INTERNAL_API_SECRET not set — deleting group via direct DB write (no real-time propagation to members)."
-      );
+    }
+
+    // Look up group name before soft-deleting for clear audit trail
+    let groupName = "";
+    try {
+      const gRes = await dbPool.query(`SELECT name FROM chat.conversations WHERE id = $1`, [id]);
+      if (gRes.rows.length > 0 && gRes.rows[0].name) {
+        groupName = gRes.rows[0].name;
+      }
+    } catch {}
+
+    if (!deletedViaService) {
       await dbPool.query(
         `UPDATE chat.conversations SET "deletedAt" = NOW(), "updatedAt" = NOW() WHERE id = $1`,
         [id]
       );
     }
 
-    await writeAudit({ action: "delete_group", reason: `conversation ${id}` });
+    await writeAudit({
+      action: "delete_group",
+      reason: groupName ? `"${groupName}" (ID: ${id})` : `conversation ${id}`,
+    });
 
     return NextResponse.json({ success: true });
   } catch (error) {

@@ -20,6 +20,7 @@ import ScreenWrapper from "../../components/layout/ScreenWrapper";
 import AppHeader from "../../components/layout/AppHeader";
 import { fetchAllEvents } from "../../services/eventService";
 import { forumService } from "../../services/forumService";
+import { parseEventBadgeParts } from "../../utils/dateHelpers";
 
 // ----------------------
 // TYPES
@@ -376,18 +377,27 @@ const HomeScreen = () => {
                 accessibilityLabel={`Event: ${event.title}`}
                 accessibilityHint="Double tap to view event details"
               >
-                {/* DATE */}
-                <LinearGradient
-                  colors={highContrast ? ["#000000", "#000000"] : ["#500088", "#6B21A8"]}
-                  style={[styles.eventDate, highContrast && { borderWidth: 2, borderColor: '#FFFFFF' }]}
-                >
-                  <AccessibleText
-                    variant="body"
-                    style={{ color: '#FFFFFF', fontWeight: '700', textAlign: 'center' }}
-                  >
-                    {event.date}
-                  </AccessibleText>
-                </LinearGradient>
+                {/* DATE BADGE */}
+                {(() => {
+                  const { day, month } = parseEventBadgeParts(event.date);
+                  return (
+                    <LinearGradient
+                      colors={highContrast ? ["#000000", "#000000"] : ["#500088", "#7004DC"]}
+                      style={[styles.eventDate, highContrast && { borderWidth: 2, borderColor: '#FFFFFF' }]}
+                    >
+                      <AccessibleText
+                        style={{ color: '#FFFFFF', fontSize: 17, fontWeight: '800', textAlign: 'center', lineHeight: 21 }}
+                      >
+                        {day}
+                      </AccessibleText>
+                      <AccessibleText
+                        style={{ color: 'rgba(255,255,255,0.9)', fontSize: 10, fontWeight: '800', textTransform: 'uppercase', textAlign: 'center', marginTop: 1, letterSpacing: 0.5 }}
+                      >
+                        {month}
+                      </AccessibleText>
+                    </LinearGradient>
+                  );
+                })()}
 
                 {/* CONTENT */}
                 <View

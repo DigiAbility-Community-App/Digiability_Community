@@ -15,19 +15,26 @@ import { AccessibleText } from "../../components/shared/AccessibleText";
 import { AccessibleButton } from "../../components/shared/AccessibleButton";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { registerForEvent } from "../../services/eventService";
+import { formatEventDateDisplay } from "../../utils/dateHelpers";
+
 export default function LeavePortalScreen() {
   const route = useRoute<any>();
   const navigation = useNavigation<any>();
   const { colors, highContrast } = useTheme();
   const insets = useSafeAreaInsets();
 
-  const { externalUrl, eventTitle, eventDate, eventLocation, organizer } = route.params || {};
+  const { eventId, externalUrl, eventTitle, eventDate, eventLocation, organizer } = route.params || {};
   const [loading, setLoading] = useState(false);
 
   const handleContinue = async () => {
     if (!externalUrl) return;
     try {
       setLoading(true);
+      if (eventId) {
+        // Count / track event registration
+        registerForEvent(eventId).catch(() => {});
+      }
       await WebBrowser.openBrowserAsync(externalUrl);
       navigation.goBack();
     } catch {
@@ -84,7 +91,7 @@ export default function LeavePortalScreen() {
               <View style={styles.eventCardMeta}>
                 <Calendar color={colors.subtext} size={14} style={{ marginRight: 6 }} />
                 <AccessibleText variant="body" style={{ color: colors.subtext, fontSize: 13 }}>
-                  {eventDate}
+                  {formatEventDateDisplay(eventDate)}
                 </AccessibleText>
               </View>
             ) : null}
@@ -142,18 +149,18 @@ export default function LeavePortalScreen() {
             )}
           </AccessibleButton>
 
-          {/* SKIP BUTTON */}
-          <AccessibleButton
-            variant="outline"
+          {/* SKIP BUTTON — FULLY CENTERED */}
+          <TouchableOpacity
             style={[styles.skipBtn, { borderColor: colors.border }]}
             onPress={handleSkip}
+            accessibilityRole="button"
             accessibilityLabel="Skip and return to event details"
             accessibilityHint="Cancels the external navigation and returns to the event page"
           >
             <AccessibleText style={[styles.skipBtnText, { color: colors.text }]}>
               Skip
             </AccessibleText>
-          </AccessibleButton>
+          </TouchableOpacity>
 
           {/* FOOTER NOTE */}
           <AccessibleText variant="caption" style={[styles.footerNote, { color: colors.subtext }]}>
@@ -276,6 +283,8 @@ const styles = StyleSheet.create({
   },
   skipBtnText: {
     fontWeight: "700",
+    fontSize: 15,
+    textAlign: "center",
   },
   footerNote: {
     fontSize: 11,

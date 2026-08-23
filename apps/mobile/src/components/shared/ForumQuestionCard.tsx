@@ -37,10 +37,15 @@ export const ForumQuestionCard: React.FC<ForumQuestionCardProps> = ({
   const { colors, spacing } = useTheme();
   const isSolved = question.status === 'SOLVED';
 
-  // Format date helper
+  // Format date helper (Standard DD/MM/YYYY)
   const formatDate = (dateInput: string | Date) => {
+    if (!dateInput) return '';
     const d = new Date(dateInput);
-    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+    if (isNaN(d.getTime())) return String(dateInput);
+    const day = String(d.getDate()).padStart(2, '0');
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const year = d.getFullYear();
+    return `${day}/${month}/${year}`;
   };
 
   const reputation = question.author?.forumStats?.reputation ?? 0;
