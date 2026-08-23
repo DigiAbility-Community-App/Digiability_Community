@@ -24,6 +24,7 @@ import {
   BackHandler,
 } from "react-native";
 
+import DateTimePickerModal from "react-native-modal-datetime-picker";
 import SafeScreen from "../../components/layout/SafeScreen";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -102,6 +103,7 @@ const ProfileDetailsScreen = () => {
   const [personName, setPersonName] = useState("");
   const [relation, setRelation] = useState("");
   const [careeDob, setCareeDob] = useState("");
+  const [showDobPicker, setShowDobPicker] = useState(false);
   const [careDisabilities, setCareDisabilities] = useState<string[]>([]);
 
   const toggleCareDisability = (item: string) => {
@@ -618,12 +620,13 @@ const ProfileDetailsScreen = () => {
 
               <AccessibleText variant="label" style={[styles.label, { color: colors.subtext }]}>Person Name</AccessibleText>
               <TextInput
-                placeholder="Enter full name"
+                placeholder="Enter full name (letters only)"
                 placeholderTextColor={colors.subtext}
                 style={[styles.input, { backgroundColor: colors.surface, color: colors.text }, fieldBorder(!!fieldErrors.personName)]}
                 value={personName}
-                onChangeText={setPersonName}
+                onChangeText={(v) => setPersonName(v.replace(/[0-9]/g, ''))}
                 accessibilityLabel="Person name"
+                accessibilityHint="Letters only"
               />
               {fieldErrors.personName && (
                 <AccessibleText style={[styles.errorText, { color: colors.error }]} accessibilityRole="alert">
@@ -646,14 +649,30 @@ const ProfileDetailsScreen = () => {
 
                 <View style={styles.halfField}>
                   <AccessibleText variant="label" style={[styles.label, { color: colors.subtext }]}>DOB</AccessibleText>
-                  <TextInput
-                    placeholder="DD/MM/YYYY"
-                    placeholderTextColor={colors.subtext}
-                    style={[styles.input, { backgroundColor: colors.surface, color: colors.text }, fieldBorder(!!fieldErrors.careeDob)]}
-                    value={careeDob}
-                    onChangeText={setCareeDob}
+                  <TouchableOpacity
+                    onPress={() => setShowDobPicker(true)}
+                    accessibilityRole="button"
                     accessibilityLabel="Date of birth"
-                    accessibilityHint="Format: day, month, year"
+                    accessibilityHint="Opens a calendar picker"
+                    style={[styles.input, { backgroundColor: colors.surface, justifyContent: 'center' }, fieldBorder(!!fieldErrors.careeDob)]}
+                  >
+                    <AccessibleText style={{ color: careeDob ? colors.text : colors.subtext }}>
+                      {careeDob || 'Pick date (DD/MM/YYYY)'}
+                    </AccessibleText>
+                  </TouchableOpacity>
+                  <DateTimePickerModal
+                    isVisible={showDobPicker}
+                    mode="date"
+                    maximumDate={new Date()}
+                    onConfirm={(date) => {
+                      const day = String(date.getDate()).padStart(2, '0');
+                      const month = String(date.getMonth() + 1).padStart(2, '0');
+                      const year = date.getFullYear();
+                      setCareeDob(`${day}/${month}/${year}`);
+                      if (fieldErrors.careeDob) setFieldErrors(e => ({ ...e, careeDob: undefined as any }));
+                      setShowDobPicker(false);
+                    }}
+                    onCancel={() => setShowDobPicker(false)}
                   />
                 </View>
               </View>

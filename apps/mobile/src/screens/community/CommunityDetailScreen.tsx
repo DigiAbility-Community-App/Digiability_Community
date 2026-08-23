@@ -1,7 +1,9 @@
 import React, { useState, useMemo } from "react";
 import { View, StyleSheet, TouchableOpacity, Dimensions } from "react-native";
 import { TabView } from "react-native-tab-view";
+import { useFocusEffect } from "@react-navigation/native";
 import { useChatStore } from "@store/chatStore";
+import { useForumStore } from "@store/forumStore";
 import ScreenWrapper from "../../components/layout/ScreenWrapper";
 import AppHeader from "../../components/layout/AppHeader";
 import GroupsTab from "../../components/community/GroupsTab";
@@ -103,11 +105,23 @@ const CommunityDetailScreen = ({ navigation, route }: any) => {
     </View>
   );
 
+  const forumNotifications = useForumStore((s) => s.notifications);
+  const fetchNotifications = useForumStore((s) => s.fetchNotifications);
+  const pendingInvites = useChatStore((s) => s.pendingInvites);
+  const hasUnreadNotifications = pendingInvites.length > 0 || forumNotifications.some((n) => !n.read);
+
+  useFocusEffect(
+    React.useCallback(() => {
+      fetchNotifications();
+    }, [fetchNotifications])
+  );
+
   return (
     <ScreenWrapper statusBarStyle="light">
       <AppHeader
         title="Community"
         showNotification
+        hasUnreadNotifications={hasUnreadNotifications}
         hideBackButton={true}
         onNotificationPress={() => navigation.navigate("Notifications")}
       />

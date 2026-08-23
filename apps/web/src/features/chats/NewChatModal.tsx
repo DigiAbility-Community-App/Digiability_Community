@@ -109,6 +109,9 @@ const NewChatModal: React.FC<NewChatModalProps> = ({ onClose }) => {
             ))}
           </div>
         </div>
+        <div className="modal-footer" style={{ padding: '16px', borderTop: '1px solid #f0f0f0', display: 'flex', justifyContent: 'flex-end' }}>
+          <button onClick={onClose} style={{ padding: '10px 20px', borderRadius: '10px', background: '#f0ecf5', border: 'none', color: '#666', fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
+        </div>
       </div>
     </div>
   );

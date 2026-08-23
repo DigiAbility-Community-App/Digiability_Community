@@ -127,7 +127,7 @@ const CreateCareCircleScreen = () => {
             <View style={[styles.inputRow, { backgroundColor: colors.surface }]}>
               <TextInput
                 value={name}
-                onChangeText={(v) => { setName(v); if (nameError) setNameError(""); }}
+                onChangeText={(v) => { setName(v.replace(/[0-9]/g, '')); if (nameError) setNameError(""); }}
                 placeholder="e.g. My Family Circle"
                 placeholderTextColor="#9A94A3"
                 style={[styles.input, { color: colors.text }]}

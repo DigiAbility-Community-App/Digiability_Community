@@ -928,6 +928,22 @@ const QuestionDetailsScreen = () => {
         onRequestClose={() => setReportModalVisible(false)}
         statusBarTranslucent
       >
+        <TouchableOpacity 
+          style={styles.reportOverlay} 
+          activeOpacity={1} 
+          onPress={() => setReportModalVisible(false)}
+        >
+          <TouchableOpacity 
+            activeOpacity={1} 
+            style={[styles.reportContent, { backgroundColor: colors.card }]}
+            onPress={() => {}}
+          >
+            <AccessibleText variant="title" style={[styles.reportTitle, { color: colors.text }]}>
+              Report Content
+            </AccessibleText>
+            <AccessibleText variant="body" style={[styles.reportSubtitle, { color: colors.subtext }]}>
+              Why are you reporting this {reportTarget?.type}? Please provide a reason (optional):
+            </AccessibleText>
         <TouchableWithoutFeedback onPress={() => setReportModalVisible(false)}>
           <View style={styles.reportOverlay}>
             <KeyboardAvoidingView
@@ -993,6 +1009,17 @@ const QuestionDetailsScreen = () => {
                     accessibilityHint="Optionally add more context about this report"
                   />
 
+              <AccessibleButton
+                variant="danger"
+                accessibilityLabel="Submit report"
+                style={styles.reportBtn}
+                onPress={handleReportSubmit}
+              >
+                Submit Report
+              </AccessibleButton>
+            </View>
+          </TouchableOpacity>
+        </TouchableOpacity>
                   <View style={styles.reportActions}>
                     <AccessibleButton
                       variant="outline"
@@ -1533,11 +1560,12 @@ const styles = StyleSheet.create({
   },
   reportActions: {
     flexDirection: "row",
-    gap: 10
+    justifyContent: "space-between",
+    marginTop: 8
   },
   reportBtn: {
-    flex: 1,
-    height: 44,
+    flex: 0.48,
+    minHeight: 44,
     borderRadius: 10,
     justifyContent: "center",
     alignItems: "center"
