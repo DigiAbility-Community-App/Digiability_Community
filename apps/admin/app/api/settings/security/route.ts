@@ -9,6 +9,7 @@ async function ensureTable() {
       id TEXT PRIMARY KEY DEFAULT 'default',
       two_fa_enabled BOOLEAN DEFAULT true,
       min_password_len INT DEFAULT 12,
+      max_password_len INT DEFAULT 16,
       require_uppercase BOOLEAN DEFAULT true,
       require_numbers BOOLEAN DEFAULT true,
       require_special BOOLEAN DEFAULT true,
@@ -16,7 +17,8 @@ async function ensureTable() {
       lockout_duration_mins INT DEFAULT 15,
       session_timeout_mins INT DEFAULT 1440,
       updated_at TIMESTAMPTZ DEFAULT NOW()
-    )
+    );
+    ALTER TABLE admin_security_settings ADD COLUMN IF NOT EXISTS max_password_len INT DEFAULT 16;
   `);
 }
 
@@ -65,7 +67,8 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
 
     const twoFa = Boolean(body.twoFa);
-    const minLen = Math.max(8, Math.min(parseInt(body.minLen ?? "12", 10), 32));
+    const minLen = Math.max(8, Math.min(parseInt(body.minLen ?? "12", 10), 16));
+    const maxLen = Math.max(minLen, Math.min(parseInt(body.maxLen ?? "16", 10), 16));
     const upperCase = Boolean(body.upperCase);
     const numbers = Boolean(body.numbers);
     const special = Boolean(body.special);
@@ -75,14 +78,15 @@ export async function POST(request: NextRequest) {
     const result = await dbPool.query(
       `
       INSERT INTO admin_security_settings (
-        id, two_fa_enabled, min_password_len, require_uppercase, require_numbers,
+        id, two_fa_enabled, min_password_len, max_password_len, require_uppercase, require_numbers,
         require_special, max_failed_attempts, lockout_duration_mins, updated_at
       ) VALUES (
-        'default', $1, $2, $3, $4, $5, $6, $7, NOW()
+        'default', $1, $2, $3, $4, $5, $6, $7, $8, NOW()
       )
       ON CONFLICT (id) DO UPDATE SET
         two_fa_enabled        = EXCLUDED.two_fa_enabled,
         min_password_len      = EXCLUDED.min_password_len,
+        max_password_len      = EXCLUDED.max_password_len,
         require_uppercase     = EXCLUDED.require_uppercase,
         require_numbers       = EXCLUDED.require_numbers,
         require_special       = EXCLUDED.require_special,
@@ -91,12 +95,12 @@ export async function POST(request: NextRequest) {
         updated_at            = NOW()
       RETURNING *
     `,
-      [twoFa, minLen, upperCase, numbers, special, maxAttempts, lockout]
+      [twoFa, minLen, maxLen, upperCase, numbers, special, maxAttempts, lockout]
     );
 
     await writeAudit({
       action: "update_security_policy",
-      reason: `min_len=${minLen}, max_attempts=${maxAttempts}, 2fa=${twoFa}`,
+      reason: `min_len=${minLen}, max_len=${maxLen}, max_attempts=${maxAttempts}, 2fa=${twoFa}`,
     });
 
     return NextResponse.json({ success: true, settings: formatRow(result.rows[0]) });
@@ -111,6 +115,7 @@ function formatRow(row: any) {
   return {
     twoFa: Boolean(row.two_fa_enabled),
     minLen: row.min_password_len ?? 12,
+    maxLen: row.max_password_len ?? 16,
     upperCase: Boolean(row.require_uppercase),
     numbers: Boolean(row.require_numbers),
     special: Boolean(row.require_special),

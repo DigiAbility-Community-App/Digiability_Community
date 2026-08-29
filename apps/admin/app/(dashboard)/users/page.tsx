@@ -453,7 +453,7 @@ export default function UserManagementPage() {
                       <td className="px-4 py-3.5 text-center">
                         <div className="flex items-center justify-center gap-1">
                           <button
-                            onClick={() => router.push(`/users/${user.id}`)}
+                            onClick={() => router.push(`/users/${user.username || user.id}`)}
                             title="View profile"
                             className="w-8 h-8 rounded-lg hover:bg-violet-50 flex items-center justify-center text-[#8A38F5] transition"
                           >

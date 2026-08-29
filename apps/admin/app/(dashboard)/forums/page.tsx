@@ -116,7 +116,7 @@ export default function CommunityPage() {
     contactPhone: "",
     contactEmail: "",
     contactUrl: "",
-    price: "$80 - $150 / session",
+    price: "₹500 - ₹1,500 / session",
     availability: "Next available: Tomorrow",
     verified: true,
     status: "published" as "published" | "unpublished",
@@ -246,7 +246,7 @@ export default function CommunityPage() {
       contactPhone: "",
       contactEmail: "",
       contactUrl: "",
-      price: "$80 - $150 / session",
+      price: "₹500 - ₹1,500 / session",
       availability: "Next available: Tomorrow",
       verified: true,
       status: "published",
@@ -269,7 +269,7 @@ export default function CommunityPage() {
       contactPhone: srv.contactPhone || "",
       contactEmail: srv.contactEmail || "",
       contactUrl: srv.contactUrl || "",
-      price: srv.price || "$80 - $150 / session",
+      price: srv.price || "₹500 - ₹1,500 / session",
       availability: srv.availability || "Next available: Tomorrow",
       verified: srv.verified !== undefined ? srv.verified : true,
       status: srv.status || "published",
@@ -917,13 +917,13 @@ export default function CommunityPage() {
                     {serviceMasterCategories.length > 0
                       ? serviceMasterCategories.map(c => <option key={c.id} value={c.name}>{c.name}</option>)
                       : [
-                          "Therapists",
-                          "Equipment Vendor",
-                          "Respite Care",
-                          "Legal Services",
-                          "Transportation",
-                          "Medical Support",
-                        ].map(c => <option key={c} value={c}>{c}</option>)}
+                        "Therapists",
+                        "Equipment Vendor",
+                        "Respite Care",
+                        "Legal Services",
+                        "Transportation",
+                        "Medical Support",
+                      ].map(c => <option key={c} value={c}>{c}</option>)}
                   </select>
                 </div>
 
@@ -976,7 +976,7 @@ export default function CommunityPage() {
                     required
                     value={serviceFormData.price}
                     onChange={e => setServiceFormData(prev => ({ ...prev, price: e.target.value }))}
-                    placeholder="e.g. $80 - $150 / session, Free consultation"
+                    placeholder="e.g. ₹500 - ₹1,500 / session, Free consultation"
                     className="w-full h-11 rounded-xl border border-slate-200 px-4 text-sm outline-none focus:border-[#7004DC]"
                   />
                 </div>
@@ -1002,7 +1002,7 @@ export default function CommunityPage() {
                     type="tel"
                     value={serviceFormData.contactPhone}
                     onChange={e => setServiceFormData(prev => ({ ...prev, contactPhone: e.target.value }))}
-                    placeholder="+1 (555) 234-5678"
+                    placeholder="+91 91xxxxxxxx"
                     className="w-full h-11 rounded-xl border border-slate-200 px-4 text-sm outline-none focus:border-[#7004DC]"
                   />
                 </div>
@@ -1015,7 +1015,7 @@ export default function CommunityPage() {
                     type="email"
                     value={serviceFormData.contactEmail}
                     onChange={e => setServiceFormData(prev => ({ ...prev, contactEmail: e.target.value }))}
-                    placeholder="provider@example.com"
+                    placeholder="provider@email.com"
                     className="w-full h-11 rounded-xl border border-slate-200 px-4 text-sm outline-none focus:border-[#7004DC]"
                   />
                 </div>

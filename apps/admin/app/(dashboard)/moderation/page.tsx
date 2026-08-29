@@ -3,7 +3,8 @@
 import { useEffect, useState } from "react";
 import {
   Shield, CheckCircle2, Trash2, AlertTriangle, UserX,
-  RefreshCw, X, ChevronDown, Bot, CheckCheck, XCircle,
+  RefreshCw, X, ChevronDown, ChevronLeft, Bot, CheckCheck, XCircle,
+  History, Eye, EyeOff, Clock, ExternalLink, Maximize2, ImageIcon,
 } from "lucide-react";
 import { ReviewQueue } from "./ReviewQueue";
 
@@ -17,6 +18,9 @@ interface Report {
   answerId: string | null;
   questionTitle: string | null;
   answerContent: string | null;
+  fullContent: string | null;
+  imageUrl: string | null;
+  reporterId: string | null;
   reporterName: string;
   reporterEmail: string;
   authorId?: string | null;
@@ -25,6 +29,23 @@ interface Report {
   messageId?: string | null;
   conversationId?: string | null;
   messageSequence?: string | null;
+}
+
+interface ModerationHistoryEntry {
+  id: string;
+  reportId: string | null;
+  source: string;
+  contentType: string | null;
+  contentPreview: string | null;
+  reason: string | null;
+  authorId: string | null;
+  authorName: string | null;
+  reporterId: string | null;
+  reporterName: string | null;
+  actionTaken: string;
+  adminNotes: string | null;
+  resolvedAt: string;
+  resolvedAtDisplay: string;
 }
 
 interface ContextMessage {
@@ -68,11 +89,58 @@ const FLAG_STATUS_COLORS: Record<string, string> = {
   DISMISSED: "bg-gray-100 text-gray-500",
 };
 
+const ACTION_BADGE: Record<string, { label: string; cls: string }> = {
+  APPROVED:           { label: "✓ Approved",         cls: "bg-green-100 text-green-700" },
+  CONTENT_REMOVED:    { label: "🗑 Content Removed",  cls: "bg-red-100 text-red-700" },
+  USER_WARNED:        { label: "⚠ Warned",            cls: "bg-yellow-100 text-yellow-700" },
+  USER_WARNED_AND_SUSPENDED: { label: "⚠ Warned + Suspended", cls: "bg-orange-100 text-orange-700" },
+  USER_PERMANENTLY_BANNED: { label: "🚫 Permanently Banned", cls: "bg-red-200 text-red-900" },
+  UNSUSPENDED:        { label: "✔ Unsuspended",       cls: "bg-emerald-100 text-emerald-700" },
+  DISMISSED:          { label: "× Dismissed",         cls: "bg-gray-100 text-gray-600" },
+};
+
+function actionBadge(action: string) {
+  const match = ACTION_BADGE[action];
+  if (match) return match;
+  // Fallback for dynamic e.g. USER_SUSPENDED_30_DAYS
+  if (action.startsWith("USER_SUSPENDED"))
+    return { label: `⏱ Suspended (${action.replace("USER_SUSPENDED_", "").replace(/_/g, " ")})`, cls: "bg-orange-100 text-orange-800" };
+  return { label: action.replace(/_/g, " "), cls: "bg-gray-100 text-gray-600" };
+}
+
+function resolveImageUrl(report?: Report | null): string | null {
+  if (!report) return null;
+  const candidates = [
+    report.imageUrl,
+    report.answerContent,
+    report.fullContent,
+    report.questionTitle,
+  ];
+
+  for (const c of candidates) {
+    if (!c) continue;
+    const trimmed = c.trim();
+    if (
+      trimmed.startsWith("/uploads/") ||
+      trimmed.startsWith("http://") ||
+      trimmed.startsWith("https://")
+    ) {
+      return trimmed;
+    }
+    const match = trimmed.match(/(https?:\/\/[^\s"']+|\/uploads\/[^\s"']+?\.(jpe?g|png|webp|gif|svg))/i);
+    if (match) return match[0];
+  }
+  return null;
+}
+
 export default function ModerationPage() {
   const [reports, setReports] = useState<Report[]>([]);
+  const [history, setHistory] = useState<ModerationHistoryEntry[]>([]);
   const [stats, setStats] = useState<ModerationStats>({ totalReports: "0", deletedPosts: "0", suspendedUsers: "0", reportsToday: "0" });
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<Report | null>(null);
+  const [showFullContent, setShowFullContent] = useState(false);
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
 
   // AI Flags state
@@ -125,6 +193,7 @@ export default function ModerationPage() {
       if (data.success) {
         setReports(data.reports);
         setStats(data.stats);
+        setHistory(data.history ?? []);
       }
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
@@ -168,32 +237,46 @@ export default function ModerationPage() {
     // Chat/DM reports dismiss to a different table.
     const effectiveAction = action === "dismiss" && report.source === "chat" ? "dismiss_chat" : action;
     setActionLoading(report.id + action);
+    const contentPreview = (report.questionTitle || report.answerContent || report.fullContent || "Reported content").slice(0, 120);
     try {
       await postAction({
         action: effectiveAction,
         reportId: report.id,
+        source: report.source,
         questionId: report.questionId,
         answerId: report.answerId,
         messageId: report.messageId,
+        userId: report.authorId,
+        contentPreview,
+        authorName: report.authorName,
+        reporterName: report.reporterName,
+        reason: report.reason,
       });
       await fetchData();
       if (selected?.id === report.id) setSelected(null);
     } finally { setActionLoading(null); }
   };
 
-  const [activeTab, setActiveTab] = useState<"queue" | "forum-reports" | "ai-flags">("queue");
+  const [activeTab, setActiveTab] = useState<"queue" | "forum-reports" | "ai-flags" | "history">("queue");
 
   // Send a warning to the offending user (the reported content's author).
   const handleWarn = async () => {
     if (!workflowReport?.authorId) { alert("This report has no identifiable author to warn."); return; }
     setActionLoading("warn");
+    const contentPreview = (workflowReport.questionTitle || workflowReport.answerContent || workflowReport.fullContent || "Reported content").slice(0, 120);
     try {
       const data = await postAction({
         action: "warn",
+        source: workflowReport.source,
+        reportId: workflowReport.id,
         userId: workflowReport.authorId,
         category: warnCategory,
         message: warnMessage,
         triggerSuspend,
+        contentPreview,
+        authorName: workflowReport.authorName,
+        reporterName: workflowReport.reporterName,
+        reason: workflowReport.reason,
       });
       if (!data.success) throw new Error(data.message);
       setShowWorkflow(false);
@@ -209,13 +292,19 @@ export default function ModerationPage() {
   const handleBan = async () => {
     if (!workflowReport?.authorId) { alert("This report has no identifiable author to ban."); return; }
     setActionLoading("ban");
+    const contentPreview = (workflowReport.questionTitle || workflowReport.answerContent || workflowReport.fullContent || "User account").slice(0, 120);
     try {
       const data = await postAction({
         action: "ban",
+        source: workflowReport.source,
+        reportId: workflowReport.id,
         userId: workflowReport.authorId,
         reason: banReason,
-        duration: banDuration,
+        duration: banDuration !== "Permanent" ? banDuration : undefined,
         message: banEmail,
+        contentPreview,
+        authorName: workflowReport.authorName,
+        reporterName: workflowReport.reporterName,
       });
       if (!data.success) throw new Error(data.message);
       setShowWorkflow(false);
@@ -228,22 +317,118 @@ export default function ModerationPage() {
     } finally { setActionLoading(null); }
   };
 
-  const urgentReports = reports.filter(r => r.reason.toLowerCase().includes("harassment") || r.reason.toLowerCase().includes("spam"));
-  const pendingReports = reports.filter(r => !urgentReports.includes(r));
+  const handleOpenWorkflow = (item: any) => {
+    const report: Report = {
+      id: item.id,
+      reason: item.summary || item.reason || "Reported content",
+      createdAt: item.createdAt,
+      type: item.contentType === "question" ? "question" : item.contentType === "answer" ? "answer" : "chat",
+      source: item.source || (item.kind === "chat_report" ? "chat" : "forum"),
+      questionId: item.questionId || (item.contentType === "question" ? item.contentId : null),
+      answerId: item.answerId || (item.contentType === "answer" ? item.contentId : null),
+      messageId: item.messageId || (item.source === "chat" ? item.contentId : null),
+      conversationId: item.conversationId || null,
+      messageSequence: item.messageSequence || null,
+      questionTitle: item.questionTitle || (item.contentType === "question" ? item.contentPreview : null),
+      answerContent: item.answerContent || (item.contentType === "answer" || item.source === "chat" ? item.contentPreview : null),
+      fullContent: item.contentPreview || item.fullContent || null,
+      imageUrl: item.imageUrl || null,
+      reporterId: item.reporterId || null,
+      reporterName: item.reporterName || "Reporter",
+      reporterEmail: item.reporterEmail || "",
+      authorId: item.userId || null,
+      authorName: item.userName || "Author",
+      authorEmail: item.userEmail || "",
+    };
+    // Reset all per-report form state so values don't bleed between reports
+    setRemoveReason("");
+    setNotifyAuthor(true);
+    setWarnCategory("Harassment");
+    setWarnMessage("");
+    setTriggerSuspend(false);
+    setEscalate(false);
+    setBanReason("Severe Community Violation");
+    setBanDuration("Permanent");
+    setBanEmail("");
+    setBanConfirm(false);
+    setWorkflowReport(report);
+    setShowWorkflow(true);
+  };
 
   if (showWorkflow && workflowReport) {
     return (
-      <div className="px-8 py-8 max-w-5xl">
-        <div className="mb-6">
-          <h1 className="text-xl font-extrabold text-[#1A1C1C]">Review Workflow</h1>
-          <p className="text-sm text-[#7D7387] mt-0.5">Manage content flags and user safety measures with DigiAbility's Guardian Moderation system.</p>
+      <div className="px-4 sm:px-6 lg:px-8 py-8 max-w-6xl mx-auto space-y-6">
+        {/* HEADER BAR */}
+        <div className="flex flex-wrap items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
+          <div>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => { setShowWorkflow(false); setWorkflowReport(null); }}
+                className="h-9 px-3 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 text-xs font-bold text-[#4B4355] flex items-center gap-1.5 transition shadow-xs"
+              >
+                <ChevronLeft className="w-4 h-4" /> Back to Queue
+              </button>
+              <h1 className="text-xl font-extrabold text-[#1A1C1C]">Review Workflow</h1>
+              <span className={`px-2.5 py-1 rounded-full text-xs font-extrabold uppercase ${workflowReport.source === "chat" ? "bg-blue-100 text-blue-700" : "bg-purple-100 text-purple-700"}`}>
+                {workflowReport.source === "chat" ? "💬 Chat Message" : "📋 Forum Content"}
+              </span>
+            </div>
+            <p className="text-sm text-[#7D7387] mt-1.5">
+              Report filed on{" "}
+              <span className="font-semibold text-[#1A1C1C]">
+                {(() => {
+                  const d = new Date(workflowReport.createdAt);
+                  return isNaN(d.getTime())
+                    ? workflowReport.createdAt
+                    : d.toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+                })()}
+              </span>{" "}by{" "}
+              <span className="font-bold text-[#1A1C1C]">{workflowReport.reporterName}</span> ({workflowReport.reporterEmail || "User"}).
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              disabled={actionLoading === "dismiss"}
+              onClick={async () => {
+                setActionLoading("dismiss");
+                try {
+                  const contentPreview = (workflowReport.questionTitle || workflowReport.answerContent || workflowReport.fullContent || "Reported content").slice(0, 120);
+                  await postAction({
+                    action: workflowReport.source === "chat" ? "dismiss_chat" : "dismiss",
+                    reportId: workflowReport.id,
+                    source: workflowReport.source,
+                    questionId: workflowReport.questionId,
+                    answerId: workflowReport.answerId,
+                    messageId: workflowReport.messageId,
+                    userId: workflowReport.authorId,
+                    contentPreview,
+                    authorName: workflowReport.authorName,
+                    reporterName: workflowReport.reporterName,
+                    reason: workflowReport.reason,
+                  });
+                  setShowWorkflow(false);
+                  setWorkflowReport(null);
+                  await fetchData();
+                } finally { setActionLoading(null); }
+              }}
+              className="h-10 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-300 text-white font-bold text-xs flex items-center gap-1.5 transition shadow-sm"
+            >
+              <CheckCircle2 className="w-4 h-4" /> {actionLoading === "dismiss" ? "Dismissing…" : "Approve & Dismiss (No Violation)"}
+            </button>
+          </div>
         </div>
 
+        {/* CONVERSATION CONTEXT FOR CHAT */}
         {workflowReport.source === "chat" && workflowReport.conversationId && (
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 mb-6">
-            <h3 className="text-sm font-extrabold text-[#1A1C1C] mb-3">Conversation Context</h3>
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-extrabold text-[#1A1C1C]">Conversation Context</h3>
+              <span className="text-xs text-[#7D7387]">Showing surrounding conversation messages</span>
+            </div>
             {contextLoading && (
-              <p className="text-sm text-[#7D7387]">Loading surrounding messages…</p>
+              <div className="py-8 text-center text-xs font-semibold text-slate-400">Loading surrounding messages…</div>
             )}
             {!contextLoading && contextMessages && contextMessages.length === 0 && (
               <p className="text-sm text-[#7D7387]">
@@ -251,24 +436,36 @@ export default function ModerationPage() {
               </p>
             )}
             {!contextLoading && contextMessages && contextMessages.length > 0 && (
-              <div className="space-y-2 max-h-72 overflow-y-auto">
+              <div className="space-y-2.5 max-h-80 overflow-y-auto pr-1">
                 {contextMessages.map((m) => {
                   const isReported = m.sequenceNo === workflowReport.messageSequence;
                   return (
                     <div
                       key={m.id}
-                      className={`rounded-lg p-3 text-sm ${isReported ? "bg-red-50 border border-red-200" : "bg-gray-50"}`}
+                      className={`rounded-xl p-3.5 text-sm transition ${
+                        isReported
+                          ? "bg-red-50/80 border-2 border-red-200 shadow-xs"
+                          : "bg-[#F7F5FA]"
+                      }`}
                     >
                       <div className="flex items-center justify-between mb-1">
-                        <span className="font-semibold text-[#1A1C1C]">{m.senderName || "Unknown"}</span>
-                        <span className="text-xs text-[#9A93A8]">{new Date(m.createdAt).toLocaleString("en-GB")}</span>
+                        <span className="font-bold text-[#1A1C1C]">{m.senderName || "Unknown Member"}</span>
+                        <span className="text-xs text-[#9A93A8]">
+                          {(() => {
+                            const d = new Date(m.createdAt);
+                            return d.toLocaleString("en-GB", {
+                              day: "2-digit", month: "short", year: "numeric",
+                              hour: "2-digit", minute: "2-digit", second: "2-digit",
+                            });
+                          })()}
+                        </span>
                       </div>
                       <p className={`leading-5 ${m.deletedAt ? "italic text-[#9A93A8]" : "text-[#4B4355]"}`}>
                         {m.deletedAt ? "(message deleted)" : m.content}
                       </p>
                       {isReported && (
-                        <span className="inline-block mt-1 text-[11px] font-bold text-red-600 uppercase tracking-wide">
-                          Reported message
+                        <span className="inline-block mt-2 px-2 py-0.5 rounded-md bg-red-100 text-[10px] font-extrabold text-red-700 uppercase tracking-wide">
+                          ⚠ Reported message
                         </span>
                       )}
                     </div>
@@ -279,99 +476,204 @@ export default function ModerationPage() {
           </div>
         )}
 
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-          {/* REMOVE CONTENT */}
+        {/* FORUM CONTENT CONTEXT */}
+        {workflowReport.source === "forum" && (
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
-            <div className="flex items-center gap-2 mb-4">
-              <AlertTriangle className="w-5 h-5 text-red-600" />
-              <h3 className="text-xl font-extrabold text-red-600">Remove This Content?</h3>
-            </div>
-            <div className="border-l-4 border-[#7004DC] pl-4 mb-4">
-              <p className="text-sm text-[#4B4355] leading-5 italic">
-                "{workflowReport.questionTitle || workflowReport.answerContent || "The reported content appears to violate community guidelines."}"
+            <h3 className="text-sm font-extrabold text-[#1A1C1C] mb-3">Reported Forum Content Details</h3>
+            <div className="bg-[#F7F5FA] rounded-xl p-4 border border-gray-200">
+              {workflowReport.questionTitle && (
+                <h4 className="font-bold text-base text-[#1A1C1C] mb-1">{workflowReport.questionTitle}</h4>
+              )}
+              <p className="text-sm text-[#4B4355] leading-relaxed">
+                {workflowReport.answerContent || workflowReport.fullContent || "(No text content)"}
               </p>
+              {(() => {
+                const imgUrl = resolveImageUrl(workflowReport);
+                if (!imgUrl) return null;
+                return (
+                  <div className="mt-4 rounded-xl overflow-hidden border border-gray-200 bg-white p-2">
+                    <img
+                      src={imgUrl}
+                      alt="Reported forum media"
+                      className="max-h-64 object-contain rounded-lg cursor-pointer"
+                      onClick={() => setLightboxUrl(imgUrl)}
+                    />
+                  </div>
+                );
+              })()}
             </div>
-            <div className="bg-red-50 rounded-xl p-4 mb-4 space-y-2">
-              {["Content will be permanently deleted", "The author will be notified", "This action cannot be undone"].map(item => (
-                <div key={item} className="flex items-center gap-2 text-sm text-red-600">
-                  <span className="shrink-0">⊗</span> {item}
-                </div>
-              ))}
+          </div>
+        )}
+
+        {/* ACTION CARDS */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* REMOVE CONTENT CARD */}
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 flex flex-col justify-between">
+            <div>
+              <div className="flex items-center gap-2 mb-4">
+                <AlertTriangle className="w-5 h-5 text-red-600" />
+                <h3 className="text-xl font-extrabold text-red-600">Remove This Content?</h3>
+              </div>
+              <div className="border-l-4 border-[#7004DC] pl-4 mb-4">
+                <p className="text-sm text-[#4B4355] leading-5 italic">
+                  "{workflowReport.questionTitle || workflowReport.answerContent || workflowReport.fullContent || "The reported content appears to violate community guidelines."}"
+                </p>
+              </div>
+              <div className="bg-red-50 rounded-xl p-4 mb-4 space-y-2 border border-red-100">
+                {["Content will be permanently deleted", "The author will be notified", "This action cannot be undone"].map(item => (
+                  <div key={item} className="flex items-center gap-2 text-xs font-semibold text-red-700">
+                    <span className="shrink-0 text-red-500 font-bold">✕</span> {item}
+                  </div>
+                ))}
+              </div>
+              <div className="mb-4">
+                <label className="block text-xs font-bold uppercase tracking-wider text-[#1A1C1C] mb-2">Reason for Removal</label>
+                <input
+                  value={removeReason}
+                  onChange={e => setRemoveReason(e.target.value)}
+                  placeholder="Select or type reason..."
+                  className="w-full h-11 rounded-xl border border-gray-200 px-4 text-sm outline-none focus:border-red-400"
+                />
+              </div>
+              <div className="flex items-center justify-between mb-5">
+                <span className="text-sm text-[#4B4355] font-semibold">Notify author of removal</span>
+                <button
+                  type="button"
+                  onClick={() => setNotifyAuthor(v => !v)}
+                  className={`w-12 h-6 rounded-full transition relative ${notifyAuthor ? "bg-[#7004DC]" : "bg-gray-200"}`}
+                >
+                  <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all ${notifyAuthor ? "right-1" : "left-1"}`} />
+                </button>
+              </div>
             </div>
-            <div className="mb-4">
-              <label className="block text-sm font-semibold text-[#1A1C1C] mb-2">Reason for Removal</label>
-              <input value={removeReason} onChange={e => setRemoveReason(e.target.value)} placeholder="Select or type reason..." className="w-full h-11 rounded-xl border border-gray-200 px-4 text-sm outline-none focus:border-red-400" />
-            </div>
-            <div className="flex items-center justify-between mb-5">
-              <span className="text-sm text-[#4B4355]">Notify author of removal</span>
-              <button onClick={() => setNotifyAuthor(v => !v)} className={`w-12 h-6 rounded-full transition relative ${notifyAuthor ? "bg-[#7004DC]" : "bg-gray-200"}`}>
-                <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all ${notifyAuthor ? "right-1" : "left-1"}`} />
-              </button>
-            </div>
-            <div className="flex gap-3">
-              <button onClick={() => setShowWorkflow(false)} className="flex-1 h-11 rounded-xl border border-gray-200 text-[#4B4355] font-semibold text-sm hover:bg-gray-50">Cancel</button>
+
+            <div className="flex gap-3 pt-2">
               <button
-                onClick={() => { handleAction("delete_post", workflowReport); setShowWorkflow(false); }}
-                disabled={!workflowReport.questionId && !workflowReport.answerId && !workflowReport.messageId}
-                className="flex-1 h-11 rounded-xl bg-red-600 hover:bg-red-700 disabled:bg-red-200 disabled:cursor-not-allowed text-white font-bold text-sm transition"
+                type="button"
+                onClick={() => { setShowWorkflow(false); setWorkflowReport(null); }}
+                className="flex-1 h-11 rounded-xl border border-gray-200 text-[#4B4355] font-bold text-sm hover:bg-gray-50 transition"
               >
-                Remove Content
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={actionLoading === "remove"}
+                onClick={async () => {
+                  setActionLoading("remove");
+                  const contentPreview = (workflowReport.questionTitle || workflowReport.answerContent || workflowReport.fullContent || "Reported content").slice(0, 120);
+                  try {
+                    const res = await postAction({
+                      action: "delete_post",
+                      reportId: workflowReport.id,
+                      source: workflowReport.source,
+                      questionId: workflowReport.questionId,
+                      answerId: workflowReport.answerId,
+                      messageId: workflowReport.messageId,
+                      userId: workflowReport.authorId,
+                      contentPreview,
+                      authorName: workflowReport.authorName,
+                      reporterName: workflowReport.reporterName,
+                      reason: removeReason || workflowReport.reason || "Content violation",
+                      message: notifyAuthor ? "Author notified of content removal" : undefined,
+                    });
+                    if (!res.success) throw new Error(res.message);
+                    setShowWorkflow(false);
+                    setWorkflowReport(null);
+                    setRemoveReason("");
+                    await fetchData();
+                  } catch (e: any) {
+                    alert(e?.message || "Failed to remove content.");
+                  } finally { setActionLoading(null); }
+                }}
+                className="flex-1 h-11 rounded-xl bg-red-600 hover:bg-red-700 disabled:bg-red-300 disabled:cursor-not-allowed text-white font-bold text-sm transition shadow-sm"
+              >
+                {actionLoading === "remove" ? "Removing…" : "Remove Content"}
               </button>
             </div>
           </div>
 
-          {/* WARN USER */}
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
-            <div className="mb-2">
-              <h3 className="text-xl font-extrabold text-[#1A1C1C]">Warn User</h3>
-              <p className="text-base font-bold text-[#7004DC]">{workflowReport.authorName || "Unknown author"}</p>
-              {!workflowReport.authorId && (
-                <p className="text-xs text-red-500 mt-1">No identifiable author for this report — warning is disabled.</p>
-              )}
-            </div>
-            <div className="bg-violet-50 rounded-xl p-3 mb-4 border border-violet-100">
-              <p className="text-sm font-bold text-[#7004DC]">This is their 2nd warning</p>
-              <div className="grid grid-cols-2 gap-3 mt-2">
-                <div className="bg-white rounded-lg p-2">
-                  <p className="text-[10px] font-bold uppercase text-slate-400">3 Warnings</p>
-                  <p className="text-xs font-semibold text-[#4B4355]">7-day suspension</p>
-                </div>
-                <div className="bg-white rounded-lg p-2">
-                  <p className="text-[10px] font-bold uppercase text-slate-400">5 Warnings</p>
-                  <p className="text-xs font-semibold text-[#4B4355]">Account ban</p>
+          {/* WARN USER CARD */}
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 flex flex-col justify-between">
+            <div>
+              <div className="mb-3">
+                <h3 className="text-xl font-extrabold text-[#1A1C1C]">Warn User</h3>
+                <p className="text-base font-bold text-[#7004DC]">{workflowReport.authorName || "Unknown author"}</p>
+                {workflowReport.authorEmail && (
+                  <p className="text-xs text-[#7D7387]">{workflowReport.authorEmail}</p>
+                )}
+              </div>
+
+              <div className="bg-amber-50 rounded-xl p-3 mb-4 border border-amber-200">
+                <p className="text-xs font-bold text-amber-800">Community Safety Standard</p>
+                <div className="grid grid-cols-2 gap-2 mt-1.5">
+                  <div className="bg-white rounded-lg p-2 border border-amber-100">
+                    <p className="text-[10px] font-bold uppercase text-slate-400">Warning Action</p>
+                    <p className="text-xs font-semibold text-[#4B4355]">7-day suspension</p>
+                  </div>
+                  <div className="bg-white rounded-lg p-2 border border-amber-100">
+                    <p className="text-[10px] font-bold uppercase text-slate-400">Repeated Violation</p>
+                    <p className="text-xs font-semibold text-[#4B4355]">Account ban</p>
+                  </div>
                 </div>
               </div>
-            </div>
-            <div className="mb-4">
-              <p className="text-sm font-semibold text-[#1A1C1C] mb-2">Violation Category</p>
-              <div className="flex flex-wrap gap-2">
-                {["Harassment", "Spam", "Misinformation", "Custom"].map(cat => (
-                  <button key={cat} onClick={() => setWarnCategory(cat)} className={`px-4 py-2 rounded-xl text-sm font-bold border-2 transition ${warnCategory === cat ? "border-[#7004DC] bg-violet-50 text-[#7004DC]" : "border-transparent bg-[#F3F3F3] text-[#4B4355] hover:bg-[#EBEBEB]"}`}>
-                    {cat}
-                  </button>
-                ))}
+
+              <div className="mb-4">
+                <p className="text-xs font-bold uppercase tracking-wider text-[#1A1C1C] mb-2">Violation Category</p>
+                <div className="flex flex-wrap gap-2">
+                  {["Harassment", "Spam", "Misinformation", "Inappropriate Content", "Custom"].map(cat => (
+                    <button
+                      type="button"
+                      key={cat}
+                      onClick={() => setWarnCategory(cat)}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold border-2 transition ${
+                        warnCategory === cat
+                          ? "border-[#7004DC] bg-violet-50 text-[#7004DC]"
+                          : "border-transparent bg-[#F3F3F3] text-[#4B4355] hover:bg-[#EBEBEB]"
+                      }`}
+                    >
+                      {cat}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="mb-4">
+                <label className="block text-xs font-bold uppercase tracking-wider text-[#1A1C1C] mb-2">Custom Message to User</label>
+                <textarea
+                  value={warnMessage}
+                  onChange={e => setWarnMessage(e.target.value)}
+                  rows={3}
+                  placeholder="Write a brief explanation of why the user is being warned..."
+                  className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm outline-none focus:border-[#8A38F5] resize-none"
+                />
+              </div>
+
+              <div className="space-y-2 mb-4">
+                <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-[#4B4355]">
+                  <input
+                    type="checkbox"
+                    checked={triggerSuspend}
+                    onChange={e => setTriggerSuspend(e.target.checked)}
+                    className="w-4 h-4 rounded accent-[#7004DC]"
+                  />
+                  Trigger automatic 7-day suspension
+                </label>
               </div>
             </div>
-            <div className="mb-4">
-              <label className="block text-sm font-semibold text-[#1A1C1C] mb-2">Custom Message to User</label>
-              <textarea value={warnMessage} onChange={e => setWarnMessage(e.target.value)} rows={3} placeholder="Write a brief explanation of why the user is being warned..." className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm outline-none focus:border-[#8A38F5] resize-none" />
-            </div>
-            <div className="space-y-2 mb-4">
-              <label className="flex items-center gap-2 cursor-pointer text-sm text-[#4B4355]">
-                <input type="checkbox" checked={triggerSuspend} onChange={e => setTriggerSuspend(e.target.checked)} className="w-4 h-4 rounded accent-[#7004DC]" />
-                Trigger automatic 7-day suspension
-              </label>
-              <label className="flex items-center gap-2 cursor-pointer text-sm text-[#4B4355]">
-                <input type="checkbox" checked={escalate} onChange={e => setEscalate(e.target.checked)} className="w-4 h-4 rounded accent-[#7004DC]" />
-                Escalate to manual senior review
-              </label>
-            </div>
-            <div className="flex gap-3">
-              <button onClick={() => setShowWorkflow(false)} className="flex-1 h-11 rounded-xl border border-gray-200 text-[#4B4355] font-semibold text-sm hover:bg-gray-50">Cancel</button>
+
+            <div className="flex gap-3 pt-2">
               <button
+                type="button"
+                onClick={() => { setShowWorkflow(false); setWorkflowReport(null); }}
+                className="flex-1 h-11 rounded-xl border border-gray-200 text-[#4B4355] font-bold text-sm hover:bg-gray-50 transition"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
                 onClick={handleWarn}
                 disabled={!workflowReport.authorId || actionLoading === "warn"}
-                className="flex-1 h-11 rounded-xl bg-[#D2A500] hover:bg-[#b89300] disabled:bg-[#e6d488] disabled:cursor-not-allowed text-[#4F3D00] font-bold text-sm transition"
+                className="flex-1 h-11 rounded-xl bg-[#D2A500] hover:bg-[#b89300] disabled:bg-[#e6d488] disabled:cursor-not-allowed text-[#4F3D00] font-bold text-sm transition shadow-sm"
               >
                 {actionLoading === "warn" ? "Sending…" : "Send Warning"}
               </button>
@@ -379,63 +681,87 @@ export default function ModerationPage() {
           </div>
         </div>
 
-        {/* BAN USER */}
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 mt-6 max-w-xl">
+        {/* BAN USER CARD */}
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
           <div className="flex items-center justify-between mb-4">
             <div>
               <h3 className="text-xl font-extrabold text-red-600">Ban User Account?</h3>
-              <p className="text-sm text-[#7D7387]">Impact for: {workflowReport.authorName || "Unknown author"}</p>
+              <p className="text-sm text-[#7D7387]">Impact for: <span className="font-bold text-[#1A1C1C]">{workflowReport.authorName || "Unknown author"}</span></p>
             </div>
-            <div className="w-12 h-12 rounded-2xl bg-red-100 flex items-center justify-center">
-              <UserX className="w-6 h-6 text-red-600" />
+            <div className="w-12 h-12 rounded-2xl bg-red-100 flex items-center justify-center text-red-600">
+              <UserX className="w-6 h-6" />
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-4 mb-4">
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
             <div className="bg-red-50 rounded-xl p-4 border border-red-100">
-              <p className="text-xs font-extrabold text-red-600 mb-2">⚠ Critical Impact</p>
-              <ul className="space-y-1 text-xs text-red-600">
-                <li>• Permanent loss of all account data</li>
-                <li>• Previous posts hidden from public</li>
-                <li>• Email block on domain @gmail.com</li>
+              <p className="text-xs font-extrabold text-red-600 mb-2">⚠ Critical Safety Action</p>
+              <ul className="space-y-1.5 text-xs text-red-700 font-medium">
+                <li>• Immediate restriction from all community and chat features</li>
+                <li>• Previous messages/posts hidden from community feed</li>
+                <li>• Security record logged in audit trail</li>
               </ul>
             </div>
             <div>
-              <label className="block text-sm font-semibold text-[#1A1C1C] mb-2">Internal Email Explanation</label>
-              <textarea value={banEmail} onChange={e => setBanEmail(e.target.value)} rows={4} placeholder="Detailed notes for audit logs and user notification email..." className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm outline-none focus:border-red-400 resize-none h-full" />
+              <label className="block text-xs font-bold uppercase tracking-wider text-[#1A1C1C] mb-2">Internal Explanation / Notes</label>
+              <textarea
+                value={banEmail}
+                onChange={e => setBanEmail(e.target.value)}
+                rows={3}
+                placeholder="Detailed notes for audit logs..."
+                className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm outline-none focus:border-red-400 resize-none h-full"
+              />
             </div>
           </div>
-          <div className="mb-4">
-            <label className="block text-sm font-semibold text-[#1A1C1C] mb-2">Ban Reason</label>
-            <div className="relative">
-              <select value={banReason} onChange={e => setBanReason(e.target.value)} className="w-full h-11 rounded-xl border border-gray-200 px-4 text-sm outline-none focus:border-red-400 bg-white appearance-none pr-8">
-                {["Severe Community Violation", "Repeated Harassment", "Fraud/Scam", "Illegal Activity", "Other"].map(r => <option key={r}>{r}</option>)}
-              </select>
-              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-wider text-[#1A1C1C] mb-2">Ban Reason</label>
+              <div className="relative">
+                <select
+                  value={banReason}
+                  onChange={e => setBanReason(e.target.value)}
+                  className="w-full h-11 rounded-xl border border-gray-200 px-4 text-sm outline-none focus:border-red-400 bg-white appearance-none pr-8 font-semibold"
+                >
+                  {["Severe Community Violation", "Repeated Harassment", "Fraud/Scam", "Illegal Activity", "Other"].map(r => <option key={r}>{r}</option>)}
+                </select>
+                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-wider text-[#1A1C1C] mb-2">Duration</label>
+              <div className="flex gap-4 h-11 items-center">
+                {["Permanent", "30 Days", "90 Days"].map(d => (
+                  <label key={d} className="flex items-center gap-2 cursor-pointer text-sm font-semibold text-[#4B4355]">
+                    <div onClick={() => setBanDuration(d)} className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${banDuration === d ? "border-[#7004DC]" : "border-gray-300"}`}>
+                      {banDuration === d && <div className="w-2 h-2 rounded-full bg-[#7004DC]" />}
+                    </div>
+                    {d}
+                  </label>
+                ))}
+              </div>
             </div>
           </div>
-          <div className="mb-4">
-            <label className="block text-sm font-semibold text-[#1A1C1C] mb-2">Duration</label>
-            <div className="flex gap-4">
-              {["Permanent", "30 Days", "90 Days"].map(d => (
-                <label key={d} className="flex items-center gap-2 cursor-pointer text-sm text-[#4B4355]">
-                  <div onClick={() => setBanDuration(d)} className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${banDuration === d ? "border-[#7004DC]" : "border-gray-300"}`}>
-                    {banDuration === d && <div className="w-2 h-2 rounded-full bg-[#7004DC]" />}
-                  </div>
-                  {d}
-                </label>
-              ))}
-            </div>
-          </div>
-          <label className="flex items-center gap-2 cursor-pointer text-sm text-[#4B4355] mb-5">
+
+          <label className="flex items-center gap-2 cursor-pointer text-sm font-medium text-[#4B4355] mb-5">
             <input type="checkbox" checked={banConfirm} onChange={e => setBanConfirm(e.target.checked)} className="w-4 h-4 rounded accent-[#7004DC]" />
-            I confirm this ban is necessary and justified according to the safety guidelines.
+            I confirm this suspension/ban is necessary and justified according to safety guidelines.
           </label>
+
           <div className="flex gap-3">
-            <button onClick={() => setShowWorkflow(false)} className="flex-1 h-11 rounded-xl border border-gray-200 text-[#4B4355] font-semibold text-sm hover:bg-gray-50">Cancel</button>
             <button
+              type="button"
+              onClick={() => { setShowWorkflow(false); setWorkflowReport(null); }}
+              className="flex-1 h-11 rounded-xl border border-gray-200 text-[#4B4355] font-bold text-sm hover:bg-gray-50 transition"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
               onClick={handleBan}
               disabled={!banConfirm || !workflowReport.authorId || actionLoading === "ban"}
-              className="flex-1 h-11 rounded-xl bg-red-600 hover:bg-red-700 disabled:bg-red-200 disabled:cursor-not-allowed text-white font-bold text-sm transition"
+              className="flex-1 h-11 rounded-xl bg-red-600 hover:bg-red-700 disabled:bg-red-200 disabled:cursor-not-allowed text-white font-bold text-sm transition shadow-sm"
             >
               {actionLoading === "ban" ? "Banning…" : (banDuration === "Permanent" ? "Ban User Permanently" : `Suspend for ${banDuration}`)}
             </button>
@@ -462,23 +788,97 @@ export default function ModerationPage() {
       {/* TAB BAR */}
       <div className="flex gap-1 mb-6 border-b border-gray-100 pb-0">
         {([
-          { id: "queue" as const, label: "Review Queue" },
-          { id: "forum-reports" as const, label: "Forum Reports" },
-          { id: "ai-flags" as const, label: "AI Flags" },
+          { id: "queue" as const, label: "Review Queue", count: reports.length },
+          { id: "forum-reports" as const, label: "Forum Reports", count: reports.filter(r => r.source === "forum").length },
+          { id: "ai-flags" as const, label: "AI Flags", count: aiFlags.length },
+          { id: "history" as const, label: "History", count: history.length },
         ] as const).map((tab) => (
           <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-            className={`px-4 py-2 text-sm font-semibold rounded-t-lg transition -mb-px border-b-2 ${
+            className={`px-4 py-2.5 text-sm font-semibold rounded-t-lg transition -mb-px border-b-2 flex items-center gap-2 ${
               activeTab === tab.id
                 ? "border-[#7004DC] text-[#7004DC] bg-violet-50/50"
                 : "border-transparent text-[#7D7387] hover:text-[#1A1C1C]"
             }`}>
-            {tab.label}
+            <span>{tab.label}</span>
+            {tab.count > 0 && (
+              <span className={`px-2 py-0.5 rounded-full text-[11px] font-extrabold ${
+                activeTab === tab.id
+                  ? "bg-[#7004DC] text-white"
+                  : "bg-slate-100 text-slate-600"
+              }`}>
+                {tab.count}
+              </span>
+            )}
           </button>
         ))}
       </div>
 
       {/* REVIEW QUEUE TAB */}
-      {activeTab === "queue" && <ReviewQueue />}
+      {activeTab === "queue" && <ReviewQueue onOpenWorkflow={handleOpenWorkflow} />}
+
+      {/* HISTORY TAB */}
+      {activeTab === "history" && (
+        <div>
+          <div className="flex items-center gap-2 mb-5">
+            <History className="w-5 h-5 text-[#7004DC]" />
+            <h2 className="text-lg font-extrabold text-[#1A1C1C]">Resolved Reports History</h2>
+            <span className="ml-2 px-2 py-0.5 rounded-full bg-violet-100 text-violet-700 text-xs font-bold">{history.length} records</span>
+          </div>
+
+          {history.length === 0 ? (
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm px-6 py-12 text-center">
+              <Clock className="w-10 h-10 mx-auto mb-3 text-slate-300" />
+              <p className="text-sm font-semibold text-slate-400">No resolved reports yet</p>
+              <p className="text-xs text-slate-300 mt-1">Resolved reports will appear here with the action taken</p>
+            </div>
+          ) : (
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-gray-100 text-xs text-[#7D7387] font-semibold uppercase tracking-wide">
+                    <th className="text-left px-4 py-3">Content Preview</th>
+                    <th className="text-left px-4 py-3">Source</th>
+                    <th className="text-left px-4 py-3">Author</th>
+                    <th className="text-left px-4 py-3">Reason</th>
+                    <th className="text-left px-4 py-3">Action Taken</th>
+                    <th className="text-left px-4 py-3">Admin Notes</th>
+                    <th className="text-left px-4 py-3">Resolved At</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {history.map((entry) => {
+                    const badge = actionBadge(entry.actionTaken);
+                    return (
+                      <tr key={entry.id} className="border-b border-gray-50 hover:bg-gray-50">
+                        <td className="px-4 py-3 max-w-[200px]">
+                          <p className="text-xs text-[#4B4355] truncate">{entry.contentPreview || "—"}</p>
+                          <p className="text-[10px] text-[#9A93A8] mt-0.5 capitalize">{entry.contentType || "—"}</p>
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${entry.source === "chat" ? "bg-blue-100 text-blue-700" : "bg-amber-100 text-amber-700"}`}>
+                            {entry.source}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-xs text-[#4B4355]">{entry.authorName || "—"}</td>
+                        <td className="px-4 py-3 text-xs text-[#7D7387] max-w-[120px] truncate">{entry.reason || "—"}</td>
+                        <td className="px-4 py-3">
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${badge.cls}`}>
+                            {badge.label}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-xs text-[#7D7387] max-w-[160px]">
+                          <p className="truncate">{entry.adminNotes || "—"}</p>
+                        </td>
+                        <td className="px-4 py-3 text-xs text-[#9A93A8] whitespace-nowrap">{entry.resolvedAtDisplay}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* FORUM REPORTS + AI FLAGS TABS */}
       {(activeTab === "forum-reports" || activeTab === "ai-flags") && <>
@@ -506,8 +906,8 @@ export default function ModerationPage() {
                   return (
                     <div
                       key={report.id}
-                      onClick={() => setSelected(selected?.id === report.id ? null : report)}
-                      className={`flex items-center gap-4 p-4 rounded-xl cursor-pointer transition ${selected?.id === report.id ? "bg-violet-50 border border-violet-200" : "bg-[#F7F5FA] hover:bg-[#F0EDFA]"}`}
+                      onClick={() => handleOpenWorkflow(report)}
+                      className="flex items-center gap-4 p-4 rounded-xl cursor-pointer transition bg-[#F7F5FA] hover:bg-[#F0EDFA] hover:border hover:border-violet-200"
                     >
                       <div className="w-9 h-9 rounded-full bg-[#EDDCFF] flex items-center justify-center text-[#7004DC] text-xs font-bold shrink-0">
                         {(report.reporterName || "?").charAt(0)}
@@ -518,7 +918,7 @@ export default function ModerationPage() {
                           <span className="text-xs text-slate-400">{report.createdAt}</span>
                         </div>
                         <p className="text-xs text-[#7D7387] truncate mt-0.5">
-                          "{(report.questionTitle || report.answerContent || "Reported content").substring(0, 45)}..."
+                          "{(report.questionTitle || report.answerContent || report.fullContent || "Reported content").substring(0, 45)}..."
                         </p>
                       </div>
                       <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase shrink-0 ${isUrgent ? "bg-red-100 text-red-600" : "bg-yellow-100 text-yellow-700"}`}>
@@ -600,34 +1000,33 @@ export default function ModerationPage() {
         </div>
 
         {flagsLoading ? (
-          <p className="text-sm text-[#7D7387] py-4">Loading AI flags…</p>
+          <div className="py-12 text-center text-sm text-[#7D7387]">Loading flags…</div>
         ) : aiFlags.length === 0 ? (
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm px-6 py-8 text-center text-sm text-[#7D7387]">
-            No pending AI flags. All clear.
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm px-6 py-12 text-center">
+            <Bot className="w-10 h-10 mx-auto mb-3 text-slate-300" />
+            <p className="text-sm font-semibold text-slate-400">No pending AI flags. All clear.</p>
           </div>
         ) : (
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-100 text-xs text-[#7D7387] font-semibold uppercase tracking-wide">
-                  <th className="text-left px-4 py-3">Content</th>
+                  <th className="text-left px-4 py-3">Content Preview</th>
                   <th className="text-left px-4 py-3">Type</th>
                   <th className="text-left px-4 py-3">Score</th>
                   <th className="text-left px-4 py-3">Categories</th>
                   <th className="text-left px-4 py-3">Status</th>
-                  <th className="px-4 py-3">Actions</th>
+                  <th className="text-center px-4 py-3">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {aiFlags.map((flag) => (
                   <tr key={flag.id} className="border-b border-gray-50 hover:bg-gray-50">
                     <td className="px-4 py-3 max-w-xs">
-                      <p className="text-xs text-[#4B4355] truncate">{flag.text ?? "(no preview)"}</p>
-                      <p className="text-[10px] text-[#7D7387] mt-0.5 font-mono">{flag.contentId.slice(-8)}</p>
+                      <p className="text-xs text-[#4B4355] truncate">{flag.text || "(no preview)"}</p>
+                      <p className="text-[10px] text-[#9A93A8] mt-0.5 font-mono">{flag.contentId.slice(-8)}</p>
                     </td>
-                    <td className="px-4 py-3 text-xs text-[#4B4355]">
-                      {flag.contentType.replace(/_/g, " ")}
-                    </td>
+                    <td className="px-4 py-3 text-xs text-[#7D7387]">{flag.contentType}</td>
                     <td className="px-4 py-3">
                       <span className={`text-sm font-bold ${flag.score >= 0.8 ? "text-red-600" : flag.score >= 0.5 ? "text-amber-600" : "text-gray-500"}`}>
                         {(flag.score * 100).toFixed(0)}%
@@ -635,8 +1034,8 @@ export default function ModerationPage() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex flex-wrap gap-1">
-                        {flag.categories.slice(0, 3).map((c) => (
-                          <span key={c} className="px-1.5 py-0.5 bg-red-50 text-red-600 text-[10px] rounded-full font-semibold">
+                        {flag.categories.map((c) => (
+                          <span key={c} className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-gray-100 text-gray-700">
                             {c}
                           </span>
                         ))}
@@ -676,93 +1075,36 @@ export default function ModerationPage() {
       </div>
       </>}
 
-      {/* CONTENT REVIEW PANEL */}
-      {selected && (
-        <div className="fixed right-0 top-0 h-full w-[380px] bg-white border-l border-gray-100 shadow-2xl z-40 flex flex-col overflow-y-auto">
-          <div className="flex items-center justify-between p-5 border-b border-gray-100">
-            <div>
-              <h3 className="font-extrabold text-base text-[#1A1C1C]">Content Review</h3>
-              <p className="text-xs text-[#7D7387] mt-0.5">Report ID: #{selected.id.slice(-4)}</p>
-            </div>
-            <button onClick={() => setSelected(null)} className="w-8 h-8 rounded-full hover:bg-gray-100 flex items-center justify-center"><X className="w-4 h-4 text-slate-500" /></button>
-          </div>
-
-          <div className="p-5 space-y-4 flex-1">
-            <span className="px-3 py-1 rounded-full bg-orange-50 text-orange-600 border border-orange-200 text-[10px] font-bold uppercase">PENDING REVIEW</span>
-            <div className="flex items-center gap-2 text-xs text-[#7D7387]">
-              <span>📄</span> Content type: {selected.type === "question" ? "Post" : "Answer"}
-            </div>
-            <div className="bg-[#F7F5FA] rounded-xl p-4">
-              <p className="text-sm text-[#1A1C1C] leading-5">"{selected.questionTitle || selected.answerContent || "Reported content"}"</p>
-              <button className="text-xs font-bold text-[#7004DC] mt-2 hover:underline">View full content ↓</button>
-            </div>
-
-            <div className="bg-[#F7F5FA] rounded-xl p-3 flex items-center gap-3">
-              <div className="w-8 h-8 rounded-full bg-[#EDDCFF] flex items-center justify-center text-[#7004DC] text-xs font-bold">{selected.reporterName?.[0]}</div>
-              <div>
-                <p className="text-sm font-bold text-[#1A1C1C]">{selected.reporterName}</p>
-                <p className="text-xs text-green-600 font-semibold">✓ Trustworthy</p>
-              </div>
-            </div>
-
-            <div>
-              <span className={`inline-block px-3 py-1 rounded-full text-[10px] font-bold uppercase ${selected.reason.toLowerCase().includes("spam") ? "bg-orange-100 text-orange-700" : "bg-red-100 text-red-700"}`}>
-                {selected.reason}
-              </span>
-              <p className="text-sm text-[#7D7387] mt-2">User reported potential violation of community guidelines.</p>
-            </div>
-
-            <div className="bg-[#F7F5FA] rounded-xl p-3">
-              <p className="text-sm font-bold text-[#1A1C1C]">{selected.reporterName}</p>
-              <p className="text-xs text-[#7D7387]">Community Member • Reporter</p>
-              <div className="mt-2 text-xs text-red-500 font-semibold flex items-center gap-1">
-                <AlertTriangle className="w-3 h-3" /> 2 Previous Warnings
-                <span className="text-[#7D7387] font-normal ml-2">2 warnings in 30 days</span>
-              </div>
-            </div>
-
-            {/* ACTION BUTTONS */}
-            <div className="space-y-2 pt-1">
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  onClick={() => handleAction("dismiss", selected)}
-                  disabled={actionLoading === selected.id + "dismiss"}
-                  className="h-11 rounded-xl bg-green-500 hover:bg-green-600 text-white font-bold text-sm transition flex items-center justify-center gap-2"
-                >
-                  <CheckCircle2 className="w-4 h-4" /> Approve
-                </button>
-                <button
-                  onClick={() => handleAction("delete_post", selected)}
-                  disabled={actionLoading === selected.id + "delete_post" || (!selected.questionId && !selected.answerId && !selected.messageId)}
-                  className="h-11 rounded-xl bg-red-600 hover:bg-red-700 disabled:bg-red-200 text-white font-bold text-sm transition flex items-center justify-center gap-2"
-                >
-                  <Trash2 className="w-4 h-4" /> Remove
-                </button>
-              </div>
-              <button
-                onClick={() => { setWorkflowReport(selected); setShowWorkflow(true); }}
-                className="w-full h-11 rounded-xl bg-[#D2A500] hover:bg-[#b89300] text-[#4F3D00] font-bold text-sm transition flex items-center justify-center gap-2"
+      {/* LIGHTBOX ZOOM MODAL */}
+      {lightboxUrl && (
+        <div
+          onClick={() => setLightboxUrl(null)}
+          className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 cursor-zoom-out"
+        >
+          <div className="relative max-w-4xl max-h-[90vh] bg-black/40 rounded-2xl overflow-hidden p-2">
+            <button
+              onClick={() => setLightboxUrl(null)}
+              className="absolute top-4 right-4 z-10 w-9 h-9 rounded-full bg-black/70 hover:bg-black text-white flex items-center justify-center transition shadow"
+            >
+              <X className="w-5 h-5" />
+            </button>
+            <img
+              src={lightboxUrl}
+              alt="Zoomed reported asset"
+              className="max-w-full max-h-[85vh] object-contain rounded-xl shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            />
+            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-black/75 px-4 py-2 rounded-xl text-white text-xs font-semibold flex items-center gap-3">
+              <span>{lightboxUrl}</span>
+              <a
+                href={lightboxUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-violet-300 hover:text-white underline flex items-center gap-1"
+                onClick={(e) => e.stopPropagation()}
               >
-                ⚠ Warn User
-              </button>
-              <button
-                onClick={() => handleAction("dismiss", selected)}
-                disabled={actionLoading === selected.id + "dismiss"}
-                className="w-full h-11 rounded-xl border border-gray-200 text-[#4B4355] font-bold text-sm hover:bg-gray-50 transition"
-              >
-                No Action Required
-              </button>
-              <button
-                onClick={() => { setWorkflowReport(selected); setShowWorkflow(true); }}
-                className="w-full h-11 rounded-xl bg-[#1A1C1C] hover:bg-black text-white font-bold text-sm transition flex items-center justify-center gap-2"
-              >
-                🚫 Ban User Account
-              </button>
-            </div>
-
-            <div className="bg-violet-50 rounded-xl p-4 border border-violet-100">
-              <p className="text-[10px] font-bold uppercase tracking-wider text-[#7004DC] mb-1">MODERATION TIP</p>
-              <p className="text-xs text-[#4B4355] leading-4">Accounts with more than 3 warnings in a 30-day period are automatically flagged for permanent suspension. Review the author's history before taking final action.</p>
+                Open in new tab <ExternalLink className="w-3 h-3" />
+              </a>
             </div>
           </div>
         </div>

@@ -88,7 +88,8 @@ export async function GET(request: NextRequest) {
     const [groupsResult, statsResult] = await Promise.all([
       dbPool.query(`
         SELECT
-          c.id, c.name, c.description, c."subType",
+          c.id, c.name, c.description, c."subType", c."sendMessages",
+          (c."sendMessages" = 'ADMINS_ONLY') AS "isSuspended",
           c."createdAt", c."lastMessageAt", c."lastMessageText", c."maxMembers",
           COUNT(cm.id) FILTER (WHERE cm."leftAt" IS NULL) AS "memberCount"
         FROM chat.conversations c

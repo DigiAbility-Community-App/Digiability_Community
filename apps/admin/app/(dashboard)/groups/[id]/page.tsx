@@ -120,6 +120,16 @@ export default function GroupDetailPage() {
         setEditAM(data.group.addMembers || "ADMINS_ONLY");
         setEditSM(data.group.sendMessages || "ALL_MEMBERS");
         setEditApprove(data.group.approveNewMembers || false);
+        if (data.group.sendMessages === "ADMINS_ONLY") {
+          setSuspensionInfo((prev) => prev || {
+            isSuspended: true,
+            period: "Active Suspension",
+            reason: "Moderator Administrative Action",
+            suspendedAt: data.group.updatedAt,
+          });
+        } else {
+          setSuspensionInfo(null);
+        }
       } else { setNotFound(true); }
     } catch { setNotFound(true); }
     finally { setLoading(false); }
@@ -212,6 +222,21 @@ export default function GroupDetailPage() {
     } finally { setDeleting(false); }
   };
 
+  const handleToggleSendTo = (opt: string) => {
+    setMsgSendTo(prev => {
+      if (opt === "All Members") {
+        return ["All Members"];
+      }
+      const withoutAll = prev.filter(x => x !== "All Members");
+      if (withoutAll.includes(opt)) {
+        const remaining = withoutAll.filter(x => x !== opt);
+        return remaining.length === 0 ? ["All Members"] : remaining;
+      } else {
+        return [...withoutAll, opt];
+      }
+    });
+  };
+
   // ── send message ──
   const handleSendMessage = async () => {
     if (!msgSubject.trim() || !msgBody.trim()) return;
@@ -229,10 +254,11 @@ export default function GroupDetailPage() {
       });
       const data = await res.json();
       if (data.success) {
-        setActionMsg("Message broadcasted to group members successfully.");
+        setActionMsg(data.message || "Message broadcasted to group members successfully.");
         setShowMessageModal(false);
         setMsgSubject("");
         setMsgBody("");
+        setMsgSendTo(["All Members"]);
       } else {
         setActionMsg(data.message || "Failed to send message.");
       }
@@ -743,7 +769,12 @@ export default function GroupDetailPage() {
                   <div className="space-y-2">
                     {["All Members", "Active Members", "Moderators Only"].map(opt => (
                       <label key={opt} className="flex items-center gap-2 cursor-pointer text-xs font-medium text-[#4B4355]">
-                        <input type="checkbox" checked={msgSendTo.includes(opt)} onChange={e => setMsgSendTo(prev => e.target.checked ? [...prev, opt] : prev.filter(x => x !== opt))} className="accent-[#7004DC] rounded" />
+                        <input
+                          type="checkbox"
+                          checked={msgSendTo.includes(opt)}
+                          onChange={() => handleToggleSendTo(opt)}
+                          className="accent-[#7004DC] rounded"
+                        />
                         {opt}
                       </label>
                     ))}

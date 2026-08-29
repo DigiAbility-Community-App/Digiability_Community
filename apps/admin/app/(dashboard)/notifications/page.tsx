@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import {
   Bell, Send, Users, CheckCircle2, AlertTriangle, Info,
-  Megaphone, Loader2, RefreshCw, Clock, X,
+  Megaphone, Loader2, RefreshCw, Clock, X, Trash2,
 } from "lucide-react";
 
 // ─────────────────────────────────────────────
@@ -68,6 +68,28 @@ export default function NotificationsPage() {
       else setHistError(true);
     } catch { setHistError(true); }
     finally   { setHistLoading(false); }
+  };
+
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  const handleDelete = async (id: string) => {
+    if (!confirm("Are you sure you want to delete this notification broadcast? It will also be removed from users' notification feeds.")) return;
+    setDeletingId(id);
+    try {
+      const res = await fetch(`/api/notifications?id=${encodeURIComponent(id)}`, {
+        method: "DELETE",
+      });
+      const data = await res.json();
+      if (data.success) {
+        setHistory(prev => prev.filter(h => h.id !== id));
+      } else {
+        alert(data.message || "Failed to delete notification");
+      }
+    } catch {
+      alert("Network error");
+    } finally {
+      setDeletingId(null);
+    }
   };
 
   useEffect(() => { fetchHistory(); }, []);
@@ -339,6 +361,18 @@ export default function NotificationsPage() {
                           → {aInfo?.label ?? item.audience}
                         </span>
                       </div>
+                      <button
+                        onClick={() => handleDelete(item.id)}
+                        disabled={deletingId === item.id}
+                        className="p-1 rounded-lg hover:bg-red-50 text-slate-400 hover:text-red-600 transition disabled:opacity-40"
+                        title="Delete notification broadcast"
+                      >
+                        {deletingId === item.id ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin text-red-600" />
+                        ) : (
+                          <Trash2 className="w-3.5 h-3.5" />
+                        )}
+                      </button>
                     </div>
                     <h4 className="font-bold text-sm text-[#1A1C1C]">{item.title}</h4>
                     <p className="text-xs text-[#7D7387] mt-1 line-clamp-2">{item.message}</p>
