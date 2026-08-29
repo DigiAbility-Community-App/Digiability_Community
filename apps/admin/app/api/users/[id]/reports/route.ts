@@ -8,6 +8,17 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
+    const rawId = decodeURIComponent(id).trim();
+    const cleanUsername = rawId.replace(/^@+/, "").trim();
+
+    const userLookup = await dbPool.query(
+      `SELECT u.id FROM users u
+       LEFT JOIN user_profiles up ON u.id = up."userId"
+       WHERE (u.id = $1 OR LOWER(up.username) = LOWER($1) OR LOWER(up.username) = LOWER($2)) AND u."deletedAt" IS NULL
+       LIMIT 1`,
+      [rawId, cleanUsername]
+    );
+    const realUserId = userLookup.rows[0]?.id ?? rawId;
 
     const fmt = (row: any) => ({
       id: row.id, reason: row.reason || "Unknown",
@@ -28,7 +39,7 @@ export async function GET(
         LEFT JOIN users u ON fr."reporterId"=u.id
         WHERE fq."authorId"=$1 OR fa."authorId"=$1
         ORDER BY fr."createdAt" DESC LIMIT 50
-      `, [id]),
+      `, [realUserId]),
       dbPool.query(`
         SELECT fr.id,fr.reason,fr."createdAt",fr."questionId",fr."answerId",
                fq.title AS "questionTitle",fa.content AS "answerContent"
@@ -37,11 +48,11 @@ export async function GET(
         LEFT JOIN forum_answers fa ON fr."answerId"=fa.id
         WHERE fr."reporterId"=$1
         ORDER BY fr."createdAt" DESC LIMIT 50
-      `, [id]),
+      `, [realUserId]),
       dbPool.query(`
         SELECT "isSuspended","suspendedUntil",reputation
         FROM forum_user_stats WHERE "userId"=$1
-      `, [id]),
+      `, [realUserId]),
     ]);
 
     const susp = suspRes.rows[0] ?? null;

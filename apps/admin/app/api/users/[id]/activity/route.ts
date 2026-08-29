@@ -11,6 +11,17 @@ export async function GET(
 
   try {
     const { id } = await params;
+    const rawId = decodeURIComponent(id).trim();
+    const cleanUsername = rawId.replace(/^@+/, "").trim();
+
+    const userLookup = await dbPool.query(
+      `SELECT u.id FROM users u
+       LEFT JOIN user_profiles up ON u.id = up."userId"
+       WHERE (u.id = $1 OR LOWER(up.username) = LOWER($1) OR LOWER(up.username) = LOWER($2)) AND u."deletedAt" IS NULL
+       LIMIT 1`,
+      [rawId, cleanUsername]
+    );
+    const realUserId = userLookup.rows[0]?.id ?? rawId;
 
     // 1. Fetch Forum Activity (Questions + Answers)
     let forumActivities: any[] = [];
@@ -28,7 +39,7 @@ export async function GET(
         JOIN forum_questions fq ON fa."questionId" = fq.id
         WHERE fa."authorId" = $1
         ORDER BY "createdAt" DESC LIMIT 50
-      `, [id]);
+      `, [realUserId]);
 
       forumActivities = result.rows.map((row) => ({
         id: row.id,
@@ -65,7 +76,7 @@ export async function GET(
         JOIN chat.conversation_members cm ON c.id = cm."conversationId"
         WHERE cm."userId" = $1 AND cm."leftAt" IS NULL AND c."deletedAt" IS NULL AND c.type = 'GROUP'
         ORDER BY cm."joinedAt" DESC
-      `, [id]);
+      `, [realUserId]);
 
       groupActivities = grpResult.rows.map((r) => ({
         id: `grp-${r.id}`,
@@ -91,7 +102,7 @@ export async function GET(
           JOIN conversation_members cm ON c.id = cm."conversationId"
           WHERE cm."userId" = $1 AND cm."leftAt" IS NULL AND c."deletedAt" IS NULL AND c.type = 'GROUP'
           ORDER BY cm."joinedAt" DESC
-        `, [id]);
+        `, [realUserId]);
 
         groupActivities = grpResult2.rows.map((r) => ({
           id: `grp-${r.id}`,
@@ -112,11 +123,11 @@ export async function GET(
       const userRes = await dbPool.query(`
         SELECT u."createdAt", u."isEmailVerified", u."profileComplete", u.name
         FROM users u WHERE u.id = $1
-      `, [id]);
+      `, [realUserId]);
       if (userRes.rows.length > 0) {
         const u = userRes.rows[0];
         accountActivities.push({
-          id: `acc-created-${id}`,
+          id: `acc-created-${realUserId}`,
           type: "account_created",
           title: "Account Created",
           content: `${u.name} registered on the DigiAbility platform`,
@@ -126,7 +137,7 @@ export async function GET(
         });
         if (u.isEmailVerified) {
           accountActivities.push({
-            id: `acc-verified-${id}`,
+            id: `acc-verified-${realUserId}`,
             type: "email_verified",
             title: "Email Verified",
             content: "Email address successfully verified",

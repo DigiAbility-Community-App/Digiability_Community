@@ -11,6 +11,17 @@ export async function GET(
 
   try {
     const { id } = await params;
+    const rawId = decodeURIComponent(id).trim();
+    const cleanUsername = rawId.replace(/^@+/, "").trim();
+
+    const userRes = await dbPool.query(
+      `SELECT u.id FROM users u
+       LEFT JOIN user_profiles up ON u.id = up."userId"
+       WHERE (u.id = $1 OR LOWER(up.username) = LOWER($1) OR LOWER(up.username) = LOWER($2)) AND u."deletedAt" IS NULL
+       LIMIT 1`,
+      [rawId, cleanUsername]
+    );
+    const realUserId = userRes.rows[0]?.id ?? rawId;
 
     // Query groups and care circles where the user is a member
     let rows: any[] = [];
@@ -28,7 +39,7 @@ export async function GET(
         JOIN chat.conversation_members cm ON c.id = cm."conversationId"
         WHERE cm."userId" = $1 AND cm."leftAt" IS NULL AND c."deletedAt" IS NULL AND c.type = 'GROUP'
         ORDER BY cm."joinedAt" DESC, c."createdAt" DESC
-      `, [id]);
+      `, [realUserId]);
       rows = res.rows;
     } catch {
       // Fallback to public schema if not using chat prefix

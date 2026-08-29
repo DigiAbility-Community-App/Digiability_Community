@@ -7,6 +7,7 @@ import {
   Clock, Shield, Bell, Pencil,
   UserX, ChevronDown, X, AlertTriangle,
   Heart, Users, MessageSquare, CheckCircle2, ChevronRight, Trash2,
+  Briefcase, Building2, Star,
 } from "lucide-react";
 
 interface UserDetail {
@@ -27,9 +28,18 @@ interface UserDetail {
   state: string | null;
   gender: string | null;
   dob: string | null;
+  addressLine1: string | null;
+  streetArea: string | null;
+  locationDistrict: string | null;
+  pincode: string | null;
   disabilityType: string | null;
   disabilitySince: number | null;
+  carePersonName: string | null;
+  careRelation: string | null;
+  careDob: string | null;
+  careDisabilityType: string | null;
   verificationStatus: string | null;
+  verificationDoc: string | null;
   ngoName: string | null;
   ngoRole: string | null;
   district: string | null;
@@ -37,7 +47,6 @@ interface UserDetail {
   organization: string | null;
   yearsOfExperience: number | null;
   supportNeeded: string | null;
-  careRelation: string | null;
   forumStats?: { questions: string; answers: string };
 }
 
@@ -62,7 +71,7 @@ export default function UserDetailPage() {
 
   const fetchUser = useCallback(async () => {
     try {
-      const res = await fetch(`/api/users/${id}`);
+      const res = await fetch(`/api/users/${encodeURIComponent(id)}`);
       const data = await res.json();
       if (data.success) setUser(data.user);
       else setNotFound(true);
@@ -107,7 +116,7 @@ export default function UserDetailPage() {
   const TABS = ["Profile", "Activity", "Care Circles & Groups", "Reports"] as const;
 
   const handleSuspend = async (reason: string, duration: string, message: string) => {
-    const res = await fetch(`/api/users/${id}`, {
+    const res = await fetch(`/api/users/${encodeURIComponent(id)}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action: "suspend", reason, duration, message }),
@@ -123,7 +132,7 @@ export default function UserDetailPage() {
   };
 
   const handleUnsuspend = async () => {
-    const res = await fetch(`/api/users/${id}`, {
+    const res = await fetch(`/api/users/${encodeURIComponent(id)}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action: "unsuspend" }),
@@ -138,7 +147,7 @@ export default function UserDetailPage() {
   };
 
   const handleDelete = async () => {
-    const res = await fetch(`/api/users/${id}`, { method: "DELETE" });
+    const res = await fetch(`/api/users/${encodeURIComponent(id)}`, { method: "DELETE" });
     const data = await res.json();
     if (data.success) {
       router.push("/users");
@@ -162,11 +171,10 @@ export default function UserDetailPage() {
 
       {/* ACTION BANNER */}
       {actionMsg && (
-        <div className={`mb-4 rounded-xl px-4 py-3 text-sm font-semibold flex items-center gap-2 ${
-          actionMsg.type === "success"
+        <div className={`mb-4 rounded-xl px-4 py-3 text-sm font-semibold flex items-center gap-2 ${actionMsg.type === "success"
             ? "bg-green-50 border border-green-200 text-green-700"
             : "bg-red-50 border border-red-200 text-red-700"
-        }`}>
+          }`}>
           {actionMsg.type === "success"
             ? <CheckCircle2 className="w-4 h-4" />
             : <AlertTriangle className="w-4 h-4" />}
@@ -179,9 +187,8 @@ export default function UserDetailPage() {
         {/* LEFT PANEL */}
         <div className="bg-white rounded-[24px] p-7 shadow-sm border border-gray-100 flex flex-col items-center text-center">
           {/* AVATAR */}
-          <div className={`w-20 h-20 rounded-2xl flex items-center justify-center text-white font-extrabold text-2xl mb-4 ${
-            user.isSuspended ? "bg-red-400" : "bg-[#7004DC]"
-          }`}>
+          <div className={`w-20 h-20 rounded-2xl flex items-center justify-center text-white font-extrabold text-2xl mb-4 ${user.isSuspended ? "bg-red-400" : "bg-[#7004DC]"
+            }`}>
             {initials}
           </div>
 
@@ -246,11 +253,11 @@ export default function UserDetailPage() {
               </button>
             )}
 
-            <button
+            {/* <button
               className="w-full h-11 rounded-xl border-2 border-gray-200 text-[#4B4355] font-semibold text-sm hover:bg-gray-50 transition flex items-center justify-center gap-2"
             >
               <Bell className="w-4 h-4" /> Send Notification
-            </button>
+            </button> */}
 
             <button
               onClick={() => {
@@ -327,94 +334,213 @@ export default function UserDetailPage() {
 // ─────────────────────────────────────────────
 // PROFILE TAB
 // ─────────────────────────────────────────────
+
+/** Small reusable section header */
+function SectionHeader({ icon, title }: { icon: React.ReactNode; title: string }) {
+  return (
+    <div className="flex items-center gap-2 mb-5">
+      <div className="w-7 h-7 rounded-lg bg-violet-100 flex items-center justify-center text-[#7004DC]">
+        {icon}
+      </div>
+      <h3 className="text-base font-extrabold text-[#1A1C1C]">{title}</h3>
+    </div>
+  );
+}
+
 function ProfileTab({ user }: { user: UserDetail }) {
-  const supportItems = user.supportNeeded ? user.supportNeeded.split(",").map(s => s.trim()) : [];
+  const hasRole = (r: string) => user.roles.includes(r);
+
+  /** Role label → friendly display name */
+  const ROLE_LABELS: Record<string, string> = {
+    PWD: "Person with Disability (PwD)",
+    CAREGIVER: "Caregiver",
+    THERAPIST: "Therapist",
+    NGO: "NGO Worker",
+    VOLUNTEER: "Volunteer",
+    STUDENT: "Student",
+    MENTOR: "Mentor",
+  };
+
+  /** Role → one-line subtitle using real data */
+  const roleSubtitle = (role: string): string => {
+    if (role === "PWD") return user.disabilityType ? `Disability: ${user.disabilityType}` : "Profile active";
+    if (role === "CAREGIVER") return user.careRelation ? `Relation: ${user.careRelation}` : "Care profile active";
+    if (role === "THERAPIST") return user.speciality ? `Speciality: ${user.speciality}` : "Therapist profile active";
+    if (role === "NGO") return user.ngoName ? `${user.ngoName}` : "NGO profile active";
+    if (role === "VOLUNTEER") return "Community volunteer";
+    if (role === "STUDENT") return "Student member";
+    if (role === "MENTOR") return "Community mentor";
+    return "Active";
+  };
+
+  /** Icon per role */
+  const roleIcon = (role: string) => {
+    if (role === "PWD") return <Shield className="w-4 h-4" />;
+    if (role === "CAREGIVER") return <Heart className="w-4 h-4" />;
+    if (role === "THERAPIST") return <Star className="w-4 h-4" />;
+    if (role === "NGO") return <Building2 className="w-4 h-4" />;
+    if (role === "VOLUNTEER") return <Users className="w-4 h-4" />;
+    if (role === "STUDENT") return <Briefcase className="w-4 h-4" />;
+    return <Users className="w-4 h-4" />;
+  };
+
+  const hasAddress = user.addressLine1 || user.streetArea || user.city || user.locationDistrict || user.state || user.pincode;
 
   return (
     <div className="space-y-8">
-      {/* PERSONAL INFORMATION */}
+
+      {/* ── PERSONAL INFORMATION ── */}
       <section>
-        <div className="flex items-center gap-2 mb-5">
-          <div className="w-7 h-7 rounded-lg bg-violet-100 flex items-center justify-center text-[#7004DC]">
-            <Shield className="w-3.5 h-3.5" />
-          </div>
-          <h3 className="text-base font-extrabold text-[#1A1C1C]">Personal Information</h3>
-        </div>
+        <SectionHeader icon={<Shield className="w-3.5 h-3.5" />} title="Personal Information" />
         <div className="grid grid-cols-2 gap-x-8 gap-y-5">
           <InfoItem label="FULL NAME" value={user.fullName || user.name} />
+          <InfoItem label="USERNAME" value={user.username ? `@${user.username}` : "—"} />
           <InfoItem label="DATE OF BIRTH" value={(() => {
             if (!user.dob) return "—";
             const d = new Date(user.dob);
-            return isNaN(d.getTime()) ? "—" : d.toLocaleDateString("en-GB").replace(/\//g, "/");
+            return isNaN(d.getTime()) ? "—" : d.toLocaleDateString("en-GB");
           })()} />
           <InfoItem label="GENDER" value={user.gender || "—"} />
-          <InfoItem label="PRIMARY LANGUAGE" value="Telugu, English" />
           <InfoItem label="PHONE NUMBER" value={user.phoneNo || "—"} />
-          <InfoItem label="STATE" value={user.state || "—"} />
-          <InfoItem label="DISTRICT" value={user.district || user.city || "—"} />
-          <InfoItem label="PINCODE" value="—" />
+          <InfoItem label="EMAIL" value={user.email} />
         </div>
       </section>
 
-      {/* DISABILITY DETAILS */}
-      {(user.disabilityType || user.roles.includes("PWD")) && (
+      {/* ── ADDRESS DETAILS ── */}
+      {hasAddress && (
         <section>
-          <div className="flex items-center gap-2 mb-5">
-            <div className="w-7 h-7 rounded-lg bg-violet-100 flex items-center justify-center text-[#7004DC]">
-              <Shield className="w-3.5 h-3.5" />
-            </div>
-            <h3 className="text-base font-extrabold text-[#1A1C1C]">Disability Details</h3>
+          <SectionHeader icon={<Building2 className="w-3.5 h-3.5" />} title="Address & Location" />
+          <div className="grid grid-cols-2 gap-x-8 gap-y-5">
+            <InfoItem label="FLAT / HOUSE / BUILDING" value={user.addressLine1 || "—"} />
+            <InfoItem label="STREET / COLONY / LOCALITY" value={user.streetArea || "—"} />
+            <InfoItem label="CITY" value={user.city || "—"} />
+            <InfoItem label="DISTRICT" value={user.locationDistrict || user.district || "—"} />
+            <InfoItem label="STATE" value={user.state || "—"} />
+            <InfoItem label="PINCODE" value={user.pincode || "—"} />
           </div>
-          <div className="grid grid-cols-3 gap-6 items-start">
+        </section>
+      )}
+
+      {/* ── DISABILITY DETAILS (PWD) ── */}
+      {(user.disabilityType || hasRole("PWD")) && (
+        <section>
+          <SectionHeader icon={<Shield className="w-3.5 h-3.5" />} title="Disability Details" />
+          <div className="grid grid-cols-2 gap-6 items-start">
             <div>
-              <p className="text-[10px] font-extrabold uppercase tracking-[0.15em] text-slate-400 mb-2">PRIMARY DISABILITY TYPE</p>
+              <p className="text-[10px] font-extrabold uppercase tracking-[0.15em] text-slate-400 mb-2">PRIMARY DISABILITY TYPE(S)</p>
               {user.disabilityType ? (
-                <span className="px-3 py-1.5 rounded-full bg-[#EDDCFF] text-[#7004DC] text-sm font-semibold">
-                  {user.disabilityType}
-                </span>
-              ) : <p className="text-sm text-slate-400">—</p>}
-            </div>
-            <div>
-              <p className="text-[10px] font-extrabold uppercase tracking-[0.15em] text-slate-400 mb-2">SINCE YEAR</p>
-              <p className="text-sm font-semibold text-[#1A1C1C]">{user.disabilitySince ?? "—"}</p>
-            </div>
-            <div>
-              <p className="text-[10px] font-extrabold uppercase tracking-[0.15em] text-slate-400 mb-2">SUPPORT REQUIRED</p>
-              {supportItems.length > 0 ? (
                 <div className="flex flex-wrap gap-2">
-                  {supportItems.map((s) => (
-                    <span key={s} className="px-3 py-1 rounded-full bg-[#F3F3F3] text-[#4B4355] text-xs font-semibold border border-gray-200">
-                      {s}
+                  {user.disabilityType.split(",").map(d => d.trim()).filter(Boolean).map(d => (
+                    <span key={d} className="px-3 py-1.5 rounded-full bg-[#EDDCFF] text-[#7004DC] text-xs font-bold">
+                      {d}
                     </span>
                   ))}
                 </div>
               ) : <p className="text-sm text-slate-400">—</p>}
             </div>
+            <div>
+              <p className="text-[10px] font-extrabold uppercase tracking-[0.15em] text-slate-400 mb-2">LIVING WITH DISABILITY SINCE</p>
+              <p className="text-sm font-semibold text-[#1A1C1C]">
+                {user.disabilitySince ? `${user.disabilitySince}` : "—"}
+              </p>
+            </div>
           </div>
         </section>
       )}
 
-      {/* PLATFORM ROLES */}
+      {/* ── CAREGIVER DETAILS ── */}
+      {(hasRole("CAREGIVER") || user.careRelation || user.carePersonName || user.careDisabilityType) && (
+        <section>
+          <SectionHeader icon={<Heart className="w-3.5 h-3.5" />} title="Caregiver Details" />
+          <div className="grid grid-cols-2 gap-x-8 gap-y-5">
+            <InfoItem label="PERSON BEING CARED FOR" value={user.carePersonName || "—"} />
+            <InfoItem label="RELATION TO PERSON" value={user.careRelation || "—"} />
+            <InfoItem label="CARE PERSON DATE OF BIRTH" value={(() => {
+              if (!user.careDob) return "—";
+              const d = new Date(user.careDob);
+              return isNaN(d.getTime()) ? "—" : d.toLocaleDateString("en-GB");
+            })()} />
+            <div>
+              <p className="text-[10px] font-extrabold uppercase tracking-[0.15em] text-slate-400 mb-1">CARE PERSON DISABILITY TYPE(S)</p>
+              {user.careDisabilityType ? (
+                <div className="flex flex-wrap gap-1.5 mt-1">
+                  {user.careDisabilityType.split(",").map(d => d.trim()).filter(Boolean).map(d => (
+                    <span key={d} className="px-2.5 py-1 rounded-full bg-pink-100 text-pink-700 text-xs font-bold">
+                      {d}
+                    </span>
+                  ))}
+                </div>
+              ) : <p className="text-sm font-semibold text-[#1A1C1C]">—</p>}
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* ── THERAPIST / PROFESSIONAL DETAILS ── */}
+      {(hasRole("THERAPIST") || user.speciality || user.organization) && (
+        <section>
+          <SectionHeader icon={<Star className="w-3.5 h-3.5" />} title="Professional Details" />
+          <div className="grid grid-cols-2 gap-x-8 gap-y-5">
+            <InfoItem label="SPECIALITY" value={user.speciality || "—"} />
+            <InfoItem label="ORGANISATION / CLINIC / HOSPITAL" value={user.organization || "—"} />
+            <InfoItem label="YEARS OF EXPERIENCE" value={user.yearsOfExperience != null ? `${user.yearsOfExperience} years` : "—"} />
+          </div>
+        </section>
+      )}
+
+      {/* ── NGO DETAILS ── */}
+      {(hasRole("NGO") || user.ngoName) && (
+        <section>
+          <SectionHeader icon={<Building2 className="w-3.5 h-3.5" />} title="NGO Details" />
+          <div className="grid grid-cols-2 gap-x-8 gap-y-5">
+            <InfoItem label="NGO NAME" value={user.ngoName || "—"} />
+            <InfoItem label="ROLE IN NGO" value={user.ngoRole || "—"} />
+            {user.district && <InfoItem label="OPERATIONAL DISTRICT" value={user.district} />}
+          </div>
+        </section>
+      )}
+
+      {/* ── VERIFICATION STATUS ── */}
+      <section>
+        <SectionHeader icon={<CheckCircle2 className="w-3.5 h-3.5" />} title="Verification Status" />
+        <div className="grid grid-cols-2 gap-x-8 gap-y-5">
+          <div>
+            <p className="text-[10px] font-extrabold uppercase tracking-[0.15em] text-slate-400 mb-1">STATUS</p>
+            <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold uppercase ${
+              (user.isEmailVerified || user.verificationStatus === "verified") ? "bg-green-100 text-green-700" :
+              user.verificationStatus === "rejected" ? "bg-red-100 text-red-700" :
+              "bg-yellow-100 text-yellow-700"
+            }`}>
+              {(user.isEmailVerified || user.verificationStatus === "verified") ? "Verified" : (user.verificationStatus || "Pending")}
+            </span>
+          </div>
+          {user.verificationDoc && (
+            <div>
+              <p className="text-[10px] font-extrabold uppercase tracking-[0.15em] text-slate-400 mb-1">DOCUMENT</p>
+              <a href={user.verificationDoc} target="_blank" rel="noreferrer" className="text-xs font-bold text-[#7004DC] hover:underline">
+                View Uploaded Document ↗
+              </a>
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* ── PLATFORM ROLES ── */}
       {user.roles.length > 0 && (
         <section>
-          <div className="flex items-center gap-2 mb-5">
-            <div className="w-7 h-7 rounded-lg bg-violet-100 flex items-center justify-center text-[#7004DC]">
-              <Users className="w-3.5 h-3.5" />
-            </div>
-            <h3 className="text-base font-extrabold text-[#1A1C1C]">Platform Roles</h3>
-          </div>
+          <SectionHeader icon={<Users className="w-3.5 h-3.5" />} title="Platform Roles" />
           <div className="grid grid-cols-2 gap-4">
             {user.roles.map((role) => (
               <div key={role} className="bg-[#F7F5FA] rounded-xl p-4 border border-[#ECE7F2] flex items-start gap-3">
                 <div className="w-9 h-9 rounded-xl bg-[#EDDCFF] flex items-center justify-center text-[#7004DC] shrink-0">
-                  {role === "PWD" ? <Shield className="w-4 h-4" /> : role === "CAREGIVER" ? <Heart className="w-4 h-4" /> : <Users className="w-4 h-4" />}
+                  {roleIcon(role)}
                 </div>
-                <div>
+                <div className="min-w-0">
                   <p className="text-sm font-bold text-[#1A1C1C]">
-                    {role === "PWD" ? "Person with Disability (PwD)" : role.charAt(0) + role.slice(1).toLowerCase()}
+                    {ROLE_LABELS[role] ?? (role.charAt(0) + role.slice(1).toLowerCase())}
                   </p>
-                  <p className="text-xs text-[#7D7387] mt-0.5">
-                    {role === "PWD" ? "Status: Active verified profile" : role === "CAREGIVER" ? `Caregiver For: —` : "Active"}
+                  <p className="text-xs text-[#7D7387] mt-0.5 truncate">
+                    {roleSubtitle(role)}
                   </p>
                 </div>
               </div>
@@ -423,14 +549,9 @@ function ProfileTab({ user }: { user: UserDetail }) {
         </section>
       )}
 
-      {/* FORUM ACTIVITY */}
+      {/* ── FORUM ACTIVITY ── */}
       <section>
-        <div className="flex items-center gap-2 mb-5">
-          <div className="w-7 h-7 rounded-lg bg-violet-100 flex items-center justify-center text-[#7004DC]">
-            <MessageSquare className="w-3.5 h-3.5" />
-          </div>
-          <h3 className="text-base font-extrabold text-[#1A1C1C]">Forum Activity</h3>
-        </div>
+        <SectionHeader icon={<MessageSquare className="w-3.5 h-3.5" />} title="Forum Activity" />
         <div className="grid grid-cols-2 gap-4">
           <div className="bg-violet-50 rounded-xl p-5 text-center">
             <h4 className="text-3xl font-extrabold text-[#7004DC]">{user.forumStats?.questions || "0"}</h4>
@@ -447,8 +568,7 @@ function ProfileTab({ user }: { user: UserDetail }) {
 }
 
 // ─────────────────────────────────────────────
-// ─────────────────────────────────────────────
-// CARE CIRCLES & GROUPS TAB — real data
+// CARE CIRCLES & GROUPS TAB
 // ─────────────────────────────────────────────
 interface UserGroupItem {
   id: string;
@@ -472,19 +592,16 @@ interface UserGroupsData {
 function CareCirclesTab({ userId }: { userId: string }) {
   const [data, setData] = useState<UserGroupsData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
   const [filter, setFilter] = useState<"ALL" | "CARE_CIRCLE" | "GENERAL">("ALL");
 
   useEffect(() => {
     setLoading(true);
-    setError(false);
     fetch(`/api/users/${userId}/groups`)
       .then((r) => r.json())
       .then((d) => {
         if (d.success) setData(d);
-        else setError(true);
       })
-      .catch(() => setError(true))
+      .catch(() => {})
       .finally(() => setLoading(false));
   }, [userId]);
 
@@ -496,7 +613,7 @@ function CareCirclesTab({ userId }: { userId: string }) {
     );
   }
 
-  if (error || !data) {
+  if (!data) {
     return (
       <div className="flex flex-col items-center justify-center py-20 text-center">
         <AlertTriangle className="w-8 h-8 text-red-400 mb-3" />
@@ -507,10 +624,10 @@ function CareCirclesTab({ userId }: { userId: string }) {
 
   const displayedGroups =
     filter === "ALL"
-      ? data.allGroups
+      ? (data.allGroups || [])
       : filter === "CARE_CIRCLE"
-      ? data.careCircles
-      : data.generalGroups;
+        ? (data.careCircles || [])
+        : (data.generalGroups || []);
 
   return (
     <div className="space-y-6">
@@ -518,15 +635,15 @@ function CareCirclesTab({ userId }: { userId: string }) {
       <div className="grid grid-cols-3 gap-4">
         <div className="bg-white rounded-2xl border border-gray-100 p-4 shadow-sm">
           <p className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 mb-1">Total Memberships</p>
-          <p className="text-2xl font-extrabold text-[#7004DC]">{data.total}</p>
+          <p className="text-2xl font-extrabold text-[#7004DC]">{data.total || 0}</p>
         </div>
         <div className="bg-white rounded-2xl border border-gray-100 p-4 shadow-sm">
           <p className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 mb-1">Care Circles</p>
-          <p className="text-2xl font-extrabold text-pink-600">{data.careCirclesCount}</p>
+          <p className="text-2xl font-extrabold text-pink-600">{data.careCirclesCount || 0}</p>
         </div>
         <div className="bg-white rounded-2xl border border-gray-100 p-4 shadow-sm">
           <p className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 mb-1">Community Groups</p>
-          <p className="text-2xl font-extrabold text-violet-600">{data.generalGroupsCount}</p>
+          <p className="text-2xl font-extrabold text-violet-600">{data.generalGroupsCount || 0}</p>
         </div>
       </div>
 
@@ -535,9 +652,9 @@ function CareCirclesTab({ userId }: { userId: string }) {
         <div className="flex items-center gap-2">
           {(
             [
-              { key: "ALL", label: `All Groups (${data.total})` },
-              { key: "CARE_CIRCLE", label: `Care Circles (${data.careCirclesCount})` },
-              { key: "GENERAL", label: `Community Groups (${data.generalGroupsCount})` },
+              { key: "ALL", label: `All Groups (${data.total || 0})` },
+              { key: "CARE_CIRCLE", label: `Care Circles (${data.careCirclesCount || 0})` },
+              { key: "GENERAL", label: `Community Groups (${data.generalGroupsCount || 0})` },
             ] as const
           ).map((t) => (
             <button
@@ -636,48 +753,35 @@ function CareCirclesTab({ userId }: { userId: string }) {
 }
 
 // ─────────────────────────────────────────────
-// ACTIVITY TAB — comprehensive real timeline
+// ACTIVITY TAB
 // ─────────────────────────────────────────────
 interface ActivityItem {
   id: string;
-  type: "question" | "answer" | "care_circle_joined" | "group_joined" | "account_created" | "email_verified";
+  type: string;
   title?: string;
+  questionTitle?: string;
   content?: string;
   category?: string;
   time: string;
-  views?: number;
-  answerCount?: number;
-  status?: string;
-  isAccepted?: boolean;
-  upvotes?: number;
-  downvotes?: number;
-  questionTitle?: string;
-  questionId?: string;
-  groupId?: string;
-  isDeleted?: boolean;
 }
 
 function ActivityTab({ userId }: { userId: string }) {
   const [activities, setActivities] = useState<ActivityItem[]>([]);
   const [counts, setCounts] = useState({ all: 0, questions: 0, answers: 0, groups: 0, account: 0 });
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
   const [typeFilter, setTypeFilter] = useState<"all" | "question" | "answer" | "groups" | "account">("all");
 
   useEffect(() => {
     setLoading(true);
-    setError(false);
     fetch(`/api/users/${userId}/activity`)
       .then((r) => r.json())
       .then((data) => {
         if (data.success) {
           setActivities(data.activities || []);
           if (data.counts) setCounts(data.counts);
-        } else {
-          setError(true);
         }
       })
-      .catch(() => setError(true))
+      .catch(() => { })
       .finally(() => setLoading(false));
   }, [userId]);
 
@@ -698,174 +802,58 @@ function ActivityTab({ userId }: { userId: string }) {
     );
   }
 
-  if (error) {
-    return (
-      <div className="flex flex-col items-center justify-center py-20 text-center">
-        <AlertTriangle className="w-8 h-8 text-red-400 mb-3" />
-        <p className="text-sm font-semibold text-slate-600">Failed to load activity timeline</p>
-      </div>
-    );
-  }
-
   return (
-    <div>
-      {/* FILTERS */}
-      <div className="flex items-center justify-between mb-6 flex-wrap gap-2">
-        <div className="flex items-center gap-2 flex-wrap">
-          {(
-            [
-              { key: "all", label: `All Activities (${counts.all || activities.length})` },
-              { key: "question", label: `Questions (${counts.questions})` },
-              { key: "answer", label: `Answers (${counts.answers})` },
-              { key: "groups", label: `Groups & Circles (${counts.groups})` },
-              { key: "account", label: `Account Events (${counts.account})` },
-            ] as const
-          ).map((f) => (
-            <button
-              key={f.key}
-              onClick={() => setTypeFilter(f.key)}
-              className={`h-9 px-4 rounded-xl text-xs font-bold transition ${
-                typeFilter === f.key
-                  ? "bg-[#7004DC] text-white shadow-sm"
-                  : "bg-[#F7F5FA] text-[#4B4355] hover:bg-violet-100/50"
+    <div className="space-y-6">
+      {/* FILTER PILLS */}
+      <div className="flex flex-wrap items-center gap-2 border-b border-gray-100 pb-4">
+        {[
+          { key: "all", label: `All Activity (${counts.all})` },
+          { key: "question", label: `Questions (${counts.questions})` },
+          { key: "answer", label: `Answers (${counts.answers})` },
+          { key: "groups", label: `Groups (${counts.groups})` },
+          { key: "account", label: `Account (${counts.account})` },
+        ].map((f) => (
+          <button
+            key={f.key}
+            onClick={() => setTypeFilter(f.key as any)}
+            className={`h-9 px-4 rounded-xl text-xs font-bold transition ${typeFilter === f.key
+                ? "bg-[#7004DC] text-white shadow-sm"
+                : "bg-[#F7F5FA] text-[#4B4355] hover:bg-violet-100/50"
               }`}
-            >
-              {f.label}
-            </button>
-          ))}
-        </div>
-        <p className="text-xs text-slate-400 font-semibold">{filtered.length} items</p>
+          >
+            {f.label}
+          </button>
+        ))}
       </div>
 
+      {/* TIMELINE */}
       {filtered.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-20 text-center border border-dashed border-gray-200 rounded-2xl bg-[#FAF9FC]">
-          <div className="w-16 h-16 rounded-full bg-[#F3F0FF] flex items-center justify-center mb-4 text-[#7004DC]">
-            <Clock className="w-7 h-7" />
-          </div>
-          <h3 className="text-base font-extrabold text-[#1A1C1C] mb-1">No activities found</h3>
-          <p className="text-xs text-[#7D7387] max-w-sm">
-            No activity records matching this filter category were found for this user.
-          </p>
+        <div className="flex flex-col items-center justify-center py-16 text-center border border-dashed border-gray-200 rounded-2xl bg-[#FAF9FC]">
+          <Clock className="w-8 h-8 text-slate-300 mb-2" />
+          <p className="text-sm font-semibold text-slate-500">No activities found</p>
         </div>
       ) : (
-        /* TIMELINE */
-        <div className="space-y-4">
-          {filtered.map((item) => {
-            const isQuestion = item.type === "question";
-            const isAnswer = item.type === "answer";
-            const isCareCircle = item.type === "care_circle_joined";
-            const isGroup = item.type === "group_joined";
-            const isAccount = item.type === "account_created" || item.type === "email_verified";
-
-            return (
-              <div
-                key={item.id}
-                className={`bg-white rounded-2xl border p-5 flex items-start gap-4 transition shadow-sm ${
-                  item.isDeleted ? "border-red-100 bg-red-50/20 opacity-70" : "border-gray-100 hover:border-violet-200"
-                }`}
-              >
-                <div
-                  className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 mt-0.5 ${
-                    isQuestion
-                      ? "bg-[#7004DC] text-white"
-                      : isAnswer
-                      ? item.isAccepted
-                        ? "bg-green-500 text-white"
-                        : "bg-blue-500 text-white"
-                      : isCareCircle
-                      ? "bg-pink-100 text-pink-600"
-                      : isGroup
-                      ? "bg-violet-100 text-violet-600"
-                      : "bg-emerald-100 text-emerald-700"
-                  }`}
-                >
-                  {isQuestion && <MessageSquare className="w-4 h-4" />}
-                  {isAnswer && <CheckCircle2 className="w-4 h-4" />}
-                  {isCareCircle && <Heart className="w-4 h-4" />}
-                  {isGroup && <Users className="w-4 h-4" />}
-                  {isAccount && <Shield className="w-4 h-4" />}
+        <div className="relative pl-6 space-y-6 before:absolute before:left-2 before:top-2 before:bottom-2 before:w-0.5 before:bg-violet-100">
+          {filtered.map((item) => (
+            <div key={item.id} className="relative group">
+              {/* TIMELINE DOT */}
+              <div className="absolute -left-6 top-1 w-4 h-4 rounded-full border-2 border-white bg-[#7004DC] shadow-sm ring-2 ring-violet-100" />
+              <div className="bg-white rounded-2xl border border-gray-100 p-5 shadow-sm hover:border-violet-200 transition">
+                <div className="flex items-start justify-between gap-4 mb-2">
+                  <span className="px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase bg-violet-50 text-[#7004DC]">
+                    {item.category || item.type}
+                  </span>
+                  <span className="text-xs font-semibold text-[#7D7387]">{item.time}</span>
                 </div>
-
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-2">
-                      <p className="text-sm font-bold text-[#1A1C1C]">
-                        {isQuestion
-                          ? "Posted a forum question"
-                          : isAnswer
-                          ? "Answered a forum question"
-                          : isCareCircle
-                          ? "Joined a Care Circle"
-                          : isGroup
-                          ? "Joined a Community Group"
-                          : item.title || "Account Milestone"}
-                      </p>
-                    </div>
-
-                    <div className="flex items-center gap-2 shrink-0">
-                      {isQuestion && item.status === "SOLVED" && (
-                        <span className="px-2 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wide bg-green-100 text-green-700">
-                          SOLVED
-                        </span>
-                      )}
-                      {isAnswer && item.isAccepted && (
-                        <span className="px-2 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wide bg-green-100 text-green-700">
-                          ✓ ACCEPTED
-                        </span>
-                      )}
-                      {item.isDeleted && (
-                        <span className="px-2 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wide bg-red-100 text-red-700">
-                          REMOVED
-                        </span>
-                      )}
-                      <span className="text-xs text-slate-400 whitespace-nowrap">{item.time}</span>
-                    </div>
-                  </div>
-
-                  {isQuestion && item.content && (
-                    <p className="text-sm text-[#4B4355] mt-1 font-semibold line-clamp-2">{item.content}</p>
-                  )}
-
-                  {isAnswer && item.questionTitle && (
-                    <p className="text-sm text-[#7004DC] mt-1 font-medium line-clamp-1">On: "{item.questionTitle}"</p>
-                  )}
-
-                  {isAnswer && item.content && (
-                    <p className="text-xs text-[#7D7387] mt-1.5 italic bg-[#FAF9FC] p-2.5 rounded-xl border border-gray-100 line-clamp-2">
-                      "{item.content}"
-                    </p>
-                  )}
-
-                  {(isCareCircle || isGroup) && (
-                    <div className="mt-1 flex items-center gap-2">
-                      <span className="text-sm font-semibold text-[#1A1C1C]">{item.title}</span>
-                      <span className="text-xs text-slate-400">({item.content})</span>
-                    </div>
-                  )}
-
-                  {isAccount && item.content && (
-                    <p className="text-xs text-[#7D7387] mt-1">{item.content}</p>
-                  )}
-
-                  <div className="flex items-center gap-4 mt-2.5 flex-wrap">
-                    {item.category && (
-                      <span className="text-[10px] font-bold uppercase tracking-wide bg-[#F3F0FF] text-[#7004DC] px-2.5 py-0.5 rounded-md">
-                        {item.category}
-                      </span>
-                    )}
-                    {isQuestion && item.views !== undefined && (
-                      <span className="text-xs text-slate-400">
-                        👁 {item.views} views · 💬 {item.answerCount} answers
-                      </span>
-                    )}
-                    {isAnswer && item.upvotes !== undefined && (
-                      <span className="text-xs text-slate-400">👍 {item.upvotes} upvotes</span>
-                    )}
-                  </div>
-                </div>
+                <h4 className="font-bold text-sm text-[#1A1C1C] mb-1">
+                  {item.title || item.questionTitle || item.content}
+                </h4>
+                {item.content && item.title && (
+                  <p className="text-xs text-[#7D7387] line-clamp-2 leading-relaxed">{item.content}</p>
+                )}
               </div>
-            );
-          })}
+            </div>
+          ))}
         </div>
       )}
     </div>
@@ -873,163 +861,83 @@ function ActivityTab({ userId }: { userId: string }) {
 }
 
 // ─────────────────────────────────────────────
-// REPORTS TAB — real data
+// REPORTS TAB
 // ─────────────────────────────────────────────
 interface ReportItem {
   id: string;
   reason: string;
   createdAt: string;
   type: "question" | "answer";
+  questionId?: string;
+  answerId?: string;
   questionTitle?: string;
-  answerContent?: string;
   reporterName?: string;
   isContentRemoved?: boolean;
 }
 
-interface ReportsData {
-  reportsAgainst: ReportItem[];
-  reportsSubmitted: ReportItem[];
-  stats: { reportsAgainst: number; reportsSubmitted: number; contentRemoved: number };
-  suspension: { isSuspended: boolean; suspendedUntil: string | null; reputation: number } | null;
-}
-
 function ReportsTab({ userId }: { userId: string }) {
-  const [data, setData] = useState<ReportsData | null>(null);
+  const [reportsAgainst, setReportsAgainst] = useState<ReportItem[]>([]);
+  const [reportsSubmitted, setReportsSubmitted] = useState<ReportItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
   const [activeSection, setActiveSection] = useState<"against" | "submitted">("against");
 
   useEffect(() => {
     setLoading(true);
-    setError(false);
     fetch(`/api/users/${userId}/reports`)
-      .then(r => r.json())
-      .then(d => {
-        if (d.success) setData(d);
-        else setError(true);
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.success) {
+          setReportsAgainst(d.reportsAgainst || []);
+          setReportsSubmitted(d.reportsSubmitted || []);
+        }
       })
-      .catch(() => setError(true))
+      .catch(() => { })
       .finally(() => setLoading(false));
   }, [userId]);
 
-  if (loading) return (
-    <div className="flex items-center justify-center py-20">
-      <div className="w-8 h-8 border-4 border-[#7004DC] border-t-transparent rounded-full animate-spin" />
-    </div>
-  );
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <div className="w-8 h-8 border-4 border-[#7004DC] border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
 
-  if (error) return (
-    <div className="flex flex-col items-center justify-center py-20 text-center">
-      <AlertTriangle className="w-8 h-8 text-red-400 mb-3" />
-      <p className="text-sm font-semibold text-slate-600">Failed to load reports</p>
-    </div>
-  );
-
-  const stats = data?.stats ?? { reportsAgainst: 0, reportsSubmitted: 0, contentRemoved: 0 };
-  const items = activeSection === "against" ? (data?.reportsAgainst ?? []) : (data?.reportsSubmitted ?? []);
+  const items = activeSection === "against" ? reportsAgainst : reportsSubmitted;
 
   return (
-    <div>
-      {/* SUSPENSION BANNER */}
-      {data?.suspension?.isSuspended && (
-        <div className="mb-5 bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex items-center gap-3">
-          <span className="text-red-500 text-lg">⊗</span>
-          <div>
-            <p className="text-sm font-bold text-red-700">User is currently suspended</p>
-            {data.suspension.suspendedUntil ? (
-              <p className="text-xs text-red-500 mt-0.5">Until: {data.suspension.suspendedUntil}</p>
-            ) : (
-              <p className="text-xs text-red-500 mt-0.5">Permanently suspended</p>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* MINI STATS */}
-      <div className="grid grid-cols-3 gap-4 mb-6">
-        {[
-          { label: "Reports Against", value: stats.reportsAgainst, color: "border-orange-400", icon: "⚠" },
-          { label: "Content Removed", value: stats.contentRemoved, color: "border-red-500", icon: "🗑" },
-          { label: "Reports Submitted", value: stats.reportsSubmitted, color: "border-[#7004DC]", icon: "🚩" },
-        ].map((stat) => (
-          <div key={stat.label} className={`bg-white rounded-xl border-l-4 ${stat.color} p-4 shadow-sm border border-gray-100 flex items-center gap-3`}>
-            <span className="text-xl">{stat.icon}</span>
-            <div>
-              <p className="text-xs text-[#7D7387] font-medium">{stat.label}</p>
-              <h3 className="text-2xl font-extrabold text-[#1A1C1C]">{stat.value}</h3>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* SECTION TOGGLE */}
-      <div className="flex items-center gap-2 mb-5">
+    <div className="space-y-6">
+      <div className="flex items-center gap-2 border-b border-gray-100 pb-4">
         <button
           onClick={() => setActiveSection("against")}
-          className={`h-9 px-4 rounded-lg text-xs font-bold transition ${
-            activeSection === "against" ? "bg-[#7004DC] text-white" : "bg-[#F3F3F3] text-[#4B4355] hover:bg-[#E8E8E8]"
-          }`}
+          className={`h-9 px-4 rounded-xl text-xs font-bold transition ${activeSection === "against" ? "bg-red-500 text-white shadow-sm" : "bg-[#F7F5FA] text-[#4B4355] hover:bg-red-50"}`}
         >
-          Reports Against This User ({stats.reportsAgainst})
+          Reports Against User ({reportsAgainst.length})
         </button>
         <button
           onClick={() => setActiveSection("submitted")}
-          className={`h-9 px-4 rounded-lg text-xs font-bold transition ${
-            activeSection === "submitted" ? "bg-[#7004DC] text-white" : "bg-[#F3F3F3] text-[#4B4355] hover:bg-[#E8E8E8]"
-          }`}
+          className={`h-9 px-4 rounded-xl text-xs font-bold transition ${activeSection === "submitted" ? "bg-[#7004DC] text-white shadow-sm" : "bg-[#F7F5FA] text-[#4B4355] hover:bg-violet-100/50"}`}
         >
-          Submitted by This User ({stats.reportsSubmitted})
+          Reports Submitted ({reportsSubmitted.length})
         </button>
       </div>
 
-      {/* REPORT ITEMS */}
       {items.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-16 text-center">
-          <div className="w-14 h-14 rounded-full bg-green-50 flex items-center justify-center mb-3">
-            <CheckCircle2 className="w-6 h-6 text-green-500" />
-          </div>
-          <h3 className="text-sm font-semibold text-[#1A1C1C] mb-1">No reports found</h3>
-          <p className="text-xs text-[#7D7387]">
-            {activeSection === "against" ? "No reports have been filed against this user's content." : "This user has not submitted any reports."}
-          </p>
+        <div className="flex flex-col items-center justify-center py-16 text-center border border-dashed border-gray-200 rounded-2xl bg-[#FAF9FC]">
+          <Shield className="w-8 h-8 text-slate-300 mb-2" />
+          <p className="text-sm font-semibold text-slate-500">No {activeSection === "against" ? "reports filed against this user" : "reports submitted by this user"}</p>
         </div>
       ) : (
         <div className="space-y-3">
           {items.map((report) => (
-            <div key={report.id} className={`bg-white rounded-2xl border shadow-sm p-5 ${
-              report.isContentRemoved ? "border-red-100" : "border-gray-100"
-            }`}>
-              <div className="flex items-start justify-between mb-3">
-                <div className="flex items-center gap-3">
-                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-base ${
-                    activeSection === "against" ? "bg-orange-100" : "bg-violet-100"
-                  }`}>
-                    {activeSection === "against" ? "⚠" : "🚩"}
-                  </div>
-                  <div>
-                    <h4 className="font-bold text-sm text-[#1A1C1C]">
-                      {report.type === "question" ? (report.questionTitle || "Forum Question") : "Forum Answer"}
-                    </h4>
-                    <p className="text-xs text-[#7D7387] mt-0.5">
-                      {report.createdAt}
-                      {activeSection === "against" && report.reporterName && ` · Reported by ${report.reporterName}`}
-                    </p>
-                  </div>
-                </div>
-                {report.isContentRemoved && (
-                  <span className="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase bg-red-100 text-red-700">REMOVED</span>
-                )}
+            <div key={report.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+              <div className="flex items-start justify-between mb-2">
+                <h4 className="font-bold text-sm text-[#1A1C1C]">Reason: {report.reason}</h4>
+                <span className="text-xs text-[#7D7387]">{report.createdAt}</span>
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400 mb-0.5">REASON</p>
-                  <p className="text-xs font-semibold text-[#1A1C1C]">{report.reason}</p>
-                </div>
-                <div>
-                  <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400 mb-0.5">TYPE</p>
-                  <p className="text-xs font-semibold text-[#1A1C1C] capitalize">{report.type}</p>
-                </div>
-              </div>
+              {report.reporterName && (
+                <p className="text-xs text-[#7D7387]">Reported by: {report.reporterName}</p>
+              )}
             </div>
           ))}
         </div>
@@ -1056,32 +964,118 @@ function InfoItem({ label, value }: { label: string; value: string }) {
 function EditUserModal({
   user, onClose, onSaved,
 }: { user: UserDetail; onClose: () => void; onSaved: () => void }) {
-  const [activeTab, setActiveTab] = useState<"Basic Info" | "Roles" | "Accessibility">("Basic Info");
-  const [fullName, setFullName] = useState(user.fullName || user.name);
+  type TabKey = "Basic Info & Address" | "Roles" | "Disability" | "Role Details";
+  const [activeTab, setActiveTab] = useState<TabKey>("Basic Info & Address");
+
+  // ── Basic Info & Address ──
+  const [fullName, setFullName] = useState(user.fullName || user.name || "");
+  const [username, setUsername] = useState(user.username || "");
   const [phone, setPhone] = useState(user.phoneNo || "");
-  const [city, setCity] = useState(user.city || "");
-  const [state, setState] = useState(user.state || "");
   const [gender, setGender] = useState(user.gender || "");
-  // Roles tab
+  const [dob, setDob] = useState(() => {
+    if (!user.dob) return "";
+    const d = new Date(user.dob);
+    if (isNaN(d.getTime())) return "";
+    return d.toISOString().split("T")[0]; // yyyy-mm-dd
+  });
+  const [addressLine1, setAddressLine1] = useState(user.addressLine1 || "");
+  const [streetArea, setStreetArea] = useState(user.streetArea || "");
+  const [city, setCity] = useState(user.city || "");
+  const [locationDistrict, setLocationDistrict] = useState(user.locationDistrict || user.district || "");
+  const [state, setState] = useState(user.state || "");
+  const [pincode, setPincode] = useState(user.pincode || "");
+
+  // ── Roles ──
   const [selectedRoles, setSelectedRoles] = useState<string[]>(user.roles || []);
-  // Accessibility tab
-  const [disabilityType, setDisabilityType] = useState(user.disabilityType || "");
+
+  // ── Disability (PwD) ──
+  const [selectedDisabilities, setSelectedDisabilities] = useState<string[]>(() => {
+    if (!user.disabilityType) return [];
+    return user.disabilityType.split(",").map(d => d.trim()).filter(Boolean);
+  });
   const [disabilitySince, setDisabilitySince] = useState(user.disabilitySince?.toString() || "");
-  const [supportNeeded, setSupportNeeded] = useState(user.supportNeeded || "");
+
+  // ── Role Details ──
+  // Caregiver
+  const [carePersonName, setCarePersonName] = useState(user.carePersonName || "");
+  const [careRelation, setCareRelation] = useState(user.careRelation || "");
+  const [careDob, setCareDob] = useState(() => {
+    if (!user.careDob) return "";
+    const d = new Date(user.careDob);
+    if (isNaN(d.getTime())) return "";
+    return d.toISOString().split("T")[0];
+  });
+  const [selectedCareDisabilities, setSelectedCareDisabilities] = useState<string[]>(() => {
+    if (!user.careDisabilityType) return [];
+    return user.careDisabilityType.split(",").map(d => d.trim()).filter(Boolean);
+  });
+
+  // Therapist
+  const [speciality, setSpeciality] = useState(user.speciality || "");
+  const [organization, setOrganization] = useState(user.organization || "");
+  const [yearsOfExperience, setYearsOfExperience] = useState(user.yearsOfExperience?.toString() || "");
+
+  // NGO
+  const [ngoName, setNgoName] = useState(user.ngoName || "");
+  const [ngoRole, setNgoRole] = useState(user.ngoRole || "");
+  const [district, setDistrict] = useState(user.district || "");
+
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  // Dynamic disability types from Master Data
-  const [disabilityTypeOptions, setDisabilityTypeOptions] = useState<string[]>([]);
+
+  // Vocabulary options
+  const DEFAULT_DISABILITIES = [
+    "Visual Impairment",
+    "Locomotor Disability",
+    "Hearing Impairment",
+    "Speech & Language",
+    "Intellectual Disability",
+    "Autism Spectrum",
+    "Mental Health",
+    "Learning Disability",
+    "Multiple Disabilities",
+    "Cerebral Palsy",
+    "Chronic Neurological Conditions",
+    "Other",
+  ];
+  const [disabilityOptions, setDisabilityOptions] = useState<string[]>(DEFAULT_DISABILITIES);
+
   useEffect(() => {
     fetch("/api/settings/disability-types")
       .then((r) => r.json())
-      .then((d) => { if (d.success) setDisabilityTypeOptions(d.types.filter((t: { status: string }) => t.status === "Active").map((t: { name: string }) => t.name)); })
-      .catch(() => {});
+      .then((d) => {
+        if (d.success && Array.isArray(d.types) && d.types.length > 0) {
+          const names = d.types
+            .filter((t: { status: string }) => t.status === "Active")
+            .map((t: { name: string }) => t.name);
+          if (names.length > 0) {
+            setDisabilityOptions(Array.from(new Set([...DEFAULT_DISABILITIES, ...names])));
+          }
+        }
+      })
+      .catch(() => { });
   }, []);
+
+  const hasRole = (r: string) => selectedRoles.includes(r);
+  const hasRoleDetails = hasRole("CAREGIVER") || hasRole("THERAPIST") || hasRole("NGO");
+
+  const TABS: TabKey[] = ["Basic Info & Address", "Roles", "Disability", ...(hasRoleDetails ? ["Role Details" as TabKey] : [])];
 
   const toggleRole = (role: string) => {
     setSelectedRoles(prev =>
       prev.includes(role) ? prev.filter(r => r !== role) : [...prev, role]
+    );
+  };
+
+  const toggleDisability = (name: string) => {
+    setSelectedDisabilities(prev =>
+      prev.includes(name) ? prev.filter(d => d !== name) : [...prev, name]
+    );
+  };
+
+  const toggleCareDisability = (name: string) => {
+    setSelectedCareDisabilities(prev =>
+      prev.includes(name) ? prev.filter(d => d !== name) : [...prev, name]
     );
   };
 
@@ -1095,21 +1089,36 @@ function EditUserModal({
         body: JSON.stringify({
           action: "update",
           fullName,
-          phoneNo: phone,
-          city,
-          state,
-          gender,
+          username: username ? username.replace(/^@/, "").trim() : null,
+          phoneNo: phone || null,
+          gender: gender || null,
+          dob: dob || null,
+          addressLine1: addressLine1 || null,
+          streetArea: streetArea || null,
+          city: city || null,
+          locationDistrict: locationDistrict || null,
+          state: state || null,
+          pincode: pincode || null,
           roles: selectedRoles,
-          disabilityType: disabilityType || null,
-          disabilitySince: disabilitySince ? parseInt(disabilitySince) : null,
-          supportNeeded: supportNeeded || null,
+          disabilityType: selectedDisabilities.length > 0 ? selectedDisabilities.join(", ") : null,
+          disabilitySince: disabilitySince ? parseInt(disabilitySince, 10) : null,
+          carePersonName: carePersonName || null,
+          careRelation: careRelation || null,
+          careDob: careDob || null,
+          careDisabilityType: selectedCareDisabilities.length > 0 ? selectedCareDisabilities.join(", ") : null,
+          speciality: speciality || null,
+          organization: organization || null,
+          yearsOfExperience: yearsOfExperience ? parseInt(yearsOfExperience, 10) : null,
+          ngoName: ngoName || null,
+          ngoRole: ngoRole || null,
+          district: district || null,
         }),
       });
       const data = await res.json();
       if (data.success) {
         onSaved();
       } else {
-        setError("Failed to save changes. Please try again.");
+        setError(data.message || "Failed to save changes.");
       }
     } catch {
       setError("Network error. Please try again.");
@@ -1120,88 +1129,178 @@ function EditUserModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-      <div className="bg-white rounded-[24px] w-full max-w-xl shadow-2xl overflow-hidden">
+      <div className="bg-white rounded-[24px] w-full max-w-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
         {/* HEADER */}
-        <div className="flex items-center justify-between px-8 py-6 border-b border-gray-100">
-          <h3 className="text-xl font-extrabold text-[#1A1C1C]">Edit User Profile</h3>
+        <div className="flex items-center justify-between px-8 py-5 border-b border-gray-100">
+          <div>
+            <h3 className="text-xl font-extrabold text-[#1A1C1C]">Edit User Profile</h3>
+            <p className="text-xs text-[#7D7387] mt-0.5">Manage all user data, address, roles & accessibility</p>
+          </div>
           <button onClick={onClose} className="w-8 h-8 rounded-full hover:bg-gray-100 flex items-center justify-center transition">
             <X className="w-4 h-4 text-slate-500" />
           </button>
         </div>
 
         {/* TABS */}
-        <div className="flex border-b border-gray-100 px-8">
-          {(["Basic Info", "Roles", "Accessibility"] as const).map((tab) => (
+        <div className="flex border-b border-gray-100 px-8 overflow-x-auto shrink-0">
+          {TABS.map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
-              className={`mr-6 py-4 text-sm font-semibold transition border-b-2 -mb-px ${activeTab === tab ? "border-[#7004DC] text-[#7004DC]" : "border-transparent text-[#7D7387] hover:text-[#1A1C1C]"}`}
+              className={`mr-6 py-4 text-sm font-semibold transition border-b-2 -mb-px whitespace-nowrap ${activeTab === tab ? "border-[#7004DC] text-[#7004DC]" : "border-transparent text-[#7D7387] hover:text-[#1A1C1C]"}`}
             >
               {tab}
             </button>
           ))}
         </div>
 
-        {/* FORM */}
-        <div className="px-8 py-6 space-y-5 overflow-y-auto max-h-[60vh]">
-          {activeTab === "Basic Info" && (
-            <>
-              <FormField label="Full Name">
-                <input value={fullName} onChange={e => setFullName(e.target.value)} className="w-full h-12 rounded-xl border border-gray-200 px-4 text-sm outline-none focus:border-[#8A38F5]" />
-              </FormField>
-              <FormField label="Email">
-                <div className="relative">
-                  <input defaultValue={user.email} readOnly className="w-full h-12 rounded-xl border border-gray-200 px-4 text-sm outline-none pr-24 bg-gray-50" />
-                  <span className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1 text-xs font-bold text-green-600 bg-green-50 px-2.5 py-1 rounded-lg">
-                    <CheckCircle2 className="w-3 h-3" /> Verified
-                  </span>
-                </div>
-              </FormField>
-              <FormField label="Phone Number">
-                <div className="relative">
-                  <input value={phone} onChange={e => setPhone(e.target.value)} className="w-full h-12 rounded-xl border border-gray-200 px-4 text-sm outline-none focus:border-[#8A38F5] pr-24" />
-                  {user.phoneNo && (
+        {/* FORM BODY */}
+        <div className="px-8 py-6 space-y-5 overflow-y-auto flex-1">
+          {/* ── TAB 1: BASIC INFO & ADDRESS ── */}
+          {activeTab === "Basic Info & Address" && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <FormField label="Full Name">
+                  <input
+                    value={fullName}
+                    onChange={e => setFullName(e.target.value)}
+                    placeholder="e.g. Prathmesh Sunil Kadam"
+                    className="w-full h-12 rounded-xl border border-gray-200 px-4 text-sm outline-none focus:border-[#8A38F5]"
+                  />
+                </FormField>
+                <FormField label="Username">
+                  <div className="relative">
+                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-sm">@</span>
+                    <input
+                      value={username.replace(/^@/, "")}
+                      onChange={e => setUsername(e.target.value)}
+                      placeholder="p7953k"
+                      className="w-full h-12 rounded-xl border border-gray-200 pl-8 pr-4 text-sm outline-none focus:border-[#8A38F5]"
+                    />
+                  </div>
+                </FormField>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <FormField label="Email Address">
+                  <div className="relative">
+                    <input defaultValue={user.email} readOnly className="w-full h-12 rounded-xl border border-gray-200 px-4 text-sm outline-none pr-24 bg-gray-50 text-slate-600" />
                     <span className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1 text-xs font-bold text-green-600 bg-green-50 px-2.5 py-1 rounded-lg">
                       <CheckCircle2 className="w-3 h-3" /> Verified
                     </span>
-                  )}
-                </div>
-              </FormField>
-              <FormField label="Gender">
-                <div className="relative">
-                  <select value={gender} onChange={e => setGender(e.target.value)} className="w-full h-12 rounded-xl border border-gray-200 px-4 text-sm outline-none focus:border-[#8A38F5] appearance-none bg-white pr-10">
-                    <option value="">Select</option>
-                    <option value="Male">Male</option>
-                    <option value="Female">Female</option>
-                    <option value="Other">Other</option>
-                  </select>
-                  <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-                </div>
-              </FormField>
-              <div className="grid grid-cols-2 gap-4">
-                <FormField label="City">
-                  <input value={city} onChange={e => setCity(e.target.value)} placeholder="Hyderabad" className="w-full h-12 rounded-xl border border-gray-200 px-4 text-sm outline-none focus:border-[#8A38F5]" />
+                  </div>
                 </FormField>
-                <FormField label="State">
-                  <input value={state} onChange={e => setState(e.target.value)} placeholder="Telangana" className="w-full h-12 rounded-xl border border-gray-200 px-4 text-sm outline-none focus:border-[#8A38F5]" />
+                <FormField label="Phone Number">
+                  <input
+                    value={phone}
+                    onChange={e => setPhone(e.target.value)}
+                    placeholder="e.g. 9175177953"
+                    className="w-full h-12 rounded-xl border border-gray-200 px-4 text-sm outline-none focus:border-[#8A38F5]"
+                  />
                 </FormField>
               </div>
-              {error && <p className="text-xs text-red-500 font-semibold">{error}</p>}
-            </>
+
+              <div className="grid grid-cols-2 gap-4">
+                <FormField label="Gender">
+                  <div className="relative">
+                    <select
+                      value={gender}
+                      onChange={e => setGender(e.target.value)}
+                      className="w-full h-12 rounded-xl border border-gray-200 px-4 text-sm outline-none focus:border-[#8A38F5] appearance-none bg-white pr-10"
+                    >
+                      <option value="">Select Gender</option>
+                      <option value="Male">Male</option>
+                      <option value="Female">Female</option>
+                      <option value="Other">Other</option>
+                      <option value="Prefer not to say">Prefer not to say</option>
+                    </select>
+                    <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                  </div>
+                </FormField>
+                <FormField label="Date of Birth">
+                  <input
+                    type="date"
+                    value={dob}
+                    onChange={e => setDob(e.target.value)}
+                    className="w-full h-12 rounded-xl border border-gray-200 px-4 text-sm outline-none focus:border-[#8A38F5]"
+                  />
+                </FormField>
+              </div>
+
+              <div className="pt-2 border-t border-gray-100">
+                <p className="text-xs font-extrabold uppercase tracking-wider text-[#7004DC] mb-3">Address & Location Details</p>
+                <div className="space-y-3">
+                  <FormField label="Flat / House / Building / Apartment">
+                    <input
+                      value={addressLine1}
+                      onChange={e => setAddressLine1(e.target.value)}
+                      placeholder="e.g. Namrata Crystal Park"
+                      className="w-full h-12 rounded-xl border border-gray-200 px-4 text-sm outline-none focus:border-[#8A38F5]"
+                    />
+                  </FormField>
+                  <FormField label="Street / Colony / Area / Locality">
+                    <input
+                      value={streetArea}
+                      onChange={e => setStreetArea(e.target.value)}
+                      placeholder="e.g. Kalewadi"
+                      className="w-full h-12 rounded-xl border border-gray-200 px-4 text-sm outline-none focus:border-[#8A38F5]"
+                    />
+                  </FormField>
+                  <div className="grid grid-cols-2 gap-4">
+                    <FormField label="City / Town">
+                      <input
+                        value={city}
+                        onChange={e => setCity(e.target.value)}
+                        placeholder="e.g. Pimpri-Chinchwad"
+                        className="w-full h-12 rounded-xl border border-gray-200 px-4 text-sm outline-none focus:border-[#8A38F5]"
+                      />
+                    </FormField>
+                    <FormField label="District">
+                      <input
+                        value={locationDistrict}
+                        onChange={e => setLocationDistrict(e.target.value)}
+                        placeholder="e.g. Pune District"
+                        className="w-full h-12 rounded-xl border border-gray-200 px-4 text-sm outline-none focus:border-[#8A38F5]"
+                      />
+                    </FormField>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <FormField label="State">
+                      <input
+                        value={state}
+                        onChange={e => setState(e.target.value)}
+                        placeholder="e.g. Maharashtra"
+                        className="w-full h-12 rounded-xl border border-gray-200 px-4 text-sm outline-none focus:border-[#8A38F5]"
+                      />
+                    </FormField>
+                    <FormField label="Pincode">
+                      <input
+                        value={pincode}
+                        onChange={e => setPincode(e.target.value)}
+                        placeholder="e.g. 411017"
+                        className="w-full h-12 rounded-xl border border-gray-200 px-4 text-sm outline-none focus:border-[#8A38F5]"
+                      />
+                    </FormField>
+                  </div>
+                </div>
+              </div>
+            </div>
           )}
-          {/* ── ROLES TAB ── */}
+
+          {/* ── TAB 2: ROLES ── */}
           {activeTab === "Roles" && (() => {
             const ALL_ROLES = [
               { key: "PWD", label: "Person with Disability", description: "User identifies as a person with disability", color: "bg-[#EDDCFF] text-[#7004DC] border-[#D5B8FF]" },
               { key: "CAREGIVER", label: "Caregiver", description: "Supports a person with disability", color: "bg-yellow-50 text-yellow-700 border-yellow-200" },
-              { key: "THERAPIST", label: "Therapist", description: "Provides therapy or medical support", color: "bg-green-50 text-green-700 border-green-200" },
-              { key: "NGO", label: "NGO", description: "Works with a non-governmental organisation", color: "bg-blue-50 text-blue-700 border-blue-200" },
+              { key: "THERAPIST", label: "Therapist / Medical Professional", description: "Provides therapy or medical support", color: "bg-green-50 text-green-700 border-green-200" },
+              { key: "NGO", label: "NGO Worker", description: "Works with a non-governmental organisation", color: "bg-blue-50 text-blue-700 border-blue-200" },
               { key: "VOLUNTEER", label: "Volunteer", description: "Community volunteer", color: "bg-orange-50 text-orange-700 border-orange-200" },
               { key: "STUDENT", label: "Student", description: "Student or young adult", color: "bg-pink-50 text-pink-700 border-pink-200" },
+              { key: "MENTOR", label: "Mentor", description: "Community peer mentor", color: "bg-indigo-50 text-indigo-700 border-indigo-200" },
             ];
             return (
               <div className="space-y-3">
-                <p className="text-xs text-[#7D7387] font-medium mb-4">Select all roles that apply to this user. At least one role is recommended.</p>
+                <p className="text-xs text-[#7D7387] font-medium mb-2">Select all roles that apply to this user. You can select multiple roles.</p>
                 {ALL_ROLES.map(({ key, label, description, color }) => {
                   const active = selectedRoles.includes(key);
                   return (
@@ -1209,16 +1308,12 @@ function EditUserModal({
                       key={key}
                       type="button"
                       onClick={() => toggleRole(key)}
-                      className={`w-full flex items-center gap-4 p-4 rounded-xl border-2 transition text-left ${
-                        active ? `${color} border-current` : "border-gray-200 hover:border-gray-300 bg-white"
-                      }`}
+                      className={`w-full flex items-center gap-4 p-4 rounded-xl border-2 transition text-left ${active ? `${color} border-current` : "border-gray-200 hover:border-gray-300 bg-white"}`}
                     >
-                      <div className={`w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 transition ${
-                        active ? "bg-[#7004DC] border-[#7004DC]" : "border-gray-300 bg-white"
-                      }`}>
+                      <div className={`w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 transition ${active ? "bg-[#7004DC] border-[#7004DC]" : "border-gray-300 bg-white"}`}>
                         {active && (
                           <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 12 12">
-                            <path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+                            <path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
                           </svg>
                         )}
                       </div>
@@ -1226,107 +1321,203 @@ function EditUserModal({
                         <p className={`text-sm font-bold ${active ? "" : "text-[#1A1C1C]"}`}>{label}</p>
                         <p className={`text-xs mt-0.5 ${active ? "opacity-80" : "text-[#7D7387]"}`}>{description}</p>
                       </div>
-                      <span className={`text-[10px] font-extrabold uppercase tracking-wider px-2.5 py-1 rounded-full border ${
-                        active ? color : "border-gray-200 bg-gray-50 text-gray-400"
-                      }`}>{key}</span>
+                      <span className={`text-[10px] font-extrabold uppercase tracking-wider px-2.5 py-1 rounded-full border ${active ? color : "border-gray-200 bg-gray-50 text-gray-400"}`}>
+                        {key}
+                      </span>
                     </button>
                   );
                 })}
-                {selectedRoles.length === 0 && (
-                  <p className="text-xs text-orange-500 font-semibold mt-2">⚠ No roles selected — the user will have limited access.</p>
-                )}
-                {error && <p className="text-xs text-red-500 font-semibold">{error}</p>}
               </div>
             );
           })()}
 
-          {/* ── ACCESSIBILITY TAB ── */}
-          {activeTab === "Accessibility" && (() => {
-            const DISABILITY_TYPES = disabilityTypeOptions.length > 0
-              ? disabilityTypeOptions
-              : ["Visual Impairment", "Hearing Impairment", "Physical Disability",
-                 "Intellectual Disability", "Autism Spectrum", "Mental Health",
-                 "Speech & Language", "Learning Disability", "Multiple Disabilities", "Other"];
-            const SUPPORT_OPTIONS = [
-              "Physical Assistance", "Sign Language", "Braille",
-              "Screen Reader", "Transportation", "Mental Health Support",
-              "Financial Aid", "Medical Support",
-            ];
-            const currentSupport = supportNeeded ? supportNeeded.split(",").map(s => s.trim()).filter(Boolean) : [];
-            const toggleSupport = (s: string) => {
-              const updated = currentSupport.includes(s)
-                ? currentSupport.filter(x => x !== s)
-                : [...currentSupport, s];
-              setSupportNeeded(updated.join(", "));
-            };
-            return (
-              <div className="space-y-6">
-                <FormField label="Primary Disability Type">
-                  <div className="relative">
-                    <select
-                      value={disabilityType}
-                      onChange={e => setDisabilityType(e.target.value)}
-                      className="w-full h-12 rounded-xl border border-gray-200 px-4 text-sm outline-none focus:border-[#8A38F5] appearance-none bg-white pr-10"
-                    >
-                      <option value="">None / Not specified</option>
-                      {DISABILITY_TYPES.map(d => <option key={d} value={d}>{d}</option>)}
-                    </select>
-                    <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-                  </div>
-                </FormField>
-
-                <FormField label="Living with Disability Since (Year)">
-                  <input
-                    type="number"
-                    min="1900"
-                    max={new Date().getFullYear()}
-                    value={disabilitySince}
-                    onChange={e => setDisabilitySince(e.target.value)}
-                    placeholder={`e.g. ${new Date().getFullYear() - 5}`}
-                    className="w-full h-12 rounded-xl border border-gray-200 px-4 text-sm outline-none focus:border-[#8A38F5]"
-                  />
-                </FormField>
-
-                <div>
-                  <p className="text-sm font-semibold text-[#1A1C1C] mb-3">Support Required</p>
-                  <div className="grid grid-cols-2 gap-2">
-                    {SUPPORT_OPTIONS.map(s => {
-                      const active = currentSupport.includes(s);
-                      return (
-                        <button
-                          key={s}
-                          type="button"
-                          onClick={() => toggleSupport(s)}
-                          className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl border text-left text-xs font-semibold transition ${
-                            active
-                              ? "border-[#7004DC] bg-[#F3EEFF] text-[#7004DC]"
-                              : "border-gray-200 bg-white text-[#4B4355] hover:border-[#C4A8F0]"
-                          }`}
-                        >
-                          <div className={`w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 ${
-                            active ? "bg-[#7004DC] border-[#7004DC]" : "border-gray-300"
-                          }`}>
-                            {active && (
-                              <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 12 12">
-                                <path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
-                              </svg>
-                            )}
-                          </div>
-                          {s}
-                        </button>
-                      );
-                    })}
-                  </div>
-                  {currentSupport.length > 0 && (
-                    <p className="text-xs text-[#7D7387] mt-2">
-                      Selected: <span className="font-semibold text-[#7004DC]">{currentSupport.join(", ")}</span>
-                    </p>
-                  )}
+          {/* ── TAB 3: DISABILITY (PwD) ── */}
+          {activeTab === "Disability" && (
+            <div className="space-y-6">
+              <div>
+                <p className="text-sm font-bold text-[#1A1C1C] mb-1">Disability Type(s)</p>
+                <p className="text-xs text-[#7D7387] mb-3">Select one or more disability types that apply:</p>
+                <div className="flex flex-wrap gap-2">
+                  {disabilityOptions.map((name) => {
+                    const selected = selectedDisabilities.includes(name);
+                    return (
+                      <button
+                        key={name}
+                        type="button"
+                        onClick={() => toggleDisability(name)}
+                        className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 border ${
+                          selected
+                            ? "bg-[#7004DC] text-white border-[#7004DC] shadow-sm"
+                            : "bg-[#F7F5FA] text-[#4B4355] border-gray-200 hover:border-[#7004DC]/40"
+                        }`}
+                      >
+                        {selected && <CheckCircle2 className="w-3.5 h-3.5" />}
+                        {name}
+                      </button>
+                    );
+                  })}
                 </div>
-                {error && <p className="text-xs text-red-500 font-semibold">{error}</p>}
+                {selectedDisabilities.length > 0 && (
+                  <p className="text-xs text-[#7D7387] mt-3">
+                    Selected ({selectedDisabilities.length}): <span className="font-bold text-[#7004DC]">{selectedDisabilities.join(", ")}</span>
+                  </p>
+                )}
               </div>
-            );
-          })()}
+
+              <FormField label="Living with Disability Since (Year)">
+                <input
+                  type="number"
+                  min="1900"
+                  max={new Date().getFullYear()}
+                  value={disabilitySince}
+                  onChange={e => setDisabilitySince(e.target.value)}
+                  placeholder="e.g. 2004"
+                  className="w-full h-12 rounded-xl border border-gray-200 px-4 text-sm outline-none focus:border-[#8A38F5]"
+                />
+              </FormField>
+            </div>
+          )}
+
+          {/* ── TAB 4: ROLE DETAILS (CAREGIVER, THERAPIST, NGO) ── */}
+          {activeTab === "Role Details" && (
+            <div className="space-y-6">
+              {/* Caregiver Details */}
+              {hasRole("CAREGIVER") && (
+                <div className="bg-[#FAF9FC] p-5 rounded-2xl border border-gray-100 space-y-4">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Heart className="w-4 h-4 text-pink-600" />
+                    <h4 className="text-sm font-extrabold text-[#1A1C1C]">Caregiver Information</h4>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <FormField label="Person Name (Being Cared For)">
+                      <input
+                        value={carePersonName}
+                        onChange={e => setCarePersonName(e.target.value)}
+                        placeholder="e.g. John Doe"
+                        className="w-full h-12 rounded-xl border border-gray-200 px-4 text-sm outline-none focus:border-[#8A38F5] bg-white"
+                      />
+                    </FormField>
+                    <FormField label="Relation to Person">
+                      <input
+                        value={careRelation}
+                        onChange={e => setCareRelation(e.target.value)}
+                        placeholder="e.g. Brother, Parent, Spouse"
+                        className="w-full h-12 rounded-xl border border-gray-200 px-4 text-sm outline-none focus:border-[#8A38F5] bg-white"
+                      />
+                    </FormField>
+                  </div>
+                  <FormField label="Care Person Date of Birth">
+                    <input
+                      type="date"
+                      value={careDob}
+                      onChange={e => setCareDob(e.target.value)}
+                      className="w-full h-12 rounded-xl border border-gray-200 px-4 text-sm outline-none focus:border-[#8A38F5] bg-white"
+                    />
+                  </FormField>
+                  <div>
+                    <p className="text-xs font-bold text-[#1A1C1C] mb-1.5">Care Person Disability Type(s)</p>
+                    <div className="flex flex-wrap gap-2">
+                      {disabilityOptions.map((name) => {
+                        const selected = selectedCareDisabilities.includes(name);
+                        return (
+                          <button
+                            key={name}
+                            type="button"
+                            onClick={() => toggleCareDisability(name)}
+                            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 border ${
+                              selected
+                                ? "bg-pink-600 text-white border-pink-600 shadow-sm"
+                                : "bg-white text-[#4B4355] border-gray-200 hover:border-pink-300"
+                            }`}
+                          >
+                            {selected && <CheckCircle2 className="w-3.5 h-3.5" />}
+                            {name}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Therapist Details */}
+              {hasRole("THERAPIST") && (
+                <div className="bg-[#FAF9FC] p-5 rounded-2xl border border-gray-100 space-y-4">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Star className="w-4 h-4 text-green-600" />
+                    <h4 className="text-sm font-extrabold text-[#1A1C1C]">Professional / Therapist Details</h4>
+                  </div>
+                  <FormField label="Speciality / Field">
+                    <input
+                      value={speciality}
+                      onChange={e => setSpeciality(e.target.value)}
+                      placeholder="e.g. Occupational Therapy, Special Education"
+                      className="w-full h-12 rounded-xl border border-gray-200 px-4 text-sm outline-none focus:border-[#8A38F5] bg-white"
+                    />
+                  </FormField>
+                  <div className="grid grid-cols-2 gap-4">
+                    <FormField label="Organisation / Hospital / Clinic">
+                      <input
+                        value={organization}
+                        onChange={e => setOrganization(e.target.value)}
+                        placeholder="e.g. Apollo Hospitals"
+                        className="w-full h-12 rounded-xl border border-gray-200 px-4 text-sm outline-none focus:border-[#8A38F5] bg-white"
+                      />
+                    </FormField>
+                    <FormField label="Years of Experience">
+                      <input
+                        type="number"
+                        min="0"
+                        max="60"
+                        value={yearsOfExperience}
+                        onChange={e => setYearsOfExperience(e.target.value)}
+                        placeholder="e.g. 5"
+                        className="w-full h-12 rounded-xl border border-gray-200 px-4 text-sm outline-none focus:border-[#8A38F5] bg-white"
+                      />
+                    </FormField>
+                  </div>
+                </div>
+              )}
+
+              {/* NGO Details */}
+              {hasRole("NGO") && (
+                <div className="bg-[#FAF9FC] p-5 rounded-2xl border border-gray-100 space-y-4">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Building2 className="w-4 h-4 text-blue-600" />
+                    <h4 className="text-sm font-extrabold text-[#1A1C1C]">NGO Information</h4>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <FormField label="NGO Name">
+                      <input
+                        value={ngoName}
+                        onChange={e => setNgoName(e.target.value)}
+                        placeholder="e.g. HelpAge India"
+                        className="w-full h-12 rounded-xl border border-gray-200 px-4 text-sm outline-none focus:border-[#8A38F5] bg-white"
+                      />
+                    </FormField>
+                    <FormField label="Role in NGO">
+                      <input
+                        value={ngoRole}
+                        onChange={e => setNgoRole(e.target.value)}
+                        placeholder="e.g. Coordinator"
+                        className="w-full h-12 rounded-xl border border-gray-200 px-4 text-sm outline-none focus:border-[#8A38F5] bg-white"
+                      />
+                    </FormField>
+                  </div>
+                  <FormField label="Operational District">
+                    <input
+                      value={district}
+                      onChange={e => setDistrict(e.target.value)}
+                      placeholder="e.g. Pune"
+                      className="w-full h-12 rounded-xl border border-gray-200 px-4 text-sm outline-none focus:border-[#8A38F5] bg-white"
+                    />
+                  </FormField>
+                </div>
+              )}
+              {error && <p className="text-xs text-red-500 font-semibold">{error}</p>}
+            </div>
+          )}
+
         </div>
 
         {/* FOOTER */}

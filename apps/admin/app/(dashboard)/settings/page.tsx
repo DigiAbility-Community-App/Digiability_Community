@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import {
   ChevronRight,
+  ChevronLeft,
   Plus,
   Pencil,
   Trash2,
@@ -1520,6 +1521,7 @@ function formatAuditTime(isoStr?: string) {
 function SecurityTab({ onSave }: { onSave: () => void }) {
   const [twoFa, setTwoFa] = useState(true);
   const [minLen, setMinLen] = useState(12);
+  const [maxLen, setMaxLen] = useState(16);
   const [upperCase, setUpperCase] = useState(true);
   const [numbers, setNumbers] = useState(true);
   const [special, setSpecial] = useState(true);
@@ -1542,6 +1544,7 @@ function SecurityTab({ onSave }: { onSave: () => void }) {
         if (data.success && data.settings) {
           setTwoFa(Boolean(data.settings.twoFa));
           setMinLen(data.settings.minLen ?? 12);
+          setMaxLen(data.settings.maxLen ?? 16);
           setUpperCase(Boolean(data.settings.upperCase));
           setNumbers(Boolean(data.settings.numbers));
           setSpecial(Boolean(data.settings.special));
@@ -1588,6 +1591,7 @@ function SecurityTab({ onSave }: { onSave: () => void }) {
         body: JSON.stringify({
           twoFa,
           minLen,
+          maxLen,
           upperCase,
           numbers,
           special,
@@ -1632,6 +1636,9 @@ function SecurityTab({ onSave }: { onSave: () => void }) {
     document.body.removeChild(link);
   };
 
+  const [auditPage, setAuditPage] = useState(1);
+  const AUDIT_PAGE_SIZE = 10;
+
   const filtered = auditLogs.filter(
     (l) =>
       !auditFilter ||
@@ -1639,6 +1646,20 @@ function SecurityTab({ onSave }: { onSave: () => void }) {
       l.admin.toLowerCase().includes(auditFilter.toLowerCase()) ||
       l.module.toLowerCase().includes(auditFilter.toLowerCase()) ||
       l.detail.toLowerCase().includes(auditFilter.toLowerCase())
+  );
+
+  // Sort latest first
+  const sortedFiltered = [...filtered].sort((a, b) => {
+    const tA = new Date(a.isoDate).getTime() || 0;
+    const tB = new Date(b.isoDate).getTime() || 0;
+    return tB - tA;
+  });
+
+  const totalAuditPages = Math.ceil(sortedFiltered.length / AUDIT_PAGE_SIZE) || 1;
+  const currentAuditPage = Math.min(Math.max(1, auditPage), totalAuditPages);
+  const pagedLogs = sortedFiltered.slice(
+    (currentAuditPage - 1) * AUDIT_PAGE_SIZE,
+    currentAuditPage * AUDIT_PAGE_SIZE
   );
 
   return (
@@ -1712,14 +1733,36 @@ function SecurityTab({ onSave }: { onSave: () => void }) {
               <input
                 type="range"
                 min={8}
-                max={24}
+                max={16}
                 value={minLen}
-                onChange={(e) => setMinLen(Number(e.target.value))}
+                onChange={(e) => {
+                  const val = Number(e.target.value);
+                  setMinLen(val);
+                  if (val > maxLen) setMaxLen(val);
+                }}
                 className="w-full accent-[#7004DC] cursor-pointer"
               />
               <div className="flex justify-between text-xs font-bold text-slate-400 mt-1">
                 <span>8 CHARS</span>
-                <span>24 CHARS</span>
+                <span>16 CHARS</span>
+              </div>
+            </div>
+            <div>
+              <div className="flex justify-between items-center mb-2">
+                <span className="text-sm font-semibold text-[#4B4355]">Maximum Character Length</span>
+                <span className="text-lg font-extrabold text-[#7004DC]">{maxLen}</span>
+              </div>
+              <input
+                type="range"
+                min={minLen}
+                max={16}
+                value={maxLen}
+                onChange={(e) => setMaxLen(Number(e.target.value))}
+                className="w-full accent-[#7004DC] cursor-pointer"
+              />
+              <div className="flex justify-between text-xs font-bold text-slate-400 mt-1">
+                <span>{minLen} CHARS (MIN)</span>
+                <span>16 CHARS (MAX)</span>
               </div>
             </div>
             <div className="grid grid-cols-3 gap-3">
@@ -1831,10 +1874,10 @@ function SecurityTab({ onSave }: { onSave: () => void }) {
               <div className="flex items-center gap-2">
                 <h3 className="text-lg font-extrabold text-[#1A1C1C]">Live Security Audit Log</h3>
                 <span className="px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[11px] font-extrabold border border-emerald-200">
-                  Live Stream ({auditLogs.length})
+                  Total Logs ({sortedFiltered.length})
                 </span>
               </div>
-              <p className="text-xs text-[#4B4355]/60">Immutable record of administrative actions and system modifications</p>
+              <p className="text-xs text-[#4B4355]/60">Immutable record of administrative actions and system modifications (10 per page)</p>
             </div>
           </div>
           <div className="flex items-center gap-3">
@@ -1843,7 +1886,10 @@ function SecurityTab({ onSave }: { onSave: () => void }) {
                 type="text"
                 placeholder="Search audit actions…"
                 value={auditFilter}
-                onChange={(e) => setAuditFilter(e.target.value)}
+                onChange={(e) => {
+                  setAuditFilter(e.target.value);
+                  setAuditPage(1);
+                }}
                 className="h-9 w-52 bg-[#F7F5FA] rounded-xl pl-9 pr-3 text-sm border border-transparent focus:border-[#8A38F5]/30 focus:outline-none"
               />
               <svg className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1879,95 +1925,149 @@ function SecurityTab({ onSave }: { onSave: () => void }) {
             <RefreshCw className="w-4 h-4 animate-spin text-[#7004DC]" />
             Streaming audit records from database...
           </div>
-        ) : filtered.length === 0 ? (
+        ) : sortedFiltered.length === 0 ? (
           <div className="p-12 text-center text-sm font-semibold text-slate-400">
             No audit records match the current filter.
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="bg-[#F7F5FA] border-b border-[#ECE7F2]">
-                  <th className="px-6 py-4 text-[11px] font-extrabold uppercase tracking-wider text-[#7D7387] whitespace-nowrap min-w-[280px]">
-                    Event & Description
-                  </th>
-                  <th className="px-6 py-4 text-[11px] font-extrabold uppercase tracking-wider text-[#7D7387] whitespace-nowrap min-w-[170px]">
-                    Module
-                  </th>
-                  <th className="px-6 py-4 text-[11px] font-extrabold uppercase tracking-wider text-[#7D7387] whitespace-nowrap min-w-[140px]">
-                    Actor
-                  </th>
-                  <th className="px-6 py-4 text-[11px] font-extrabold uppercase tracking-wider text-[#7D7387] whitespace-nowrap min-w-[180px]">
-                    Timestamp
-                  </th>
-                  <th className="px-6 py-4 text-[11px] font-extrabold uppercase tracking-wider text-[#7D7387] whitespace-nowrap text-right pr-8 min-w-[110px]">
-                    Status
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[#F0EDF5]">
-                {filtered.map((row) => {
-                  const time = formatAuditTime(row.isoDate);
-                  return (
-                    <tr key={row.id} className="hover:bg-[#FAFAFC] transition">
-                      {/* EVENT & DESCRIPTION */}
-                      <td className="px-6 py-4">
-                        <p className="text-sm font-bold text-[#1A1C1C] leading-snug">{row.action}</p>
-                        {row.detail && (
-                          <p className="text-xs text-[#7D7387] mt-1 leading-relaxed">
-                            {row.detail}
-                          </p>
-                        )}
-                      </td>
+          <div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-[#F7F5FA] border-b border-[#ECE7F2]">
+                    <th className="px-6 py-4 text-[11px] font-extrabold uppercase tracking-wider text-[#7D7387] whitespace-nowrap min-w-[280px]">
+                      Event & Description
+                    </th>
+                    <th className="px-6 py-4 text-[11px] font-extrabold uppercase tracking-wider text-[#7D7387] whitespace-nowrap min-w-[170px]">
+                      Module
+                    </th>
+                    <th className="px-6 py-4 text-[11px] font-extrabold uppercase tracking-wider text-[#7D7387] whitespace-nowrap min-w-[140px]">
+                      Actor
+                    </th>
+                    <th className="px-6 py-4 text-[11px] font-extrabold uppercase tracking-wider text-[#7D7387] whitespace-nowrap min-w-[180px]">
+                      Timestamp
+                    </th>
+                    <th className="px-6 py-4 text-[11px] font-extrabold uppercase tracking-wider text-[#7D7387] whitespace-nowrap text-right pr-8 min-w-[110px]">
+                      Status
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#F0EDF5]">
+                  {pagedLogs.map((row) => {
+                    const time = formatAuditTime(row.isoDate);
+                    return (
+                      <tr key={row.id} className="hover:bg-[#FAFAFC] transition">
+                        {/* EVENT & DESCRIPTION */}
+                        <td className="px-6 py-4">
+                          <p className="text-sm font-bold text-[#1A1C1C] leading-snug">{row.action}</p>
+                          {row.detail && (
+                            <p className="text-xs text-[#7D7387] mt-1 leading-relaxed">
+                              {row.detail}
+                            </p>
+                          )}
+                        </td>
 
-                      {/* MODULE */}
-                      <td className="px-6 py-4 whitespace-nowrap align-middle">
-                        <span
-                          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border ${
-                            row.moduleType === "group"
-                              ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                              : row.moduleType === "user"
-                              ? "bg-amber-50 text-amber-800 border-amber-200"
-                              : row.moduleType === "security"
-                              ? "bg-violet-50 text-violet-700 border-violet-200"
-                              : "bg-blue-50 text-blue-700 border-blue-200"
-                          }`}
-                        >
-                          <span>
-                            {row.moduleType === "group" && "👥"}
-                            {row.moduleType === "user" && "👤"}
-                            {row.moduleType === "security" && "🛡️"}
-                            {row.moduleType === "system" && "⚙️"}
+                        {/* MODULE */}
+                        <td className="px-6 py-4 whitespace-nowrap align-middle">
+                          <span
+                            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border ${
+                              row.moduleType === "group"
+                                ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                : row.moduleType === "user"
+                                ? "bg-amber-50 text-amber-800 border-amber-200"
+                                : row.moduleType === "security"
+                                ? "bg-violet-50 text-violet-700 border-violet-200"
+                                : "bg-blue-50 text-blue-700 border-blue-200"
+                            }`}
+                          >
+                            <span>
+                              {row.moduleType === "group" && "👥"}
+                              {row.moduleType === "user" && "👤"}
+                              {row.moduleType === "security" && "🛡️"}
+                              {row.moduleType === "system" && "⚙️"}
+                            </span>
+                            {row.module}
                           </span>
-                          {row.module}
-                        </span>
-                      </td>
+                        </td>
 
-                      {/* ACTOR */}
-                      <td className="px-6 py-4 whitespace-nowrap align-middle">
-                        <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-bold text-[#7004DC] bg-[#F3EEFF] border border-[#E9D9FF]">
-                          {row.admin}
-                        </span>
-                      </td>
+                        {/* ACTOR */}
+                        <td className="px-6 py-4 whitespace-nowrap align-middle">
+                          <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-bold text-[#7004DC] bg-[#F3EEFF] border border-[#E9D9FF]">
+                            {row.admin}
+                          </span>
+                        </td>
 
-                      {/* TIMESTAMP */}
-                      <td className="px-6 py-4 whitespace-nowrap align-middle">
-                        <p className="text-xs font-bold text-[#1A1C1C]">{time.formatted}</p>
-                        <span className="text-[11px] text-slate-400 font-medium block mt-0.5">{time.relative}</span>
-                      </td>
+                        {/* TIMESTAMP */}
+                        <td className="px-6 py-4 whitespace-nowrap align-middle">
+                          <p className="text-xs font-bold text-[#1A1C1C]">{time.formatted}</p>
+                          <span className="text-[11px] text-slate-400 font-medium block mt-0.5">{time.relative}</span>
+                        </td>
 
-                      {/* STATUS */}
-                      <td className="px-6 py-4 whitespace-nowrap align-middle text-right pr-8">
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-green-100 text-green-700">
-                          <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
-                          {row.status}
+                        {/* STATUS */}
+                        <td className="px-6 py-4 whitespace-nowrap align-middle text-right pr-8">
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-green-100 text-green-700">
+                            <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
+                            {row.status}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {/* PAGINATION FOOTER */}
+            {sortedFiltered.length > 0 && (
+              <div className="px-6 py-4 border-t border-[#ECE7F2] bg-[#FAFAFC] flex flex-col sm:flex-row items-center justify-between gap-4">
+                <p className="text-xs text-[#7D7387] font-semibold">
+                  Showing <span className="font-bold text-[#1A1C1C]">{(currentAuditPage - 1) * AUDIT_PAGE_SIZE + 1}</span> to{" "}
+                  <span className="font-bold text-[#1A1C1C]">{Math.min(currentAuditPage * AUDIT_PAGE_SIZE, sortedFiltered.length)}</span> of{" "}
+                  <span className="font-bold text-[#1A1C1C]">{sortedFiltered.length}</span> audit logs
+                </p>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setAuditPage(prev => Math.max(1, prev - 1))}
+                    disabled={currentAuditPage === 1}
+                    className="h-9 px-3 rounded-xl border border-gray-200 bg-white text-xs font-bold text-[#4B4355] hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition flex items-center gap-1"
+                  >
+                    <ChevronLeft className="w-4 h-4" /> Previous
+                  </button>
+                  {Array.from({ length: totalAuditPages }, (_, idx) => idx + 1)
+                    .filter(page => page === 1 || page === totalAuditPages || Math.abs(page - currentAuditPage) <= 1)
+                    .map((page, idx, arr) => {
+                      const prev = arr[idx - 1];
+                      return (
+                        <span key={page} className="flex items-center">
+                          {prev && page - prev > 1 && (
+                            <span className="px-2 text-xs text-slate-400">...</span>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => setAuditPage(page)}
+                            className={`w-9 h-9 rounded-xl text-xs font-bold transition ${
+                              currentAuditPage === page
+                                ? "bg-[#7004DC] text-white shadow-sm"
+                                : "border border-gray-200 bg-white text-[#4B4355] hover:bg-gray-50"
+                            }`}
+                          >
+                            {page}
+                          </button>
                         </span>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                      );
+                    })}
+                  <button
+                    type="button"
+                    onClick={() => setAuditPage(prev => Math.min(totalAuditPages, prev + 1))}
+                    disabled={currentAuditPage === totalAuditPages}
+                    className="h-9 px-3 rounded-xl border border-gray-200 bg-white text-xs font-bold text-[#4B4355] hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition flex items-center gap-1"
+                  >
+                    Next <ChevronRight className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>

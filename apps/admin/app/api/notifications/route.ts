@@ -133,3 +133,50 @@ export async function POST(request: NextRequest) {
     );
   }
 }
+
+// ─────────────────────────────────────────────
+// DELETE — delete sent notification
+// ─────────────────────────────────────────────
+export async function DELETE(request: NextRequest) {
+  const authError = await requireAdminAuth(request);
+  if (authError) return authError;
+
+  try {
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get("id");
+
+    if (!id) {
+      return NextResponse.json(
+        { success: false, message: "Notification ID is required" },
+        { status: 400 }
+      );
+    }
+
+    // Get log details first
+    const logRes = await dbPool.query(
+      `SELECT title, message FROM admin_notification_logs WHERE id = $1`,
+      [id]
+    );
+
+    if (logRes.rows.length > 0) {
+      const { title, message } = logRes.rows[0];
+      // Clean up the distributed user notifications matching this broadcast
+      await dbPool.query(
+        `DELETE FROM forum_notifications WHERE title = $1 AND message = $2`,
+        [title, message]
+      );
+    }
+
+    // Delete log
+    await dbPool.query(`DELETE FROM admin_notification_logs WHERE id = $1`, [id]);
+
+    return NextResponse.json({ success: true, message: "Notification deleted successfully" });
+  } catch (error) {
+    console.error("Notification DELETE error:", error);
+    return NextResponse.json(
+      { success: false, message: "Internal server error" },
+      { status: 500 }
+    );
+  }
+}
+
