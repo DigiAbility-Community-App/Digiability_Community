@@ -242,9 +242,6 @@ const styles = StyleSheet.create({
     lineHeight: 54,
     textAlign: 'center',
     marginBottom: 8,
-
-    // If Plus Jakarta Sans installed
-    fontFamily: 'PlusJakartaSans-Bold',
   },
 
   tagline: {
@@ -253,9 +250,6 @@ const styles = StyleSheet.create({
     lineHeight: 26,
     textAlign: 'center',
     maxWidth: 310,
-
-    // If Plus Jakarta Sans installed
-    fontFamily: 'PlusJakartaSans-Regular',
   },
 
   // Loading

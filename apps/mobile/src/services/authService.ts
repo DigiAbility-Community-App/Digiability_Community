@@ -121,24 +121,26 @@ function mapUserToFrontend(user: any): any {
 
 // ── Register ───────────────────────────────────────────────
 
-export async function register(input: RegisterInput): Promise<AuthUser> {
+export async function register(
+  input: RegisterInput
+): Promise<AuthUser & { otpEmailSent?: boolean }> {
   const mappedInput = {
     ...input,
     role: input.role ? (ROLE_MAP_TO_BACKEND[input.role] ?? input.role) : undefined,
     roles: input.roles ? input.roles.map(r => ROLE_MAP_TO_BACKEND[r] ?? r) : undefined,
   };
 
-  const response = await apiClient.post<ApiResponse<LoginResponseData>>(
+  const response = await apiClient.post<ApiResponse<LoginResponseData & { otpEmailSent?: boolean }>>(
     '/api/auth/register',
     mappedInput,
   );
 
-  const { accessToken, user } = response.data.data;
+  const { accessToken, user, otpEmailSent } = response.data.data;
   const mappedUser = mapUserToFrontend(user);
   await persistRefreshToken(response.headers as Record<string, string | string[]>);
   useAuthStore.getState().setAuth(accessToken, mappedUser);
 
-  return mappedUser;
+  return { ...mappedUser, otpEmailSent };
 }
 
 // ── Login ──────────────────────────────────────────────────

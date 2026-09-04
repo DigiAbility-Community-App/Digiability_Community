@@ -6,6 +6,7 @@ import GroupChatScreen from '@screens/chats/GroupChatScreen';
 import CreateGroupScreen from '@screens/chats/CreateGroupScreen';
 import NewChatScreen from '@screens/chats/NewChatScreen';
 import UserProfileScreen from '@screens/chats/UserProfileScreen';
+import DiscoverGroupsScreen from '@screens/community/DiscoverGroupsScreen';
 
 // ─────────────────────────────────────────────────────────
 // Chat Stack Navigator
@@ -35,6 +36,9 @@ export type ChatsStackParamList = {
     subType: 'GENERAL' | 'CARE_CIRCLE';
   };
   NewChat: undefined;
+  DiscoverGroups: {
+    subType: 'GENERAL' | 'CARE_CIRCLE';
+  };
   GroupInfo: {
     conversationId: string;
   };
@@ -55,6 +59,7 @@ const ChatsStack = () => {
       <Stack.Screen name="GroupChat" component={GroupChatScreen} />
       <Stack.Screen name="CreateGroup" component={CreateGroupScreen} />
       <Stack.Screen name="NewChat" component={NewChatScreen} />
+      <Stack.Screen name="DiscoverGroups" component={DiscoverGroupsScreen} />
       <Stack.Screen name="GroupInfo" component={require('@screens/chats/GroupInfoScreen').default} />
       <Stack.Screen name="Invites" component={require('@screens/chats/InvitesScreen').default} />
       <Stack.Screen name="UserProfile" component={UserProfileScreen} />

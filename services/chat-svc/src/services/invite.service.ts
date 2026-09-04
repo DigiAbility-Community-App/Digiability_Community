@@ -8,23 +8,15 @@
 
 import { inviteRepository } from "../repositories/invite.repository";
 import { conversationRepository } from "../repositories/conversation.repository";
+import { conversationService } from "./conversation.service";
 import { MemberRole, GroupSubType } from "../generated/client";
 import { logger } from "../config/logger";
 import { connectionManager } from "../websocket/connection-manager";
 import { WS_EVENTS } from "../types/ws-events";
+import { createError } from "../middleware/error.middleware";
+import { hasAdminAccess, adminRolesFor } from "../utils/roles.util";
 
 const INVITE_EXPIRY_DAYS = 7;
-
-// Roles with admin-level access per group type
-const CARE_CIRCLE_ADMIN_ROLES: MemberRole[] = ["OWNER", "CAREGIVER"];
-const GROUP_ADMIN_ROLES: MemberRole[] = ["OWNER", "ADMIN"];
-
-function hasAdminAccess(role: MemberRole, subType?: GroupSubType | null): boolean {
-  if (subType === "CARE_CIRCLE") {
-    return CARE_CIRCLE_ADMIN_ROLES.includes(role);
-  }
-  return GROUP_ADMIN_ROLES.includes(role);
-}
 
 class InviteService {
   /**
@@ -115,6 +107,79 @@ class InviteService {
   }
 
   /**
+   * Self-serve join a discoverable group (mobile "Join" button on a public
+   * group listing) — distinct from sendInvite/respondToInvite, where an
+   * existing member invites someone specific. Mirrors respondToInvite's
+   * accept branch: check limit, then gate on approveNewMembers.
+   */
+  async requestToJoin(conversationId: string, userId: string) {
+    const conversation = await conversationRepository.getById(conversationId);
+    if (!conversation) throw new Error("Conversation not found");
+    if (conversation.type !== "GROUP") throw new Error("Not a group conversation");
+
+    // 1. Already a member — idempotent, matches the prior joinGroup behavior.
+    const alreadyMember = await conversationRepository.isMember(conversationId, userId);
+    if (alreadyMember) {
+      return { status: "joined" as const };
+    }
+
+    // 2. A request is already outstanding — don't create a duplicate invite
+    // row on a repeat tap of "Join".
+    const existing = await inviteRepository.findActiveJoinRequest(conversationId, userId);
+    if (existing) {
+      return existing.status === "AWAITING_APPROVAL"
+        ? { status: "pending_approval" as const, inviteId: existing.id }
+        : { status: "joined" as const }; // PENDING self-request would only reach here mid-race; treat as in-flight
+    }
+
+    // 3. Member limit — checked before queuing a request too, so a full
+    // group doesn't accumulate pending approvals it can never honor.
+    const memberCount = await conversationRepository.getMemberCount(conversationId);
+    if (memberCount >= conversation.maxMembers) {
+      throw createError(`Group has reached its maximum capacity of ${conversation.maxMembers} members`, 400);
+    }
+
+    // 4. WhatsApp-style: require admin approval instead of joining directly.
+    if (conversation.approveNewMembers) {
+      const invite = await inviteRepository.create({
+        conversationId,
+        inviterId: userId,
+        inviteeId: userId,
+        role: "MEMBER",
+        expiresAt: new Date(Date.now() + INVITE_EXPIRY_DAYS * 24 * 60 * 60 * 1000),
+        status: "AWAITING_APPROVAL",
+      });
+
+      const admins = await this.getAdminMembers(conversationId, conversation.subType);
+      for (const adminId of admins) {
+        this.notifyUser(adminId, "member.join_request" as any, {
+          inviteId: invite.id,
+          conversationId,
+          groupName: conversation.name,
+          userId,
+          requestedRole: "MEMBER",
+        });
+      }
+
+      logger.info("Join request awaiting admin approval", { conversationId, userId, inviteId: invite.id });
+
+      return { status: "pending_approval" as const, inviteId: invite.id };
+    }
+
+    // 5. No approval required — join directly.
+    await conversationRepository.addMember(conversationId, userId, "MEMBER");
+
+    const memberIds = await conversationRepository.getMemberIds(conversationId);
+    for (const memberId of memberIds) {
+      this.notifyUser(memberId, WS_EVENTS.MEMBER_JOINED, { conversationId, userId, role: "MEMBER" });
+    }
+
+    logger.info("User joined group directly", { conversationId, userId });
+
+    return { status: "joined" as const };
+  }
+
+  /**
    * Respond to an invitation (accept or decline).
    */
   async respondToInvite(
@@ -173,7 +238,11 @@ class InviteService {
         }
       }
 
-      // 4a. Add member with the assigned role
+      // 4a. Add member with the assigned role — enforce the max-3-admin cap
+      // if this invite carries an admin-capable role.
+      if (conversation && adminRolesFor(conversation.subType).includes(invite.role)) {
+        await conversationService.ensureAdminCapacity(invite.conversationId, conversation.subType);
+      }
       await conversationRepository.addMember(invite.conversationId, inviteeId, invite.role);
       await inviteRepository.updateStatus(inviteId, "ACCEPTED");
 
@@ -244,7 +313,11 @@ class InviteService {
         throw new Error("Group has reached its maximum capacity");
       }
 
-      // Add member
+      // Add member — enforce the max-3-admin cap if this invite carries an
+      // admin-capable role.
+      if (adminRolesFor(conversation.subType).includes(invite.role)) {
+        await conversationService.ensureAdminCapacity(invite.conversationId, conversation.subType);
+      }
       await conversationRepository.addMember(invite.conversationId, invite.inviteeId, invite.role);
       await inviteRepository.updateStatus(inviteId, "ACCEPTED");
 

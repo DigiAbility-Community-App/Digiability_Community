@@ -18,9 +18,10 @@ import {
   listNotifications,
   markNotificationRead,
   markAllNotificationsRead,
+  deleteNotification,
   getMyStats
 } from '../controllers/forum.controller';
-import { authenticate } from '../middleware/auth.middleware';
+import { authenticate, optionalAuth } from '../middleware/auth.middleware';
 import { upload } from '../middleware/uploadMiddleware';
 import { validate } from '../middleware/validate.middleware';
 import { moderateContent } from '../middleware/moderation.middleware';
@@ -50,7 +51,7 @@ router.post(
 router.get('/questions', listQuestions);
 // IMPORTANT: /questions/check-duplicates must remain above /questions/:id to avoid being shadowed
 router.get('/questions/check-duplicates', checkDuplicates);
-router.get('/questions/:id', getQuestionDetails);
+router.get('/questions/:id', optionalAuth, getQuestionDetails);
 router.delete('/questions/:id', authenticate, deleteQuestion);
 router.get('/questions/:id/summary', getQuestionSummary);
 
@@ -81,6 +82,7 @@ router.get('/bookmarks', authenticate, listBookmarks);
 router.get('/notifications', authenticate, listNotifications);
 router.put('/notifications/read-all', authenticate, markAllNotificationsRead);
 router.put('/notifications/:id/read', authenticate, markNotificationRead);
+router.delete('/notifications/:id', authenticate, deleteNotification);
 
 // ── User Stats Route ──────────────────────────────────
 router.get('/me/stats', authenticate, getMyStats);

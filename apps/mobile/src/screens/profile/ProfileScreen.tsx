@@ -35,6 +35,7 @@ import {
 import DateTimePickerModal from "react-native-modal-datetime-picker";
 import * as Location from "expo-location";
 import { reverseGeocodeEnglish } from "../../utils/reverseGeocode";
+import { sanitizeNameInput, isValidNameFormat } from "../../utils/nameValidation";
 import { useTheme } from "../../theme/ThemeContext";
 import { AccessibleText } from "../../components/shared/AccessibleText";
 import { AccessibleButton } from "../../components/shared/AccessibleButton";
@@ -64,7 +65,7 @@ const ROLE_LABELS: Record<
 };
 
 const USERNAME_REGEX =
-  /^[a-z0-9_.]{3,20}$/;
+  /^[a-zA-Z0-9_.]{1,15}$/;
 
 // --------------------------------------------------
 // TYPES
@@ -277,7 +278,7 @@ const ProfileScreen = () => {
       );
 
       setUsernameMessage(
-        "3–20 lowercase letters, numbers, _ or ."
+        "1–15 characters (letters, numbers, _ or .)"
       );
 
       return;
@@ -326,6 +327,9 @@ const ProfileScreen = () => {
     if (!fullName.trim()) {
       newErrors.fullName =
         "Full name is required.";
+    } else if (!isValidNameFormat(fullName)) {
+      newErrors.fullName =
+        "Name may only contain letters, spaces, and single hyphens or apostrophes between name parts.";
     }
 
     const normalizedUser =
@@ -499,13 +503,25 @@ const ProfileScreen = () => {
   // --------------------------------------------------
 
   const usernameSuggestions = useMemo(() => {
-    const name = fullName.trim().toLowerCase().replace(/\s+/g, "");
+    // fullName can carry characters USERNAME_REGEX doesn't allow (e.g. a
+    // hyphenated name like "Anna-Marie") — it's seeded straight from
+    // user?.name with no sanitization, unlike the field's own onChangeText.
+    // Strip down to the allowed set before building suggestions from it.
+    const name = fullName
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, "")
+      .replace(/[^a-z0-9_.]/g, "");
     if (!name) return [];
-    return [
+    const candidates = [
       `${name}${Math.floor(Math.random() * 100)}`,
       `${name}_${Math.floor(Math.random() * 999)}`,
       `${name}.${Math.floor(Math.random() * 9999)}`,
     ];
+    // Safety net: only ever show a suggestion that already passes the same
+    // validator shown to the user (also guards the length cap — a long
+    // name plus suffix could otherwise exceed it).
+    return candidates.filter((c) => USERNAME_REGEX.test(c));
   }, [fullName]);
 
   // --------------------------------------------------
@@ -754,7 +770,7 @@ const ProfileScreen = () => {
               placeholderTextColor={placeholderColor}
               style={[styles.input, { color: colors.text }]}
               value={fullName}
-              onChangeText={setFullName}
+              onChangeText={(v) => setFullName(sanitizeNameInput(v))}
               accessibilityLabel="Full Name"
               accessibilityHint="Enter your first and last name"
             />

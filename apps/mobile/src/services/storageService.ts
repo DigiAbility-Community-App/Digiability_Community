@@ -27,12 +27,12 @@ function getAccessibilityKey(userId: string) {
 export async function getAccessibilityPreferences(
   userId: string
 ): Promise<AccessibilityPreferences | null> {
-  const rawValue = await SecureStore.getItemAsync(getAccessibilityKey(userId));
-  if (!rawValue) {
-    return null;
-  }
-
   try {
+    const rawValue = await SecureStore.getItemAsync(getAccessibilityKey(userId));
+    if (!rawValue) {
+      return null;
+    }
+
     return {
       ...defaultAccessibilityPreferences,
       ...JSON.parse(rawValue),

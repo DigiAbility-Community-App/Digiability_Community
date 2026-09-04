@@ -49,6 +49,19 @@ export const reportUser = asyncHandler(async (req: Request, res: Response) => {
     return;
   }
 
+  // Super Admin / Platform Admin messages and accounts cannot be reported
+  if (
+    reportedUserId === "admin" ||
+    reportedUserId === "digiability-admin" ||
+    reportedUserId === "system"
+  ) {
+    res.status(400).json({
+      success: false,
+      message: "Administrator messages and accounts cannot be reported.",
+    });
+    return;
+  }
+
   // Snapshot the message content at report time so the evidence an admin
   // reviews survives even if the message is later edited or deleted.
   let messageContent: string | undefined;

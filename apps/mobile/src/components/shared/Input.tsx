@@ -180,7 +180,6 @@ const styles = StyleSheet.create({
   },
   input: {
     width: '100%',
-    fontFamily: 'Inter-Regular',
     minHeight: 48, // Minimum tap height
   },
   eyeButton: {

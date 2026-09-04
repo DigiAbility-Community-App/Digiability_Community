@@ -56,14 +56,13 @@ export const joinGroup = asyncHandler(async (req: Request, res: Response) => {
     return;
   }
 
-  const alreadyMember = await conversationRepository.isMember(conversationId, user.sub);
-  if (alreadyMember) {
-    res.status(200).json({ success: true, message: "Already a member" });
-    return;
-  }
+  // Delegates to inviteService — same GroupInvite/AWAITING_APPROVAL model
+  // and admin-approval path used for invite-accept, so a group with
+  // approveNewMembers enabled queues a request instead of joining directly.
+  const { inviteService } = await import("../services/invite.service");
+  const result = await inviteService.requestToJoin(conversationId, user.sub);
 
-  await conversationRepository.addMember(conversationId, user.sub, "MEMBER");
-  res.status(200).json({ success: true, message: "Joined group successfully" });
+  res.status(200).json({ success: true, data: result });
 });
 
 export const listAllGroups = asyncHandler(async (req: Request, res: Response) => {

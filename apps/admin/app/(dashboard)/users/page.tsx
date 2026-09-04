@@ -18,6 +18,7 @@ import {
   ChevronRight,
   ShieldOff,
   ShieldCheck,
+  MailWarning,
 } from "lucide-react";
 
 const PAGE_SIZE = 25;
@@ -49,7 +50,7 @@ export default function UserManagementPage() {
   const router = useRouter();
 
   const [usersList, setUsersList] = useState<User[]>([]);
-  const [stats, setStats] = useState({ total: "0", active: "0", inactive: "0", suspended: "0" });
+  const [stats, setStats] = useState({ total: "0", active: "0", inactive: "0", suspended: "0", pendingVerification: "0" });
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedRole, setSelectedRole] = useState("ALL");
@@ -63,6 +64,7 @@ export default function UserManagementPage() {
   // Delete state
   const [deleteTarget, setDeleteTarget] = useState<User | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
   
   // Suspend state
   const [suspendTarget, setSuspendTarget] = useState<User | null>(null);
@@ -149,6 +151,7 @@ export default function UserManagementPage() {
       if (data.success) {
         setUsersList((prev) => prev.filter((u) => u.id !== deleteTarget.id));
         setDeleteTarget(null);
+        setDeleteConfirmText("");
         fetchUsers();
       } else {
         alert(data.message || "Failed to delete user");
@@ -222,7 +225,7 @@ export default function UserManagementPage() {
       </div>
 
       {/* STATS */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4 w-full">
+      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3 sm:gap-4 w-full">
         <div className="bg-white rounded-xl p-4 sm:p-5 shadow-sm border border-gray-100">
           <div className="flex items-center gap-2 mb-1">
             <Users className="w-4 h-4 text-[#7D7387]" />
@@ -253,6 +256,13 @@ export default function UserManagementPage() {
             <p className="text-xs sm:text-sm text-[#7D7387]">Suspended</p>
           </div>
           <h2 className="text-2xl sm:text-3xl font-extrabold text-red-600 mt-1">{stats.suspended}</h2>
+        </div>
+        <div className="bg-white rounded-xl p-4 sm:p-5 shadow-sm border border-gray-100">
+          <div className="flex items-center gap-2 mb-1">
+            <MailWarning className="w-4 h-4 text-amber-600" />
+            <p className="text-xs sm:text-sm text-[#7D7387]">Pending Verification</p>
+          </div>
+          <h2 className="text-2xl sm:text-3xl font-extrabold text-amber-600 mt-1">{stats.pendingVerification}</h2>
         </div>
       </div>
 
@@ -305,7 +315,7 @@ export default function UserManagementPage() {
           </button>
           {statusDropdownOpen && (
             <div className="absolute top-11 left-0 w-44 bg-white border border-gray-100 rounded-xl shadow-lg z-50 py-1">
-              {["ALL", "Active", "Inactive", "Suspended"].map((s) => (
+              {["ALL", "Active", "Inactive", "Suspended", "Pending Verification"].map((s) => (
                 <button
                   key={s}
                   onClick={() => { setSelectedStatus(s); setStatusDropdownOpen(false); }}
@@ -436,14 +446,16 @@ export default function UserManagementPage() {
 
                       {/* STATUS */}
                       <td className="px-4 py-3.5">
-                        <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold ${
+                        <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold whitespace-nowrap ${
                           user.status === "Active" ? "bg-green-100 text-green-700" :
                           user.status === "Suspended" ? "bg-red-100 text-red-700" :
+                          user.status === "Pending Verification" ? "bg-amber-100 text-amber-700" :
                           "bg-gray-100 text-gray-500"
                         }`}>
                           <div className={`w-1.5 h-1.5 rounded-full ${
                             user.status === "Active" ? "bg-green-600" :
-                            user.status === "Suspended" ? "bg-red-600" : "bg-gray-400"
+                            user.status === "Suspended" ? "bg-red-600" :
+                            user.status === "Pending Verification" ? "bg-amber-500" : "bg-gray-400"
                           }`} />
                           {user.status}
                         </span>
@@ -453,18 +465,26 @@ export default function UserManagementPage() {
                       <td className="px-4 py-3.5 text-center">
                         <div className="flex items-center justify-center gap-1">
                           <button
-                            onClick={() => router.push(`/users/${user.username || user.id}`)}
+                            // Always navigate by the immutable UUID, never the
+                            // display username — the list API sends "—" as a
+                            // placeholder for "no username" (truthy, so it used
+                            // to defeat this fallback for unverified signups),
+                            // and a username the admin later edits would leave
+                            // any already-open detail page pointed at a value
+                            // that no longer matches anyone.
+                            onClick={() => router.push(`/users/${user.id}`)}
                             title="View profile"
                             className="w-8 h-8 rounded-lg hover:bg-violet-50 flex items-center justify-center text-[#8A38F5] transition"
                           >
                             <Eye className="w-4 h-4" />
                           </button>
                           <button
-                            onClick={() => {
-                              if (window.confirm(`Are you sure you want to delete user "${user.name}"?`)) {
-                                setDeleteTarget(user);
-                              }
-                            }}
+                            // Opens the styled "Delete User?" modal below —
+                            // that's the confirmation step. A native
+                            // window.confirm() used to gate entry to it,
+                            // showing an ugly OS popup before the real,
+                            // already-built modal as a redundant second ask.
+                            onClick={() => { setDeleteTarget(user); setDeleteConfirmText(""); }}
                             title="Delete user"
                             className="w-8 h-8 rounded-lg hover:bg-red-50 flex items-center justify-center text-red-300 hover:text-red-500 transition"
                           >
@@ -559,17 +579,31 @@ export default function UserManagementPage() {
               ))}
             </div>
 
+            <div className="mx-8 mb-5">
+              <label className="block text-xs font-bold text-[#4B4355] mb-1.5">
+                Type <span className="font-extrabold text-[#1A1C1C]">{deleteTarget.name}</span> to confirm
+              </label>
+              <input
+                type="text"
+                value={deleteConfirmText}
+                onChange={(e) => setDeleteConfirmText(e.target.value)}
+                placeholder={deleteTarget.name}
+                autoComplete="off"
+                className="w-full h-11 rounded-xl border border-gray-200 px-4 text-sm outline-none focus:border-red-400"
+              />
+            </div>
+
             <div className="flex gap-3 px-8 pb-8">
               <button
-                onClick={() => setDeleteTarget(null)}
+                onClick={() => { setDeleteTarget(null); setDeleteConfirmText(""); }}
                 className="flex-1 h-12 rounded-xl border border-gray-200 text-[#4B4355] font-semibold text-sm hover:bg-gray-50 transition"
               >
                 Cancel
               </button>
               <button
                 onClick={handleDelete}
-                disabled={deleting}
-                className="flex-1 h-12 rounded-xl bg-red-600 hover:bg-red-700 disabled:bg-red-300 text-white font-bold text-sm transition"
+                disabled={deleting || deleteConfirmText.trim() !== deleteTarget.name.trim()}
+                className="flex-1 h-12 rounded-xl bg-red-600 hover:bg-red-700 disabled:bg-red-300 disabled:cursor-not-allowed text-white font-bold text-sm transition"
               >
                 {deleting ? "Deleting..." : "Yes, Delete"}
               </button>

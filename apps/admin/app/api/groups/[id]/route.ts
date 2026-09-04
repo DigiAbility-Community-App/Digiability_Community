@@ -67,7 +67,29 @@ export async function PATCH(
   try {
     const { id } = await params;
     const body = await request.json();
+
+    // Whitelist. Only these six columns are editable here — destructuring the
+    // body rather than iterating it keeps suspension state (isSuspended,
+    // suspendedAt, suspendedUntil, suspensionReason, suspensionNote) out of
+    // reach of this endpoint entirely. Suspension is changed only via
+    // POST /api/groups/[id]/suspend.
+    //
+    // This used to be the mechanism behind a silent un-suspend: suspension was
+    // stored AS `sendMessages = 'ADMINS_ONLY'`, so an admin editing
+    // "Send Messages" to "All Members" here was writing the exact same column
+    // the unsuspend action wrote. Those are now separate columns, so editing
+    // permissions leaves an active suspension untouched.
     const { name, description, editGroupInfo, addMembers, sendMessages, approveNewMembers } = body;
+
+    const PERMISSION_VALUES = ["ADMINS_ONLY", "ALL_MEMBERS"];
+    for (const [field, value] of Object.entries({ editGroupInfo, addMembers, sendMessages })) {
+      if (value !== undefined && !PERMISSION_VALUES.includes(value)) {
+        return NextResponse.json(
+          { success: false, message: `Invalid value for ${field}` },
+          { status: 400 }
+        );
+      }
+    }
 
     const updates: string[] = [];
     const values: any[] = [];

@@ -55,12 +55,39 @@ async function suspendUser(userId: string, interval: string | null, reason?: str
     );
   }
 
-  try {
-    await dbPool.query(
-      `UPDATE chat.conversation_members SET "leftAt" = NOW() WHERE "userId" = $1 AND "leftAt" IS NULL`,
-      [userId]
-    );
-  } catch {}
+  // See moderation/route.ts's identical suspendUser() for the rationale —
+  // goes through chat-svc's internal API (runs an admin-succession check)
+  // with the raw-SQL strip kept as a fallback if chat-svc is unreachable.
+  const chatSvcUrl = process.env.CHAT_SVC_URL;
+  const internalSecret = process.env.INTERNAL_API_SECRET;
+  let removedViaService = false;
+  if (chatSvcUrl && internalSecret) {
+    try {
+      const res = await fetch(`${chatSvcUrl}/api/internal/users/${userId}/memberships`, {
+        method: "DELETE",
+        headers: {
+          "x-internal-secret": internalSecret,
+          "x-internal-ts": String(Date.now()),
+        },
+      });
+      if (res.ok) {
+        removedViaService = true;
+      } else {
+        console.warn(`chat-svc internal memberships delete returned status ${res.status}, falling back to direct DB update.`);
+      }
+    } catch (svcErr) {
+      console.warn("Failed to reach chat-svc for membership removal, falling back to direct DB update:", svcErr);
+    }
+  }
+
+  if (!removedViaService) {
+    try {
+      await dbPool.query(
+        `UPDATE chat.conversation_members SET "leftAt" = NOW() WHERE "userId" = $1 AND "leftAt" IS NULL`,
+        [userId]
+      );
+    } catch {}
+  }
 }
 
 async function notifyUser(userId: string, type: string, title: string, message: string) {
@@ -136,7 +163,9 @@ export async function GET(request: NextRequest) {
           reporter.email as "reporterEmail",
           fq.title as "questionTitle",
           fq.description as "questionDescription",
+          fq."imageUrl" as "questionImage",
           fa.content as "answerContent",
+          fa."imageUrl" as "answerImage",
           COALESCE(qauthor.id, aauthor.id) as "authorId",
           COALESCE(qauthor.name, aauthor.name) as "authorName",
           COALESCE(qauthor.email, aauthor.email) as "authorEmail"
@@ -213,6 +242,25 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // Best-effort image URL detection so image-type reports (a chat photo
+    // message, a forum post with an image attached) can show a thumbnail in
+    // the queue instead of the raw /uploads/... path as quoted text.
+    const extractImageUrl = (text?: string | null): string | null => {
+      if (!text) return null;
+      const trimmed = text.trim();
+      if (
+        trimmed.startsWith("/uploads/") ||
+        trimmed.startsWith("http://") ||
+        trimmed.startsWith("https://")
+      ) {
+        if (/\.(jpe?g|png|webp|gif|svg)(\?.*)?$/i.test(trimmed) || trimmed.includes("/uploads/")) {
+          return trimmed;
+        }
+      }
+      const match = trimmed.match(/(https?:\/\/[^\s"']+|\/uploads\/[^\s"']+?\.(jpe?g|png|webp|gif))/i);
+      return match ? match[0] : null;
+    };
+
     // Normalize everything into a single unified queue structure
     const items = [
       ...chatRows.map((r: any) => ({
@@ -232,6 +280,7 @@ export async function GET(request: NextRequest) {
         reporterName: r.reporterName || "Reporter",
         summary: r.reason ? `${r.reason.replace(/_/g, " ")}` : "Reported chat message",
         contentPreview: r.messageContent || "(no content preview)",
+        imageUrl: extractImageUrl(r.messageContent),
         score: null as number | null,
         status: r.status === "OPEN" ? "PENDING" : r.status,
         createdAt: r.createdAt,
@@ -252,6 +301,7 @@ export async function GET(request: NextRequest) {
         reporterName: r.reporterName || "Reporter",
         summary: r.reason ? `${r.reason.replace(/_/g, " ")}` : "Reported forum content",
         contentPreview: r.questionTitle || r.questionDescription || r.answerContent || "(no content preview)",
+        imageUrl: r.questionImage || r.answerImage || extractImageUrl(r.questionDescription) || extractImageUrl(r.answerContent) || null,
         score: null as number | null,
         status: "PENDING",
         createdAt: r.createdAt,

@@ -7,7 +7,7 @@ export interface TypographyStyle {
   fontSize: number;
   lineHeight?: number;
   fontWeight: '400' | '500' | '600' | '700' | '800' | 'normal' | 'bold';
-  fontFamily: string;
+  fontFamily?: string;
   letterSpacing?: number;
   textTransform?: 'none' | 'uppercase' | 'lowercase' | 'capitalize';
   color: string;
@@ -116,59 +116,50 @@ export const AppThemeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         fontSize: fs(30),
         lineHeight: fs(38),
         fontWeight: '700' as const,
-        fontFamily: 'Inter-Bold',
         color: colors.text,
       },
       title: {
         fontSize: fs(20),
         lineHeight: fs(28),
         fontWeight: '700' as const,
-        fontFamily: 'Inter-Bold',
         color: colors.text,
       },
       subtitle: {
         fontSize: fs(16),
         lineHeight: fs(24),
         fontWeight: '500' as const,
-        fontFamily: 'Inter-Regular',
         color: colors.subtext,
       },
       body: {
         fontSize: fs(14),
         lineHeight: fs(20),
         fontWeight: '400' as const,
-        fontFamily: 'Inter-Regular',
         color: colors.text,
       },
       label: {
         fontSize: fs(12),
         fontWeight: '700' as const,
-        fontFamily: 'Inter-Bold',
         letterSpacing: 1.2,
         color: colors.subtext,
       },
       caption: {
         fontSize: fs(11),
         fontWeight: '400' as const,
-        fontFamily: 'Inter-Regular',
         color: colors.subtext,
       },
       button: {
         fontSize: fs(16),
         fontWeight: '700' as const,
-        fontFamily: 'Inter-Bold',
         color: '#FFFFFF',
       },
       input: {
         fontSize: fs(16),
         fontWeight: '400' as const,
-        fontFamily: 'Inter-Regular',
         color: colors.text,
       },
       overline: {
         fontSize: fs(10),
         fontWeight: '700' as const,
-        fontFamily: 'Inter-Bold',
         letterSpacing: 1.5,
         textTransform: 'uppercase' as const,
         color: colors.subtext,

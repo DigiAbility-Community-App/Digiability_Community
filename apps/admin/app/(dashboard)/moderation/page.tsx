@@ -3,10 +3,11 @@
 import { useEffect, useState } from "react";
 import {
   Shield, CheckCircle2, Trash2, AlertTriangle, UserX,
-  RefreshCw, X, ChevronDown, ChevronLeft, Bot, CheckCheck, XCircle,
-  History, Eye, EyeOff, Clock, ExternalLink, Maximize2, ImageIcon,
+  RefreshCw, ChevronDown, ChevronLeft, Bot, CheckCheck, XCircle,
+  History, Eye, EyeOff, Clock, Maximize2, ImageIcon, X,
 } from "lucide-react";
 import { ReviewQueue } from "./ReviewQueue";
+import { DateRangePicker, isWithinDateRange } from "@/components/shared/DateRangePicker";
 
 interface Report {
   id: string;
@@ -140,7 +141,6 @@ export default function ModerationPage() {
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<Report | null>(null);
   const [showFullContent, setShowFullContent] = useState(false);
-  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
 
   // AI Flags state
@@ -161,7 +161,9 @@ export default function ModerationPage() {
   const [escalate, setEscalate] = useState(false);
   const [banReason, setBanReason] = useState("Severe Community Violation");
   const [banDuration, setBanDuration] = useState("Permanent");
-  const [banEmail, setBanEmail] = useState("");
+  // Internal-only audit notes for the ban action — never shown to the
+  // banned user (was misleadingly named banEmail; it was never an email).
+  const [banInternalNotes, setBanInternalNotes] = useState("");
   const [banConfirm, setBanConfirm] = useState(false);
 
   // Load surrounding conversation context whenever a chat-sourced report is
@@ -258,6 +260,13 @@ export default function ModerationPage() {
   };
 
   const [activeTab, setActiveTab] = useState<"queue" | "forum-reports" | "ai-flags" | "history">("queue");
+  const [historyDateFrom, setHistoryDateFrom] = useState("");
+  const [historyDateTo, setHistoryDateTo] = useState("");
+  const [selectedHistoryEntry, setSelectedHistoryEntry] = useState<ModerationHistoryEntry | null>(null);
+
+  // The Forum Reports tab shows forum-sourced reports only — chat/DM reports
+  // are handled from the unified Review Queue tab.
+  const forumReports = reports.filter(r => r.source === "forum");
 
   // Send a warning to the offending user (the reported content's author).
   const handleWarn = async () => {
@@ -270,6 +279,7 @@ export default function ModerationPage() {
         source: workflowReport.source,
         reportId: workflowReport.id,
         userId: workflowReport.authorId,
+        conversationId: workflowReport.conversationId,
         category: warnCategory,
         message: warnMessage,
         triggerSuspend,
@@ -299,9 +309,10 @@ export default function ModerationPage() {
         source: workflowReport.source,
         reportId: workflowReport.id,
         userId: workflowReport.authorId,
+        conversationId: workflowReport.conversationId,
         reason: banReason,
         duration: banDuration !== "Permanent" ? banDuration : undefined,
-        message: banEmail,
+        internalNotes: banInternalNotes,
         contentPreview,
         authorName: workflowReport.authorName,
         reporterName: workflowReport.reporterName,
@@ -310,7 +321,7 @@ export default function ModerationPage() {
       setShowWorkflow(false);
       setSelected(null);
       setBanConfirm(false);
-      setBanEmail("");
+      setBanInternalNotes("");
       await fetchData();
     } catch (e: any) {
       alert(e?.message || "Failed to ban user.");
@@ -349,7 +360,7 @@ export default function ModerationPage() {
     setEscalate(false);
     setBanReason("Severe Community Violation");
     setBanDuration("Permanent");
-    setBanEmail("");
+    setBanInternalNotes("");
     setBanConfirm(false);
     setWorkflowReport(report);
     setShowWorkflow(true);
@@ -415,7 +426,7 @@ export default function ModerationPage() {
               }}
               className="h-10 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-300 text-white font-bold text-xs flex items-center gap-1.5 transition shadow-sm"
             >
-              <CheckCircle2 className="w-4 h-4" /> {actionLoading === "dismiss" ? "Dismissing…" : "Approve & Dismiss (No Violation)"}
+              <CheckCircle2 className="w-4 h-4" /> {actionLoading === "dismiss" ? "Dismissing…" : "Dismiss Report (No Violation)"}
             </button>
           </div>
         </div>
@@ -460,9 +471,19 @@ export default function ModerationPage() {
                           })()}
                         </span>
                       </div>
-                      <p className={`leading-5 ${m.deletedAt ? "italic text-[#9A93A8]" : "text-[#4B4355]"}`}>
-                        {m.deletedAt ? "(message deleted)" : m.content}
-                      </p>
+                      {m.deletedAt ? (
+                        <p className="leading-5 italic text-[#9A93A8]">(message deleted)</p>
+                      ) : m.type === "IMAGE" ? (
+                        <div className="mt-1 rounded-xl overflow-hidden border border-gray-200 bg-white p-1.5">
+                          <img
+                            src={m.content}
+                            alt="Reported chat image"
+                            className="max-h-[600px] w-full object-contain rounded-lg"
+                          />
+                        </div>
+                      ) : (
+                        <p className="leading-5 text-[#4B4355]">{m.content}</p>
+                      )}
                       {isReported && (
                         <span className="inline-block mt-2 px-2 py-0.5 rounded-md bg-red-100 text-[10px] font-extrabold text-red-700 uppercase tracking-wide">
                           ⚠ Reported message
@@ -495,8 +516,7 @@ export default function ModerationPage() {
                     <img
                       src={imgUrl}
                       alt="Reported forum media"
-                      className="max-h-64 object-contain rounded-lg cursor-pointer"
-                      onClick={() => setLightboxUrl(imgUrl)}
+                      className="max-h-[600px] w-full object-contain rounded-lg"
                     />
                   </div>
                 );
@@ -569,12 +589,13 @@ export default function ModerationPage() {
                       questionId: workflowReport.questionId,
                       answerId: workflowReport.answerId,
                       messageId: workflowReport.messageId,
+                      conversationId: workflowReport.conversationId,
                       userId: workflowReport.authorId,
                       contentPreview,
                       authorName: workflowReport.authorName,
                       reporterName: workflowReport.reporterName,
                       reason: removeReason || workflowReport.reason || "Content violation",
-                      message: notifyAuthor ? "Author notified of content removal" : undefined,
+                      notifyAuthor,
                     });
                     if (!res.success) throw new Error(res.message);
                     setShowWorkflow(false);
@@ -693,7 +714,7 @@ export default function ModerationPage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4 items-start">
             <div className="bg-red-50 rounded-xl p-4 border border-red-100">
               <p className="text-xs font-extrabold text-red-600 mb-2">⚠ Critical Safety Action</p>
               <ul className="space-y-1.5 text-xs text-red-700 font-medium">
@@ -705,16 +726,16 @@ export default function ModerationPage() {
             <div>
               <label className="block text-xs font-bold uppercase tracking-wider text-[#1A1C1C] mb-2">Internal Explanation / Notes</label>
               <textarea
-                value={banEmail}
-                onChange={e => setBanEmail(e.target.value)}
+                value={banInternalNotes}
+                onChange={e => setBanInternalNotes(e.target.value)}
                 rows={3}
                 placeholder="Detailed notes for audit logs..."
-                className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm outline-none focus:border-red-400 resize-none h-full"
+                className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm outline-none focus:border-red-400 resize-none"
               />
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4 items-start">
             <div>
               <label className="block text-xs font-bold uppercase tracking-wider text-[#1A1C1C] mb-2">Ban Reason</label>
               <div className="relative">
@@ -789,7 +810,7 @@ export default function ModerationPage() {
       <div className="flex gap-1 mb-6 border-b border-gray-100 pb-0">
         {([
           { id: "queue" as const, label: "Review Queue", count: reports.length },
-          { id: "forum-reports" as const, label: "Forum Reports", count: reports.filter(r => r.source === "forum").length },
+          { id: "forum-reports" as const, label: "Forum Reports", count: forumReports.length },
           { id: "ai-flags" as const, label: "AI Flags", count: aiFlags.length },
           { id: "history" as const, label: "History", count: history.length },
         ] as const).map((tab) => (
@@ -817,19 +838,30 @@ export default function ModerationPage() {
       {activeTab === "queue" && <ReviewQueue onOpenWorkflow={handleOpenWorkflow} />}
 
       {/* HISTORY TAB */}
-      {activeTab === "history" && (
+      {activeTab === "history" && (() => {
+        const filteredHistory = history.filter(entry => isWithinDateRange(entry.resolvedAt, historyDateFrom, historyDateTo));
+        return (
         <div>
-          <div className="flex items-center gap-2 mb-5">
+          <div className="flex items-center gap-2 mb-5 flex-wrap">
             <History className="w-5 h-5 text-[#7004DC]" />
             <h2 className="text-lg font-extrabold text-[#1A1C1C]">Resolved Reports History</h2>
-            <span className="ml-2 px-2 py-0.5 rounded-full bg-violet-100 text-violet-700 text-xs font-bold">{history.length} records</span>
+            <span className="ml-2 px-2 py-0.5 rounded-full bg-violet-100 text-violet-700 text-xs font-bold">{filteredHistory.length} records</span>
+            <div className="ml-auto">
+              <DateRangePicker
+                from={historyDateFrom}
+                to={historyDateTo}
+                onFromChange={setHistoryDateFrom}
+                onToChange={setHistoryDateTo}
+                className="h-9 rounded-lg border border-gray-200 text-xs font-semibold text-[#4B4355] bg-white outline-none focus:border-[#7004DC]"
+              />
+            </div>
           </div>
 
-          {history.length === 0 ? (
+          {filteredHistory.length === 0 ? (
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm px-6 py-12 text-center">
               <Clock className="w-10 h-10 mx-auto mb-3 text-slate-300" />
-              <p className="text-sm font-semibold text-slate-400">No resolved reports yet</p>
-              <p className="text-xs text-slate-300 mt-1">Resolved reports will appear here with the action taken</p>
+              <p className="text-sm font-semibold text-slate-400">{history.length === 0 ? "No resolved reports yet" : "No resolved reports in this date range"}</p>
+              <p className="text-xs text-slate-300 mt-1">{history.length === 0 ? "Resolved reports will appear here with the action taken" : "Try widening or clearing the date filter"}</p>
             </div>
           ) : (
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
@@ -846,10 +878,14 @@ export default function ModerationPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {history.map((entry) => {
+                  {filteredHistory.map((entry) => {
                     const badge = actionBadge(entry.actionTaken);
                     return (
-                      <tr key={entry.id} className="border-b border-gray-50 hover:bg-gray-50">
+                      <tr
+                        key={entry.id}
+                        onClick={() => setSelectedHistoryEntry(entry)}
+                        className="border-b border-gray-50 hover:bg-gray-50 cursor-pointer"
+                      >
                         <td className="px-4 py-3 max-w-[200px]">
                           <p className="text-xs text-[#4B4355] truncate">{entry.contentPreview || "—"}</p>
                           <p className="text-[10px] text-[#9A93A8] mt-0.5 capitalize">{entry.contentType || "—"}</p>
@@ -878,30 +914,34 @@ export default function ModerationPage() {
             </div>
           )}
         </div>
-      )}
+        );
+      })()}
 
-      {/* FORUM REPORTS + AI FLAGS TABS */}
-      {(activeTab === "forum-reports" || activeTab === "ai-flags") && <>
+      {/* FORUM REPORTS TAB */}
+      {activeTab === "forum-reports" && (
       <div className="grid grid-cols-1 xl:grid-cols-[1fr_260px] gap-6 items-start">
-        {activeTab === "ai-flags" && <div className="xl:col-span-2"><p className="text-sm text-[#7D7387] mb-4">AI-generated flags from the async moderation worker. Use the Review Queue tab for unified actions.</p></div>}
-
-        {/* LEFT: QUEUE */}
+        {/* LEFT: FORUM REPORTS QUEUE */}
         <div className="space-y-4">
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
-            <h3 className="text-lg font-extrabold text-[#1A1C1C] mb-4">Queue Overview</h3>
+            <div className="flex items-center gap-2 mb-4">
+              <Shield className="w-5 h-5 text-[#7004DC]" />
+              <h3 className="text-lg font-extrabold text-[#1A1C1C]">Forum Reports</h3>
+              <span className="ml-2 px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 text-xs font-bold">{forumReports.length} pending</span>
+            </div>
+            <p className="text-sm text-[#7D7387] mb-4">User-submitted reports on forum questions and answers. Select one to open the review workflow.</p>
 
             {loading ? (
               <div className="flex items-center justify-center py-10">
                 <div className="w-8 h-8 border-4 border-[#7004DC] border-t-transparent rounded-full animate-spin" />
               </div>
-            ) : reports.length === 0 ? (
+            ) : forumReports.length === 0 ? (
               <div className="text-center py-10 text-slate-400">
                 <Shield className="w-10 h-10 mx-auto mb-2 text-slate-300" />
-                <p className="font-semibold">No pending reports</p>
+                <p className="font-semibold">No pending forum reports</p>
               </div>
             ) : (
               <div className="space-y-2">
-                {reports.slice(0, 10).map(report => {
+                {forumReports.slice(0, 10).map(report => {
                   const isUrgent = report.reason.toLowerCase().includes("harassment") || report.reason.toLowerCase().includes("spam");
                   return (
                     <div
@@ -962,32 +1002,14 @@ export default function ModerationPage() {
                 </div>
               </div>
             ))}
-            {/* Auto-blocked messages (Tier A — screener counts) */}
-            <div className="bg-white rounded-xl border border-gray-100 shadow-sm px-4 py-3">
-              <p className="text-[10px] font-bold uppercase text-[#7D7387] mb-2 tracking-wide">Auto-blocked today</p>
-              <div className="flex gap-4">
-                <div>
-                  <p className="text-xs text-[#7D7387]">Chat</p>
-                  <p className="text-xl font-extrabold text-slate-800">{stats.blockedChatToday ?? 0}</p>
-                </div>
-                <div className="w-px bg-gray-100" />
-                <div>
-                  <p className="text-xs text-[#7D7387]">Forum</p>
-                  <p className="text-xl font-extrabold text-slate-800">{stats.blockedForumToday ?? 0}</p>
-                </div>
-                <div className="w-px bg-gray-100" />
-                <div>
-                  <p className="text-xs text-[#7D7387]">Total</p>
-                  <p className="text-xl font-extrabold text-red-600">{stats.blockedToday ?? 0}</p>
-                </div>
-              </div>
-            </div>
           </div>
         </div>
       </div>
+      )}
 
-      {/* AI FLAGS SECTION */}
-      <div className="mt-8">
+      {/* AI FLAGS TAB */}
+      {activeTab === "ai-flags" && (
+      <div>
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
             <Bot className="w-5 h-5 text-[#7004DC]" />
@@ -997,6 +1019,29 @@ export default function ModerationPage() {
           <button onClick={fetchFlags} className="p-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 text-[#7D7387]">
             <RefreshCw className="w-3.5 h-3.5" />
           </button>
+        </div>
+
+        <p className="text-sm text-[#7D7387] mb-4">AI-generated flags from the async moderation worker. Use the Review Queue tab for unified actions.</p>
+
+        {/* Auto-blocked messages (Tier A — screener counts) */}
+        <div className="bg-white rounded-xl border border-gray-100 shadow-sm px-4 py-3 mb-4">
+          <p className="text-[10px] font-bold uppercase text-[#7D7387] mb-2 tracking-wide">Auto-blocked today</p>
+          <div className="flex gap-6">
+            <div>
+              <p className="text-xs text-[#7D7387]">Chat</p>
+              <p className="text-xl font-extrabold text-slate-800">{stats.blockedChatToday ?? 0}</p>
+            </div>
+            <div className="w-px bg-gray-100" />
+            <div>
+              <p className="text-xs text-[#7D7387]">Forum</p>
+              <p className="text-xl font-extrabold text-slate-800">{stats.blockedForumToday ?? 0}</p>
+            </div>
+            <div className="w-px bg-gray-100" />
+            <div>
+              <p className="text-xs text-[#7D7387]">Total</p>
+              <p className="text-xl font-extrabold text-red-600">{stats.blockedToday ?? 0}</p>
+            </div>
+          </div>
         </div>
 
         {flagsLoading ? (
@@ -1073,42 +1118,89 @@ export default function ModerationPage() {
           </div>
         )}
       </div>
-      </>}
+      )}
 
-      {/* LIGHTBOX ZOOM MODAL */}
-      {lightboxUrl && (
+      {/* HISTORY ENTRY DETAIL MODAL */}
+      {selectedHistoryEntry && (
         <div
-          onClick={() => setLightboxUrl(null)}
-          className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 cursor-zoom-out"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
+          onClick={() => setSelectedHistoryEntry(null)}
         >
-          <div className="relative max-w-4xl max-h-[90vh] bg-black/40 rounded-2xl overflow-hidden p-2">
-            <button
-              onClick={() => setLightboxUrl(null)}
-              className="absolute top-4 right-4 z-10 w-9 h-9 rounded-full bg-black/70 hover:bg-black text-white flex items-center justify-center transition shadow"
-            >
-              <X className="w-5 h-5" />
-            </button>
-            <img
-              src={lightboxUrl}
-              alt="Zoomed reported asset"
-              className="max-w-full max-h-[85vh] object-contain rounded-xl shadow-2xl"
-              onClick={(e) => e.stopPropagation()}
-            />
-            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-black/75 px-4 py-2 rounded-xl text-white text-xs font-semibold flex items-center gap-3">
-              <span>{lightboxUrl}</span>
-              <a
-                href={lightboxUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-violet-300 hover:text-white underline flex items-center gap-1"
-                onClick={(e) => e.stopPropagation()}
+          <div
+            className="bg-white rounded-3xl w-full max-w-lg shadow-2xl max-h-[85vh] flex flex-col overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+              <div>
+                <h3 className="text-lg font-extrabold text-[#1A1C1C]">Resolved Report Details</h3>
+                <p className="text-xs text-slate-500 mt-0.5">Full record of this report and the action taken</p>
+              </div>
+              <button
+                onClick={() => setSelectedHistoryEntry(null)}
+                className="w-8 h-8 rounded-full hover:bg-gray-200 flex items-center justify-center transition"
+                aria-label="Close"
               >
-                Open in new tab <ExternalLink className="w-3 h-3" />
-              </a>
+                <X className="w-4 h-4 text-slate-500" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-6 space-y-5">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${selectedHistoryEntry.source === "chat" ? "bg-blue-100 text-blue-700" : "bg-amber-100 text-amber-700"}`}>
+                  {selectedHistoryEntry.source}
+                </span>
+                {(() => {
+                  const badge = actionBadge(selectedHistoryEntry.actionTaken);
+                  return (
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${badge.cls}`}>
+                      {badge.label}
+                    </span>
+                  );
+                })()}
+                {selectedHistoryEntry.contentType && (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-slate-100 text-slate-600">
+                    {selectedHistoryEntry.contentType}
+                  </span>
+                )}
+              </div>
+
+              <DetailField label="Content Preview" value={selectedHistoryEntry.contentPreview} />
+              <DetailField label="Reason" value={selectedHistoryEntry.reason} />
+
+              <div className="grid grid-cols-2 gap-4">
+                <DetailField label="Author" value={selectedHistoryEntry.authorName} sub={selectedHistoryEntry.authorId} />
+                <DetailField label="Reporter" value={selectedHistoryEntry.reporterName} sub={selectedHistoryEntry.reporterId} />
+              </div>
+
+              <DetailField label="Admin Notes" value={selectedHistoryEntry.adminNotes} />
+
+              <div className="grid grid-cols-2 gap-4">
+                <DetailField label="Resolved At" value={selectedHistoryEntry.resolvedAtDisplay} />
+                <DetailField label="Report ID" value={selectedHistoryEntry.reportId} />
+              </div>
+            </div>
+
+            <div className="flex justify-end p-4 border-t border-slate-100">
+              <button
+                onClick={() => setSelectedHistoryEntry(null)}
+                className="h-10 px-5 rounded-xl border border-slate-200 text-[#4B4355] font-semibold text-sm hover:bg-slate-50 transition"
+              >
+                Close
+              </button>
             </div>
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function DetailField({ label, value, sub }: { label: string; value: string | null | undefined; sub?: string | null }) {
+  return (
+    <div>
+      <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">{label}</p>
+      <p className="text-sm text-[#1A1C1C] break-words whitespace-pre-wrap">{value || "—"}</p>
+      {sub && <p className="text-[10px] text-slate-400 mt-0.5 font-mono">{sub}</p>}
     </div>
   );
 }

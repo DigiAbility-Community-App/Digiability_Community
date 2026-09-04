@@ -19,7 +19,6 @@ module.exports = function (api) {
           },
         },
       ],
-      // 'react-native-reanimated/plugin', // Enable when using Reanimated animations
     ],
   };
 };

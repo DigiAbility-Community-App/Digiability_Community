@@ -165,13 +165,26 @@ const handleSocketEvent = (message: any) => {
         // Update the optimistic message with the real server messageId
         store.confirmMessage(payload.clientMessageId, payload.messageId, 'sent');
       } else {
+        // Server refused the message (group suspended, blocked, moderation,
+        // not a member, ...). Mark it failed instead of leaving the
+        // optimistic bubble stuck on "sending" with no explanation — the
+        // chat screens watch for a newly-failed message and show a themed
+        // dialog with the reason (see ChatScreen/GroupChatScreen).
         console.warn('❌ Message rejected by server:', payload.reason);
+        store.failMessage(payload.clientMessageId, payload.reason);
       }
       break;
 
     case 'message.delivered.receipt':
       console.log('[WS-EVENT] message.delivered.receipt:', payload.messageIds || payload.messageId);
       store.updateMessageStatus(payload.messageIds || [payload.messageId], 'delivered');
+      break;
+
+    case 'message.read.receipt':
+      // The recipient read our message — update the message status to 'read'
+      // so the sender sees the seen (coloured double-tick) in real time.
+      console.log('[WS-EVENT] message.read.receipt:', payload.messageId);
+      store.updateMessageStatus([payload.messageId], 'read');
       break;
 
     case 'presence.update':

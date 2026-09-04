@@ -14,6 +14,7 @@ import masterRoutes from "./routes/master.routes";
 import moderationRoutes from "./routes/moderation.routes";
 import privacyRoutes from "./routes/privacy.routes";
 import { initKeywordCache } from "./services/keyword.service";
+import { verifyEmailTransport } from "./services/email.service";
 import { startModerationWorker } from "./workers/moderation.worker";
 import { startRetentionWorker } from "./workers/retention.worker";
 import type { Worker } from "bullmq";
@@ -160,6 +161,15 @@ async function startServer() {
     await initKeywordCache().catch((err) =>
       console.warn("⚠️  Keyword cache init failed (non-fatal):", err?.message)
     );
+
+    // Verify SMTP credentials so a broken mail relay (revoked App Password,
+    // wrong host, etc.) is visible in boot logs immediately — not just the
+    // first time a real user's OTP silently fails to arrive.
+    await verifyEmailTransport()
+      .then(() => console.log("✅ Email transport verified (SMTP auth OK)"))
+      .catch((err) =>
+        console.error("❌ Email transport verification FAILED — OTP emails will not send:", err?.message)
+      );
 
     // Start async AI classification worker (Tier C)
     try {

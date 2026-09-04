@@ -37,10 +37,12 @@ import {
   VolumeX,
   Type,
   X,
-  Plus
+  Plus,
+  Heart
 } from "lucide-react-native";
 import * as Speech from "expo-speech";
 import Markdown from "react-native-markdown-display";
+import { MediaViewer } from "../../components/chat/MediaViewer";
 import { useForumStore, ForumAnswer } from "../../store/forumStore";
 import { useAuthStore } from "../../store/authStore";
 import CreateAnswerModal from "./CreateAnswerModal";
@@ -118,6 +120,7 @@ const QuestionDetailsScreen = () => {
   const [reportModalVisible, setReportModalVisible] = useState(false);
   const [reportTarget, setReportTarget] = useState<{ type: "question" | "answer"; id: string } | null>(null);
   const [reportReason, setReportReason] = useState("");
+  const [reportCustomCategory, setReportCustomCategory] = useState("");
   const [reportDetails, setReportDetails] = useState("");
   const [reportSubmitting, setReportSubmitting] = useState(false);
 
@@ -127,10 +130,10 @@ const QuestionDetailsScreen = () => {
   const [showSummaryDrawer, setShowSummaryDrawer] = useState(false);
   const [loadingSummary, setLoadingSummary] = useState(false);
   const [failedImages, setFailedImages] = useState<Record<string, boolean>>({});
+  const [selectedMedia, setSelectedMedia] = useState<{ src: string; alt?: string } | null>(null);
 
   useEffect(() => {
     fetchQuestionDetails(questionId);
-    fetchBookmarks();
   }, [questionId]);
 
   // Clean up speaking on unmount
@@ -259,6 +262,7 @@ const QuestionDetailsScreen = () => {
   const openReportModal = (type: "question" | "answer", id: string) => {
     setReportTarget({ type, id });
     setReportReason("");
+    setReportCustomCategory("");
     setReportDetails("");
     setReportModalVisible(true);
   };
@@ -268,13 +272,21 @@ const QuestionDetailsScreen = () => {
       Alert.alert("Reason Required", "Please select a reason for reporting this content.");
       return;
     }
+    if (reportReason === "OTHER" && !reportCustomCategory.trim()) {
+      Alert.alert("Category Required", "Please specify a category for 'Other'.");
+      return;
+    }
     if (reportSubmitting) return;
 
     setReportSubmitting(true);
     try {
+      const selectedLabel = reportReason === "OTHER"
+        ? `Other: ${reportCustomCategory.trim()}`
+        : REPORT_REASONS.find(r => r.key === reportReason)?.label || reportReason;
+
       const fullReason = reportDetails.trim()
-        ? `${reportReason}: ${reportDetails.trim()}`
-        : reportReason;
+        ? `${selectedLabel}: ${reportDetails.trim()}`
+        : selectedLabel;
       const payload: any = { reason: fullReason };
       if (reportTarget) {
         if (reportTarget.type === "question") {
@@ -361,9 +373,9 @@ const QuestionDetailsScreen = () => {
                 {currentQuestion.author.name.charAt(0).toUpperCase()}
               </AccessibleText>
             </View>
-            <View>
+            <View style={styles.authorInfo}>
               <View style={styles.authorNameContainer}>
-                <AccessibleText style={[styles.authorName, { color: colors.text }, textStyle]}>
+                <AccessibleText numberOfLines={1} style={[styles.authorName, { color: colors.text }, textStyle]}>
                   {currentQuestion.author.name}
                 </AccessibleText>
                 {currentQuestion.author.forumStats && currentQuestion.author.forumStats.reputation > 0 && (
@@ -379,14 +391,14 @@ const QuestionDetailsScreen = () => {
                   </View>
                 )}
               </View>
-              <AccessibleText variant="caption" style={[styles.authorMeta, { color: colors.subtext }]}>
+              <AccessibleText numberOfLines={1} variant="caption" style={[styles.authorMeta, { color: colors.subtext }]}>
                 {currentQuestion.author.role?.toUpperCase()} •{" "}
                 {formatPostDate(currentQuestion.createdAt)}
               </AccessibleText>
             </View>
           </View>
 
-          {/* OPTIONS Row */}
+          {/* OPTIONS Row (TTS, Delete if owner, Flag) */}
           <View style={styles.optionsRow}>
             <TouchableOpacity
               onPress={() => handleSpeakText(currentQuestion.title + ". " + (currentQuestion.description || ""), currentQuestion.id)}
@@ -396,27 +408,10 @@ const QuestionDetailsScreen = () => {
               accessibilityHint="Uses text-to-speech to read the question title and description"
             >
               {speakingId === currentQuestion.id ? (
-                <VolumeX size={20} color={colors.error} />
+                <VolumeX size={18} color={colors.error} />
               ) : (
-                <Volume2 size={20} color={colors.subtext} />
+                <Volume2 size={18} color={colors.subtext} />
               )}
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={handleToggleBookmark}
-              style={styles.optionIcon}
-              accessibilityRole="button"
-              accessibilityLabel={isBookmarked ? "Remove bookmark" : "Bookmark this discussion"}
-              accessibilityState={{ selected: isBookmarked }}
-            >
-              <Bookmark size={20} color={isBookmarked ? colors.badge : colors.subtext} fill={isBookmarked ? colors.badge : "none"} />
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => openReportModal("question", currentQuestion.id)}
-              style={styles.optionIcon}
-              accessibilityRole="button"
-              accessibilityLabel="Report this question"
-            >
-              <Flag size={18} color={colors.subtext} />
             </TouchableOpacity>
             {isOwner && (
               <TouchableOpacity
@@ -428,6 +423,14 @@ const QuestionDetailsScreen = () => {
                 <Trash2 size={18} color={colors.error} />
               </TouchableOpacity>
             )}
+            <TouchableOpacity
+              onPress={() => openReportModal("question", currentQuestion.id)}
+              style={styles.optionIcon}
+              accessibilityRole="button"
+              accessibilityLabel="Report this question"
+            >
+              <Flag size={18} color={colors.subtext} />
+            </TouchableOpacity>
           </View>
         </View>
 
@@ -445,9 +448,27 @@ const QuestionDetailsScreen = () => {
           </View>
         ) : null}
 
-        {/* QUESTION IMAGE */}
+        {/* QUESTION IMAGE - Clickable to open pinch-to-zoom MediaViewer */}
         {!failedImages[currentQuestion.id] && isValidImageUrl(currentQuestion.imageUrl) && (
-          <View style={styles.imageContainer}>
+          <TouchableOpacity
+            style={styles.imageContainer}
+            activeOpacity={0.9}
+            onPress={() =>
+              setSelectedMedia({
+                src: currentQuestion.imageUrl as string,
+                alt: isValidAltText(currentQuestion.altText)
+                  ? currentQuestion.altText!
+                  : currentQuestion.title,
+              })
+            }
+            accessibilityRole="button"
+            accessibilityLabel={
+              isValidAltText(currentQuestion.altText)
+                ? currentQuestion.altText!
+                : "Uploaded question image"
+            }
+            accessibilityHint="Tap to view image full screen with zoom and download"
+          >
             <Image
               source={{ uri: currentQuestion.imageUrl as string }}
               style={styles.questionImage}
@@ -461,7 +482,7 @@ const QuestionDetailsScreen = () => {
                 Alt text: {currentQuestion.altText}
               </AccessibleText>
             )}
-          </View>
+          </TouchableOpacity>
         )}
 
         {/* QUESTION FOOTER / TAGS */}
@@ -648,26 +669,35 @@ const QuestionDetailsScreen = () => {
         )}
 
         <View style={styles.answerContentRow}>
-          {/* VOTING BUTTONS */}
-          <View style={styles.votingContainer}>
+          {/* LIKE BUTTON */}
+          <View style={styles.likeContainer}>
             <TouchableOpacity
-              style={styles.voteBtn}
+              style={[
+                styles.likeBtn,
+                item.isLiked && styles.likeBtnActive,
+                { backgroundColor: item.isLiked ? (highContrast ? "#000000" : "#FEE2E2") : (highContrast ? colors.surface : "#F3F4F6") },
+                highContrast && { borderWidth: 1, borderColor: "#000000" },
+              ]}
               onPress={() => handleVote(item.id, "UP")}
+              activeOpacity={0.7}
               accessibilityRole="button"
-              accessibilityLabel="Upvote this answer"
+              accessibilityLabel={item.isLiked ? `Liked, ${item.upvotes ?? 0} likes. Tap to unlike` : `Like this answer, ${item.upvotes ?? 0} likes`}
             >
-              <ChevronUp size={24} color={colors.subtext} />
-            </TouchableOpacity>
-            <AccessibleText variant="body" style={[styles.voteCount, { color: colors.subtext }]}>
-              {item.upvotes - item.downvotes}
-            </AccessibleText>
-            <TouchableOpacity
-              style={styles.voteBtn}
-              onPress={() => handleVote(item.id, "DOWN")}
-              accessibilityRole="button"
-              accessibilityLabel="Downvote this answer"
-            >
-              <ChevronDown size={24} color={colors.subtext} />
+              <Heart
+                size={18}
+                color={item.isLiked ? (highContrast ? "#FFFFFF" : "#EF4444") : colors.subtext}
+                fill={item.isLiked ? (highContrast ? "#FFFFFF" : "#EF4444") : "transparent"}
+              />
+              <AccessibleText
+                variant="caption"
+                style={[
+                  styles.likeCount,
+                  { color: item.isLiked ? (highContrast ? "#FFFFFF" : "#DC2626") : colors.subtext },
+                  item.isLiked && { fontWeight: "800" },
+                ]}
+              >
+                {item.upvotes ?? 0}
+              </AccessibleText>
             </TouchableOpacity>
           </View>
 
@@ -675,9 +705,9 @@ const QuestionDetailsScreen = () => {
           <View style={{ flex: 1 }}>
             {/* META */}
             <View style={styles.answerHeader}>
-              <View>
+              <View style={styles.answerAuthorInfo}>
                 <View style={styles.authorNameContainer}>
-                  <AccessibleText style={[styles.answerAuthorName, { color: colors.text }, textStyle]}>
+                  <AccessibleText numberOfLines={1} style={[styles.answerAuthorName, { color: colors.text }, textStyle]}>
                     {item.author.name}
                   </AccessibleText>
                   {item.author.forumStats && item.author.forumStats.reputation > 0 && (
@@ -693,7 +723,7 @@ const QuestionDetailsScreen = () => {
                     </View>
                   )}
                 </View>
-                <AccessibleText variant="caption" style={[styles.answerTime, { color: colors.subtext }]}>
+                <AccessibleText numberOfLines={1} variant="caption" style={[styles.answerTime, { color: colors.subtext }]}>
                   {item.author.role?.toUpperCase()} •{" "}
                   {formatPostDate(item.createdAt)}
                 </AccessibleText>
@@ -702,7 +732,7 @@ const QuestionDetailsScreen = () => {
               <View style={styles.answerActions}>
                 <TouchableOpacity
                   onPress={() => handleSpeakText(item.content || "", item.id)}
-                  style={{ marginRight: 12 }}
+                  style={styles.answerActionIcon}
                   accessibilityRole="button"
                   accessibilityLabel={speakingId === item.id ? "Stop reading answer aloud" : "Read answer aloud"}
                   accessibilityHint="Uses text-to-speech to read the answer content"
@@ -716,7 +746,7 @@ const QuestionDetailsScreen = () => {
                 {isAnswerAuthor && (
                   <TouchableOpacity
                     onPress={() => handleDeleteAnswer(item.id)}
-                    style={{ marginRight: 12 }}
+                    style={styles.answerActionIcon}
                     accessibilityRole="button"
                     accessibilityLabel="Delete this answer"
                   >
@@ -725,6 +755,7 @@ const QuestionDetailsScreen = () => {
                 )}
                 <TouchableOpacity
                   onPress={() => openReportModal("answer", item.id)}
+                  style={styles.answerActionIcon}
                   accessibilityRole="button"
                   accessibilityLabel="Report this answer"
                 >
@@ -740,9 +771,23 @@ const QuestionDetailsScreen = () => {
               </Markdown>
             )}
 
-            {/* IMAGE */}
+            {/* IMAGE - Clickable to open pinch-to-zoom MediaViewer */}
             {!failedImages[item.id] && isValidImageUrl(item.imageUrl) && (
-              <View style={styles.imageContainer}>
+              <TouchableOpacity
+                style={styles.imageContainer}
+                activeOpacity={0.9}
+                onPress={() =>
+                  setSelectedMedia({
+                    src: item.imageUrl as string,
+                    alt: isValidAltText(item.altText) ? item.altText! : "Answer image",
+                  })
+                }
+                accessibilityRole="button"
+                accessibilityLabel={
+                  isValidAltText(item.altText) ? item.altText! : "Answer image"
+                }
+                accessibilityHint="Tap to view image full screen with zoom and download"
+              >
                 <Image
                   source={{ uri: item.imageUrl as string }}
                   style={styles.answerImage}
@@ -756,7 +801,7 @@ const QuestionDetailsScreen = () => {
                     Alt text: {item.altText}
                   </AccessibleText>
                 )}
-              </View>
+              </TouchableOpacity>
             )}
 
             {/* ACCEPT LINK FOR OWNER */}
@@ -924,128 +969,137 @@ const QuestionDetailsScreen = () => {
       <Modal
         visible={reportModalVisible}
         transparent
-        animationType="fade"
+        animationType="slide"
         onRequestClose={() => setReportModalVisible(false)}
         statusBarTranslucent
       >
-        <TouchableOpacity 
-          style={styles.reportOverlay} 
-          activeOpacity={1} 
-          onPress={() => setReportModalVisible(false)}
-        >
-          <TouchableOpacity 
-            activeOpacity={1} 
-            style={[styles.reportContent, { backgroundColor: colors.card }]}
-            onPress={() => {}}
+        <View style={styles.reportBackdrop}>
+          <TouchableWithoutFeedback onPress={() => setReportModalVisible(false)}>
+            <View style={StyleSheet.absoluteFillObject} />
+          </TouchableWithoutFeedback>
+
+          <KeyboardAvoidingView
+            behavior={Platform.OS === "ios" ? "padding" : "height"}
+            style={{ width: "100%", justifyContent: "flex-end" }}
+            keyboardVerticalOffset={Platform.OS === "ios" ? 20 : 0}
           >
-            <AccessibleText variant="title" style={[styles.reportTitle, { color: colors.text }]}>
-              Report Content
-            </AccessibleText>
-            <AccessibleText variant="body" style={[styles.reportSubtitle, { color: colors.subtext }]}>
-              Why are you reporting this {reportTarget?.type}? Please provide a reason (optional):
-            </AccessibleText>
-        <TouchableWithoutFeedback onPress={() => setReportModalVisible(false)}>
-          <View style={styles.reportOverlay}>
-            <KeyboardAvoidingView
-              behavior={Platform.OS === "ios" ? "padding" : undefined}
-              style={{ width: "100%", alignItems: "center" }}
-            >
-              <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-                <View style={[styles.reportContent, { backgroundColor: colors.card }]}>
-                  <AccessibleText variant="title" style={[styles.reportTitle, { color: colors.text }]}>
-                    Report {reportTarget?.type === "answer" ? "Answer" : "Post"}
-                  </AccessibleText>
-                  <AccessibleText variant="body" style={[styles.reportSubtitle, { color: colors.subtext }]}>
-                    Select a reason for reporting this content:
-                  </AccessibleText>
+            <View style={[styles.reportContent, { backgroundColor: colors.card }]}>
+              <ScrollView
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+                contentContainerStyle={{ paddingBottom: 16 }}
+              >
+                <AccessibleText variant="title" style={[styles.reportTitle, { color: colors.text }]}>
+                  Report {reportTarget?.type === "answer" ? "Answer" : "Post"}
+                </AccessibleText>
+                <AccessibleText variant="body" style={[styles.reportSubtitle, { color: colors.subtext }]}>
+                  Select a reason for reporting this content:
+                </AccessibleText>
 
-                  {/* Predefined reason chips */}
-                  <View style={styles.reportReasonGrid}>
-                    {REPORT_REASONS.map((r) => (
-                      <TouchableOpacity
-                        key={r.key}
-                        style={[
-                          styles.reportReasonChip,
-                          { borderColor: reportReason === r.key ? colors.primary : colors.border,
-                            backgroundColor: reportReason === r.key
-                              ? (highContrast ? "#000" : "#F3E8FF")
-                              : colors.surface },
-                        ]}
-                        onPress={() => setReportReason(r.key)}
-                        accessibilityRole="radio"
-                        accessibilityState={{ checked: reportReason === r.key }}
-                        accessibilityLabel={r.label}
+                {/* Predefined reason chips */}
+                <View style={styles.reportReasonGrid}>
+                  {REPORT_REASONS.map((r) => (
+                    <TouchableOpacity
+                      key={r.key}
+                      style={[
+                        styles.reportReasonChip,
+                        {
+                          borderColor: reportReason === r.key ? colors.primary : colors.border,
+                          backgroundColor: reportReason === r.key
+                            ? (highContrast ? "#000" : "#F3E8FF")
+                            : colors.surface,
+                        },
+                      ]}
+                      onPress={() => setReportReason(r.key)}
+                      accessibilityRole="radio"
+                      accessibilityState={{ checked: reportReason === r.key }}
+                      accessibilityLabel={r.label}
+                    >
+                      <AccessibleText
+                        variant="caption"
+                        style={{
+                          color: reportReason === r.key
+                            ? (highContrast ? "#fff" : colors.primary)
+                            : colors.text,
+                          fontWeight: reportReason === r.key ? "700" : "400",
+                        }}
                       >
-                        <AccessibleText
-                          variant="caption"
-                          style={{
-                            color: reportReason === r.key
-                              ? (highContrast ? "#fff" : colors.primary)
-                              : colors.text,
-                            fontWeight: reportReason === r.key ? "700" : "400",
-                          }}
-                        >
-                          {r.label}
-                        </AccessibleText>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
+                        {r.label}
+                      </AccessibleText>
+                    </TouchableOpacity>
+                  ))}
+                </View>
 
-                  {/* Optional details input */}
+                {/* Custom category input if 'Other' is chosen */}
+                {reportReason === "OTHER" && (
                   <TextInput
                     style={[
-                      styles.reportInput,
-                      { backgroundColor: colors.surface, color: colors.text, marginTop: 12 },
+                      styles.reportCustomInput,
+                      { backgroundColor: colors.surface, color: colors.text, borderColor: colors.border },
                       highContrast && { borderWidth: 1, borderColor: "#000000" },
                     ]}
-                    placeholder="Additional details (optional)"
+                    placeholder="Specify category (e.g. Copyright, Impersonation)"
                     placeholderTextColor={colors.subtext}
-                    value={reportDetails}
-                    onChangeText={setReportDetails}
-                    multiline
-                    numberOfLines={3}
-                    textAlignVertical="top"
-                    accessibilityLabel="Additional details"
-                    accessibilityHint="Optionally add more context about this report"
+                    value={reportCustomCategory}
+                    onChangeText={setReportCustomCategory}
+                    maxLength={80}
+                    autoCapitalize="sentences"
+                    accessibilityLabel="Custom report category"
                   />
+                )}
 
-              <AccessibleButton
-                variant="danger"
-                accessibilityLabel="Submit report"
-                style={styles.reportBtn}
-                onPress={handleReportSubmit}
-              >
-                Submit Report
-              </AccessibleButton>
-            </View>
-          </TouchableOpacity>
-        </TouchableOpacity>
-                  <View style={styles.reportActions}>
-                    <AccessibleButton
-                      variant="outline"
-                      accessibilityLabel="Cancel report"
-                      style={styles.reportBtn}
-                      onPress={() => setReportModalVisible(false)}
-                    >
-                      Cancel
-                    </AccessibleButton>
+                {/* Optional details input */}
+                <TextInput
+                  style={[
+                    styles.reportInput,
+                    { backgroundColor: colors.surface, color: colors.text, marginTop: 12 },
+                    highContrast && { borderWidth: 1, borderColor: "#000000" },
+                  ]}
+                  placeholder="Additional details (optional)"
+                  placeholderTextColor={colors.subtext}
+                  value={reportDetails}
+                  onChangeText={setReportDetails}
+                  multiline
+                  numberOfLines={3}
+                  textAlignVertical="top"
+                  accessibilityLabel="Additional details"
+                  accessibilityHint="Optionally add more context about this report"
+                />
 
-                    <AccessibleButton
-                      variant="danger"
-                      accessibilityLabel="Submit report"
-                      style={styles.reportBtn}
-                      onPress={handleReportSubmit}
-                      disabled={reportSubmitting || !reportReason}
-                    >
-                      {reportSubmitting ? "Submitting..." : "Submit Report"}
-                    </AccessibleButton>
-                  </View>
+                <View style={styles.reportActions}>
+                  <AccessibleButton
+                    variant="outline"
+                    accessibilityLabel="Cancel report"
+                    style={styles.reportBtn}
+                    onPress={() => setReportModalVisible(false)}
+                  >
+                    Cancel
+                  </AccessibleButton>
+
+                  <AccessibleButton
+                    variant="danger"
+                    accessibilityLabel="Submit report"
+                    style={styles.reportBtn}
+                    onPress={handleReportSubmit}
+                    disabled={reportSubmitting || !reportReason || (reportReason === "OTHER" && !reportCustomCategory.trim())}
+                  >
+                    {reportSubmitting ? "Submitting..." : "Submit Report"}
+                  </AccessibleButton>
                 </View>
-              </TouchableWithoutFeedback>
-            </KeyboardAvoidingView>
-          </View>
-        </TouchableWithoutFeedback>
+              </ScrollView>
+            </View>
+          </KeyboardAvoidingView>
+        </View>
       </Modal>
+
+      {/* MEDIA VIEWER (Full Screen Zoom, Pan, Download, Share) */}
+      <MediaViewer
+        visible={!!selectedMedia}
+        src={selectedMedia?.src || ""}
+        alt={selectedMedia?.alt}
+        isVideo={false}
+        onClose={() => setSelectedMedia(null)}
+      />
     </ScreenWrapper>
   );
 };
@@ -1124,19 +1178,26 @@ const styles = StyleSheet.create({
     marginBottom: 12
   },
   authorLeft: {
+    flex: 1,
     flexDirection: "row",
-    alignItems: "center"
+    alignItems: "center",
+    marginRight: 8,
+  },
+  authorInfo: {
+    flex: 1,
+    flexShrink: 1,
   },
   authorNameContainer: {
     flexDirection: "row",
     alignItems: "center",
+    flexWrap: "wrap",
+    gap: 4,
   },
   repBadge: {
     borderWidth: 0.5,
     borderRadius: 4,
     paddingHorizontal: 4,
     paddingVertical: 1,
-    marginLeft: 6
   },
   repText: {
     fontSize: 9,
@@ -1157,18 +1218,20 @@ const styles = StyleSheet.create({
   },
   authorName: {
     fontSize: 14,
-    fontWeight: "700"
+    fontWeight: "700",
+    flexShrink: 1,
   },
   authorMeta: {
     fontSize: 11
   },
   optionsRow: {
     flexDirection: "row",
-    alignItems: "center"
+    alignItems: "center",
+    gap: 4,
   },
   optionIcon: {
     padding: 6,
-    marginLeft: 6
+    borderRadius: 6,
   },
   questionTitle: {
     fontSize: 18,
@@ -1225,34 +1288,32 @@ const styles = StyleSheet.create({
   },
   statText: {
     fontSize: 12,
-    marginLeft: 4,
-    fontWeight: "600"
   },
   aiSummaryBadge: {
     flexDirection: "row",
     alignItems: "center",
-    borderWidth: 0.5,
     paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1,
     marginLeft: "auto"
   },
   aiSummaryBadgeText: {
     fontSize: 11,
-    fontWeight: "700"
+    fontWeight: "700",
+    marginLeft: 4
   },
   reopenButton: {
     flexDirection: "row",
     alignItems: "center",
-    alignSelf: "flex-start",
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
-    marginTop: 14
+    justifyContent: "center",
+    padding: 10,
+    borderRadius: 10,
+    marginTop: 12
   },
   reopenButtonText: {
-    fontSize: 12,
-    fontWeight: "700"
+    fontWeight: "700",
+    fontSize: 13
   },
   satisfactionCard: {
     flexDirection: "row",
@@ -1349,7 +1410,8 @@ const styles = StyleSheet.create({
   acceptedAnswerCard: {
     borderWidth: 2,
     borderColor: "#16A34A",
-    backgroundColor: "#F0FDF4"
+    backgroundColor: "#F0FDF4",
+    paddingTop: 32
   },
   acceptedMarker: {
     position: "absolute",
@@ -1373,18 +1435,31 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     marginTop: 6
   },
-  votingContainer: {
-    alignItems: "center",
+  likeContainer: {
     marginRight: 12,
-    width: 32
+    alignItems: "center",
+    justifyContent: "flex-start",
+    paddingTop: 2,
   },
-  voteBtn: {
-    padding: 4
+  likeBtn: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 8,
+    paddingHorizontal: 8,
+    borderRadius: 14,
+    minWidth: 42,
+    gap: 4,
   },
-  voteCount: {
-    fontSize: 14,
-    fontWeight: "800",
-    marginVertical: 2
+  likeBtnActive: {
+    shadowColor: "#EF4444",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  likeCount: {
+    fontSize: 12,
+    fontWeight: "700",
   },
   answerHeader: {
     flexDirection: "row",
@@ -1392,16 +1467,26 @@ const styles = StyleSheet.create({
     alignItems: "flex-start",
     marginBottom: 10
   },
+  answerAuthorInfo: {
+    flex: 1,
+    flexShrink: 1,
+    marginRight: 8,
+  },
   answerAuthorName: {
     fontSize: 13,
-    fontWeight: "700"
+    fontWeight: "700",
+    flexShrink: 1,
   },
   answerTime: {
     fontSize: 10
   },
   answerActions: {
     flexDirection: "row",
-    alignItems: "center"
+    alignItems: "center",
+    gap: 6,
+  },
+  answerActionIcon: {
+    padding: 4,
   },
   answerImage: {
     width: "100%",
@@ -1517,57 +1602,75 @@ const styles = StyleSheet.create({
     flex: 1
   },
   // REPORT MODAL
-  reportOverlay: {
+  reportBackdrop: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.5)",
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 20
+    justifyContent: "flex-end",
+    paddingHorizontal: 16,
+    paddingBottom: Platform.OS === "ios" ? 30 : 24,
   },
   reportContent: {
-    borderRadius: 20,
+    borderRadius: 28,
     width: "100%",
-    padding: 20
+    paddingTop: 22,
+    paddingHorizontal: 22,
+    paddingBottom: 16,
+    maxHeight: "92%",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 16,
+    elevation: 10,
   },
   reportTitle: {
-    fontSize: 18,
+    fontSize: 19,
     fontWeight: "800",
-    marginBottom: 8
+    marginBottom: 6,
   },
   reportSubtitle: {
     fontSize: 13,
     lineHeight: 18,
-    marginBottom: 12
+    marginBottom: 14,
   },
   reportReasonGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 8,
-    marginBottom: 4,
+    marginBottom: 6,
   },
   reportReasonChip: {
-    paddingHorizontal: 12,
-    paddingVertical: 7,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
     borderRadius: 20,
     borderWidth: 1.5,
   },
-  reportInput: {
-    borderRadius: 10,
-    padding: 12,
-    height: 72,
+  reportCustomInput: {
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
     fontSize: 14,
-    marginBottom: 16
+    marginTop: 10,
+  },
+  reportInput: {
+    borderRadius: 12,
+    padding: 14,
+    height: 80,
+    fontSize: 14,
+    marginBottom: 16,
   },
   reportActions: {
     flexDirection: "row",
     justifyContent: "space-between",
-    marginTop: 8
+    gap: 12,
+    marginTop: 14,
+    marginBottom: 16,
   },
   reportBtn: {
-    flex: 0.48,
-    minHeight: 44,
-    borderRadius: 10,
+    flex: 1,
+    minHeight: 48,
+    borderRadius: 14,
     justifyContent: "center",
-    alignItems: "center"
-  }
+    alignItems: "center",
+  },
 });

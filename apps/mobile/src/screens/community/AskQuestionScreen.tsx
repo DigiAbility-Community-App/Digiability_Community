@@ -12,7 +12,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
-import { ArrowLeft, Camera, HelpCircle, X, Check, Mic } from "lucide-react-native";
+import { ArrowLeft, Camera, HelpCircle, X, Check } from "lucide-react-native";
 import * as ImagePicker from "expo-image-picker";
 import { Dropdown } from "react-native-element-dropdown";
 import { useForumStore } from "../../store/forumStore";
@@ -75,10 +75,6 @@ const AskQuestionScreen = () => {
   const handleClearImage = () => {
     setImageUri(null);
     setAltText("");
-  };
-
-  const handleVoiceTyping = () => {
-    Alert.alert("Coming Soon", "Voice typing will be available in a future update.");
   };
 
   const checkAndSubmit = async () => {
@@ -218,24 +214,10 @@ const AskQuestionScreen = () => {
           accessibilityLabel="Category dropdown"
         />
 
-        {/* DESCRIPTION + VOICE INPUT */}
-        <View style={styles.descriptionHeader}>
-          <AccessibleText variant="label" style={[styles.inputLabel, { color: colors.text }]}>
-            Description
-          </AccessibleText>
-          <TouchableOpacity
-            onPress={handleVoiceTyping}
-            style={[styles.voiceBtn, { backgroundColor: colors.background }, accentBorder]}
-            accessibilityRole="button"
-            accessibilityLabel="Voice typing — coming soon"
-            accessibilityHint="Dictate your question description using your voice"
-          >
-            <Mic size={14} color={colors.secondary} style={{ marginRight: 4 }} />
-            <AccessibleText variant="caption" style={[styles.voiceBtnText, { color: colors.secondary }]}>
-              Voice Type
-            </AccessibleText>
-          </TouchableOpacity>
-        </View>
+        {/* DESCRIPTION */}
+        <AccessibleText variant="label" style={[styles.inputLabel, { color: colors.text }]}>
+          Description
+        </AccessibleText>
 
         <TextInput
           style={[

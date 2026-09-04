@@ -3,10 +3,11 @@ import {
   View, Text, StyleSheet, TouchableOpacity,
   FlatList, ActivityIndicator, RefreshControl, Alert, Platform,
 } from "react-native";
-import { HeartHandshake, Plus, ChevronRight, LogIn, Accessibility, TriangleAlert } from "lucide-react-native";
+import { HeartHandshake, Plus, ChevronRight, LogIn, Accessibility, TriangleAlert, Clock, AlertCircle } from "lucide-react-native";
 import { useNavigation } from "@react-navigation/native";
 import { chatService, CommunityGroup } from "../../services/chatService";
 import { useTheme } from "../../theme/ThemeContext";
+import { ConfirmDialog } from "../chat/ConfirmDialog";
 
 const CareCirclesTab = () => {
   const navigation = useNavigation<any>();
@@ -17,6 +18,11 @@ const CareCirclesTab = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
   const [joiningId, setJoiningId] = useState<string | null>(null);
+  // Circles where this user has an outstanding join request awaiting
+  // admin/caregiver approval — kept separate from isMember so the card
+  // shows "Requested" instead of reverting to a plain "Join" button.
+  const [pendingIds, setPendingIds] = useState<Set<string>>(new Set());
+  const [joinError, setJoinError] = useState<{ visible: boolean; message: string }>({ visible: false, message: "" });
 
   const loadCircles = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
@@ -35,6 +41,13 @@ const CareCirclesTab = () => {
   useEffect(() => { loadCircles(); }, [loadCircles]);
 
   const handleCirclePress = (circle: CommunityGroup) => {
+    if (pendingIds.has(circle.id)) {
+      Alert.alert(
+        "Request pending",
+        "Your request to join this Care Circle is awaiting approval."
+      );
+      return;
+    }
     if (!circle.isMember) {
       Alert.alert(
         `Join "${circle.name}"?`,
@@ -55,7 +68,15 @@ const CareCirclesTab = () => {
   const handleJoin = async (circle: CommunityGroup) => {
     setJoiningId(circle.id);
     try {
-      await chatService.joinGroup(circle.id);
+      const result = await chatService.joinGroup(circle.id);
+      if (result.status === "pending_approval") {
+        setPendingIds((prev) => new Set(prev).add(circle.id));
+        Alert.alert(
+          "Request sent",
+          "An admin needs to approve your request before you can enter this Care Circle."
+        );
+        return;
+      }
       setCircles((prev) =>
         prev.map((c) => c.id === circle.id ? { ...c, isMember: true, memberCount: c.memberCount + 1 } : c)
       );
@@ -63,8 +84,9 @@ const CareCirclesTab = () => {
         screen: "GroupChat",
         params: { conversationId: circle.id, groupName: circle.name, subType: "CARE_CIRCLE" },
       });
-    } catch {
-      Alert.alert("Error", "Could not join the Care Circle. Please try again.");
+    } catch (e: any) {
+      const message = e?.response?.data?.message || "Could not join the Care Circle. Please try again.";
+      setJoinError({ visible: true, message });
     } finally {
       setJoiningId(null);
     }
@@ -79,6 +101,7 @@ const CareCirclesTab = () => {
 
   const renderItem = ({ item }: { item: CommunityGroup }) => {
     const isJoining = joiningId === item.id;
+    const isPending = pendingIds.has(item.id);
     return (
       <TouchableOpacity
         style={[styles.card, { backgroundColor: colors.card }]}
@@ -86,7 +109,7 @@ const CareCirclesTab = () => {
         disabled={isJoining}
         activeOpacity={0.7}
         accessibilityRole="button"
-        accessibilityLabel={`Care Circle: ${item.name}, ${item.memberCount} members${item.isMember ? ", you are a member" : ", tap to join"}`}
+        accessibilityLabel={`Care Circle: ${item.name}, ${item.memberCount} members${item.isMember ? ", you are a member" : isPending ? ", join request pending approval" : ", tap to join"}`}
       >
         <View style={styles.avatar}>
           <Accessibility size={26} color="#8A38F5" strokeWidth={2} />
@@ -97,7 +120,7 @@ const CareCirclesTab = () => {
             <Text style={[styles.name, { color: colors.text }]} numberOfLines={1}>{item.name}</Text>
             {!item.isMember && (
               <View style={styles.joinBadge}>
-                <Text style={styles.joinBadgeText}>Join</Text>
+                <Text style={styles.joinBadgeText}>{isPending ? "Requested" : "Join"}</Text>
               </View>
             )}
           </View>
@@ -113,7 +136,9 @@ const CareCirclesTab = () => {
           ? <ActivityIndicator size="small" color="#500088" />
           : item.isMember
             ? <ChevronRight size={20} color={colors.border} />
-            : <LogIn size={18} color="#500088" />
+            : isPending
+              ? <Clock size={18} color={colors.subtext} />
+              : <LogIn size={18} color="#500088" />
         }
       </TouchableOpacity>
     );
@@ -145,29 +170,45 @@ const CareCirclesTab = () => {
     );
   }
 
+  const errorDialog = (
+    <ConfirmDialog
+      visible={joinError.visible}
+      title="Unable to Join"
+      message={joinError.message}
+      icon={AlertCircle}
+      hideCancel
+      confirmLabel="OK"
+      onConfirm={() => setJoinError({ visible: false, message: "" })}
+      onCancel={() => setJoinError({ visible: false, message: "" })}
+    />
+  );
+
   if (circles.length === 0) {
     return (
-      <FlatList
-        data={[]}
-        renderItem={() => null}
-        contentContainerStyle={styles.centered}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadCircles(true); }} tintColor="#500088" />}
-        ListEmptyComponent={
-          <View style={styles.emptyCard}>
-            <View style={styles.iconBox}>
-              <HeartHandshake size={44} color="#500088" />
+      <>
+        <FlatList
+          data={[]}
+          renderItem={() => null}
+          contentContainerStyle={styles.centered}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadCircles(true); }} tintColor="#500088" />}
+          ListEmptyComponent={
+            <View style={styles.emptyCard}>
+              <View style={styles.iconBox}>
+                <HeartHandshake size={44} color="#500088" />
+              </View>
+              <Text style={[styles.emptyTitle, { color: colors.text }]}>No Care Circles Yet</Text>
+              <Text style={[styles.emptySubtitle, { color: colors.subtext }]}>
+                Create a Care Circle to connect with your support network.
+              </Text>
+              <TouchableOpacity style={styles.createBtn} onPress={handleCreate}>
+                <Plus size={18} color="#FFFFFF" />
+                <Text style={styles.createBtnText}>Create Care Circle</Text>
+              </TouchableOpacity>
             </View>
-            <Text style={[styles.emptyTitle, { color: colors.text }]}>No Care Circles Yet</Text>
-            <Text style={[styles.emptySubtitle, { color: colors.subtext }]}>
-              Create a Care Circle to connect with your support network.
-            </Text>
-            <TouchableOpacity style={styles.createBtn} onPress={handleCreate}>
-              <Plus size={18} color="#FFFFFF" />
-              <Text style={styles.createBtnText}>Create Care Circle</Text>
-            </TouchableOpacity>
-          </View>
-        }
-      />
+          }
+        />
+        {errorDialog}
+      </>
     );
   }
 
@@ -190,6 +231,7 @@ const CareCirclesTab = () => {
       <TouchableOpacity style={styles.fab} onPress={handleCreate} accessibilityLabel="Create new Care Circle">
         <Plus size={24} color="#FFFFFF" />
       </TouchableOpacity>
+      {errorDialog}
     </View>
   );
 };

@@ -7,10 +7,14 @@
     "development": {
       "developmentClient": true,
       "distribution": "internal",
+      "node": "24.14.1",
+      "android": {
+        "buildType": "apk"
+      },
       "env": {
-        "EXPO_PUBLIC_API_BASE_URL": "http://10.0.2.2:4001",
-        "EXPO_PUBLIC_CHAT_API_URL": "http://10.0.2.2:4002",
-        "EXPO_PUBLIC_FORUM_API_URL": "http://10.0.2.2:4003"
+        "EXPO_PUBLIC_API_BASE_URL": "http://187.127.191.28:30501",
+        "EXPO_PUBLIC_CHAT_API_URL": "http://187.127.191.28:30502",
+        "EXPO_PUBLIC_FORUM_API_URL": "http://187.127.191.28:30503"
       }
     },
     "preview": {

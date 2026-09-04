@@ -1,7 +1,8 @@
 // ─────────────────────────────────────────────────────────────
 // MessageMedia — renders IMAGE, VIDEO, and AUDIO chat messages.
 //
-//  • IMAGE: larger thumbnail (300px), tappable to open full-screen viewer
+//  • IMAGE: fixed-size thumbnail (fills 65% of screen width, fixed height
+//           ratio), tappable to open full-screen viewer with zoom & download
 //  • VIDEO: thumbnail with play icon overlay, tappable to open viewer
 //  • AUDIO: play/pause voice-note bubble backed by expo-av
 //
@@ -19,13 +20,15 @@ import {
   Dimensions,
 } from "react-native";
 import { Audio } from "expo-av";
-import { Play } from "lucide-react-native";
+import { Play, Pause } from "lucide-react-native";
 import { ChatMessage } from "@store/chatStore";
 import { resolveMediaUrl } from "@services/chatService";
 
 const SCREEN_WIDTH = Dimensions.get("window").width;
-// Image thumbnail should be large but bounded — roughly 70% of screen width
-const IMAGE_SIZE = Math.min(300, SCREEN_WIDTH * 0.7);
+// Fixed width for all image/video thumbnails — 65% screen width on any device
+const MEDIA_WIDTH = Math.round(SCREEN_WIDTH * 0.65);
+// Fixed 4:3 aspect ratio height
+const MEDIA_HEIGHT = Math.round(MEDIA_WIDTH * 0.75);
 
 function parseMeta(metadata?: string): Record<string, any> {
   if (!metadata) return {};
@@ -75,7 +78,6 @@ export function MessageMedia({ message, isMine, onOpenViewer, onLongPress }: Mes
     };
 
     if (video) {
-      // Video: show static thumbnail with play icon overlay
       return (
         <View>
           <TouchableOpacity
@@ -85,12 +87,11 @@ export function MessageMedia({ message, isMine, onOpenViewer, onLongPress }: Mes
             accessibilityRole="button"
             accessibilityLabel="Play video"
             accessibilityHint="Opens video in full-screen player"
-            style={styles.videoThumbWrap}
+            style={styles.mediaTouchable}
           >
-            {/* Use Image for the poster — server may return a thumbnail, or we show a dark placeholder */}
             <Image
               source={{ uri: mediaSrc }}
-              style={styles.image}
+              style={styles.mediaImage}
               resizeMode="cover"
               accessible={false}
             />
@@ -116,27 +117,31 @@ export function MessageMedia({ message, isMine, onOpenViewer, onLongPress }: Mes
       );
     }
 
-    // Regular image: tappable thumbnail
+    // Regular image: fixed-size, edge-to-edge in bubble
     return (
       <View>
         <TouchableOpacity
-          activeOpacity={0.85}
+          activeOpacity={0.9}
           onPress={handlePress}
           onLongPress={onLongPress}
           accessibilityRole="button"
           accessibilityLabel={altText}
           accessibilityHint="Tap to view full-screen"
+          style={styles.mediaTouchable}
         >
           <Image
             source={{ uri: mediaSrc }}
-            style={styles.image}
+            style={styles.mediaImage}
             resizeMode="cover"
             accessible
             accessibilityLabel={altText}
           />
         </TouchableOpacity>
         {meta.altText ? (
-          <Text style={[styles.caption, isMine ? styles.captionMine : undefined]} numberOfLines={3}>
+          <Text
+            style={[styles.caption, isMine ? styles.captionMine : undefined]}
+            numberOfLines={3}
+          >
             {meta.altText}
           </Text>
         ) : null}
@@ -152,10 +157,21 @@ export function MessageMedia({ message, isMine, onOpenViewer, onLongPress }: Mes
   return null;
 }
 
-function AudioBubble({ uri, durationMs, isMine, onLongPress }: { uri: string; durationMs?: number; isMine: boolean, onLongPress?: () => void }) {
+function AudioBubble({
+  uri,
+  durationMs,
+  isMine,
+  onLongPress,
+}: {
+  uri: string;
+  durationMs?: number;
+  isMine: boolean;
+  onLongPress?: () => void;
+}) {
   const soundRef = useRef<Audio.Sound | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [progress, setProgress] = useState(0);
 
   useEffect(() => {
     return () => {
@@ -164,37 +180,67 @@ function AudioBubble({ uri, durationMs, isMine, onLongPress }: { uri: string; du
     };
   }, []);
 
+  const didFinishRef = useRef(false); // track if audio reached end
+
   const toggle = async () => {
     try {
+      // ── PAUSE ──
       if (isPlaying) {
         await soundRef.current?.pauseAsync();
         setIsPlaying(false);
         return;
       }
-      if (soundRef.current) {
-        await soundRef.current.replayAsync();
+
+      // ── RESUME (audio loaded, not at end yet) ──
+      if (soundRef.current && !didFinishRef.current) {
+        await soundRef.current.playAsync(); // resume from exact pause position
         setIsPlaying(true);
         return;
       }
+
+      // ── REPLAY or FIRST PLAY (audio not loaded OR reached end) ──
+      if (soundRef.current) {
+        // Already loaded but finished → rewind then play
+        await soundRef.current.setPositionAsync(0);
+        await soundRef.current.playAsync();
+        didFinishRef.current = false;
+        setProgress(0);
+        setIsPlaying(true);
+        return;
+      }
+
+      // First time: load and play
       setIsLoading(true);
       await Audio.setAudioModeAsync({ playsInSilentModeIOS: true });
       const { sound } = await Audio.Sound.createAsync({ uri }, { shouldPlay: true });
       soundRef.current = sound;
+      didFinishRef.current = false;
       setIsPlaying(true);
+
       sound.setOnPlaybackStatusUpdate((status) => {
-        if (status.isLoaded && status.didJustFinish) {
-          setIsPlaying(false);
-          sound.setPositionAsync(0).catch(() => {});
+        if (status.isLoaded) {
+          if (status.durationMillis) {
+            setProgress(status.positionMillis / status.durationMillis);
+          }
+          if (status.didJustFinish) {
+            // Audio ended — mark as finished, reset UI, but keep position at 0 for replay
+            didFinishRef.current = true;
+            setIsPlaying(false);
+            setProgress(0);
+          }
         }
       });
     } catch (err) {
       console.error("audio playback failed", err);
+      setIsPlaying(false);
     } finally {
       setIsLoading(false);
     }
   };
 
   const tint = isMine ? "#fff" : "#7c3aed";
+  const trackBg = isMine ? "rgba(255,255,255,0.3)" : "rgba(112,4,220,0.15)";
+
   return (
     <TouchableOpacity
       style={styles.audioRow}
@@ -203,30 +249,65 @@ function AudioBubble({ uri, durationMs, isMine, onLongPress }: { uri: string; du
       accessibilityRole="button"
       accessibilityLabel={isPlaying ? "Pause voice message" : "Play voice message"}
     >
-      {isLoading ? (
-        <ActivityIndicator size="small" color={tint} />
-      ) : (
-        <Text style={[styles.audioIcon, { color: tint }]}>{isPlaying ? "⏸" : "▶"}</Text>
-      )}
-      <View style={styles.audioWave}>
-        <View style={[styles.audioBar, { backgroundColor: tint, height: 8 }]} />
-        <View style={[styles.audioBar, { backgroundColor: tint, height: 16 }]} />
-        <View style={[styles.audioBar, { backgroundColor: tint, height: 12 }]} />
-        <View style={[styles.audioBar, { backgroundColor: tint, height: 20 }]} />
-        <View style={[styles.audioBar, { backgroundColor: tint, height: 10 }]} />
+      {/* Play/Pause button */}
+      <View style={[styles.audioPlayBtn, { backgroundColor: tint + "30" }]}>
+        {isLoading ? (
+          <ActivityIndicator size="small" color={tint} />
+        ) : isPlaying ? (
+          <Pause size={18} color={tint} fill={tint} />
+        ) : (
+          <Play size={18} color={tint} fill={tint} style={{ marginLeft: 1 }} />
+        )}
       </View>
-      <Text style={[styles.audioDuration, { color: tint }]}>{formatDuration(durationMs)}</Text>
+
+      {/* Waveform bars + progress track */}
+      <View style={styles.audioTrackArea}>
+        <View style={[styles.audioTrack, { backgroundColor: trackBg }]}>
+          <View
+            style={[
+              styles.audioProgress,
+              { backgroundColor: tint, width: `${Math.round(progress * 100)}%` },
+            ]}
+          />
+        </View>
+        {/* Waveform bars for decoration */}
+        <View style={styles.audioWave}>
+          {[8, 14, 10, 20, 12, 18, 8, 16, 10, 14, 8].map((h, i) => (
+            <View
+              key={i}
+              style={[
+                styles.audioBar,
+                {
+                  height: h,
+                  backgroundColor: tint,
+                  opacity: progress > i / 11 ? 1 : 0.4,
+                },
+              ]}
+            />
+          ))}
+        </View>
+      </View>
+
+      <Text style={[styles.audioDuration, { color: tint }]}>
+        {formatDuration(durationMs)}
+      </Text>
     </TouchableOpacity>
   );
 }
 
 const styles = StyleSheet.create({
-  image: {
-    width: IMAGE_SIZE,
-    height: IMAGE_SIZE,
-    borderRadius: 12,
-    backgroundColor: "#eee",
+  // ── Image / Video thumbnail — no border-radius; parent bubble clips ──
+  mediaTouchable: {
+    width: MEDIA_WIDTH,
+    height: MEDIA_HEIGHT,
+    backgroundColor: "#111",
   },
+  mediaImage: {
+    width: MEDIA_WIDTH,
+    height: MEDIA_HEIGHT,
+    backgroundColor: "#DDD",
+  },
+
   caption: {
     marginTop: 6,
     fontSize: 13,
@@ -237,11 +318,6 @@ const styles = StyleSheet.create({
   },
 
   // ── Video thumbnail overlay ──
-  videoThumbWrap: {
-    position: "relative",
-    borderRadius: 12,
-    overflow: "hidden",
-  },
   videoOverlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: "rgba(0,0,0,0.3)",
@@ -277,27 +353,45 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
-    minWidth: 160,
-    paddingVertical: 2,
+    minWidth: SCREEN_WIDTH * 0.5,
+    maxWidth: SCREEN_WIDTH * 0.65,
+    paddingVertical: 4,
   },
-  audioIcon: {
-    fontSize: 20,
-    width: 24,
-    textAlign: "center",
+  audioPlayBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  audioTrackArea: {
+    flex: 1,
+    gap: 4,
+  },
+  audioTrack: {
+    height: 4,
+    borderRadius: 2,
+    overflow: "hidden",
+  },
+  audioProgress: {
+    height: 4,
+    borderRadius: 2,
   },
   audioWave: {
     flexDirection: "row",
     alignItems: "center",
     gap: 3,
-    flex: 1,
+    height: 24,
   },
   audioBar: {
     width: 3,
     borderRadius: 2,
-    opacity: 0.8,
   },
   audioDuration: {
     fontSize: 12,
     fontVariant: ["tabular-nums"],
+    fontWeight: "600",
+    minWidth: 36,
+    textAlign: "right",
   },
 });

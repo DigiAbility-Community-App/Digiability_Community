@@ -88,7 +88,7 @@ export default function EventDetailScreen() {
       await Share.share({
         message: `Check out this event: ${event.title}\nDate: ${formatEventDateDisplay(event.date)}${event.time ? ` • ${event.time}` : ""}\nLocation: ${event.location}\nShared via DigiAbility Community.`,
       });
-    } catch {}
+    } catch { }
   };
 
   const handleRegisterPress = () => {
@@ -113,7 +113,7 @@ export default function EventDetailScreen() {
             Loading event details...
           </AccessibleText>
         </View>
-        <AppFooter activeTab="Home" />
+        <AppFooter activeTab="Events" />
       </ScreenWrapper>
     );
   }
@@ -138,7 +138,7 @@ export default function EventDetailScreen() {
             Go Back
           </AccessibleButton>
         </View>
-        <AppFooter activeTab="Home" />
+        <AppFooter activeTab="Events" />
       </ScreenWrapper>
     );
   }
@@ -168,7 +168,7 @@ export default function EventDetailScreen() {
             >
               <Share2 color="#fff" size={20} />
             </TouchableOpacity>
-            <TouchableOpacity
+            {/* <TouchableOpacity
               onPress={() => setBookmarked(b => !b)}
               style={styles.headerIcon}
               accessibilityRole="button"
@@ -180,7 +180,7 @@ export default function EventDetailScreen() {
                 size={20}
                 fill={bookmarked ? "#fff" : "none"}
               />
-            </TouchableOpacity>
+            </TouchableOpacity> */}
           </View>
         }
       />
@@ -269,8 +269,8 @@ export default function EventDetailScreen() {
                 {isCompleted
                   ? `${event.spots || 0} people attended`
                   : isSoldOut
-                  ? "Sold Out (0 slots available)"
-                  : `${event.spots} slots available`}
+                    ? "Sold Out (0 slots available)"
+                    : `${event.spots} slots available`}
               </AccessibleText>
             </View>
           </View>
@@ -318,8 +318,8 @@ export default function EventDetailScreen() {
               {isCompleted
                 ? "This event has ended. Registrations are closed."
                 : isSoldOut
-                ? "All spots for this event have been filled."
-                : "Registrations handled by Digiability Services"}
+                  ? "All spots for this event have been filled."
+                  : "Registrations handled by Digiability Services"}
             </AccessibleText>
           </View>
 
@@ -335,8 +335,8 @@ export default function EventDetailScreen() {
               isCompleted
                 ? "Event completed and registration closed"
                 : isSoldOut
-                ? "Registration closed, event sold out"
-                : "Register via Digiability"
+                  ? "Registration closed, event sold out"
+                  : "Register via Digiability"
             }
             accessibilityHint="Opens the external Digiability registration portal"
           >
@@ -350,8 +350,8 @@ export default function EventDetailScreen() {
               {isCompleted
                 ? "Event Completed"
                 : isSoldOut
-                ? "Registration Closed"
-                : "Register via Digiability"}
+                  ? "Registration Closed"
+                  : "Register via Digiability"}
             </AccessibleText>
             {!isActionDisabled && (
               <ExternalLink
@@ -376,7 +376,7 @@ export default function EventDetailScreen() {
         />
       )}
 
-      <AppFooter activeTab="Home" />
+      <AppFooter activeTab="Events" />
     </ScreenWrapper>
   );
 }

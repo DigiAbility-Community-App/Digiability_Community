@@ -45,7 +45,9 @@ export async function POST(
 
     // 1. Verify group exists
     const groupRes = await dbPool.query(
-      `SELECT id, name, "createdBy", "subType" FROM chat.conversations WHERE id = $1 AND "deletedAt" IS NULL`,
+      `SELECT id, name, "createdBy", "subType",
+              "isSuspended", "suspendedUntil", "suspensionReason"
+         FROM chat.conversations WHERE id = $1 AND "deletedAt" IS NULL`,
       [id]
     );
 
@@ -55,6 +57,33 @@ export async function POST(
 
     const group = groupRes.rows[0];
     const groupName = group.name || "Community Group";
+
+    // 1b. Refuse to broadcast into a suspended group.
+    // This route writes straight into chat.messages with raw SQL, so it never
+    // passes through chat-svc's WebSocket send path and none of that path's
+    // gating applies. Without this check, "suspend the group" would still let
+    // the admin dashboard post into it.
+    // A lapsed suspension (suspendedUntil in the past) is treated as expired,
+    // matching isConversationSuspended() in chat-svc.
+    const suspendedUntil: Date | null = group.suspendedUntil;
+    const isActivelySuspended =
+      group.isSuspended === true &&
+      (suspendedUntil === null || new Date(suspendedUntil).getTime() > Date.now());
+
+    if (isActivelySuspended) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: suspendedUntil
+            ? `"${groupName}" is suspended until ${new Date(suspendedUntil).toLocaleString("en-GB")}. Reactivate the group before sending messages.`
+            : `"${groupName}" is suspended indefinitely. Reactivate the group before sending messages.`,
+          suspended: true,
+          suspendedUntil: suspendedUntil ? new Date(suspendedUntil).toISOString() : null,
+          reason: group.suspensionReason ?? null,
+        },
+        { status: 409 }
+      );
+    }
 
     // 2. Determine target audience members
     const sendToArr: string[] = Array.isArray(sendTo)

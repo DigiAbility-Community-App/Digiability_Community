@@ -25,6 +25,7 @@ import { Mail, SquarePen, Search, Users, Accessibility, User, Bot, X, MessageCir
 import { useTheme } from "../../theme/ThemeContext";
 import { AccessibleText } from "../../components/shared/AccessibleText";
 import { AccessibleButton } from "../../components/shared/AccessibleButton";
+import { formatUserDisplayName } from "../../utils/formatUserName";
 
 // ─────────────────────────────────────────────────────────
 // Conversation List Screen
@@ -100,14 +101,15 @@ const ConversationListScreen = ({ navigation: propNavigation, isTab = false, dir
     let displayName = c.name || "Unknown";
     if (c.type === "DIRECT" && c.participants) {
       const other = c.participants.find(p => p.userId !== user?.id)?.user;
-      if (other) displayName = other.name;
+      if (other) displayName = formatUserDisplayName(other);
     }
 
       let lastMsgText = c.lastMessageText || "No messages yet";
       if (c.type === "GROUP" && c.lastMessage?.senderId && c.lastMessage.senderId !== user?.id) {
         const sender = c.participants?.find((p: any) => p.userId === c.lastMessage!.senderId)?.user;
         if (sender) {
-          lastMsgText = `${sender.name}: ${lastMsgText}`;
+          const senderLabel = sender.deletedAt ? "Deleted User" : sender.name;
+          lastMsgText = `${senderLabel}: ${lastMsgText}`;
         }
       }
 
@@ -230,30 +232,7 @@ const ConversationListScreen = ({ navigation: propNavigation, isTab = false, dir
   };
 
   const handleNewAction = () => {
-    if (Platform.OS === 'ios') {
-      ActionSheetIOS.showActionSheetWithOptions(
-        {
-          options: ['Cancel', 'New 1:1 Chat', 'Create Care Circle', 'Create General Group'],
-          cancelButtonIndex: 0,
-        },
-        (buttonIndex) => {
-          if (buttonIndex === 1) {
-            navigateToScreen('NewChat');
-          } else if (buttonIndex === 2) {
-            navigateToScreen('CreateGroup', { subType: 'CARE_CIRCLE' });
-          } else if (buttonIndex === 3) {
-            navigateToScreen('CreateGroup', { subType: 'GENERAL' });
-          }
-        }
-      );
-    } else {
-      Alert.alert('New Chat', 'Choose an option:', [
-        { text: 'New 1:1 Chat', onPress: () => navigateToScreen('NewChat') },
-        { text: 'Create Care Circle', onPress: () => navigateToScreen('CreateGroup', { subType: 'CARE_CIRCLE' }) },
-        { text: 'Create General Group', onPress: () => navigateToScreen('CreateGroup', { subType: 'GENERAL' }) },
-        { text: 'Cancel', style: 'cancel' },
-      ]);
-    }
+    navigateToScreen('NewChat');
   };
 
   // ── Theme-derived, high-contrast-aware card outline ─────────

@@ -13,7 +13,7 @@ import {
 } from "react-native";
 import { Swipeable } from "react-native-gesture-handler";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import { RouteProp } from "@react-navigation/native";
+import { RouteProp, useFocusEffect } from "@react-navigation/native";
 import { ChatsStackParamList } from "@navigation/ChatsStack";
 import { useAuthStore } from "@store/authStore";
 import { useChatStore, ChatMessage } from "@store/chatStore";
@@ -25,11 +25,12 @@ import { useChatMedia } from "@hooks/useChatMedia";
 import { MessageMedia } from "../../components/chat/MessageMedia";
 import { MediaViewer } from "../../components/chat/MediaViewer";
 import { AltTextModal } from "../../components/chat/AltTextModal";
+import { ReportModal } from "../../components/chat/ReportModal";
 import { ActionSheet, ActionSheetOption } from "../../components/chat/ActionSheet";
 import { ConfirmDialog } from "../../components/chat/ConfirmDialog";
 import ScreenWrapper from "../../components/layout/ScreenWrapper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Send, ArrowLeft, MoreVertical, Paperclip, Mic, Image as ImageIcon, Smile, Check, CheckCheck, Plus, Square, Phone, Trash2, Volume2, Flag, Ban, CircleCheck, TriangleAlert, User, CornerUpLeft, X } from "lucide-react-native";
+import { Send, ArrowLeft, MoreVertical, Paperclip, Mic, Image as ImageIcon, Smile, Check, CheckCheck, Plus, Square, Trash2, Volume2, Flag, Ban, CircleCheck, TriangleAlert, AlertCircle, User, CornerUpLeft, X } from "lucide-react-native";
 import { useTheme } from "../../theme/ThemeContext";
 import { AccessibleText } from "../../components/shared/AccessibleText";
 import { LinkifiedText } from "../../components/shared/LinkifiedText";
@@ -81,16 +82,38 @@ const ChatScreen = ({ navigation, route }: Props) => {
   const presenceMap = useChatStore((s) => s.presence);
   const clearUnreadCount = useChatStore((s) => s.clearUnreadCount);
 
-  // Opening a chat marks it read: clear the local badge and advance the
-  // server read cursor so it stays cleared after a refresh.
+  // Track whether this screen is currently focused (visible to the user).
+  // We only send read receipts when the screen is focused so that navigating
+  // away does NOT incorrectly mark messages as seen.
+  const isFocusedRef = useRef(false);
+  useFocusEffect(
+    useCallback(() => {
+      isFocusedRef.current = true;
+      // Mark messages read immediately on focus
+      clearUnreadCount(conversationId);
+      const msgs = useChatStore.getState().messages[conversationId] || [];
+      const lastFromOther = [...msgs].reverse().find((m) => m.senderId !== user?.id);
+      if (lastFromOther?.id) {
+        sendSocketMessage("message.read", { messageId: lastFromOther.id, conversationId });
+      }
+      return () => {
+        // Screen is losing focus — stop marking new arrivals as read
+        isFocusedRef.current = false;
+      };
+    }, [conversationId, user?.id])
+  );
+
+  // When new messages arrive while this screen is already focused, mark them
+  // read immediately. Without focus the useEffect is a no-op.
   useEffect(() => {
-    clearUnreadCount(conversationId);
+    if (!isFocusedRef.current) return;
     const msgs = useChatStore.getState().messages[conversationId] || [];
     const lastFromOther = [...msgs].reverse().find((m) => m.senderId !== user?.id);
     if (lastFromOther?.id) {
+      clearUnreadCount(conversationId);
       sendSocketMessage("message.read", { messageId: lastFromOther.id, conversationId });
     }
-  }, [conversationId, storeMessages.length]);
+  }, [storeMessages.length]);
 
   const [messageText, setMessageText] = useState("");
   const [isLoading, setIsLoading] = useState(true);
@@ -98,6 +121,14 @@ const ChatScreen = ({ navigation, route }: Props) => {
   const [mediaViewer, setMediaViewer] = useState<{ src: string; alt: string; isVideo: boolean } | null>(null);
   const [replyingTo, setReplyingTo] = useState<ChatMessage | null>(null);
   const [speakingId, setSpeakingId] = useState<string | null>(null);
+
+  // Stop any active speech when the screen loses focus (e.g. user navigates away)
+  // This prevents speech from looping or continuing in the background.
+  useEffect(() => {
+    return () => {
+      Speech.stop();
+    };
+  }, []);
 
   const openMediaViewer = useCallback((src: string, alt: string, isVideo: boolean) => {
     setMediaViewer({ src, alt, isVideo });
@@ -324,12 +355,36 @@ const ChatScreen = ({ navigation, route }: Props) => {
     onConfirm: () => void;
   } | null>(null);
 
+  // Surface a themed dialog the moment a message we sent gets rejected
+  // (blocked, moderation, ...) — failMessage() in the store sets
+  // status:'failed' + failureReason, this just watches for it. The
+  // acknowledged flag lives in the store (not a local ref) so it survives
+  // leaving and re-entering this screen — a ref resets on every remount and
+  // would otherwise re-show the dialog for the same message each time.
+  useEffect(() => {
+    const latestFailed = [...storeMessages].reverse().find(
+      (m) => m.status === "failed" && !m.failureAcknowledged
+    );
+    if (latestFailed) {
+      useChatStore.getState().acknowledgeMessageFailure(latestFailed.clientMessageId);
+      setConfirmState({
+        title: "Message Not Sent",
+        message: latestFailed.failureReason || "Your message could not be delivered.",
+        confirmLabel: "OK",
+        destructive: true,
+        hideCancel: true,
+        onConfirm: () => setConfirmState(null),
+      });
+    }
+  }, [storeMessages]);
+
   const submitReport = useCallback(
-    (reason: string) => {
+    (reason: string, details?: string) => {
       if (!peerId) return;
       const messageId = reportTargetMessageId ?? undefined;
+      const finalReason = details ? `${reason} — ${details}` : reason;
       chatService
-        .reportUser({ reportedUserId: peerId, conversationId, messageId, reason })
+        .reportUser({ reportedUserId: peerId, conversationId, messageId, reason: finalReason })
         .then(() =>
           setConfirmState({
             title: "Report submitted",
@@ -413,6 +468,8 @@ const ChatScreen = ({ navigation, route }: Props) => {
         return <CheckCheck size={14} color="rgba(255,255,255,0.8)" style={{ marginLeft: 4 }} />;
       case "read":
         return <CheckCheck size={14} color="#38bdf8" style={{ marginLeft: 4 }} />;
+      case "failed":
+        return <AlertCircle size={14} color="#EF4444" style={{ marginLeft: 4 }} />;
       default:
         return null;
     }
@@ -429,6 +486,8 @@ const ChatScreen = ({ navigation, route }: Props) => {
     if (!messageMenu) return [];
     const item = messageMenu;
     const isMine = item.senderId === user?.id;
+    // Super Admin / platform Admin can delete any message for everyone
+    const isSuperAdmin = user?.role === "SUPER_ADMIN" || user?.role === "ADMIN";
     const opts: ActionSheetOption[] = [];
     opts.push({ label: "Reply", icon: CornerUpLeft, onPress: () => setReplyingTo(item) });
     if (item.type === "TEXT" && item.content?.trim()) {
@@ -442,6 +501,7 @@ const ChatScreen = ({ navigation, route }: Props) => {
           Speech.stop();
           setSpeakingId(item.id);
           Speech.speak(item.content, {
+            language: "en-IN",
             onDone: () => setSpeakingId(null),
             onStopped: () => setSpeakingId(null),
             onError: () => setSpeakingId(null),
@@ -449,7 +509,17 @@ const ChatScreen = ({ navigation, route }: Props) => {
         }});
       }
     }
-    if (!isMine) {
+    // Don't allow reporting messages sent by platform admins/super admins
+    const senderIsAdmin = (
+      item.senderId === "admin" ||
+      item.senderId === "system" ||
+      item.senderId === "digiability-admin" ||
+      item.type === "SYSTEM"
+    );
+    let meta: any = null;
+    try { meta = item.metadata ? (typeof item.metadata === "string" ? JSON.parse(item.metadata) : item.metadata) : null; } catch {}
+    const senderIsPlatformAdmin = senderIsAdmin || meta?.isAdmin === true || meta?.senderName === "DigiAbility Admin";
+    if (!isMine && !senderIsPlatformAdmin) {
       opts.push({
         label: "Report message",
         icon: Flag,
@@ -461,7 +531,7 @@ const ChatScreen = ({ navigation, route }: Props) => {
       });
     }
     opts.push({ label: "Delete for me", icon: Trash2, destructive: true, onPress: () => askDelete(item, "me") });
-    if (isMine) {
+    if (isMine || isSuperAdmin) {
       opts.push({ label: "Delete for everyone", icon: Trash2, destructive: true, onPress: () => askDelete(item, "everyone") });
     }
     return opts;
@@ -519,6 +589,7 @@ const ChatScreen = ({ navigation, route }: Props) => {
               ? { backgroundColor: colors.primary }
               : { backgroundColor: colors.card, shadowColor: colors.primary },
             !isMine && cardBorder,
+            (item.type === "IMAGE" || item.type === "VIDEO") && styles.mediaBubble,
           ]}
         >
           {(() => {
@@ -537,31 +608,72 @@ const ChatScreen = ({ navigation, route }: Props) => {
             }
             return null;
           })()}
-          {item.type === "IMAGE" || item.type === "VIDEO" || item.type === "AUDIO" ? (
-            <MessageMedia message={item} isMine={isMine} onOpenViewer={openMediaViewer} onLongPress={() => handleMessageLongPress(item)} />
+          {item.deletedAt ? (
+            <View style={styles.textBubbleContainer}>
+              <AccessibleText
+                variant="body"
+                style={[
+                  styles.messageText,
+                  { color: isMine ? "rgba(255,255,255,0.7)" : colors.subtext, fontStyle: "italic" },
+                ]}
+              >
+                This message was removed
+              </AccessibleText>
+              <View style={styles.messageFooter}>
+                <AccessibleText
+                  variant="caption"
+                  style={[styles.messageTime, { color: isMine ? "rgba(255,255,255,0.7)" : colors.subtext }]}
+                >
+                  {timeString}
+                </AccessibleText>
+              </View>
+            </View>
+          ) : (item.type === "IMAGE" || item.type === "VIDEO") ? (
+            <View style={styles.mediaBubbleInner}>
+              <MessageMedia message={item} isMine={isMine} onOpenViewer={openMediaViewer} onLongPress={() => handleMessageLongPress(item)} />
+              <View style={styles.mediaTimeOverlay}>
+                <AccessibleText style={[styles.mediaTimeText, { color: "#fff" }]}>
+                  {timeString}
+                </AccessibleText>
+                {isMine && renderStatusIcon(item.status)}
+              </View>
+            </View>
+          ) : item.type === "AUDIO" ? (
+            <View>
+              <MessageMedia message={item} isMine={isMine} onOpenViewer={openMediaViewer} onLongPress={() => handleMessageLongPress(item)} />
+              <View style={styles.messageFooter}>
+                <AccessibleText variant="caption" style={[styles.messageTime, { color: isMine ? "rgba(255,255,255,0.65)" : colors.subtext }]}>
+                  {timeString}
+                </AccessibleText>
+                {isMine && renderStatusIcon(item.status)}
+              </View>
+            </View>
           ) : (
-            <LinkifiedText
-              variant="body"
-              text={item.content}
-              style={[
-                styles.messageText,
-                { color: isMine ? colors.white : colors.text },
-              ]}
-              linkStyle={{ color: isMine ? "rgba(255,255,255,0.9)" : colors.primary }}
-            />
+            <View style={styles.textBubbleContainer}>
+              <LinkifiedText
+                variant="body"
+                text={item.content}
+                style={[
+                  styles.messageText,
+                  { color: isMine ? colors.white : colors.text },
+                ]}
+                linkStyle={{ color: isMine ? "rgba(255,255,255,0.9)" : colors.primary }}
+              />
+              <View style={styles.messageFooter}>
+                <AccessibleText
+                  variant="caption"
+                  numberOfLines={1}
+                  style={[
+                    styles.messageTime,
+                    { color: isMine ? "rgba(255,255,255,0.7)" : colors.subtext },
+                  ]}
+                >
+                  {timeString}
+                </AccessibleText>
+                {isMine && renderStatusIcon(item.status)}
+              </View>
+            </View>
           )}
-          <View style={styles.messageFooter}>
-            <AccessibleText
-              variant="caption"
-              style={[
-                styles.messageTime,
-                { color: isMine ? "rgba(255,255,255,0.65)" : colors.subtext },
-              ]}
-            >
-              {timeString}
-            </AccessibleText>
-            {isMine && renderStatusIcon(item.status)}
-          </View>
         </TouchableOpacity>
         </View>
         </SwipeableMessageRow>
@@ -635,14 +747,6 @@ const ChatScreen = ({ navigation, route }: Props) => {
         </View>
 
         <View style={styles.headerActions}>
-          <TouchableOpacity
-            style={styles.headerActionBtn}
-            accessibilityRole="button"
-            accessibilityLabel="Call"
-            accessibilityHint="Voice calling is not yet available"
-          >
-            <Phone size={20} color={colors.white} strokeWidth={2} />
-          </TouchableOpacity>
           <TouchableOpacity
             style={styles.headerActionBtn}
             onPress={handleHeaderMenu}
@@ -911,19 +1015,16 @@ const ChatScreen = ({ navigation, route }: Props) => {
         onClose={() => setHeaderMenuOpen(false)}
       />
 
-      {/* Report reason picker */}
-      <ActionSheet
+      {/* Report reason picker with description & custom category */}
+      <ReportModal
         visible={reportReasonOpen}
         title="Report reason"
-        message="Why are you reporting this user?"
-        options={["Spam", "Harassment", "Inappropriate content", "Other"].map((r) => ({
-          label: r,
-          onPress: () => submitReport(r),
-        }))}
+        subtitle={reportTargetMessageId ? "Why are you reporting this message?" : "Why are you reporting this user?"}
         onClose={() => {
           setReportReasonOpen(false);
           setReportTargetMessageId(null);
         }}
+        onSubmit={submitReport}
       />
 
       {/* Confirm / info dialog */}
@@ -1115,19 +1216,52 @@ const styles = StyleSheet.create({
   },
   messageBubble: {
     maxWidth: "80%",
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 18,
+    paddingHorizontal: 12,
+    paddingTop: 7,
+    paddingBottom: 6,
+    borderRadius: 16,
+    minWidth: 80,
+  },
+  mediaBubble: {
+    paddingHorizontal: 0,
+    paddingTop: 0,
+    paddingBottom: 0,
+    overflow: "hidden",
+    minWidth: 0,
+  },
+  mediaBubbleInner: {
+    position: "relative",
+  },
+  mediaTimeOverlay: {
+    position: "absolute",
+    bottom: 6,
+    right: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 10,
+  },
+  mediaTimeText: {
+    fontSize: 11,
+    fontWeight: "600",
+    fontVariant: ["tabular-nums"],
+    color: "#FFFFFF",
   },
   myBubble: {
-    borderBottomRightRadius: 6,
+    borderBottomRightRadius: 4,
   },
   theirBubble: {
-    borderBottomLeftRadius: 6,
+    borderBottomLeftRadius: 4,
     shadowOpacity: 0.06,
-    shadowOffset: { width: 0, height: 2 },
-    shadowRadius: 6,
-    elevation: 2,
+    shadowOffset: { width: 0, height: 1 },
+    shadowRadius: 4,
+    elevation: 1,
+  },
+  textBubbleContainer: {
+    flexDirection: "column",
   },
   messageText: {
     fontSize: 15,
@@ -1137,11 +1271,15 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "flex-end",
-    marginTop: 4,
-    gap: 4,
+    alignSelf: "flex-end",
+    marginTop: 2,
+    marginLeft: 14,
+    gap: 3,
   },
   messageTime: {
     fontSize: 11,
+    fontVariant: ["tabular-nums"],
+    letterSpacing: 0.2,
   },
   statusIcon: {
     fontSize: 12,

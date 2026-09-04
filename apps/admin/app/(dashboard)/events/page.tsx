@@ -71,6 +71,30 @@ function formatTimeDisplay(t: string): string {
   return `${h % 12 || 12}:${min} ${h >= 12 ? "PM" : "AM"}`;
 }
 
+// Event Time picker — three explicit dropdowns (Hour / Minute / AM-PM)
+// instead of a native <input type="time">, whose AM/PM segment is rendered
+// entirely by the browser/OS and wasn't reliably togglable. formData still
+// stores the canonical 24-hour "HH:MM" string, so formatTimeDisplay and the
+// edit-mode parser below don't need to change.
+const TIME_HOUR_OPTIONS = Array.from({ length: 12 }, (_, i) => String(i + 1));
+const TIME_MINUTE_OPTIONS = Array.from({ length: 12 }, (_, i) => String(i * 5).padStart(2, "0"));
+
+function hhmmToParts(hhmm: string): { hour: string; minute: string; meridiem: "AM" | "PM" } {
+  const m = (hhmm || "").match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) return { hour: "", minute: "", meridiem: "AM" };
+  const h = parseInt(m[1], 10);
+  const meridiem: "AM" | "PM" = h >= 12 ? "PM" : "AM";
+  return { hour: String(h % 12 || 12), minute: m[2], meridiem };
+}
+
+function partsToHhmm(hour: string, minute: string, meridiem: "AM" | "PM"): string {
+  if (!hour || !minute) return "";
+  let h = parseInt(hour, 10);
+  if (meridiem === "PM" && h !== 12) h += 12;
+  if (meridiem === "AM" && h === 12) h = 0;
+  return `${String(h).padStart(2, "0")}:${minute}`;
+}
+
 /** Parse a date string in multiple formats into { day, month (0-indexed), year }.
  *  Handles: YYYY-MM-DD, DD/MM/YYYY, "15 March 2026", "March 15 2026" */
 function parseEventDate(dateStr: string): { day: number; month: number; year: number } | null {
@@ -161,6 +185,20 @@ export default function EventsPage() {
     status: "published" as "published" | "unpublished",
   });
 
+  // Independent hour/minute/meridiem state for the time pickers below — kept
+  // separate from formData.timeFrom/timeTo (a single canonical "HH:MM"
+  // string) because partsToHhmm only produces a non-empty string once BOTH
+  // hour and minute are chosen. Deriving the selects' displayed value by
+  // re-parsing that string on every render would erase whichever part the
+  // user picked first, since it collapses back to "" until all parts are
+  // present — this is what made picking any one option "not stick".
+  const [timeParts, setTimeParts] = useState<
+    Record<"timeFrom" | "timeTo", { hour: string; minute: string; meridiem: "AM" | "PM" }>
+  >({
+    timeFrom: { hour: "", minute: "", meridiem: "AM" },
+    timeTo: { hour: "", minute: "", meridiem: "AM" },
+  });
+
   const fetchEvents = async () => {
     setLoading(true);
     try {
@@ -201,6 +239,18 @@ export default function EventsPage() {
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
+  const handleTimePartChange = (
+    field: "timeFrom" | "timeTo",
+    part: "hour" | "minute" | "meridiem",
+    value: string
+  ) => {
+    const next = { ...timeParts[field], [part]: value };
+    setTimeParts(prev => ({ ...prev, [field]: next }));
+    // Only becomes a non-empty canonical string once both hour and minute
+    // are chosen — that's fine, formData[field] is just what gets submitted.
+    setFormData(prev => ({ ...prev, [field]: partsToHhmm(next.hour, next.minute, next.meridiem as "AM" | "PM") }));
+  };
+
   const handleImageFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -237,6 +287,10 @@ export default function EventsPage() {
       accessibilityTags: "",
       status: "published",
     });
+    setTimeParts({
+      timeFrom: { hour: "", minute: "", meridiem: "AM" },
+      timeTo: { hour: "", minute: "", meridiem: "AM" },
+    });
     setErrorMsg("");
     setSuccessMsg("");
     setUseUrlInput(false);
@@ -261,14 +315,20 @@ export default function EventsPage() {
       }
       return "";
     };
-    const timeParts = (ev.time || "").split("-").map(s => s.trim());
+    // Split on a hyphen, en dash, or em dash — buildTimeString() below joins
+    // with an en dash ("10:00 AM – 1:00 PM"), but older/legacy data may use
+    // a plain hyphen ("10:00-13:00"). Splitting on ASCII "-" alone missed the
+    // en dash entirely, leaving "To" blank whenever a range was re-opened.
+    const timeRangeParts = (ev.time || "").split(/\s*[-–—]\s*/).map(s => s.trim());
+    const timeFromHHMM = parseToHHMM(timeRangeParts[0] || "");
+    const timeToHHMM = parseToHHMM(timeRangeParts[1] || "");
     setFormData({
       title: ev.title || "",
       category: ev.category || masterCategories[0] || "Medical Support",
       location: ev.location || "",
       date: ev.date || "",
-      timeFrom: parseToHHMM(timeParts[0] || ""),
-      timeTo: parseToHHMM(timeParts[1] || ""),
+      timeFrom: timeFromHHMM,
+      timeTo: timeToHHMM,
       image: ev.image || "",
       description: ev.description || "",
       spots: String(ev.spots || 50),
@@ -277,6 +337,10 @@ export default function EventsPage() {
       organizer: ev.organizer || "",
       accessibilityTags: ev.accessibility_tags || "",
       status: ev.status || "published",
+    });
+    setTimeParts({
+      timeFrom: hhmmToParts(timeFromHHMM),
+      timeTo: hhmmToParts(timeToHHMM),
     });
     setErrorMsg("");
     setSuccessMsg("");
@@ -304,6 +368,18 @@ export default function EventsPage() {
     e.preventDefault();
     if (!formData.image.trim()) {
       setErrorMsg("Please upload an event image from your device.");
+      return;
+    }
+
+    const todayStr = new Date().toISOString().slice(0, 10);
+    if (formData.date && formData.date < todayStr) {
+      setErrorMsg("Event date cannot be in the past.");
+      return;
+    }
+
+    const spotsNum = Number(formData.spots);
+    if (formData.spots !== "" && (!Number.isInteger(spotsNum) || spotsNum < 0)) {
+      setErrorMsg("Available Spots must be a whole number of 0 or greater.");
       return;
     }
 
@@ -872,6 +948,7 @@ export default function EventsPage() {
                     name="date"
                     type="date"
                     required
+                    min={new Date().toISOString().slice(0, 10)}
                     value={formData.date}
                     onChange={handleInput}
                     className="w-full h-11 rounded-xl border border-slate-200 px-4 text-sm outline-none focus:border-[#8A38F5] text-[#1A1C1C]"
@@ -884,28 +961,54 @@ export default function EventsPage() {
                     Event Time <span className="normal-case font-normal">(optional)</span>
                   </label>
                   <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-[10px] text-slate-400 mb-1">From</label>
-                      <input
-                        name="timeFrom"
-                        type="time"
-                        value={formData.timeFrom}
-                        onChange={handleInput}
-                        className="w-full h-11 rounded-xl border border-slate-200 px-4 text-sm outline-none focus:border-[#8A38F5] text-[#1A1C1C]"
-                        style={{ colorScheme: "light" }}
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[10px] text-slate-400 mb-1">To</label>
-                      <input
-                        name="timeTo"
-                        type="time"
-                        value={formData.timeTo}
-                        onChange={handleInput}
-                        className="w-full h-11 rounded-xl border border-slate-200 px-4 text-sm outline-none focus:border-[#8A38F5] text-[#1A1C1C]"
-                        style={{ colorScheme: "light" }}
-                      />
-                    </div>
+                    {(["timeFrom", "timeTo"] as const).map((field) => {
+                      const parts = timeParts[field];
+                      const selectClass =
+                        "w-full h-11 rounded-xl border border-slate-200 px-1.5 text-sm outline-none focus:border-[#8A38F5] text-[#1A1C1C]";
+                      return (
+                        <div key={field}>
+                          <label className="block text-[10px] text-slate-400 mb-1">
+                            {field === "timeFrom" ? "From" : "To"}
+                          </label>
+                          <div className="grid grid-cols-3 gap-1.5">
+                            <select
+                              aria-label={`${field === "timeFrom" ? "From" : "To"} hour`}
+                              value={parts.hour}
+                              onChange={(e) => handleTimePartChange(field, "hour", e.target.value)}
+                              className={selectClass}
+                              style={{ colorScheme: "light" }}
+                            >
+                              <option value="">--</option>
+                              {TIME_HOUR_OPTIONS.map((h) => (
+                                <option key={h} value={h}>{h}</option>
+                              ))}
+                            </select>
+                            <select
+                              aria-label={`${field === "timeFrom" ? "From" : "To"} minute`}
+                              value={parts.minute}
+                              onChange={(e) => handleTimePartChange(field, "minute", e.target.value)}
+                              className={selectClass}
+                              style={{ colorScheme: "light" }}
+                            >
+                              <option value="">--</option>
+                              {TIME_MINUTE_OPTIONS.map((m) => (
+                                <option key={m} value={m}>{m}</option>
+                              ))}
+                            </select>
+                            <select
+                              aria-label={`${field === "timeFrom" ? "From" : "To"} AM or PM`}
+                              value={parts.meridiem}
+                              onChange={(e) => handleTimePartChange(field, "meridiem", e.target.value)}
+                              className={selectClass}
+                              style={{ colorScheme: "light" }}
+                            >
+                              <option value="AM">AM</option>
+                              <option value="PM">PM</option>
+                            </select>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
 
@@ -931,6 +1034,8 @@ export default function EventsPage() {
                   <input
                     name="spots"
                     type="number"
+                    min="0"
+                    step="1"
                     value={formData.spots}
                     onChange={handleInput}
                     className="w-full h-11 rounded-xl border border-slate-200 px-4 text-sm outline-none focus:border-[#8A38F5]"

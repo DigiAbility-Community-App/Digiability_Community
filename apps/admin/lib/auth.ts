@@ -27,3 +27,21 @@ export async function requireAdminAuth(request: NextRequest): Promise<NextRespon
 
   return null; // auth passed
 }
+
+/**
+ * Non-rejecting version of the same check, for routes that serve a public
+ * subset of data to anyone but a fuller view to a logged-in admin (e.g. the
+ * services directory: published rows are public, drafts are admin-only).
+ * Never throws/returns an error response — just tells the caller whether
+ * this request carries a valid admin session.
+ */
+export async function isAdminRequest(request: NextRequest): Promise<boolean> {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) return false;
+
+  const sessionCookie = request.cookies.get("admin-session");
+  if (!sessionCookie?.value) return false;
+
+  const payload = await verifyJWT(sessionCookie.value, secret);
+  return !!payload && payload.role === "admin";
+}

@@ -576,6 +576,7 @@ const styles = StyleSheet.create({
 
   quickEmoji: {
     fontSize: 22,
+    lineHeight: 28,
   },
 
   // SECTIONS

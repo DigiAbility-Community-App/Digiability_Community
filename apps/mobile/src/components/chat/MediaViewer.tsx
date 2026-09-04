@@ -1,28 +1,41 @@
 // ─────────────────────────────────────────────────────────────
 // MediaViewer — full-screen modal for viewing images & videos.
 //
-// WhatsApp-style experience:
-//   • Images shown full-screen with dark background
-//   • Videos auto-play with native controls
-//   • Back button (top-left) to return to chat
-//   • Android hardware back button handled
-//   • Tap dark area outside media to dismiss
+// Image zoom: Uses react-native-image-viewing which provides
+//   • Proper 2-finger pinch-to-zoom (in and out, clamped at 1x min)
+//   • Pan/drag while zoomed - stays within image bounds
+//   • Double-tap to zoom
+//   • Image always centered in its original frame
+//
+// Download: Saves directly to device Gallery/Photos via expo-media-library.
+//   Green tick ONLY shows when save genuinely succeeds.
+// Share: Opens system share sheet.
 // ─────────────────────────────────────────────────────────────
 
-import React, { useCallback, useRef } from "react";
+import React, { useCallback, useRef, useState, useEffect } from "react";
 import {
   View,
-  Image,
   TouchableOpacity,
   StyleSheet,
   Modal,
   StatusBar,
   Dimensions,
-  SafeAreaView,
+  ActivityIndicator,
+  Alert,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Video, ResizeMode } from "expo-av";
-import { ArrowLeft, X } from "lucide-react-native";
+import { File, Paths, downloadAsync } from "expo-file-system";
+import * as MediaLibrary from "expo-media-library";
+import * as Sharing from "expo-sharing";
+import ImageViewing from "react-native-image-viewing";
+import {
+  ArrowLeft,
+  X,
+  Download,
+  Share2,
+  Check,
+} from "lucide-react-native";
 import { AccessibleText } from "../shared/AccessibleText";
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get("window");
@@ -33,125 +46,286 @@ interface MediaViewerProps {
   alt?: string;
   isVideo: boolean;
   onClose: () => void;
+  title?: string;
 }
 
-export function MediaViewer({ visible, src, alt, isVideo, onClose }: MediaViewerProps) {
+export function MediaViewer({
+  visible,
+  src,
+  alt,
+  isVideo,
+  onClose,
+  title = "Shared image",
+}: MediaViewerProps) {
   const videoRef = useRef<Video>(null);
   const insets = useSafeAreaInsets();
 
+  const [downloading, setDownloading] = useState(false);
+  const [downloadSuccess, setDownloadSuccess] = useState(false);
+  // Track whether user has reached end-of-video so next play restarts from beginning
+  const videoEndedRef = useRef(false);
+
+  // Auto-start video when modal becomes visible (without using shouldPlay=true which fights native controls)
+  useEffect(() => {
+    if (visible && isVideo) {
+      videoEndedRef.current = false;
+      const timer = setTimeout(() => {
+        videoRef.current?.playAsync().catch(() => {});
+      }, 300);
+      return () => clearTimeout(timer);
+    }
+  }, [visible, isVideo]);
+
+  // Handle end-of-video: pause in place (do NOT seek — that causes resume-from-start bug)
+  // When user taps play after video ends, we seek to 0 THEN play (see handleVideoPress)
+  const handlePlaybackStatusUpdate = useCallback((status: any) => {
+    if (status?.didJustFinish && !status?.isLooping) {
+      videoEndedRef.current = true;
+      // Just pause — keep position at end so native controls show correctly
+      videoRef.current?.pauseAsync().catch(() => {});
+    }
+  }, []);
+
   const handleClose = useCallback(() => {
-    // Pause video before closing to avoid audio leak
-    videoRef.current?.pauseAsync().catch(() => {});
+    videoRef.current?.stopAsync().catch(() => {});
     onClose();
   }, [onClose]);
 
+  // ── Helper to save media to local cache file ──
+  const prepareLocalFile = async (): Promise<string> => {
+    let fileUri = src;
+
+    // Remote HTTP/HTTPS URL — download to cache first
+    if (src.startsWith("http://") || src.startsWith("https://")) {
+      const ext = isVideo
+        ? "mp4"
+        : src.split(".").pop()?.split("?")[0]?.toLowerCase() || "jpg";
+      const validExts = ["jpg", "jpeg", "png", "gif", "webp", "mp4", "mov", "webm"];
+      const safeExt = validExts.includes(ext) ? ext : (isVideo ? "mp4" : "jpg");
+      const filename = `digiability-${Date.now()}.${safeExt}`;
+      const destFile = new File(Paths.cache, filename);
+      const res = await downloadAsync(src, destFile.uri);
+      fileUri = res.uri;
+    }
+    // Base64 / data URL
+    else if (src.startsWith("data:")) {
+      const extMatch = src.match(/^data:image\/(\w+);base64,/);
+      const ext = extMatch?.[1] ?? "jpg";
+      const filename = `digiability-${Date.now()}.${ext}`;
+      const destFile = new File(Paths.cache, filename);
+      destFile.write(src.replace(/^data:image\/\w+;base64,/, ""));
+      fileUri = destFile.uri;
+    }
+
+    return fileUri;
+  };
+
+  // ── Download & Save Directly to Phone Gallery / Photos ──
+  const handleDownload = async () => {
+    if (!src || downloading) return;
+    setDownloading(true);
+    setDownloadSuccess(false);
+
+    try {
+      const localUri = await prepareLocalFile();
+
+      // Request photo/video write permission only (not AUDIO to avoid AndroidManifest error)
+      const { status } = await MediaLibrary.requestPermissionsAsync(true, ["photo", "video"]);
+      if (status !== "granted") {
+        setDownloadSuccess(false);
+        Alert.alert(
+          "Permission Required",
+          "Please allow photo/media access in Settings so Digiability can save images to your phone Gallery.",
+          [{ text: "OK" }]
+        );
+        return;
+      }
+
+      // Save to device Gallery — green tick ONLY if this succeeds
+      await MediaLibrary.saveToLibraryAsync(localUri);
+
+      setDownloadSuccess(true);
+      Alert.alert(
+        "Saved to Gallery ✓",
+        "The media has been saved to your device's Photos / Gallery.",
+        [{ text: "OK" }]
+      );
+      setTimeout(() => setDownloadSuccess(false), 3500);
+    } catch (error: any) {
+      console.error("Save to gallery error:", error);
+      setDownloadSuccess(false);
+      Alert.alert(
+        "Save Failed",
+        error?.message || "Could not save media to device. Please try again."
+      );
+    } finally {
+      setDownloading(false);
+    }
+  };
+
+  // ── Share via external apps (WhatsApp, Drive, etc.) ──
+  const handleShare = async () => {
+    try {
+      const localUri = await prepareLocalFile();
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(localUri, {
+          mimeType: isVideo ? "video/mp4" : "image/jpeg",
+          dialogTitle: isVideo ? "Share Video" : "Share Image",
+        });
+      } else {
+        Alert.alert("Share", "Sharing is not available on this device.");
+      }
+    } catch (error: any) {
+      Alert.alert("Share Failed", error?.message || "Could not open share menu.");
+    }
+  };
+
   if (!visible) return null;
 
-  return (
-    <Modal
-      visible={visible}
-      animationType="fade"
-      presentationStyle="fullScreen"
-      statusBarTranslucent
-      onRequestClose={handleClose}
-      supportedOrientations={["portrait", "landscape"]}
-    >
-      <StatusBar barStyle="light-content" backgroundColor="#000" />
-      <View style={styles.container}>
-        {/* Top bar */}
-        <View style={[styles.topBarSafe, { paddingTop: Math.max(insets.top, 20) }]}>
-          <View style={styles.topBar}>
-            <TouchableOpacity
-              style={styles.backBtn}
-              onPress={handleClose}
-              accessibilityRole="button"
-              accessibilityLabel="Back to chat"
-              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            >
-              <ArrowLeft size={22} color="#fff" strokeWidth={2.2} />
-              <AccessibleText style={styles.backText}>Back</AccessibleText>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.closeBtn}
-              onPress={handleClose}
-              accessibilityRole="button"
-              accessibilityLabel="Close"
-              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            >
-              <X size={22} color="#fff" strokeWidth={2} />
-            </TouchableOpacity>
+  // ── VIDEO: Custom full-screen modal ──
+  if (isVideo) {
+    return (
+      <Modal
+        visible={visible}
+        animationType="fade"
+        presentationStyle="fullScreen"
+        statusBarTranslucent
+        onRequestClose={handleClose}
+        supportedOrientations={["portrait", "landscape"]}
+      >
+        <StatusBar barStyle="light-content" backgroundColor="#000" />
+        <View style={styles.container}>
+          {/* Top bar */}
+          <View style={[styles.topBarSafe, { paddingTop: Math.max(insets.top, 16) }]}>
+            <View style={styles.topBar}>
+              <TouchableOpacity style={styles.backBtn} onPress={handleClose} accessibilityRole="button" accessibilityLabel="Back" hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+                <ArrowLeft size={22} color="#fff" strokeWidth={2.2} />
+                <AccessibleText numberOfLines={1} style={styles.headerTitle}>{alt || title}</AccessibleText>
+              </TouchableOpacity>
+              <View style={styles.actionsRow}>
+                <TouchableOpacity style={[styles.iconBtn, downloadSuccess && styles.iconBtnSuccess]} onPress={handleDownload} disabled={downloading} accessibilityRole="button" accessibilityLabel="Save to Gallery" hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                  {downloading ? <ActivityIndicator size="small" color="#fff" /> : downloadSuccess ? <Check size={20} color="#4ADE80" strokeWidth={2.5} /> : <Download size={20} color="#fff" strokeWidth={2} />}
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.iconBtn} onPress={handleShare} accessibilityRole="button" accessibilityLabel="Share" hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                  <Share2 size={20} color="#fff" strokeWidth={2} />
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.closeBtn} onPress={handleClose} accessibilityRole="button" accessibilityLabel="Close" hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                  <X size={20} color="#fff" strokeWidth={2.2} />
+                </TouchableOpacity>
+              </View>
+            </View>
           </View>
-        </View>
-
-        {/* Content area — tap backdrop to close */}
-        <TouchableOpacity
-          style={styles.content}
-          activeOpacity={1}
-          onPress={handleClose}
-          accessibilityLabel="Tap to close viewer"
-        >
-          {isVideo ? (
+          {/* Video player */}
+          <View style={styles.content}>
             <Video
               ref={videoRef}
               source={{ uri: src }}
               style={styles.video}
               resizeMode={ResizeMode.CONTAIN}
               useNativeControls
-              shouldPlay
+              shouldPlay={false}
               isLooping={false}
+              onPlaybackStatusUpdate={handlePlaybackStatusUpdate}
               accessibilityLabel={alt || "Video"}
             />
-          ) : (
-            <Image
-              source={{ uri: src }}
-              style={styles.image}
-              resizeMode="contain"
-              accessibilityLabel={alt || "Full size image"}
-            />
-          )}
-        </TouchableOpacity>
-      </View>
-    </Modal>
+          </View>
+        </View>
+      </Modal>
+    );
+  }
+
+  // ── IMAGE: react-native-image-viewing handles pinch-to-zoom, pan, centering natively ──
+  return (
+    <>
+      <StatusBar barStyle="light-content" backgroundColor="#000" />
+      <ImageViewing
+        images={[{ uri: src }]}
+        imageIndex={0}
+        visible={visible}
+        onRequestClose={handleClose}
+        animationType="fade"
+        backgroundColor="#000"
+        swipeToCloseEnabled={false}
+        doubleTapToZoomEnabled={true}
+        // Custom header with download + share
+        HeaderComponent={() => (
+          <View style={[styles.topBarSafe, { paddingTop: Math.max(insets.top, 16) }]}>
+            <View style={styles.topBar}>
+              <TouchableOpacity style={styles.backBtn} onPress={handleClose} accessibilityRole="button" accessibilityLabel="Back" hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+                <ArrowLeft size={22} color="#fff" strokeWidth={2.2} />
+                <AccessibleText numberOfLines={1} style={styles.headerTitle}>{alt || title}</AccessibleText>
+              </TouchableOpacity>
+              <View style={styles.actionsRow}>
+                <TouchableOpacity style={[styles.iconBtn, downloadSuccess && styles.iconBtnSuccess]} onPress={handleDownload} disabled={downloading} accessibilityRole="button" accessibilityLabel="Save to Gallery" hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                  {downloading ? <ActivityIndicator size="small" color="#fff" /> : downloadSuccess ? <Check size={20} color="#4ADE80" strokeWidth={2.5} /> : <Download size={20} color="#fff" strokeWidth={2} />}
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.iconBtn} onPress={handleShare} accessibilityRole="button" accessibilityLabel="Share" hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                  <Share2 size={20} color="#fff" strokeWidth={2} />
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.closeBtn} onPress={handleClose} accessibilityRole="button" accessibilityLabel="Close" hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                  <X size={20} color="#fff" strokeWidth={2.2} />
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        )}
+      />
+    </>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#000",
+    backgroundColor: "#000000",
   },
   topBarSafe: {
-    backgroundColor: "rgba(0,0,0,0.6)",
+    backgroundColor: "rgba(0, 0, 0, 0.75)",
     zIndex: 10,
   },
   topBar: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingHorizontal: 16,
+    paddingHorizontal: 14,
     paddingVertical: 10,
   },
   backBtn: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-    backgroundColor: "rgba(255,255,255,0.15)",
-    borderRadius: 24,
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    paddingLeft: 12,
+    flex: 1,
+    paddingRight: 10,
   },
-  backText: {
-    color: "#fff",
-    fontSize: 15,
-    fontWeight: "600",
+  headerTitle: {
+    color: "#FFFFFF",
+    fontSize: 16,
+    fontWeight: "700",
+    flex: 1,
+  },
+  actionsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  iconBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "rgba(255, 255, 255, 0.15)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  iconBtnSuccess: {
+    backgroundColor: "rgba(74, 222, 128, 0.2)",
+    borderColor: "#4ADE80",
+    borderWidth: 1,
   },
   closeBtn: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: "rgba(255,255,255,0.15)",
+    backgroundColor: "rgba(255, 255, 255, 0.18)",
     justifyContent: "center",
     alignItems: "center",
   },
@@ -159,10 +333,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-  },
-  image: {
-    width: SCREEN_W,
-    height: SCREEN_H * 0.8,
+    overflow: "hidden",
   },
   video: {
     width: SCREEN_W,

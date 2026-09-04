@@ -10,6 +10,7 @@ export interface QuestionFilters {
   tag?: string;
   status?: "SOLVED" | "UNSOLVED";
   sort?: "newest" | "popular" | "answers";
+  order?: "asc" | "desc";
   page?: number;
   limit?: number;
   cursor?: string | null;
@@ -250,6 +251,14 @@ export const forumService = {
   markNotificationRead: async (id: string) => {
     const res = await apiClient.put(`${FORUM_BASE_URL}/api/forum/notifications/${id}/read`);
     return res.data.data;
+  },
+
+  /**
+   * Delete notification
+   */
+  deleteNotification: async (id: string) => {
+    const res = await apiClient.delete(`${FORUM_BASE_URL}/api/forum/notifications/${id}`);
+    return res.data;
   },
 
   /**

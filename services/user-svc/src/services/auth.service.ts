@@ -91,9 +91,22 @@ export async function resendVerificationOtp(
   }
 
   const rawOtp = await createEmailVerificationOtp(user.id);
-  sendVerificationOtpEmail(user.email, user.name, rawOtp).catch((err) =>
-    console.error("[EmailService] Failed to send verification OTP:", err)
-  );
+
+  // Awaited (not fire-and-forget) so a send failure is visible to the
+  // caller instead of the API responding "sent" before the send even
+  // resolves. Safe to report honestly here — we've already confirmed this
+  // account exists and created the OTP row, so an honest failure doesn't
+  // leak account existence the way the "no such account" branch above must
+  // stay vague about.
+  try {
+    await sendVerificationOtpEmail(user.email, user.name, rawOtp);
+  } catch (err) {
+    console.error("[EmailService] Failed to send verification OTP (resend):", err);
+    throw createError(
+      "We couldn't send the verification email right now. Please try again in a moment.",
+      502
+    );
+  }
 
   return { message: "If an account with that email exists, a new OTP has been sent." };
 }
@@ -112,6 +125,9 @@ export interface LoginResult {
     profileComplete: boolean;
     isEmailVerified: boolean;
   };
+  /** Only meaningful on the registration path — whether the verification
+   *  OTP email actually sent. `undefined` for login, where no OTP is sent. */
+  otpEmailSent?: boolean;
 }
 
 function toAuthUser(user: {
@@ -169,11 +185,19 @@ export async function registerUser(
 
   auditLog("auth.register", { userId: user.id, email: user.email });
 
-  // Email verification is enabled
+  // Email verification is enabled. Awaited (not fire-and-forget) so we know
+  // whether it actually sent — registration still succeeds either way (a
+  // failed confirmation email shouldn't undo a successful signup), but the
+  // controller uses otpEmailSent to tell the client honestly rather than
+  // claiming "OTP sent" when it wasn't.
   const rawOtp = await createEmailVerificationOtp(user.id);
-  sendVerificationOtpEmail(user.email, user.name, rawOtp).catch((err) =>
-    console.error("[EmailService] Failed to send verification OTP:", err)
-  );
+  let otpEmailSent = true;
+  try {
+    await sendVerificationOtpEmail(user.email, user.name, rawOtp);
+  } catch (err) {
+    console.error("[EmailService] Failed to send verification OTP (register):", err);
+    otpEmailSent = false;
+  }
 
   const accessToken = signAccessToken({ sub: user.id, email: user.email });
   const refreshToken = await createRefreshToken(user.id);
@@ -187,6 +211,7 @@ export async function registerUser(
     accessToken,
     refreshToken,
     user: toAuthUser(user),
+    otpEmailSent,
   };
 }
 
@@ -297,10 +322,20 @@ export async function forgotPassword(
   // Create a 6-digit reset OTP
   const rawOtp = await createPasswordResetOtp(user.id);
 
-  // Send email (non-blocking)
-  sendPasswordResetOtpEmail(user.email, user.name, rawOtp).catch((err) =>
-    console.error("[EmailService] Failed to send reset email:", err)
-  );
+  // Awaited so a send failure is visible instead of claiming "sent" when it
+  // wasn't. Safe to report honestly — we're already past the account-exists
+  // branch (the SAFE_MESSAGE above still covers "no such account" exactly
+  // as before), so an honest failure here doesn't add an enumeration signal
+  // beyond what a rare, non-attacker-controlled delivery failure already is.
+  try {
+    await sendPasswordResetOtpEmail(user.email, user.name, rawOtp);
+  } catch (err) {
+    console.error("[EmailService] Failed to send reset email:", err);
+    throw createError(
+      "We couldn't send the reset code right now. Please try again in a moment.",
+      502
+    );
+  }
 
   return { message: SAFE_MESSAGE };
 }
@@ -519,9 +554,11 @@ export async function updateUserRole(userId: string, input: UpdateRoleInput) {
 }
 
 // ─── Batch User Lookup ─────────────────────────────────
-// Returns minimal user info (id, name) for a list of IDs.
+// Returns minimal user info (id, name, deletedAt) for a list of IDs.
 // Used by the mobile app to resolve participant names in
-// conversation lists without making N+1 requests.
+// conversation lists without making N+1 requests. deletedAt lets
+// clients distinguish a soft-deleted account from a real user who
+// happens to be named "Deleted User".
 
 export async function getUsersByIds(ids: string[]) {
   const uniqueIds = [...new Set(ids)];
@@ -535,6 +572,7 @@ export async function getUsersByIds(ids: string[]) {
     select: {
       id: true,
       name: true,
+      deletedAt: true,
     },
   });
 

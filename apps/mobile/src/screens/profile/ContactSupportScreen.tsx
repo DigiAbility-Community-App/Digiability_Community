@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   View,
   StyleSheet,
@@ -11,7 +11,7 @@ import {
   Clipboard,
   KeyboardAvoidingView,
 } from "react-native";
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation, useRoute } from "@react-navigation/native";
 import { useTheme } from "../../theme/ThemeContext";
 import { AccessibleText } from "../../components/shared/AccessibleText";
 import { AccessibleButton } from "../../components/shared/AccessibleButton";
@@ -33,8 +33,18 @@ const CATEGORIES = [
 
 export default function ContactSupportScreen() {
   const navigation = useNavigation();
+  const route = useRoute<any>();
   const { colors, highContrast } = useTheme();
   const user = useAuthStore((s) => s.user);
+
+  // Help Center & FAQs and Contact Support are the same screen, entered
+  // from two different menu items — initialSection tells us which one the
+  // user tapped so we can scroll/expand to the relevant part and reflect
+  // it in the header, instead of showing the identical page for both.
+  const initialSection: "faq" | "contact" = route.params?.initialSection === "faq" ? "faq" : "contact";
+  const scrollViewRef = useRef<ScrollView>(null);
+  const [faqSectionY, setFaqSectionY] = useState<number | null>(null);
+  const hasScrolledToFaq = useRef(false);
 
   // Dynamic system settings from Admin General Settings
   const supportEmail = useSystemStore((s) => s.supportEmail) || "support@digiability.org";
@@ -56,7 +66,14 @@ export default function ContactSupportScreen() {
   const [submitted, setSubmitted] = useState(false);
 
   // FAQ Expand state
-  const [expandedFaq, setExpandedFaq] = useState<number | null>(null);
+  const [expandedFaq, setExpandedFaq] = useState<number | null>(initialSection === "faq" ? 0 : null);
+
+  useEffect(() => {
+    if (initialSection === "faq" && faqSectionY !== null && !hasScrolledToFaq.current) {
+      hasScrolledToFaq.current = true;
+      scrollViewRef.current?.scrollTo({ y: faqSectionY, animated: true });
+    }
+  }, [initialSection, faqSectionY]);
 
   const cardBorder = highContrast
     ? { borderWidth: 2, borderColor: "#000000" }
@@ -172,7 +189,7 @@ export default function ContactSupportScreen() {
   return (
     <ScreenWrapper>
       <AppHeader
-        title="Contact Support"
+        title={initialSection === "faq" ? "Help Center & FAQs" : "Contact Support"}
         onBackPress={() => navigation.goBack()}
       />
 
@@ -181,6 +198,7 @@ export default function ContactSupportScreen() {
         style={{ flex: 1 }}
       >
         <ScrollView
+          ref={scrollViewRef}
           style={[styles.container, { backgroundColor: colors.background }]}
           contentContainerStyle={styles.content}
           showsVerticalScrollIndicator={false}
@@ -445,6 +463,7 @@ export default function ContactSupportScreen() {
           </View>
 
           {/* ── FREQUENTLY ASKED QUESTIONS ── */}
+          <View onLayout={(e) => setFaqSectionY(e.nativeEvent.layout.y)}>
           <AccessibleText variant="caption" style={[styles.sectionHeading, { color: colors.subtext, marginTop: 24 }]}>
             FREQUENTLY ASKED QUESTIONS
           </AccessibleText>
@@ -482,6 +501,7 @@ export default function ContactSupportScreen() {
                 </View>
               );
             })}
+          </View>
           </View>
 
           {/* ── FOOTER ADDRESS & HOURS ── */}

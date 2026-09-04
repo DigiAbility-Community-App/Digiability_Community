@@ -8,6 +8,19 @@
 import prisma from "../models/prisma.client";
 import { Prisma, ConversationType, GroupSubType, MemberRole } from "../generated/client";
 import { logger } from "../config/logger";
+import { createError } from "../middleware/error.middleware";
+
+// Shared member projection reused by every query that embeds a conversation's
+// member list — keeps the shape (and the fields callers can rely on, notably
+// joinedAt for succession's "earliest-joined eligible member" lookup)
+// consistent everywhere instead of six near-identical inline copies.
+const MEMBER_SELECT = {
+  userId: true,
+  role: true,
+  lastReadSequenceNo: true,
+  isMuted: true,
+  joinedAt: true,
+} as const;
 
 export interface CreateConversationInput {
   type: ConversationType;
@@ -17,6 +30,14 @@ export interface CreateConversationInput {
   createdBy: string;
   memberIds: string[];  // Does NOT include the creator (added automatically)
   memberRoles?: Array<{ userId: string; role: MemberRole }>;
+  // Optional overrides for admin-initiated creation (mobile/web creation
+  // never sets these — the Prisma column defaults apply). maxMembers still
+  // falls back to the subType default (15/256) when omitted.
+  maxMembers?: number;
+  editGroupInfo?: string;
+  addMembers?: string;
+  sendMessages?: string;
+  approveNewMembers?: boolean;
 }
 
 export interface ConversationWithMembers {
@@ -32,6 +53,13 @@ export interface ConversationWithMembers {
   addMembers: string;
   sendMessages: string;
   approveNewMembers: boolean;
+  // Admin suspension state — separate from `sendMessages`, which is an
+  // owner-facing permission. See utils/suspension.util.ts.
+  isSuspended: boolean;
+  suspendedAt: Date | null;
+  suspendedUntil: Date | null;
+  suspensionReason: string | null;
+  suspensionNote: string | null;
   lastMessageText: string | null;
   lastMessageAt: Date | null;
   createdAt: Date;
@@ -40,6 +68,7 @@ export interface ConversationWithMembers {
     role: MemberRole;
     lastReadSequenceNo: bigint;
     isMuted: boolean;
+    joinedAt: Date;
   }>;
   _count?: { messages: number };
 }
@@ -51,7 +80,10 @@ class ConversationRepository {
    * Supports self-conversations (memberIds is empty).
    */
   async create(input: CreateConversationInput): Promise<ConversationWithMembers> {
-    const { type, subType, name, description, createdBy, memberIds, memberRoles } = input;
+    const {
+      type, subType, name, description, createdBy, memberIds, memberRoles,
+      maxMembers: maxMembersOverride, editGroupInfo, addMembers, sendMessages, approveNewMembers,
+    } = input;
 
     // Self-conversation: user messaging themselves
     const isSelfConversation =
@@ -86,13 +118,26 @@ class ConversationRepository {
       }
     }
 
-    // Determine max members based on subType
-    const maxMembers = subType === "CARE_CIRCLE" ? 15 : 256;
+    // Determine max members based on subType, unless the caller (admin
+    // panel) explicitly overrode it.
+    const maxMembers = maxMembersOverride && maxMembersOverride > 0
+      ? maxMembersOverride
+      : subType === "CARE_CIRCLE" ? 15 : 256;
 
     // Build member entries
     const allMemberIds = isSelfConversation
       ? [createdBy]
       : [createdBy, ...uniqueMembers];
+
+    // Reject at creation, not just on later adds — memberIds can carry up to
+    // 500 entries (Zod cap) with nothing else stopping a GROUP/CARE_CIRCLE
+    // from being created straight over its own default capacity.
+    if (type === "GROUP" && allMemberIds.length > maxMembers) {
+      throw createError(
+        `Cannot create group with ${allMemberIds.length} members — limit is ${maxMembers}`,
+        400
+      );
+    }
 
     // Build role map from memberRoles if provided
     const roleMap = new Map<string, MemberRole>();
@@ -108,6 +153,10 @@ class ConversationRepository {
         description: type === "GROUP" ? description : null,
         createdBy,
         maxMembers,
+        ...(editGroupInfo ? { editGroupInfo } : {}),
+        ...(addMembers ? { addMembers } : {}),
+        ...(sendMessages ? { sendMessages } : {}),
+        ...(approveNewMembers !== undefined ? { approveNewMembers } : {}),
         members: {
           create: allMemberIds.map((userId, index) => ({
             userId,
@@ -119,12 +168,7 @@ class ConversationRepository {
       },
       include: {
         members: {
-          select: {
-            userId: true,
-            role: true,
-            lastReadSequenceNo: true,
-            isMuted: true,
-          },
+          select: MEMBER_SELECT,
         },
       },
     });
@@ -158,12 +202,7 @@ class ConversationRepository {
       include: {
         members: {
           where: { leftAt: null },
-          select: {
-            userId: true,
-            role: true,
-            lastReadSequenceNo: true,
-            isMuted: true,
-          },
+          select: MEMBER_SELECT,
         },
       },
       take: 1,
@@ -181,12 +220,7 @@ class ConversationRepository {
       include: {
         members: {
           where: { leftAt: null },
-          select: {
-            userId: true,
-            role: true,
-            lastReadSequenceNo: true,
-            isMuted: true,
-          },
+          select: MEMBER_SELECT,
         },
       },
     });
@@ -210,12 +244,7 @@ class ConversationRepository {
       include: {
         members: {
           where: { leftAt: null },
-          select: {
-            userId: true,
-            role: true,
-            lastReadSequenceNo: true,
-            isMuted: true,
-          },
+          select: MEMBER_SELECT,
         },
       },
       orderBy: [
@@ -258,7 +287,7 @@ class ConversationRepository {
       include: {
         members: {
           where: { leftAt: null },
-          select: { userId: true, role: true, lastReadSequenceNo: true, isMuted: true },
+          select: MEMBER_SELECT,
         },
       },
       orderBy: [
@@ -429,12 +458,7 @@ class ConversationRepository {
       include: {
         members: {
           where: { leftAt: null },
-          select: {
-            userId: true,
-            role: true,
-            lastReadSequenceNo: true,
-            isMuted: true,
-          },
+          select: MEMBER_SELECT,
         },
       },
     });
@@ -458,12 +482,7 @@ class ConversationRepository {
       include: {
         members: {
           where: { leftAt: null },
-          select: {
-            userId: true,
-            role: true,
-            lastReadSequenceNo: true,
-            isMuted: true,
-          },
+          select: MEMBER_SELECT,
         },
       },
     });
@@ -502,6 +521,73 @@ class ConversationRepository {
       data: { leftAt: new Date() },
     });
     return result.count;
+  }
+
+  /**
+   * Count active (leftAt null) members holding one of the given admin-capable
+   * roles. `excludeUserId` lets a caller ask "ignoring this specific user,
+   * does the group still have an active admin?" — used both for the max-3
+   * cap (no exclusion) and succession (excluding the user who just became
+   * ineligible, e.g. suspended, whose own membership row may still be
+   * active).
+   */
+  async countActiveAdmins(
+    conversationId: string,
+    adminRoles: MemberRole[],
+    excludeUserId?: string
+  ): Promise<number> {
+    return prisma.conversationMember.count({
+      where: {
+        conversationId,
+        leftAt: null,
+        role: { in: adminRoles },
+        ...(excludeUserId ? { userId: { not: excludeUserId } } : {}),
+      },
+    });
+  }
+
+  /**
+   * The earliest-joined active member who does NOT already hold an
+   * admin-capable role — the succession candidate ("the next member which
+   * is added to the group after admin").
+   */
+  async getEarliestActiveNonAdmin(
+    conversationId: string,
+    adminRoles: MemberRole[],
+    excludeUserId?: string
+  ): Promise<{ userId: string; role: MemberRole; joinedAt: Date } | null> {
+    return prisma.conversationMember.findFirst({
+      where: {
+        conversationId,
+        leftAt: null,
+        role: { notIn: adminRoles },
+        ...(excludeUserId ? { userId: { not: excludeUserId } } : {}),
+      },
+      orderBy: { joinedAt: "asc" },
+      select: { userId: true, role: true, joinedAt: true },
+    });
+  }
+
+  /**
+   * Conversation IDs where this user currently holds an active admin-capable
+   * role for that conversation's own subType — used to know which groups
+   * need a succession check when the user becomes ineligible (suspended) or
+   * before their memberships are stripped (deleted/banned).
+   */
+  async getActiveAdminConversationIds(userId: string): Promise<Array<{ conversationId: string; subType: GroupSubType | null }>> {
+    const rows = await prisma.conversationMember.findMany({
+      where: {
+        userId,
+        leftAt: null,
+        role: { in: ["OWNER", "ADMIN", "CAREGIVER"] },
+        conversation: { deletedAt: null, type: "GROUP" },
+      },
+      select: {
+        conversationId: true,
+        conversation: { select: { subType: true } },
+      },
+    });
+    return rows.map((r) => ({ conversationId: r.conversationId, subType: r.conversation.subType }));
   }
 }
 

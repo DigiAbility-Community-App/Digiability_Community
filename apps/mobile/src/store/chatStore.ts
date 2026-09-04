@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { formatMessagePreview } from '../utils/messagePreview';
 
 export interface ChatMessage {
   id: string;
@@ -9,7 +10,18 @@ export interface ChatMessage {
   type: string;
   metadata?: string; // JSON string: { altText?, durationMs?, mimeType?, ... }
   status: 'sending' | 'sent' | 'delivered' | 'read' | 'failed';
+  /** Why the server rejected this message (only set when status is 'failed'). */
+  failureReason?: string;
+  /** True once the rejection dialog has been shown for this message — keeps
+   *  it from re-appearing on every remount (e.g. leaving and re-entering the
+   *  chat). Lives here rather than in screen-local state because it must
+   *  outlive the screen's own mount lifecycle the same way status does. */
+  failureAcknowledged?: boolean;
   createdAt: string;
+  /** Set when a moderator or the sender removed this message — content is
+   *  blanked server-side when this is set, so render a placeholder instead
+   *  of the (empty) content. */
+  deletedAt?: string | null;
 }
 
 export interface ConversationParticipant {
@@ -17,7 +29,7 @@ export interface ConversationParticipant {
   role: 'OWNER' | 'ADMIN' | 'MEMBER' | 'CAREGIVER' | 'MENTOR' | 'PROFESSIONAL';
   lastReadSequenceNo?: number;
   isMuted?: boolean;
-  user?: { id: string; name: string; avatarUrl?: string };
+  user?: { id: string; name: string; avatarUrl?: string; deletedAt?: string | null };
 }
 
 export interface Conversation {
@@ -83,6 +95,10 @@ interface ChatState {
   addMessage: (message: ChatMessage) => void;
   removeMessage: (conversationId: string, messageId: string) => void;
   confirmMessage: (clientMessageId: string, serverMessageId: string, status?: 'sent' | 'delivered' | 'read') => void;
+  /** Mark an optimistic message as rejected by the server, with the reason. */
+  failMessage: (clientMessageId: string, reason?: string) => void;
+  /** Mark a failed message's rejection dialog as already shown to the user. */
+  acknowledgeMessageFailure: (clientMessageId: string) => void;
   updateMessageStatus: (messageIds: string[], status: 'delivered' | 'read') => void;
 
   updatePresence: (userId: string, status: string, lastSeen: string) => void;
@@ -109,11 +125,26 @@ export const useChatStore = create<ChatState>((set) => ({
   setConversations: (convos) =>
     // Replace (not merge) so a fresh fetch fully reflects the current
     // user's conversations — leftover entries from a previous account
-    // or a stale socket event can't survive a reload.
-    set(() => {
+    // or a stale socket event can't survive a reload. The one exception:
+    // an optimistic send (or a WS event already applied locally) can be
+    // newer than what this REST fetch returns if the fetch raced ahead of
+    // chat-svc's async persist worker — in that case keep the locally-set
+    // last-message preview instead of regressing it back to blank/stale data.
+    set((state) => {
       const newConvos: Record<string, (typeof convos)[number]> = {};
       convos.forEach((c) => {
-        newConvos[c.id] = c;
+        const existing = state.conversations[c.id];
+        const existingIsNewer =
+          existing?.updatedAt && c.updatedAt && new Date(existing.updatedAt) > new Date(c.updatedAt);
+        newConvos[c.id] = existingIsNewer
+          ? {
+              ...c,
+              lastMessage: existing.lastMessage,
+              lastMessageText: existing.lastMessageText,
+              lastMessageAt: existing.lastMessageAt,
+              updatedAt: existing.updatedAt,
+            }
+          : c;
       });
       return { conversations: newConvos };
     }),
@@ -191,7 +222,7 @@ export const useChatStore = create<ChatState>((set) => ({
         updatedConversations[message.conversationId] = {
           ...conv,
           lastMessage: message,
-          lastMessageText: message.type === 'IMAGE' ? '[Image]' : message.content,
+          lastMessageText: formatMessagePreview(message.type, message.content),
           lastMessageAt: message.createdAt,
           updatedAt: message.createdAt
         };
@@ -222,6 +253,41 @@ export const useChatStore = create<ChatState>((set) => ({
             ...newMessages[convId][idx],
             id: serverMessageId,
             status: status || newMessages[convId][idx].status,
+          };
+          break;
+        }
+      }
+      return { messages: newMessages };
+    }),
+
+  failMessage: (clientMessageId, reason) =>
+    set((state) => {
+      const newMessages = { ...state.messages };
+      for (const convId of Object.keys(newMessages)) {
+        const idx = newMessages[convId].findIndex(m => m.clientMessageId === clientMessageId);
+        if (idx >= 0) {
+          newMessages[convId] = [...newMessages[convId]];
+          newMessages[convId][idx] = {
+            ...newMessages[convId][idx],
+            status: 'failed',
+            failureReason: reason,
+          };
+          break;
+        }
+      }
+      return { messages: newMessages };
+    }),
+
+  acknowledgeMessageFailure: (clientMessageId) =>
+    set((state) => {
+      const newMessages = { ...state.messages };
+      for (const convId of Object.keys(newMessages)) {
+        const idx = newMessages[convId].findIndex(m => m.clientMessageId === clientMessageId);
+        if (idx >= 0) {
+          newMessages[convId] = [...newMessages[convId]];
+          newMessages[convId][idx] = {
+            ...newMessages[convId][idx],
+            failureAcknowledged: true,
           };
           break;
         }

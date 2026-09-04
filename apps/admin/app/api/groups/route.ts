@@ -2,6 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAdminAuth } from "@/lib/auth";
 import { dbPool } from "@/lib/db";
 
+// A group can have at most this many admin-capable members (OWNER counts
+// toward this) — mirrors MAX_ADMINS_PER_GROUP in chat-svc's roles.util.ts.
+const MAX_ADMINS_PER_GROUP = 3;
+
+function adminRolesFor(subType: string): string[] {
+  return subType === "CARE_CIRCLE" ? ["OWNER", "CAREGIVER"] : ["OWNER", "ADMIN"];
+}
+
 // ─────────────────────────────────────────────
 // POST — create a new group / community
 // Writes to chat schema so groups appear in the mobile app.
@@ -21,6 +29,7 @@ export async function POST(request: NextRequest) {
       addMembers = "ADMINS_ONLY",
       sendMessages = "ALL_MEMBERS",
       approveNewMembers = false,
+      ownerId,
       initialMembers = [],
     } = body;
 
@@ -30,11 +39,86 @@ export async function POST(request: NextRequest) {
     if (!["GENERAL", "CARE_CIRCLE"].includes(subType)) {
       return NextResponse.json({ success: false, message: "Invalid subType" }, { status: 400 });
     }
+    // Every group must be created with a designated admin/owner — fixes
+    // the previous behavior where admin-created groups had zero OWNER
+    // member rows and "createdBy" was the literal string 'SYSTEM_ADMIN'.
+    if (!ownerId) {
+      return NextResponse.json({ success: false, message: "A group admin must be designated to create the group" }, { status: 400 });
+    }
 
     const defaultMax = subType === "CARE_CIRCLE" ? 15 : 256;
     const resolvedMax = Number(maxMembers) > 0 ? Number(maxMembers) : defaultMax;
 
-    // Write into chat schema — same schema chat-svc reads from
+    const memberList: Array<{ userId: string; role: string }> = Array.isArray(initialMembers) ? initialMembers : [];
+    const ownerIncluded = memberList.some((m) => m.userId === ownerId);
+    const totalMemberCount = ownerIncluded ? memberList.length : memberList.length + 1;
+
+    // Enforce the chosen limit against the members being added at creation
+    // time — previously nothing checked this, so a 2-member cap with 4
+    // initialMembers created the group successfully with all 4.
+    if (totalMemberCount > resolvedMax) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: `Cannot add ${totalMemberCount} members — the group's member limit is ${resolvedMax}.`,
+        },
+        { status: 400 }
+      );
+    }
+
+    // Enforce the max-3-admin cap (owner + any admin-capable initial roles).
+    const adminRoles = adminRolesFor(subType);
+    const adminCount = 1 + memberList.filter((m) => m.userId !== ownerId && adminRoles.includes(m.role)).length;
+    if (adminCount > MAX_ADMINS_PER_GROUP) {
+      return NextResponse.json(
+        { success: false, message: `A group can have at most ${MAX_ADMINS_PER_GROUP} admins (including the owner).` },
+        { status: 400 }
+      );
+    }
+
+    // Go through chat-svc's internal API (not raw SQL) so the group gets a
+    // real OWNER via the same createConversation logic mobile/web use —
+    // Care Circle role validation, member-limit checks, and this now
+    // included, the admin-cap check. Falls back to a direct DB insert only
+    // if chat-svc/the internal secret aren't configured.
+    const chatSvcUrl = process.env.CHAT_SVC_URL;
+    const internalSecret = process.env.INTERNAL_API_SECRET;
+
+    if (chatSvcUrl && internalSecret) {
+      try {
+        const res = await fetch(`${chatSvcUrl}/api/internal/groups`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-internal-secret": internalSecret,
+            "x-internal-ts": String(Date.now()),
+          },
+          body: JSON.stringify({
+            subType,
+            name: name.trim(),
+            description: description.trim(),
+            ownerId,
+            initialMembers: memberList.filter((m) => m.userId !== ownerId),
+            maxMembers: resolvedMax,
+            editGroupInfo,
+            addMembers,
+            sendMessages,
+            approveNewMembers,
+          }),
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+          return NextResponse.json({ success: true, group: data.data });
+        }
+        console.warn(`chat-svc internal group create returned status ${res.status} (${data.message}), falling back to direct DB insert.`);
+      } catch (svcErr) {
+        console.warn("Failed to reach chat-svc for group creation, falling back to direct DB insert:", svcErr);
+      }
+    }
+
+    // Fallback: direct DB insert. createdBy is the real owner's id (not the
+    // old 'SYSTEM_ADMIN' placeholder), and the owner is inserted explicitly
+    // as OWNER — the previous fallback never created an OWNER row at all.
     const convResult = await dbPool.query(`
       INSERT INTO chat.conversations
         (id, type, "subType", name, description, "createdBy", "maxMembers",
@@ -44,30 +128,38 @@ export async function POST(request: NextRequest) {
         (gen_random_uuid()::text,
          'GROUP'::"chat"."ConversationType",
          $1::"chat"."GroupSubType",
-         $2, $3, 'SYSTEM_ADMIN', $4, $5, $6, $7, $8,
+         $2, $3, $4, $5, $6, $7, $8, $9,
          NOW(), NOW())
       RETURNING id, name, "subType", "createdAt"
-    `, [subType, name.trim(), description.trim(), resolvedMax,
+    `, [subType, name.trim(), description.trim(), ownerId, resolvedMax,
         editGroupInfo, addMembers, sendMessages, approveNewMembers]);
 
     const group = convResult.rows[0];
 
-    if (Array.isArray(initialMembers) && initialMembers.length > 0) {
-      const validRolesGeneral    = ["OWNER", "ADMIN", "MEMBER"];
-      const validRolesCareCircle = ["OWNER", "CAREGIVER", "MENTOR", "PROFESSIONAL", "MEMBER"];
-      const validRoles = subType === "CARE_CIRCLE" ? validRolesCareCircle : validRolesGeneral;
+    await dbPool.query(`
+      INSERT INTO chat.conversation_members
+        (id, "conversationId", "userId", role, "joinedAt", "updatedAt")
+      VALUES (gen_random_uuid()::text, $1, $2, 'OWNER'::"chat"."MemberRole", NOW(), NOW())
+      ON CONFLICT ("conversationId", "userId")
+        DO UPDATE SET "leftAt" = NULL, role = 'OWNER'::"chat"."MemberRole", "updatedAt" = NOW()
+    `, [group.id, ownerId]);
 
-      for (const m of initialMembers) {
-        if (!m.userId) continue;
-        const role = validRoles.includes(m.role) ? m.role : "MEMBER";
-        await dbPool.query(`
-          INSERT INTO chat.conversation_members
-            (id, "conversationId", "userId", role, "joinedAt", "updatedAt")
-          VALUES (gen_random_uuid()::text, $1, $2, $3::"chat"."MemberRole", NOW(), NOW())
-          ON CONFLICT ("conversationId", "userId")
-            DO UPDATE SET "leftAt" = NULL, role = $3::"chat"."MemberRole", "updatedAt" = NOW()
-        `, [group.id, m.userId, role]);
-      }
+    const validRolesGeneral    = ["ADMIN", "MEMBER"];
+    const validRolesCareCircle = ["CAREGIVER", "MENTOR", "PROFESSIONAL", "MEMBER"];
+    const validRoles = subType === "CARE_CIRCLE" ? validRolesCareCircle : validRolesGeneral;
+
+    for (const m of memberList) {
+      if (!m.userId || m.userId === ownerId) continue;
+      // OWNER can only be assigned via the owner slot above — a second
+      // OWNER role here would silently create a two-owner group.
+      const role = validRoles.includes(m.role) ? m.role : "MEMBER";
+      await dbPool.query(`
+        INSERT INTO chat.conversation_members
+          (id, "conversationId", "userId", role, "joinedAt", "updatedAt")
+        VALUES (gen_random_uuid()::text, $1, $2, $3::"chat"."MemberRole", NOW(), NOW())
+        ON CONFLICT ("conversationId", "userId")
+          DO UPDATE SET "leftAt" = NULL, role = $3::"chat"."MemberRole", "updatedAt" = NOW()
+      `, [group.id, m.userId, role]);
     }
 
     return NextResponse.json({ success: true, group });
@@ -89,7 +181,13 @@ export async function GET(request: NextRequest) {
       dbPool.query(`
         SELECT
           c.id, c.name, c.description, c."subType", c."sendMessages",
-          (c."sendMessages" = 'ADMINS_ONLY') AS "isSuspended",
+          -- Real suspension state. This was previously the derived expression
+          -- (c."sendMessages" = 'ADMINS_ONLY'), which reported every
+          -- announcement-only group as "Suspended" and flipped the badge
+          -- whenever an owner edited the permission.
+          -- A lapsed suspension reads as not-suspended without needing a job.
+          (c."isSuspended" AND (c."suspendedUntil" IS NULL OR c."suspendedUntil" > NOW())) AS "isSuspended",
+          c."suspendedUntil", c."suspensionReason",
           c."createdAt", c."lastMessageAt", c."lastMessageText", c."maxMembers",
           COUNT(cm.id) FILTER (WHERE cm."leftAt" IS NULL) AS "memberCount"
         FROM chat.conversations c
@@ -114,6 +212,7 @@ export async function GET(request: NextRequest) {
       groups: groupsResult.rows.map((g) => ({
         ...g,
         memberCount: Number(g.memberCount),
+        createdAtISO: g.createdAt,
         createdAt: new Date(g.createdAt).toLocaleDateString("en-GB", {
           day: "2-digit", month: "short", year: "numeric",
         }),

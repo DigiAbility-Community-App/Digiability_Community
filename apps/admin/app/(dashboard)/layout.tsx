@@ -17,8 +17,6 @@ import {
   UsersRound,
   Menu,
   X,
-  ChevronLeft,
-  ChevronRight,
   PanelLeftClose,
   PanelLeftOpen,
 } from "lucide-react";
@@ -178,22 +176,6 @@ export default function DashboardLayout({
               </div>
             )}
           </Link>
-
-          {/* DESKTOP COLLAPSE / EXPAND BUTTON */}
-          <button
-            onClick={toggleSidebar}
-            title={isCollapsed ? "Expand Menu" : "Collapse Menu"}
-            className={`hidden lg:flex w-8 h-8 rounded-lg bg-white/5 hover:bg-white/15 text-[#E2E0FC]/70 hover:text-white items-center justify-center transition shrink-0 ${
-              isCollapsed ? "absolute -right-3 top-6 bg-[#8A38F5] text-white shadow-lg z-50 hover:bg-[#7004DC]" : ""
-            }`}
-            aria-label={isCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
-          >
-            {isCollapsed ? (
-              <ChevronRight className="w-4 h-4" />
-            ) : (
-              <ChevronLeft className="w-4 h-4" />
-            )}
-          </button>
 
           {/* MOBILE CLOSE BUTTON */}
           <button

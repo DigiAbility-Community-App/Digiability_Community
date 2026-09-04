@@ -40,14 +40,16 @@ export const register = asyncHandler(async (req: Request, res: Response) => {
   const ip =
     req.headers["x-forwarded-for"]?.toString().split(",")[0] ||
     req.socket.remoteAddress;
-  const { accessToken, refreshToken, user } = await registerUser(req.body, ip);
+  const { accessToken, refreshToken, user, otpEmailSent } = await registerUser(req.body, ip);
 
   attachRefreshToken(res, refreshToken);
 
   res.status(201).json({
     success: true,
-    message: "Account created successfully. Please verify your email with the OTP sent.",
-    data: { accessToken, user },
+    message: otpEmailSent
+      ? "Account created successfully. Please verify your email with the OTP sent."
+      : "Account created successfully, but we couldn't send the verification email right now. Please use Resend OTP to try again.",
+    data: { accessToken, user, otpEmailSent },
   });
 });
 
@@ -131,7 +133,10 @@ export const logout = asyncHandler(async (req: Request, res: Response) => {
 export const forgotPasswordHandler = asyncHandler(
   async (req: Request, res: Response) => {
     const result = await forgotPassword(req.body);
-    // Always 200 to prevent email enumeration
+    // Always 200 for the "does this account exist" question specifically —
+    // that's what prevents email enumeration. A genuine send failure for an
+    // account that DOES exist throws (502) rather than claiming success;
+    // see forgotPassword()'s own comment for why that's still safe.
     res.status(200).json({ success: true, message: result.message, data: {} });
   }
 );

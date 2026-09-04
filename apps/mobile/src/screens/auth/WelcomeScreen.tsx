@@ -18,6 +18,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { AuthStackParamList } from "@navigation/AuthNavigator";
 import { login, register } from "@services/authService";
+import { sanitizeNameInput, isValidNameFormat } from "../../utils/nameValidation";
 import { useTheme } from "../../theme/ThemeContext";
 import { AccessibleText } from "../../components/shared/AccessibleText";
 import { AccessibleButton } from "../../components/shared/AccessibleButton";
@@ -25,7 +26,6 @@ import { Input } from "../../components/shared/Input";
 import ScreenWrapper from "../../components/layout/ScreenWrapper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as WebBrowser from "expo-web-browser";
-import * as Google from "expo-auth-session/providers/google";
 import { useEffect } from "react";
 
 type Props = {
@@ -119,7 +119,7 @@ const WelcomeScreen = ({ navigation }: Props) => {
       return;
     }
 
-    if (!/^[0-9]{10}$/.test(trimmedPhone)) {
+    if (!/^[6-9]\d{9}$/.test(trimmedPhone)) {
       setError("Please enter a valid 10-digit mobile number.");
       return;
     }
@@ -129,8 +129,8 @@ const WelcomeScreen = ({ navigation }: Props) => {
       return;
     }
 
-    if (!/^[a-zA-Z\s'-]{2,100}$/.test(trimmedName)) {
-      setError("Name may only contain letters, spaces, hyphens, or apostrophes.");
+    if (!isValidNameFormat(trimmedName)) {
+      setError("Name may only contain letters, spaces, and single hyphens or apostrophes between name parts.");
       return;
     }
 
@@ -144,6 +144,11 @@ const WelcomeScreen = ({ navigation }: Props) => {
       return;
     }
 
+    if (trimmedPassword.length > 16) {
+      setError("Password must be at most 16 characters.");
+      return;
+    }
+
     if (!/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/.test(trimmedPassword)) {
       setError("Password must include uppercase, lowercase, and a number.");
       return;
@@ -152,7 +157,7 @@ const WelcomeScreen = ({ navigation }: Props) => {
     setLoading(true);
 
     try {
-      await register({
+      const result = await register({
         name: trimmedName,
         email: trimmedEmail,
         password: trimmedPassword,
@@ -161,6 +166,14 @@ const WelcomeScreen = ({ navigation }: Props) => {
       // register() calls setAuth() in the auth store → isAuthenticated flips
       // to true → RootNavigator auto-switches to Main stack (Accessibility first).
       // No manual navigation required.
+      if (result.otpEmailSent === false) {
+        // Account exists either way — this just tells the user not to sit
+        // waiting for an email that never sent, and to use Resend instead.
+        Alert.alert(
+          "Account created",
+          "We couldn't send the verification email right now. On the next screen, use Resend OTP to try again."
+        );
+      }
     } catch (err: unknown) {
       console.error("[SignUpError]", err);
       setError(getApiErrorMessage(err, "Registration failed."));
@@ -315,7 +328,7 @@ const WelcomeScreen = ({ navigation }: Props) => {
               label="Full Name"
               placeholder="Enter your full name"
               value={name}
-              onChangeText={(v) => setName(v.replace(/[0-9]/g, ''))}
+              onChangeText={(v) => setName(sanitizeNameInput(v))}
               accessibilityHint="Enter your first and last name (letters only)"
             />
 
@@ -423,27 +436,6 @@ const WelcomeScreen = ({ navigation }: Props) => {
           </View>
         )}
 
-        {/* DIVIDER */}
-        <View style={styles.divider}>
-          <View style={styles.line} />
-          <AccessibleText variant="caption" style={{ marginHorizontal: spacing.md, fontSize: 18, fontWeight: '800', color: colors.primary }}>
-            or
-          </AccessibleText>
-          <View style={styles.line} />
-        </View>
-
-        {/* SOCIAL */}
-        <View style={styles.socialRow}>
-          <AccessibleButton
-            variant="outline"
-            accessibilityLabel="Sign in with Google"
-            style={{ flex: 1 }}
-            onPress={() => Alert.alert("Coming Soon", "Google sign-in will be available in a future update.")}
-          >
-            🌐 Google
-          </AccessibleButton>
-        </View>
-
         {/* FOOTER — privacy notice required by DPDP Act 2023 §6 */}
         {/* [LEGAL PLACEHOLDER] Replace EXPO_PUBLIC_WEB_BASE_URL with production URL before launch */}
         <AccessibleText variant="caption" style={{ marginTop: spacing.xl, textAlign: 'center', lineHeight: 22 }}>
@@ -489,7 +481,7 @@ const styles = StyleSheet.create({
   phoneLabel: {
     textTransform: 'uppercase',
     fontSize: 12,
-    fontFamily: 'Inter-SemiBold',
+    fontWeight: '600',
     marginBottom: 6,
     letterSpacing: 0.5,
   },
@@ -509,7 +501,7 @@ const styles = StyleSheet.create({
   },
   phonePrefixText: {
     fontSize: 16,
-    fontFamily: 'Inter-SemiBold',
+    fontWeight: '600',
     letterSpacing: 0.5,
   },
   phoneDivider: {
@@ -519,7 +511,6 @@ const styles = StyleSheet.create({
   phoneInput: {
     flex: 1,
     fontSize: 16,
-    fontFamily: 'Inter-Regular',
     paddingHorizontal: 14,
     paddingVertical: 14,
     minHeight: 48,
@@ -718,33 +709,6 @@ const styles = StyleSheet.create({
   errorText: {
     color: "#C62828",
     fontSize: 14,
-  },
-
-  // DIVIDER
-  divider: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginVertical: 34,
-  },
-
-  line: {
-    flex: 1,
-    height: 2,
-    backgroundColor: "#CFC2D4",
-  },
-
-  or: {
-    marginHorizontal: 16,
-    color: "#7E7383",
-    fontSize: 18,
-    fontWeight: "800",
-  },
-
-  // SOCIAL
-  socialRow: {
-    flexDirection: "row",
-    justifyContent: "center",
-    gap: 14,
   },
 
   // FOOTER

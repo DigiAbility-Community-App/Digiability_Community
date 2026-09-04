@@ -61,27 +61,30 @@ const mapAuthorRole = (author: any) => {
   };
 };
 
-const mapQuestionRoles = (q: any) => {
+const mapAnswerRoles = (a: any, currentUserId?: string | number) => {
+  if (!a) return a;
+  const uid = typeof currentUserId === 'string' ? currentUserId : undefined;
+  const isLiked = a.votes && Array.isArray(a.votes)
+    ? a.votes.some((v: any) => v.type === 'UP' && (!uid || v.userId === uid))
+    : Boolean(a.isLiked);
+  return {
+    ...a,
+    author: mapAuthorRole(a.author),
+    isLiked,
+  };
+};
+
+const mapQuestionRoles = (q: any, currentUserId?: string | number) => {
   if (!q) return q;
+  const uid = typeof currentUserId === 'string' ? currentUserId : undefined;
   const mapped = {
     ...q,
     author: mapAuthorRole(q.author),
   };
   if (q.answers && Array.isArray(q.answers)) {
-    mapped.answers = q.answers.map((a: any) => ({
-      ...a,
-      author: mapAuthorRole(a.author),
-    }));
+    mapped.answers = q.answers.map((a: any) => mapAnswerRoles(a, uid));
   }
   return mapped;
-};
-
-const mapAnswerRoles = (a: any) => {
-  if (!a) return a;
-  return {
-    ...a,
-    author: mapAuthorRole(a.author),
-  };
 };
 
 /**
@@ -251,7 +254,7 @@ export const checkDuplicates = async (req: Request, res: Response): Promise<void
 
 export const listQuestions = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { search, category, tag, status, sort, cursor, limit = '10' } = req.query;
+    const { search, category, tag, status, sort, order, cursor, limit = '10' } = req.query;
     const limitNum = parseInt(limit as string, 10);
 
     const where: any = { deletedAt: null };
@@ -279,12 +282,13 @@ export const listQuestions = async (req: Request, res: Response): Promise<void> 
       where.status = status as QuestionStatus;
     }
 
-    // Determine ordering
-    let orderBy: any = { createdAt: 'desc' };
+    // Determine ordering (support asc and desc for all sort modes)
+    const sortDirection: 'asc' | 'desc' = order === 'asc' ? 'asc' : 'desc';
+    let orderBy: any = { createdAt: sortDirection };
     if (sort === 'popular') {
-      orderBy = { views: 'desc' };
+      orderBy = { views: sortDirection };
     } else if (sort === 'answers') {
-      orderBy = { answerCount: 'desc' };
+      orderBy = { answerCount: sortDirection };
     }
 
     // Build cursor logic
@@ -332,6 +336,7 @@ export const listQuestions = async (req: Request, res: Response): Promise<void> 
 export const getQuestionDetails = async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
+    const userId = req.user?.sub;
 
     const question = await prisma.forumQuestion.update({
       where: { id, deletedAt: null },
@@ -363,13 +368,17 @@ export const getQuestionDetails = async (req: Request, res: Response): Promise<v
                 roles: true,
                 forumStats: true
               }
-            }
+            },
+            votes: userId ? {
+              where: { userId },
+              select: { type: true, userId: true }
+            } : false
           }
         }
       }
     });
 
-    res.status(200).json({ success: true, data: mapQuestionRoles(question) });
+    res.status(200).json({ success: true, data: mapQuestionRoles(question, userId) });
   } catch (error: any) {
     console.error('Get Question Details Error:', error);
     res.status(404).json({ success: false, message: 'Question not found' });
@@ -689,8 +698,14 @@ export const voteAnswer = async (req: Request, res: Response): Promise<void> => 
       return updated;
     });
 
+    const userLikedNow = existingVote && existingVote.type === voteType ? false : (voteType === VoteType.UP);
+    const mappedResult = {
+      ...mapAnswerRoles(result, userId),
+      isLiked: userLikedNow
+    };
+
     broadcastForumEvent('answer_voted', mapAnswerRoles(result));
-    res.status(200).json({ success: true, data: mapAnswerRoles(result) });
+    res.status(200).json({ success: true, data: mappedResult });
   } catch (error: any) {
     console.error('Vote Answer Error:', error);
     res.status(500).json({ success: false, message: 'Failed to cast vote' });
@@ -818,6 +833,29 @@ export const reportContent = async (req: Request, res: Response): Promise<void> 
     if (!reporterId) {
       res.status(401).json({ success: false, message: 'Unauthorized' });
       return;
+    }
+
+    // Check author of the reported question/answer
+    if (questionId) {
+      const q = await prisma.forumQuestion.findUnique({
+        where: { id: questionId },
+        include: { author: { select: { roles: true } } }
+      });
+      if (q?.author?.roles?.some(r => r.toLowerCase().includes('admin'))) {
+        res.status(400).json({ success: false, message: 'Administrator posts cannot be reported.' });
+        return;
+      }
+    }
+
+    if (answerId) {
+      const a = await prisma.forumAnswer.findUnique({
+        where: { id: answerId },
+        include: { author: { select: { roles: true } } }
+      });
+      if (a?.author?.roles?.some(r => r.toLowerCase().includes('admin'))) {
+        res.status(400).json({ success: false, message: 'Administrator answers cannot be reported.' });
+        return;
+      }
     }
 
     const report = await prisma.$transaction(async (tx) => {
@@ -1049,6 +1087,43 @@ export const markNotificationRead = async (req: Request, res: Response): Promise
   } catch (error: any) {
     console.error('Mark Notification Read Error:', error);
     res.status(500).json({ success: false, message: 'Failed to update notification' });
+  }
+};
+
+export const deleteNotification = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const userId = req.user?.sub;
+    const roles: string[] = (req as any).user?.roles || [];
+    const isSuperAdmin = roles.includes('admin') || roles.includes('superadmin') || roles.includes('ADMIN') || roles.includes('SUPER_ADMIN');
+
+    if (!userId) {
+      res.status(401).json({ success: false, message: 'Unauthorized' });
+      return;
+    }
+
+    const notification = await prisma.notification.findUnique({
+      where: { id }
+    });
+
+    if (!notification) {
+      res.status(404).json({ success: false, message: 'Notification not found' });
+      return;
+    }
+
+    if (notification.userId !== userId && !isSuperAdmin) {
+      res.status(403).json({ success: false, message: 'Permission denied' });
+      return;
+    }
+
+    await prisma.notification.delete({
+      where: { id }
+    });
+
+    res.status(200).json({ success: true, message: 'Notification deleted' });
+  } catch (error: any) {
+    console.error('Delete Notification Error:', error);
+    res.status(500).json({ success: false, message: 'Failed to delete notification' });
   }
 };
 

@@ -1,9 +1,9 @@
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useMemo } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  FlatList, ActivityIndicator, RefreshControl, Alert, Platform,
+  FlatList, ActivityIndicator, RefreshControl, Platform,
 } from "react-native";
-import { Users, Plus, ChevronRight, UserPlus, LogIn, TriangleAlert } from "lucide-react-native";
+import { Users, Plus, ChevronRight, UserPlus, TriangleAlert } from "lucide-react-native";
 import { useNavigation } from "@react-navigation/native";
 import { chatService, CommunityGroup } from "../../services/chatService";
 import { useTheme } from "../../theme/ThemeContext";
@@ -33,46 +33,15 @@ const GroupsTab = () => {
 
   useEffect(() => { loadGroups(); }, [loadGroups]);
 
-  const [joiningId, setJoiningId] = useState<string | null>(null);
+  // This tab only shows groups the user has already joined — browsing and
+  // joining new ones happens on the separate "Join Community" screen.
+  const joinedGroups = useMemo(() => groups.filter((g) => g.isMember), [groups]);
 
   const handleGroupPress = (group: CommunityGroup) => {
-    if (!group.isMember) {
-      // Prompt to join first
-      Alert.alert(
-        `Join "${group.name}"?`,
-        `${group.memberCount} ${group.memberCount === 1 ? "member" : "members"} · ${group.description || "Community group"}`,
-        [
-          { text: "Cancel", style: "cancel" },
-          {
-            text: "Join Group",
-            onPress: () => handleJoin(group),
-          },
-        ]
-      );
-      return;
-    }
     navigation.navigate("Chats", {
       screen: "GroupChat",
       params: { conversationId: group.id, groupName: group.name, subType: group.subType },
     });
-  };
-
-  const handleJoin = async (group: CommunityGroup) => {
-    setJoiningId(group.id);
-    try {
-      await chatService.joinGroup(group.id);
-      // Mark as member locally for instant UI update
-      setGroups((prev) => prev.map((g) => g.id === group.id ? { ...g, isMember: true, memberCount: g.memberCount + 1 } : g));
-      // Navigate into the group
-      navigation.navigate("Chats", {
-        screen: "GroupChat",
-        params: { conversationId: group.id, groupName: group.name, subType: group.subType },
-      });
-    } catch {
-      Alert.alert("Error", "Could not join the group. Please try again.");
-    } finally {
-      setJoiningId(null);
-    }
   };
 
   const handleCreateGroup = () => {
@@ -82,16 +51,21 @@ const GroupsTab = () => {
     });
   };
 
+  const handleJoinCommunity = () => {
+    navigation.navigate("Chats", {
+      screen: "DiscoverGroups",
+      params: { subType: "GENERAL" },
+    });
+  };
+
   const renderGroupItem = ({ item }: { item: CommunityGroup }) => {
-    const isJoining = joiningId === item.id;
     return (
       <TouchableOpacity
         style={[styles.groupCard, { backgroundColor: colors.card }]}
         onPress={() => handleGroupPress(item)}
-        disabled={isJoining}
         activeOpacity={0.7}
         accessibilityRole="button"
-        accessibilityLabel={`Group: ${item.name}, ${item.memberCount} members${item.isMember ? ", you are a member" : ", tap to join"}`}
+        accessibilityLabel={`Group: ${item.name}, ${item.memberCount} members`}
       >
         <View style={styles.groupAvatar}>
           <Text style={styles.groupAvatarText}>
@@ -100,28 +74,16 @@ const GroupsTab = () => {
         </View>
 
         <View style={styles.groupInfo}>
-          <View style={styles.nameRow}>
-            <Text style={[styles.groupName, { color: colors.text }]}>{item.name}</Text>
-            {!item.isMember && (
-              <View style={styles.joinBadge}>
-                <Text style={styles.joinBadgeText}>Join</Text>
-              </View>
-            )}
-          </View>
+          <Text style={[styles.groupName, { color: colors.text }]}>{item.name}</Text>
           <Text style={[styles.groupDesc, { color: colors.subtext }]} numberOfLines={1}>
-            {item.description || item.lastMessageText || "No messages yet"}
+            {item.lastMessageText || item.description || "No messages yet"}
           </Text>
           <Text style={[styles.memberCount, { color: colors.subtext }]}>
             {item.memberCount} {item.memberCount === 1 ? "member" : "members"}
           </Text>
         </View>
 
-        {isJoining
-          ? <ActivityIndicator size="small" color="#500088" />
-          : item.isMember
-            ? <ChevronRight size={20} color={colors.border} />
-            : <LogIn size={18} color="#500088" />
-        }
+        <ChevronRight size={20} color={colors.border} />
       </TouchableOpacity>
     );
   };
@@ -154,7 +116,14 @@ const GroupsTab = () => {
     );
   }
 
-  if (groups.length === 0) {
+  const joinCommunityBtn = (
+    <TouchableOpacity style={styles.joinCommunityBtn} onPress={handleJoinCommunity} accessibilityRole="button" accessibilityLabel="Join Community — browse groups you haven't joined yet">
+      <UserPlus size={18} color="#500088" />
+      <Text style={styles.joinCommunityBtnText}>Join Community</Text>
+    </TouchableOpacity>
+  );
+
+  if (joinedGroups.length === 0) {
     return (
       <FlatList
         data={[]}
@@ -170,12 +139,13 @@ const GroupsTab = () => {
             </View>
             <Text style={[styles.emptyTitle, { color: colors.text }]}>No Groups Yet</Text>
             <Text style={[styles.emptySubtitle, { color: colors.subtext }]}>
-              Be the first to create a community group.
+              Create a group, or join one that already exists.
             </Text>
             <TouchableOpacity style={styles.createBtn} onPress={handleCreateGroup}>
               <Plus size={18} color="#FFFFFF" />
               <Text style={styles.createBtnText}>Create Group</Text>
             </TouchableOpacity>
+            {joinCommunityBtn}
           </View>
         }
       />
@@ -185,11 +155,12 @@ const GroupsTab = () => {
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <FlatList
-        data={groups}
+        data={joinedGroups}
         keyExtractor={(item) => item.id}
         renderItem={renderGroupItem}
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
+        ListHeaderComponent={<View style={styles.listHeader}>{joinCommunityBtn}</View>}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -211,6 +182,13 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#FAF8FF" },
   centered: { flex: 1, justifyContent: "center", alignItems: "center", padding: 24, paddingTop: 60 },
   listContent: { padding: 16, paddingBottom: Platform.OS === "ios" ? 190 : 170 },
+  listHeader: { marginBottom: 12 },
+  joinCommunityBtn: {
+    flexDirection: "row", alignItems: "center", justifyContent: "center",
+    backgroundColor: "#F3E8FF", borderRadius: 14,
+    paddingVertical: 12, gap: 8, marginTop: 14,
+  },
+  joinCommunityBtnText: { color: "#500088", fontSize: 14, fontWeight: "700" },
   groupCard: {
     flexDirection: "row",
     alignItems: "center",
@@ -232,13 +210,7 @@ const styles = StyleSheet.create({
   },
   groupAvatarText: { fontSize: 16, fontWeight: "700", color: "#6B21A8" },
   groupInfo: { flex: 1, marginRight: 12 },
-  nameRow: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 2 },
-  groupName: { fontSize: 16, fontWeight: "700", flexShrink: 1 },
-  joinBadge: {
-    backgroundColor: "#F3E8FF", borderRadius: 6,
-    paddingHorizontal: 6, paddingVertical: 2,
-  },
-  joinBadgeText: { fontSize: 10, fontWeight: "700", color: "#500088" },
+  groupName: { fontSize: 16, fontWeight: "700", marginBottom: 2 },
   groupDesc: { fontSize: 13, marginBottom: 2 },
   memberCount: { fontSize: 11, fontWeight: "600" },
   emptyCard: {
