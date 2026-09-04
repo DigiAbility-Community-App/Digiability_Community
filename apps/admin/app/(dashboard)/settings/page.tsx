@@ -31,6 +31,7 @@ import {
   Calendar as CalendarIcon,
   Lock,
 } from "lucide-react";
+import { isValidIndianPhone, INVALID_PHONE_MESSAGE, isValidEmail, INVALID_EMAIL_MESSAGE } from "@/lib/validation";
 
 // ─────────────────────────────────────
 // TYPES
@@ -191,6 +192,17 @@ function GeneralTab({ onSave }: { onSave: () => void }) {
 
 
   const handleSave = async () => {
+    // These two are shown to end users in the mobile app's support screen,
+    // so garbage here ships straight to them — validate before saving.
+    if (!isValidIndianPhone(supportPhone)) {
+      setErrorMsg(INVALID_PHONE_MESSAGE);
+      return;
+    }
+    if (!isValidEmail(emailConfig)) {
+      setErrorMsg(INVALID_EMAIL_MESSAGE);
+      return;
+    }
+
     setSaving(true);
     setErrorMsg("");
     try {

@@ -43,8 +43,6 @@ export default function ContactSupportScreen() {
   // it in the header, instead of showing the identical page for both.
   const initialSection: "faq" | "contact" = route.params?.initialSection === "faq" ? "faq" : "contact";
   const scrollViewRef = useRef<ScrollView>(null);
-  const [faqSectionY, setFaqSectionY] = useState<number | null>(null);
-  const hasScrolledToFaq = useRef(false);
 
   // Dynamic system settings from Admin General Settings
   const supportEmail = useSystemStore((s) => s.supportEmail) || "support@digiability.org";
@@ -68,12 +66,9 @@ export default function ContactSupportScreen() {
   // FAQ Expand state
   const [expandedFaq, setExpandedFaq] = useState<number | null>(initialSection === "faq" ? 0 : null);
 
-  useEffect(() => {
-    if (initialSection === "faq" && faqSectionY !== null && !hasScrolledToFaq.current) {
-      hasScrolledToFaq.current = true;
-      scrollViewRef.current?.scrollTo({ y: faqSectionY, animated: true });
-    }
-  }, [initialSection, faqSectionY]);
+  // No scroll-to-FAQ effect any more — the FAQ block is rendered first in
+  // "faq" mode, so it's already at the top when the screen opens. The old
+  // scrollTo depended on onLayout timing and often silently did nothing.
 
   const cardBorder = highContrast
     ? { borderWidth: 2, borderColor: "#000000" }
@@ -186,6 +181,54 @@ export default function ContactSupportScreen() {
     },
   ];
 
+  // "Help Center & FAQs" and "Contact Support" share this screen, so the FAQ
+  // block is positioned rather than duplicated: it renders first when the user
+  // came from Help Center, and in its usual place below the contact channels
+  // otherwise. Ordering the content is reliable in a way that scrolling to it
+  // after layout was not.
+  const faqSection = (
+    <View>
+      <AccessibleText variant="caption" style={[styles.sectionHeading, { color: colors.subtext, marginTop: 24 }]}>
+        FREQUENTLY ASKED QUESTIONS
+      </AccessibleText>
+
+      <View style={[styles.faqCard, { backgroundColor: colors.surface }, cardBorder]}>
+        {FAQS.map((faq, index) => {
+          const isExpanded = expandedFaq === index;
+          return (
+            <View
+              key={index}
+              style={[
+                styles.faqItem,
+                index !== FAQS.length - 1 && { borderBottomWidth: 1, borderBottomColor: colors.border },
+              ]}
+            >
+              <TouchableOpacity
+                onPress={() => setExpandedFaq(isExpanded ? null : index)}
+                style={styles.faqQuestionRow}
+                accessibilityRole="button"
+                accessibilityLabel={faq.q}
+              >
+                <AccessibleText variant="body" style={[styles.faqQuestion, { color: colors.text }]}>
+                  {faq.q}
+                </AccessibleText>
+                <AccessibleText variant="body" style={{ color: colors.primary, fontWeight: "700" }}>
+                  {isExpanded ? "−" : "+"}
+                </AccessibleText>
+              </TouchableOpacity>
+
+              {isExpanded && (
+                <AccessibleText variant="caption" style={[styles.faqAnswer, { color: colors.subtext }]}>
+                  {faq.a}
+                </AccessibleText>
+              )}
+            </View>
+          );
+        })}
+      </View>
+    </View>
+  );
+
   return (
     <ScreenWrapper>
       <AppHeader
@@ -219,6 +262,9 @@ export default function ContactSupportScreen() {
               </AccessibleText>
             </View>
           </View>
+
+          {/* Help Center entry point puts FAQs first. */}
+          {initialSection === "faq" && faqSection}
 
           {/* ── DIRECT CONTACT CHANNELS ── */}
           <AccessibleText variant="caption" style={[styles.sectionHeading, { color: colors.subtext }]}>
@@ -462,47 +508,9 @@ export default function ContactSupportScreen() {
             </AccessibleButton>
           </View>
 
-          {/* ── FREQUENTLY ASKED QUESTIONS ── */}
-          <View onLayout={(e) => setFaqSectionY(e.nativeEvent.layout.y)}>
-          <AccessibleText variant="caption" style={[styles.sectionHeading, { color: colors.subtext, marginTop: 24 }]}>
-            FREQUENTLY ASKED QUESTIONS
-          </AccessibleText>
-
-          <View style={[styles.faqCard, { backgroundColor: colors.surface }, cardBorder]}>
-            {FAQS.map((faq, index) => {
-              const isExpanded = expandedFaq === index;
-              return (
-                <View
-                  key={index}
-                  style={[
-                    styles.faqItem,
-                    index !== FAQS.length - 1 && { borderBottomWidth: 1, borderBottomColor: colors.border },
-                  ]}
-                >
-                  <TouchableOpacity
-                    onPress={() => setExpandedFaq(isExpanded ? null : index)}
-                    style={styles.faqQuestionRow}
-                    accessibilityRole="button"
-                    accessibilityLabel={faq.q}
-                  >
-                    <AccessibleText variant="body" style={[styles.faqQuestion, { color: colors.text }]}>
-                      {faq.q}
-                    </AccessibleText>
-                    <AccessibleText variant="body" style={{ color: colors.primary, fontWeight: "700" }}>
-                      {isExpanded ? "−" : "+"}
-                    </AccessibleText>
-                  </TouchableOpacity>
-
-                  {isExpanded && (
-                    <AccessibleText variant="caption" style={[styles.faqAnswer, { color: colors.subtext }]}>
-                      {faq.a}
-                    </AccessibleText>
-                  )}
-                </View>
-              );
-            })}
-          </View>
-          </View>
+          {/* Rendered above the contact channels when the user arrived via
+              "Help Center & FAQs" — see faqSection below. */}
+          {initialSection !== "faq" && faqSection}
 
           {/* ── FOOTER ADDRESS & HOURS ── */}
           <View style={[styles.footerInfo, { backgroundColor: colors.surface }, cardBorder]}>

@@ -518,10 +518,15 @@ const styles = StyleSheet.create({
     color: "#1A1B20",
     marginTop: 1,
   },
+  // The label, the sort pills and the order toggle now wrap in ONE flex
+  // context. Previously the pills lived in a nested wrapping container while
+  // the toggle was a sibling of it, so when the pills wrapped to a second
+  // line the toggle stayed centered on the first — the reported misalignment.
   sortRow: {
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
+    flexWrap: "wrap",
+    rowGap: 6,
     paddingTop: 8,
     borderTopWidth: 1,
     borderTopColor: "#F4F3FA",
@@ -529,8 +534,7 @@ const styles = StyleSheet.create({
   sortTypeContainer: {
     flexDirection: "row",
     alignItems: "center",
-    flex: 1,
-    flexWrap: "wrap",
+    flexShrink: 1,
     gap: 6,
   },
   sortLabel: {
@@ -543,6 +547,7 @@ const styles = StyleSheet.create({
   sortButtons: {
     flexDirection: "row",
     alignItems: "center",
+    flexShrink: 1,
     gap: 4,
   },
   sortBtn: {
@@ -574,7 +579,9 @@ const styles = StyleSheet.create({
     backgroundColor: "#F7F4FD",
     borderWidth: 1,
     borderColor: "#E2D3FD",
-    marginLeft: 6,
+    // Never squeezed, and pushed to the row's end when there's spare width.
+    flexShrink: 0,
+    marginLeft: "auto",
   },
   orderToggleBtnAsc: {
     backgroundColor: "#EDE4FC",

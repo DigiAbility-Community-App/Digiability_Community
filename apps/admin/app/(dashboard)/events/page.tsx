@@ -6,6 +6,8 @@ import {
   MapPin, Clock, X, Loader2, Tag, ExternalLink, Trash2, Calendar,
   Edit3, Upload, Image as ImageIcon, CheckCircle2, Eye, EyeOff,
 } from "lucide-react";
+import { ConfirmModal } from "@/components/shared/ConfirmModal";
+import { isValidLocation, INVALID_LOCATION_MESSAGE } from "@/lib/validation";
 
 interface EventType {
   id: string;
@@ -166,6 +168,9 @@ export default function EventsPage() {
   const [successMsg, setSuccessMsg] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
   const [useUrlInput, setUseUrlInput] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; title: string } | null>(null);
+  const [deletingEvent, setDeletingEvent] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [formData, setFormData] = useState({
@@ -383,6 +388,11 @@ export default function EventsPage() {
       return;
     }
 
+    if (!isValidLocation(formData.location)) {
+      setErrorMsg(INVALID_LOCATION_MESSAGE);
+      return;
+    }
+
     setSubmitting(true);
     setErrorMsg("");
     setSuccessMsg("");
@@ -430,16 +440,25 @@ export default function EventsPage() {
     }
   };
 
-  const handleDelete = async (id: string, title: string) => {
-    if (!confirm(`Are you sure you want to delete event "${title}"?`)) return;
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    const { id } = deleteTarget;
+    setDeletingEvent(true);
+    setDeleteError("");
     try {
       const res = await fetch(`/api/events/${id}`, { method: "DELETE" });
       const data = await res.json();
       if (data.success) {
         setEvents(prev => prev.filter(e => e.id !== id));
+        setDeleteTarget(null);
+      } else {
+        setDeleteError(data.message || "Failed to delete event.");
       }
     } catch (e) {
       console.error(e);
+      setDeleteError("Network error while deleting the event.");
+    } finally {
+      setDeletingEvent(false);
     }
   };
 
@@ -763,7 +782,7 @@ export default function EventsPage() {
                             {ev.status === "unpublished" ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                           </button>
                           <button onClick={() => handleOpenEdit(ev)} className="w-8 h-8 rounded-lg text-[#7004DC] hover:bg-violet-100/70 flex items-center justify-center transition" title="Edit Event"><Edit3 className="w-4 h-4" /></button>
-                          <button onClick={() => handleDelete(ev.id, ev.title)} className="w-8 h-8 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 flex items-center justify-center transition" title="Delete Event"><Trash2 className="w-4 h-4" /></button>
+                          <button onClick={() => { setDeleteTarget({ id: ev.id, title: ev.title }); setDeleteError(""); }} className="w-8 h-8 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 flex items-center justify-center transition" title="Delete Event"><Trash2 className="w-4 h-4" /></button>
                         </div>
                       </td>
                     </tr>
@@ -1131,6 +1150,24 @@ export default function EventsPage() {
           </div>
         </div>
       )}
+
+      {/* DELETE EVENT CONFIRMATION */}
+      <ConfirmModal
+        open={!!deleteTarget}
+        title="Delete this event?"
+        message={
+          deleteTarget
+            ? `"${deleteTarget.title}" will be permanently removed and will no longer appear in the mobile app. This cannot be undone.`
+            : undefined
+        }
+        confirmLabel="Delete Event"
+        destructive
+        busy={deletingEvent}
+        error={deleteError}
+        icon={Trash2}
+        onConfirm={handleDelete}
+        onCancel={() => { setDeleteTarget(null); setDeleteError(""); }}
+      />
     </div>
   );
 }

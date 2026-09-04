@@ -5,6 +5,7 @@ import SplashScreen from '@screens/auth/SplashScreen';
 import ForgotPasswordScreen from '@screens/auth/ForgotPasswordScreen';
 import AccountSuspendedScreen from '@screens/auth/AccountSuspendedScreen';
 import VerifyEmailScreen from '@screens/auth/VerifyEmailScreen';
+import LegalScreen from '@screens/legal/LegalScreen';
 
 // ─────────────────────────────────────────────────────────
 // Auth Navigator
@@ -27,6 +28,8 @@ export type AuthStackParamList = {
     suspendedUntil: string | null;
     reason: string | null;
   };
+  // Terms / Privacy shown in-app rather than opening an external URL.
+  Legal: { doc: 'terms' | 'privacy' };
 };
 
 const Stack = createNativeStackNavigator<AuthStackParamList>();
@@ -42,6 +45,7 @@ const AuthNavigator = () => {
       <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
       <Stack.Screen name="VerifyEmail" component={VerifyEmailScreen} />
       <Stack.Screen name="AccountSuspended" component={AccountSuspendedScreen} />
+      <Stack.Screen name="Legal" component={LegalScreen} />
     </Stack.Navigator>
   );
 };

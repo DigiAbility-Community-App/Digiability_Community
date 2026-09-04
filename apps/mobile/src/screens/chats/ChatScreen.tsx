@@ -22,7 +22,7 @@ import { sendSocketMessage } from "@services/socketService";
 import * as Speech from "expo-speech";
 import { generateUUID } from "../../utils/uuid";
 import { useChatMedia } from "@hooks/useChatMedia";
-import { MessageMedia } from "../../components/chat/MessageMedia";
+import { MessageMedia, hasCaption } from "../../components/chat/MessageMedia";
 import { MediaViewer } from "../../components/chat/MediaViewer";
 import { AltTextModal } from "../../components/chat/AltTextModal";
 import { ReportModal } from "../../components/chat/ReportModal";
@@ -315,7 +315,7 @@ const ChatScreen = ({ navigation, route }: Props) => {
 
     setReplyingTo(null);
 
-    sendSocketMessage("message.send", {
+    const sent = sendSocketMessage("message.send", {
       conversationId,
       content,
       type: "TEXT",
@@ -323,6 +323,11 @@ const ChatScreen = ({ navigation, route }: Props) => {
       senderName: user?.name,
       metadata,
     });
+    if (!sent) {
+      // Never leave the optimistic bubble looking delivered when nothing
+      // left the device — the failed status drives the themed dialog below.
+      useChatStore.getState().failMessage(clientMessageId, "You appear to be offline. The message wasn't sent.");
+    }
 
     // Re-enable after a brief debounce
     setTimeout(() => { isSendingRef.current = false; }, 300);
@@ -631,12 +636,23 @@ const ChatScreen = ({ navigation, route }: Props) => {
           ) : (item.type === "IMAGE" || item.type === "VIDEO") ? (
             <View style={styles.mediaBubbleInner}>
               <MessageMedia message={item} isMine={isMine} onOpenViewer={openMediaViewer} onLongPress={() => handleMessageLongPress(item)} />
-              <View style={styles.mediaTimeOverlay}>
-                <AccessibleText style={[styles.mediaTimeText, { color: "#fff" }]}>
-                  {timeString}
-                </AccessibleText>
-                {isMine && renderStatusIcon(item.status)}
-              </View>
+              {hasCaption(item) ? (
+                // With a caption the overlay would sit on top of the last
+                // line of text — put the time in normal flow underneath.
+                <View style={styles.mediaCaptionFooter}>
+                  <AccessibleText variant="caption" style={[styles.messageTime, { color: isMine ? "rgba(255,255,255,0.7)" : colors.subtext }]}>
+                    {timeString}
+                  </AccessibleText>
+                  {isMine && renderStatusIcon(item.status)}
+                </View>
+              ) : (
+                <View style={styles.mediaTimeOverlay}>
+                  <AccessibleText style={[styles.mediaTimeText, { color: "#fff" }]}>
+                    {timeString}
+                  </AccessibleText>
+                  {isMine && renderStatusIcon(item.status)}
+                </View>
+              )}
             </View>
           ) : item.type === "AUDIO" ? (
             <View>
@@ -1231,6 +1247,16 @@ const styles = StyleSheet.create({
   },
   mediaBubbleInner: {
     position: "relative",
+  },
+  // Timestamp row used when a media message has a caption — normal flow
+  // under the text instead of an absolute pill overlapping it.
+  mediaCaptionFooter: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "flex-end",
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingBottom: 6,
   },
   mediaTimeOverlay: {
     position: "absolute",

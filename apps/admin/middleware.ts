@@ -25,27 +25,18 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  // If trying to access dashboard/sub-routes or root "/" without a valid session, redirect to login
-  const isProtected = 
-    pathname === "/" || 
-    pathname.startsWith("/dashboard") || 
-    pathname.startsWith("/users") ||
-    pathname.startsWith("/moderation") ||
-    pathname.startsWith("/forums") ||
-    pathname.startsWith("/events") ||
-    pathname.startsWith("/analytics") ||
-    pathname.startsWith("/notifications") ||
-    pathname.startsWith("/settings");
+  // Deny by default: every route requires a valid session except this
+  // explicit public allowlist, so a newly added dashboard route can't
+  // silently bypass auth again the way /groups and /messages did.
+  const isPublic = pathname === "/login";
 
-  if (isProtected) {
-    if (!isValid) {
-      const loginUrl = new URL("/login", request.url);
-      const response = NextResponse.redirect(loginUrl);
-      if (sessionCookie) {
-        response.cookies.delete("admin-session");
-      }
-      return response;
+  if (!isPublic && !isValid) {
+    const loginUrl = new URL("/login", request.url);
+    const response = NextResponse.redirect(loginUrl);
+    if (sessionCookie) {
+      response.cookies.delete("admin-session");
     }
+    return response;
   }
 
   // If already logged in and visiting login, redirect to dashboard

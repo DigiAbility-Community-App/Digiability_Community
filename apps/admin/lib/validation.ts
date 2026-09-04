@@ -17,3 +17,29 @@ export function isValidIndianPhone(raw: string | null | undefined): boolean {
   const digits = raw.replace(/[\s\-()]/g, "");
   return /^(\+?91)?[6-9]\d{9}$/.test(digits);
 }
+
+export const INVALID_EMAIL_MESSAGE = "Please enter a valid email address.";
+
+/**
+ * Pragmatic email check: a non-empty local part, an "@", a domain with at
+ * least one dot, and a 2+ character TLD — no spaces anywhere. Deliberately
+ * not RFC 5322 exhaustive; it exists to reject obvious junk like "123".
+ * An empty value is valid — callers enforce "required" separately, the same
+ * convention isValidIndianPhone follows.
+ */
+export function isValidEmail(raw: string | null | undefined): boolean {
+  if (raw === null || raw === undefined || raw.trim() === "") return true;
+  return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(raw.trim());
+}
+
+export const INVALID_LOCATION_MESSAGE =
+  "Please enter a valid location — it can't be only numbers.";
+
+/**
+ * A location must contain at least one letter, so "12345" is rejected while
+ * "Pune", "Online Webinar" and "Sector 12, Pune" all pass.
+ */
+export function isValidLocation(raw: string | null | undefined): boolean {
+  if (raw === null || raw === undefined || raw.trim() === "") return false;
+  return /\p{L}/u.test(raw);
+}

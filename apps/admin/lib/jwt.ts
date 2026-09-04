@@ -75,13 +75,15 @@ export async function verifyJWT(token: string, secret: string): Promise<Record<s
     const payloadStr = new TextDecoder().decode(fromBase64url(encodedPayload));
     const payload = JSON.parse(payloadStr);
 
-    // Check expiration if 'exp' claim is present
-    if (payload.exp && typeof payload.exp === "number") {
-      const now = Math.floor(Date.now() / 1000);
-      if (now > payload.exp) {
-        return null; // Token expired
-      }
-    }
+    // `exp` is REQUIRED. This used to be conditional, which meant a token
+    // without an exp claim verified successfully and never expired.
+    const now = Math.floor(Date.now() / 1000);
+    if (typeof payload.exp !== "number") return null;
+    if (now > payload.exp) return null; // idle window elapsed
+
+    // Absolute deadline: sliding renewal refreshes `exp`, but never past this,
+    // so an active session still can't live forever.
+    if (typeof payload.abs === "number" && now > payload.abs) return null;
 
     return payload;
   } catch (error) {

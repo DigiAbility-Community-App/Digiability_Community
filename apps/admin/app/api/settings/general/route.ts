@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdminAuth } from "@/lib/auth";
 import { dbPool } from "@/lib/db";
+import { isValidIndianPhone, INVALID_PHONE_MESSAGE, isValidEmail, INVALID_EMAIL_MESSAGE } from "@/lib/validation";
 import { writeAudit } from "@/lib/audit";
 
 async function ensureTable() {
@@ -68,6 +69,14 @@ export async function POST(request: NextRequest) {
     const supportedLanguages = Array.isArray(body.supportedLanguages)
       ? JSON.stringify(body.supportedLanguages)
       : '["English", "Hindi", "Marathi"]';
+
+    // Enforce server-side too — the client check is UX, this is the guard.
+    if (!isValidIndianPhone(supportPhone)) {
+      return NextResponse.json({ success: false, message: INVALID_PHONE_MESSAGE }, { status: 400 });
+    }
+    if (!isValidEmail(emailConfig)) {
+      return NextResponse.json({ success: false, message: INVALID_EMAIL_MESSAGE }, { status: 400 });
+    }
 
     const result = await dbPool.query(
       `

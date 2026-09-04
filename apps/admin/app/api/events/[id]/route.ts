@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdminAuth } from "@/lib/auth";
 import { dbPool } from "@/lib/db";
+import { isValidLocation, INVALID_LOCATION_MESSAGE } from "@/lib/validation";
 
 export async function GET(
   _request: Request,
@@ -27,6 +28,13 @@ export async function PATCH(
     const { id } = await params;
     const body = await request.json();
     const { title, category, location, date, time, image, description, spots, buttonType, externalUrl, organizer, accessibilityTags, status } = body;
+
+    if (location !== undefined && !isValidLocation(location)) {
+      return NextResponse.json(
+        { success: false, message: INVALID_LOCATION_MESSAGE },
+        { status: 400 }
+      );
+    }
 
     const result = await dbPool.query(`
       UPDATE events SET
