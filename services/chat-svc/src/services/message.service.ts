@@ -10,6 +10,8 @@
 import { messageRepository } from "../repositories/message.repository";
 import { conversationRepository } from "../repositories/conversation.repository";
 import { logger } from "../config/logger";
+import { connectionManager } from "../websocket/connection-manager";
+import { WS_EVENTS } from "../types/ws-events";
 
 class MessageService {
   /**
@@ -170,6 +172,29 @@ class MessageService {
     }
 
     return counts;
+  }
+
+  /**
+   * Admin-initiated deletion (moderation panel). Goes through the normal
+   * service layer — not raw SQL — so members get a real-time MESSAGE_DELETED
+   * WS event instead of the removal silently taking effect on their next
+   * fetch, mirroring conversationService.adminDeleteGroup/softDeleteAndNotify.
+   */
+  async adminDeleteMessage(messageId: string, conversationId: string): Promise<void> {
+    const memberIds = await conversationRepository.getMemberIds(conversationId);
+
+    await messageRepository.softDeleteMessage(messageId, conversationId);
+
+    const envelope = {
+      event: WS_EVENTS.MESSAGE_DELETED,
+      data: { messageId, conversationId, deletedBy: "admin", timestamp: Date.now() },
+      timestamp: Date.now(),
+    };
+    for (const memberId of memberIds) {
+      connectionManager.sendToUser(memberId, envelope);
+    }
+
+    logger.info("Message soft-deleted and broadcast", { messageId, conversationId });
   }
 }
 

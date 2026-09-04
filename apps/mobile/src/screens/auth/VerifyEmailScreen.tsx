@@ -221,7 +221,16 @@ const VerifyEmailScreen = () => {
         <View style={styles.otpContainer}>
           <Pressable
             style={styles.otpBoxes}
-            onPress={() => inputRef.current?.focus()}
+            onPress={() => {
+              // A bare focus() can no-op if the OS dismissed the keyboard
+              // (back button, tap elsewhere) without React ever seeing a
+              // blur — the native side still considers this input focused,
+              // so re-focusing it doesn't reliably reopen the keyboard.
+              // Forcing blur() first, then focus() on the next tick, makes
+              // it a genuine new focus event every time.
+              inputRef.current?.blur();
+              setTimeout(() => inputRef.current?.focus(), 0);
+            }}
             accessibilityRole="button"
             accessibilityLabel="OTP input"
             accessibilityHint="Focuses the one-time code field"

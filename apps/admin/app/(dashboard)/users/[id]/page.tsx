@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -69,12 +69,25 @@ export default function UserDetailPage() {
     setTimeout(() => setActionMsg(null), 4000);
   };
 
+  // Once we've successfully loaded a user, all subsequent refetches (after
+  // save/verify/suspend/etc.) use their real UUID instead of the original
+  // route param. The route param can be a username (list page links by
+  // username when one exists) or even the "—" placeholder for a user with
+  // none — and a username the admin edits mid-session stops matching
+  // anyone. A ref (not state) so this doesn't change fetchUser's identity
+  // and re-trigger the mount effect below.
+  const resolvedIdRef = useRef<string | null>(null);
   const fetchUser = useCallback(async () => {
+    const lookupId = resolvedIdRef.current ?? id;
     try {
-      const res = await fetch(`/api/users/${encodeURIComponent(id)}`);
+      const res = await fetch(`/api/users/${encodeURIComponent(lookupId)}`);
       const data = await res.json();
-      if (data.success) setUser(data.user);
-      else setNotFound(true);
+      if (data.success) {
+        resolvedIdRef.current = data.user.id;
+        setUser(data.user);
+      } else {
+        setNotFound(true);
+      }
     } catch { setNotFound(true); }
     finally { setLoading(false); }
   }, [id]);
@@ -108,15 +121,17 @@ export default function UserDetailPage() {
     Active: "bg-green-100 text-green-700",
     Inactive: "bg-gray-100 text-gray-500",
     Suspended: "bg-red-100 text-red-700",
+    "Pending Verification": "bg-amber-100 text-amber-700",
   };
   const STATUS_DOT: Record<string, string> = {
     Active: "bg-green-600", Inactive: "bg-gray-400", Suspended: "bg-red-600",
+    "Pending Verification": "bg-amber-500",
   };
 
   const TABS = ["Profile", "Activity", "Care Circles & Groups", "Reports"] as const;
 
   const handleSuspend = async (reason: string, duration: string, message: string) => {
-    const res = await fetch(`/api/users/${encodeURIComponent(id)}`, {
+    const res = await fetch(`/api/users/${encodeURIComponent(user.id)}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action: "suspend", reason, duration, message }),
@@ -132,7 +147,7 @@ export default function UserDetailPage() {
   };
 
   const handleUnsuspend = async () => {
-    const res = await fetch(`/api/users/${encodeURIComponent(id)}`, {
+    const res = await fetch(`/api/users/${encodeURIComponent(user.id)}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action: "unsuspend" }),
@@ -147,7 +162,7 @@ export default function UserDetailPage() {
   };
 
   const handleDelete = async () => {
-    const res = await fetch(`/api/users/${encodeURIComponent(id)}`, { method: "DELETE" });
+    const res = await fetch(`/api/users/${encodeURIComponent(user.id)}`, { method: "DELETE" });
     const data = await res.json();
     if (data.success) {
       router.push("/users");
@@ -260,11 +275,11 @@ export default function UserDetailPage() {
             </button> */}
 
             <button
-              onClick={() => {
-                if (window.confirm(`Are you sure you want to delete user "${user.name}"?`)) {
-                  setShowDeleteModal(true);
-                }
-              }}
+              // Opens the styled "Delete User Account?" modal below — that's
+              // the confirmation step. A native window.confirm() used to gate
+              // entry to it, showing an ugly OS popup before the real,
+              // already-built modal as a redundant second ask.
+              onClick={() => setShowDeleteModal(true)}
               className="w-full h-11 rounded-xl border-2 border-red-100 text-red-400 font-semibold text-sm hover:bg-red-50 hover:border-red-300 hover:text-red-600 transition flex items-center justify-center gap-2"
             >
               <Trash2 className="w-4 h-4" /> Delete User

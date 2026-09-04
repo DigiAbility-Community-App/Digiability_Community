@@ -11,6 +11,7 @@ export async function getEvents(req: Request, res: Response, next: NextFunction)
     const cursor = req.query.cursor as string | undefined;
 
     const events = await prisma.event.findMany({
+      where: { status: "published" },
       orderBy: { createdAt: "desc" },
       take: limit + 1,
       ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),

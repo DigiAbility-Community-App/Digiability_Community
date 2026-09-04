@@ -37,6 +37,10 @@ class InviteRepository {
     role?: MemberRole;
     message?: string;
     expiresAt: Date;
+    /** Defaults to PENDING (the schema default). Self-join requests are
+     * created directly as AWAITING_APPROVAL — there's no separate party
+     * to "accept," the request itself is the terminal pre-admin state. */
+    status?: InviteStatus;
   }): Promise<InviteWithConversation> {
     return prisma.groupInvite.create({
       data: {
@@ -46,6 +50,7 @@ class InviteRepository {
         role: data.role || "MEMBER",
         message: data.message,
         expiresAt: data.expiresAt,
+        ...(data.status ? { status: data.status } : {}),
       },
       include: {
         conversation: {
@@ -61,6 +66,31 @@ class InviteRepository {
   async findById(inviteId: string): Promise<InviteWithConversation | null> {
     return prisma.groupInvite.findUnique({
       where: { id: inviteId },
+      include: {
+        conversation: {
+          select: { id: true, name: true, subType: true, type: true },
+        },
+      },
+    });
+  }
+
+  /**
+   * Find an active self-initiated join request for a user in a conversation
+   * (inviterId === inviteeId — created by requestToJoin, not sendInvite).
+   * Covers both PENDING and AWAITING_APPROVAL so a repeat tap on "Join"
+   * doesn't create duplicate GroupInvite rows.
+   */
+  async findActiveJoinRequest(
+    conversationId: string,
+    userId: string
+  ): Promise<InviteWithConversation | null> {
+    return prisma.groupInvite.findFirst({
+      where: {
+        conversationId,
+        inviterId: userId,
+        inviteeId: userId,
+        status: { in: ["PENDING", "AWAITING_APPROVAL"] },
+      },
       include: {
         conversation: {
           select: { id: true, name: true, subType: true, type: true },

@@ -36,10 +36,12 @@ import {
     parseDateInput,
 } from "@services/profileService";
 import apiClient from "@services/apiClient";
+import { sanitizeNameInput, isValidNameFormat } from "../../utils/nameValidation";
 
 import { useTheme, getFontScale } from "../../theme/ThemeContext";
 import { AccessibleText } from "../../components/shared/AccessibleText";
 import { AccessibleButton } from "../../components/shared/AccessibleButton";
+import { DisabilityDropdown } from "../../components/shared/DisabilityDropdown";
 
 // ─────────────────────────────────────────────────────────────
 // CONSTANTS
@@ -406,6 +408,22 @@ const EditProfileScreen = () => {
             try {
                 if (!user?.id) return;
 
+                if (!isValidNameFormat(fullName)) {
+                    Alert.alert(
+                        "Invalid name",
+                        "Name may only contain letters, spaces, and single hyphens or apostrophes between name parts."
+                    );
+                    return;
+                }
+
+                if (roles.includes("caregiver") && personName.trim() && !isValidNameFormat(personName)) {
+                    Alert.alert(
+                        "Invalid name",
+                        "Care recipient's name may only contain letters, spaces, and single hyphens or apostrophes between name parts."
+                    );
+                    return;
+                }
+
                 setSaving(true);
 
                 await updateUserProfile({
@@ -543,7 +561,7 @@ const EditProfileScreen = () => {
                         style={[styles.input, { backgroundColor: colors.surface, color: colors.text }, cardBorder]}
                         value={fullName}
                         onChangeText={
-                            setFullName
+                            (v: string) => setFullName(sanitizeNameInput(v))
                         }
                         accessibilityLabel="Full Name"
                     />
@@ -665,57 +683,12 @@ const EditProfileScreen = () => {
                             Disability Details
                         </AccessibleText>
 
-                        <ScrollView
-                            horizontal
-                            showsHorizontalScrollIndicator={
-                                false
-                            }
-                            style={
-                                styles.chipsScroll
-                            }
-                        >
-                            {disabilityOptions.map(
-                                (item) => {
-                                    const selected =
-                                        selectedDisabilities.includes(item);
-
-                                    return (
-                                        <TouchableOpacity
-                                            key={item}
-                                            style={[
-                                                styles.chip,
-                                                { backgroundColor: colors.surface },
-                                                cardBorder,
-
-                                                selected && {
-                                                    backgroundColor: highContrast ? "#000000" : colors.primary,
-                                                    borderColor: highContrast ? "#000000" : colors.primary,
-                                                },
-                                            ]}
-                                            onPress={() =>
-                                                toggleDisability(item)
-                                            }
-                                            accessibilityRole="checkbox"
-                                            accessibilityState={{ checked: selected }}
-                                            accessibilityLabel={item}
-                                        >
-                                            <AccessibleText
-                                                variant="body"
-                                                style={[
-                                                    styles.chipText,
-                                                    { color: colors.subtext },
-
-                                                    selected &&
-                                                    styles.selectedChipText,
-                                                ]}
-                                            >
-                                                {item}
-                                            </AccessibleText>
-                                        </TouchableOpacity>
-                                    );
-                                }
-                            )}
-                        </ScrollView>
+                        <DisabilityDropdown
+                            options={disabilityOptions}
+                            selected={selectedDisabilities}
+                            onToggle={toggleDisability}
+                            label="Disability types"
+                        />
 
                         <TextInput
                             placeholder="Disability Since"
@@ -752,7 +725,7 @@ const EditProfileScreen = () => {
                                 style={[styles.input, { backgroundColor: colors.surface, color: colors.text }, cardBorder]}
                                 value={personName}
                                 onChangeText={
-                                    setPersonName
+                                    (v: string) => setPersonName(sanitizeNameInput(v))
                                 }
                                 accessibilityLabel="Person name"
                             />
@@ -785,48 +758,12 @@ const EditProfileScreen = () => {
                                 Disability Type(s)
                             </AccessibleText>
 
-                            <ScrollView
-                                horizontal
-                                showsHorizontalScrollIndicator={false}
-                                style={styles.chipsScroll}
-                            >
-                                {disabilityOptions.map((item) => {
-                                    const selected = careDisabilities.includes(item);
-
-                                    return (
-                                        <TouchableOpacity
-                                            key={item}
-                                            style={[
-                                                styles.chip,
-                                                { backgroundColor: colors.surface },
-                                                cardBorder,
-
-                                                selected && {
-                                                    backgroundColor: highContrast ? "#000000" : colors.primary,
-                                                    borderColor: highContrast ? "#000000" : colors.primary,
-                                                },
-                                            ]}
-                                            onPress={() => toggleCareDisability(item)}
-                                            accessibilityRole="checkbox"
-                                            accessibilityState={{ checked: selected }}
-                                            accessibilityLabel={item}
-                                        >
-                                            <AccessibleText
-                                                variant="body"
-                                                style={[
-                                                    styles.chipText,
-                                                    { color: colors.subtext },
-
-                                                    selected &&
-                                                    styles.selectedChipText,
-                                                ]}
-                                            >
-                                                {item}
-                                            </AccessibleText>
-                                        </TouchableOpacity>
-                                    );
-                                })}
-                            </ScrollView>
+                            <DisabilityDropdown
+                                options={disabilityOptions}
+                                selected={careDisabilities}
+                                onToggle={toggleCareDisability}
+                                label="Care recipient disability types"
+                            />
                         </View>
                     )}
 
@@ -1038,27 +975,6 @@ const styles =
             fontSize: 15,
 
             marginBottom: 14,
-        },
-
-        chipsScroll: {
-            marginBottom: 14,
-        },
-
-        chip: {
-            paddingHorizontal: 16,
-            paddingVertical: 10,
-
-            borderRadius: 999,
-
-            marginRight: 10,
-        },
-
-        chipText: {
-            fontWeight: "600",
-        },
-
-        selectedChipText: {
-            color: "#FFFFFF",
         },
 
         footer: {

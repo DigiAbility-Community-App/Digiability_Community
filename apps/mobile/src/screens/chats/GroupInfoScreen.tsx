@@ -22,6 +22,7 @@ import { ArrowLeft, Users, Accessibility, SquarePen, Bell, BellOff, ChevronRight
 import { useTheme, getFontScale } from "../../theme/ThemeContext";
 import { AccessibleText } from "../../components/shared/AccessibleText";
 import { AccessibleButton } from "../../components/shared/AccessibleButton";
+import { formatUserDisplayName } from "../../utils/formatUserName";
 
 type Props = NativeStackScreenProps<ChatsStackParamList, "GroupInfo">;
 
@@ -38,10 +39,13 @@ const GroupInfoScreen = ({ navigation, route }: Props) => {
 
   const [isUpdatingSettings, setIsUpdatingSettings] = useState(false);
   const [showAddMember, setShowAddMember] = useState(false);
+  const [showAllMembers, setShowAllMembers] = useState(false);
   const [memberSearch, setMemberSearch] = useState("");
   const [memberSearchResults, setMemberSearchResults] = useState<{id:string;name:string;email:string}[]>([]);
   const [isSearchingMembers, setIsSearchingMembers] = useState(false);
   const searchTimeout = useRef<NodeJS.Timeout | null>(null);
+
+  const MEMBERS_PAGE_SIZE = 12;
 
   // Edit group info form
   const [isEditingInfo, setIsEditingInfo] = useState(false);
@@ -416,6 +420,9 @@ const GroupInfoScreen = ({ navigation, route }: Props) => {
   const getInitials = (name: string) =>
     name.split(" ").map((w) => w[0]).join("").toUpperCase().slice(0, 2);
 
+  const isAdminRole = (role: string) =>
+    role === 'OWNER' || role === 'ADMIN' || role === 'CAREGIVER';
+
   const getRoleLabel = (role: string) => {
     switch (role) {
       case 'OWNER': return 'Group admin';
@@ -753,46 +760,91 @@ const GroupInfoScreen = ({ navigation, route }: Props) => {
             </View>
           )}
 
-          <View style={[styles.membersCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            {conversation.participants.map((p, index) => {
-              const roleLabel = getRoleLabel(p.role);
-              const roleBadge = getRoleBadgeStyle(p.role);
-              const name = p.user?.name || 'Unknown';
-              const isMe = p.userId === user?.id;
-              return (
-                <TouchableOpacity
-                  key={p.userId}
-                  style={[
-                    styles.memberRow,
-                    index < conversation.participants.length - 1 && [styles.memberBorder, { borderBottomColor: colors.border }],
-                  ]}
-                  onPress={() => handleMemberAction(p.userId, p.role, name)}
-                  disabled={!hasAdminRights || isMe}
-                  activeOpacity={0.7}
-                  accessibilityRole="button"
-                  accessibilityLabel={`${name}${isMe ? " (you)" : ""}${roleLabel ? `, ${roleLabel}` : ""}`}
-                  accessibilityHint={hasAdminRights && !isMe ? "Opens member actions" : undefined}
-                >
-                  <View style={[styles.memberAvatar, { backgroundColor: colors.surface }]}>
-                    <AccessibleText variant="label" style={[styles.memberAvatarText, { color: colors.subtext }]}>{getInitials(name)}</AccessibleText>
-                  </View>
-                  <View style={styles.memberInfo}>
-                    <AccessibleText variant="body" style={[styles.memberName, { color: colors.text }]}>
-                      {name}{isMe ? <AccessibleText variant="caption" style={[styles.youTag, { color: colors.subtext }]}> (You)</AccessibleText> : null}
+          {(() => {
+            // Sort: admins first, then alphabetically by name within each group
+            const sorted = [...(conversation.participants || [])].sort((a, b) => {
+              const aAdmin = isAdminRole(a.role) ? 0 : 1;
+              const bAdmin = isAdminRole(b.role) ? 0 : 1;
+              if (aAdmin !== bAdmin) return aAdmin - bAdmin;
+              return (a.user?.name || '').localeCompare(b.user?.name || '');
+            });
+            const displayedMembers = showAllMembers ? sorted : sorted.slice(0, MEMBERS_PAGE_SIZE);
+            const remaining = sorted.length - MEMBERS_PAGE_SIZE;
+
+            return (
+              <>
+                <View style={[styles.membersCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                  {displayedMembers.map((p, index) => {
+                    const roleLabel = getRoleLabel(p.role);
+                    const roleBadge = getRoleBadgeStyle(p.role);
+                    const name = formatUserDisplayName(p.user);
+                    const isMe = p.userId === user?.id;
+                    const isAdmin = isAdminRole(p.role);
+                    return (
+                      <TouchableOpacity
+                        key={p.userId}
+                        style={[
+                          styles.memberRow,
+                          index < displayedMembers.length - 1 && [styles.memberBorder, { borderBottomColor: colors.border }],
+                        ]}
+                        onPress={() => handleMemberAction(p.userId, p.role, name)}
+                        disabled={!hasAdminRights || isMe}
+                        activeOpacity={0.7}
+                        accessibilityRole="button"
+                        accessibilityLabel={`${name}${isMe ? " (you)" : ""}${roleLabel ? `, ${roleLabel}` : ", Member"}`}
+                        accessibilityHint={hasAdminRights && !isMe ? "Opens member actions" : undefined}
+                      >
+                        <View style={[styles.memberAvatar, { backgroundColor: isAdmin ? (highContrast ? '#000' : '#EDE9FE') : colors.surface }]}>
+                          <AccessibleText variant="label" style={[styles.memberAvatarText, { color: isAdmin ? colors.primary : colors.subtext }]}>{getInitials(name)}</AccessibleText>
+                        </View>
+                        <View style={styles.memberInfo}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
+                            <AccessibleText variant="body" style={[styles.memberName, { color: colors.text }]}>
+                              {name}{isMe ? <AccessibleText variant="caption" style={[styles.youTag, { color: colors.subtext }]}> (You)</AccessibleText> : null}
+                            </AccessibleText>
+                            {/* Admin/Member badge */}
+                            <View style={[
+                              styles.memberTypePill,
+                              isAdmin
+                                ? { backgroundColor: highContrast ? '#000' : '#EDE9FE' }
+                                : { backgroundColor: highContrast ? '#000' : '#F3F4F6' }
+                            ]}>
+                              <AccessibleText variant="label" style={[
+                                styles.memberTypePillText,
+                                { color: isAdmin ? colors.primary : (highContrast ? '#fff' : '#6B7280') }
+                              ]}>
+                                {isAdmin ? 'Admin' : 'Member'}
+                              </AccessibleText>
+                            </View>
+                          </View>
+                          {roleLabel && roleBadge && (
+                            <View style={[styles.rolePill, { backgroundColor: roleBadge.backgroundColor, borderWidth: roleBadge.borderWidth, borderColor: roleBadge.borderColor }]}>
+                              <AccessibleText variant="label" style={[styles.rolePillText, { color: roleBadge.color }]}>{roleLabel}</AccessibleText>
+                            </View>
+                          )}
+                        </View>
+                        {hasAdminRights && !isMe && p.role !== 'OWNER' && (
+                          <ChevronRight size={20} color={colors.subtext} strokeWidth={2} style={{ marginLeft: 10 }} />
+                        )}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+                {sorted.length > MEMBERS_PAGE_SIZE && (
+                  <TouchableOpacity
+                    style={[styles.showMoreBtn, { backgroundColor: colors.surface }]}
+                    onPress={() => setShowAllMembers((v) => !v)}
+                    accessibilityRole="button"
+                    accessibilityLabel={showAllMembers ? 'Show fewer members' : `Show ${remaining} more members`}
+                  >
+                    <AccessibleText variant="body" style={[styles.showMoreText, { color: colors.primary }]}>
+                      {showAllMembers ? 'Show less' : `Show ${remaining} more member${remaining === 1 ? '' : 's'}`}
                     </AccessibleText>
-                    {roleLabel && roleBadge && (
-                      <View style={[styles.rolePill, { backgroundColor: roleBadge.backgroundColor, borderWidth: roleBadge.borderWidth, borderColor: roleBadge.borderColor }]}>
-                        <AccessibleText variant="label" style={[styles.rolePillText, { color: roleBadge.color }]}>{roleLabel}</AccessibleText>
-                      </View>
-                    )}
-                  </View>
-                  {hasAdminRights && !isMe && p.role !== 'OWNER' && (
-                    <ChevronRight size={20} color={colors.subtext} strokeWidth={2} style={{ marginLeft: 10 }} />
-                  )}
-                </TouchableOpacity>
-              );
-            })}
-          </View>
+                  </TouchableOpacity>
+                )}
+              </>
+            );
+          })()}
         </View>
 
         {/* Leave Group — non-owners; Delete Group — owner */}
@@ -918,6 +970,18 @@ const styles = StyleSheet.create({
     borderRadius: 10, marginTop: 3,
   },
   rolePillText: { fontSize: 11, fontWeight: "700" },
+  memberTypePill: {
+    paddingHorizontal: 7, paddingVertical: 2,
+    borderRadius: 8, alignSelf: 'flex-start',
+  },
+  memberTypePillText: { fontSize: 10, fontWeight: "700", letterSpacing: 0.3 },
+  showMoreBtn: {
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  showMoreText: { fontSize: 14, fontWeight: '600' },
   inviteBtn: { fontSize: 13, fontWeight: "700", paddingHorizontal: 8 },
   leaveBtn: {
     marginHorizontal: 16, paddingVertical: 16,

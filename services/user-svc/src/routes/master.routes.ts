@@ -19,4 +19,34 @@ router.get("/disability-types", async (_req, res, next) => {
   }
 });
 
+router.get("/event-categories", async (_req, res, next) => {
+  try {
+    const categories = await prisma.$queryRaw<{ id: string; name: string }[]>`
+      SELECT id, name
+      FROM event_categories
+      WHERE status = 'Active'
+      ORDER BY name
+    `;
+    res.json({ success: true, data: categories });
+  } catch {
+    // Table may not exist yet if admin panel has never been opened; return empty list
+    res.json({ success: true, data: [] });
+  }
+});
+
+router.get("/service-categories", async (_req, res, next) => {
+  try {
+    const categories = await prisma.$queryRaw<{ id: string; name: string }[]>`
+      SELECT id, name
+      FROM service_categories
+      WHERE status = 'Active'
+      ORDER BY name
+    `;
+    res.json({ success: true, data: categories });
+  } catch {
+    // Table may not exist yet if admin panel has never been opened; return empty list
+    res.json({ success: true, data: [] });
+  }
+});
+
 export default router;

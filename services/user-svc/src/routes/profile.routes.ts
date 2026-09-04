@@ -31,14 +31,14 @@ const getUserIdFromAuthToken = (req: Request): string => {
 // VALIDATION SCHEMAS
 // ─────────────────────────────────────────────
 
-const USERNAME_REGEX = /^[a-z0-9_.]{3,20}$/;
+const USERNAME_REGEX = /^[a-zA-Z0-9_.]{1,15}$/;
 
 const basicProfileSchema = z.object({
   username: z
     .string()
-    .min(3, 'Username must be at least 3 characters')
-    .max(20, 'Username must be at most 20 characters')
-    .regex(USERNAME_REGEX, 'Username may only contain lowercase letters, numbers, underscores, and dots')
+    .min(1, 'Username must be between 1 and 15 characters')
+    .max(15, 'Username must be between 1 and 15 characters')
+    .regex(USERNAME_REGEX, 'Username may only contain letters, numbers, periods, and underscores')
     .optional(),
   fullName: z.string().min(2, 'Full name must be at least 2 characters').optional(),
   dob: z.string().optional(),
@@ -83,7 +83,7 @@ const profileDetailsSchema = z.object({
 });
 
 const pwdProfileSchema = z.object({
-  username: z.string().min(3).max(20).optional(),
+  username: z.string().min(1).max(15).optional(),
   dob: z.string().optional(),
   disabilityType: z.string().optional(),
   disabilitySince: z.number().min(1900).max(new Date().getFullYear()).optional(),
@@ -103,7 +103,7 @@ const caregiverProfileSchema = z.object({
 });
 
 const therapistProfileSchema = z.object({
-  username: z.string().min(3).max(20).optional(),
+  username: z.string().min(1).max(15).optional(),
   dob: z.string().optional(),
   specialty: z.string().optional(),
   institution: z.string().optional(),
@@ -117,7 +117,7 @@ const therapistProfileSchema = z.object({
 
 const ngoProfileSchema = z.object({
   contactPersonName: z.string().optional(),
-  username: z.string().min(3).max(20).optional(),
+  username: z.string().min(1).max(15).optional(),
   organizationName: z.string().optional(),
   registrationNumber: z.string().optional(),
   organizationType: z.string().optional(),
@@ -141,7 +141,7 @@ router.get('/check-username', async (req: Request, res: Response) => {
       return res.status(400).json({
         success: false,
         available: false,
-        message: 'Invalid username format. Use 3–20 lowercase letters, numbers, underscores, or dots.',
+        message: 'Invalid username format. Must be between 1 and 15 characters (letters, numbers, periods, underscores).',
       });
     }
 

@@ -58,11 +58,16 @@ export async function GET(request: NextRequest) {
         year: "numeric",
       });
 
-      // Determine status — suspended takes priority over active/inactive
+      // Determine status — suspended takes priority; an account that never
+      // verified its OTP is "Pending Verification", distinct from
+      // "Inactive" (verified but hasn't finished onboarding, or just
+      // dormant) — these are different admin concerns.
       let status = "Inactive";
       if (row.isSuspended) {
         status = "Suspended";
-      } else if (row.isEmailVerified && row.profileComplete) {
+      } else if (!row.isEmailVerified) {
+        status = "Pending Verification";
+      } else if (row.profileComplete) {
         status = "Active";
       }
 
@@ -86,6 +91,7 @@ export async function GET(request: NextRequest) {
     const activeUsers = formattedUsers.filter(u => u.status === "Active").length;
     const inactiveUsers = formattedUsers.filter(u => u.status === "Inactive").length;
     const suspendedUsers = formattedUsers.filter(u => u.status === "Suspended").length;
+    const pendingVerificationUsers = formattedUsers.filter(u => u.status === "Pending Verification").length;
 
     return NextResponse.json({
       success: true,
@@ -95,6 +101,7 @@ export async function GET(request: NextRequest) {
         active: activeUsers.toLocaleString(),
         inactive: inactiveUsers.toLocaleString(),
         suspended: suspendedUsers.toLocaleString(),
+        pendingVerification: pendingVerificationUsers.toLocaleString(),
       },
     });
   } catch (error) {

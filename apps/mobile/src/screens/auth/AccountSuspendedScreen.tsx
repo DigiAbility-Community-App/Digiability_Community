@@ -1,12 +1,13 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { View, StyleSheet, TouchableOpacity } from "react-native";
+import { View, StyleSheet, TouchableOpacity, Linking } from "react-native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { RouteProp } from "@react-navigation/native";
-import { Ban, Clock, ArrowLeft } from "lucide-react-native";
+import { Ban, Clock, ArrowLeft, Mail } from "lucide-react-native";
 import { AuthStackParamList } from "@navigation/AuthNavigator";
 import { AccessibleText } from "../../components/shared/AccessibleText";
 import ScreenWrapper from "../../components/layout/ScreenWrapper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useSystemStore } from "../../store/systemStore";
 
 type Props = {
   navigation: NativeStackNavigationProp<AuthStackParamList, "AccountSuspended">;
@@ -28,6 +29,15 @@ function formatRemaining(until: Date): string {
 const AccountSuspendedScreen = ({ navigation, route }: Props) => {
   const insets = useSafeAreaInsets();
   const { permanent, suspendedUntil, reason } = route.params ?? {};
+  const supportEmail = useSystemStore((s) => s.supportEmail) || "support@digiability.org";
+
+  const handleContactSupport = () => {
+    const subject = encodeURIComponent("Account suspension appeal");
+    const body = encodeURIComponent(
+      `Hello DigiAbility Support,\n\nI'd like to appeal my account suspension.\n\nReason given: ${reason || "N/A"}\n`
+    );
+    Linking.openURL(`mailto:${supportEmail}?subject=${subject}&body=${body}`).catch(() => {});
+  };
 
   const untilDate = useMemo(
     () => (suspendedUntil ? new Date(suspendedUntil) : null),
@@ -66,12 +76,22 @@ const AccountSuspendedScreen = ({ navigation, route }: Props) => {
           </View>
         )}
 
-        {permanent && (
-          <AccessibleText variant="caption" style={styles.appealText}>
-            If you believe this was a mistake, please contact support at
-            {" "}support@digiability.com.
+        <AccessibleText variant="caption" style={styles.appealText}>
+          If you believe this was a mistake, you can reach out to our support team.
+        </AccessibleText>
+
+        <TouchableOpacity
+          style={styles.contactButton}
+          onPress={handleContactSupport}
+          accessibilityRole="button"
+          accessibilityLabel="Contact Support"
+          accessibilityHint="Opens your mail app to email the DigiAbility support team about this suspension"
+        >
+          <Mail size={18} color="#FFFFFF" strokeWidth={2} />
+          <AccessibleText variant="body" style={styles.contactButtonText}>
+            Contact Support
           </AccessibleText>
-        )}
+        </TouchableOpacity>
 
         <TouchableOpacity
           style={styles.backButton}
@@ -132,7 +152,21 @@ const styles = StyleSheet.create({
   appealText: {
     textAlign: "center",
     color: "#9CA3AF",
-    marginBottom: 24,
+    marginBottom: 16,
+  },
+  contactButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: "#7C3AED",
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 14,
+    marginBottom: 8,
+  },
+  contactButtonText: {
+    color: "#FFFFFF",
+    fontWeight: "700",
   },
   backButton: {
     flexDirection: "row",

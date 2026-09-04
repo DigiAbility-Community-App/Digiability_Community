@@ -6,7 +6,6 @@ import {
     TouchableOpacity,
     ActivityIndicator,
     RefreshControl,
-    Alert,
 } from "react-native";
 
 import { useNavigation } from "@react-navigation/native";
@@ -18,6 +17,7 @@ import AppFooter from "../../components/layout/AppFooter";
 import { forumService } from "../../services/forumService";
 import { chatService } from "../../services/chatService";
 import { useChatStore } from "../../store/chatStore";
+import { NotificationDetailModal } from "../../components/shared/NotificationDetailModal";
 
 // ─────────────────────────────────────────────
 // Types
@@ -47,7 +47,7 @@ interface UnifiedNotification {
 
 function mapNotifType(type: string): FilterCategory {
     if (type === "INVITE") return "invites";
-    if (type.startsWith("ADMIN_") || type === "MODERATION") return "alerts";
+    if (type.startsWith("ADMIN_") || type.startsWith("MODERATION")) return "alerts";
     return "community";
 }
 
@@ -100,6 +100,7 @@ const NotificationsScreen = () => {
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
     const [error, setError] = useState("");
+    const [detailNotif, setDetailNotif] = useState<UnifiedNotification | null>(null);
 
     // Always fetch fresh invites when this screen opens — the store may be
     // empty if the user navigated here without visiting the Chats screen first.
@@ -212,12 +213,30 @@ const NotificationsScreen = () => {
             return;
         }
 
-        if (item.type === "MODERATION" || item.type.startsWith("ADMIN_")) {
-            // No deep-link target — show full content in alert
-            Alert.alert(item.title, item.message, [{ text: "OK" }]);
+        if ((item.type === "GROUP_ANNOUNCEMENT" || item.type === "GROUP_MESSAGE" || item.type === "ADMIN_ALERT" || item.type.startsWith("GROUP_")) && item.relatedId) {
+            navigation.navigate("Chats", {
+                screen: "GroupChat",
+                params: {
+                    conversationId: item.relatedId,
+                    groupName: item.title.replace(/^📢\s*/, "").split(":")[0] || "Group Chat",
+                },
+            });
+            return;
+        }
+
+        if (item.type === "MODERATION" || item.type.startsWith("ADMIN_") || item.type.startsWith("MODERATION")) {
+            // Show the full notification (message may be several lines —
+            // group, reason, flagged content) in a proper in-app dialog
+            // instead of the OS's tiny, truncating native alert.
+            setDetailNotif(item);
             return;
         }
     };
+
+    const detailSeverity: "info" | "warning" | "danger" =
+        detailNotif?.type === "MODERATION_BAN" ? "danger" :
+        detailNotif?.type === "MODERATION_WARNING" || detailNotif?.type === "MODERATION_CONTENT_REMOVED" ? "warning" :
+        "info";
 
     const cardBorderStyle = (item: UnifiedNotification) => {
         if (highContrast) return { borderWidth: 2, borderColor: "#000000" };
@@ -405,6 +424,14 @@ const NotificationsScreen = () => {
             )}
 
             <AppFooter activeTab="Home" />
+
+            <NotificationDetailModal
+                visible={!!detailNotif}
+                title={detailNotif ? `${detailNotif.icon} ${detailNotif.title}` : ""}
+                message={detailNotif?.message ?? ""}
+                severity={detailSeverity}
+                onClose={() => setDetailNotif(null)}
+            />
         </ScreenWrapper>
     );
 };
@@ -428,8 +455,9 @@ const styles = StyleSheet.create({
         fontSize: 14,
     },
     filterContainer: {
-        maxHeight: 68,
+        maxHeight: 84,
         paddingTop: 14,
+        paddingBottom: 10,
     },
     filterPill: {
         height: 38,

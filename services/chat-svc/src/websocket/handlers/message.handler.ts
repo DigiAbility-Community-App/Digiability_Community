@@ -28,6 +28,11 @@ import { redis } from "../../config/redis";
 import { screenText } from "@digiability/moderation";
 import { keywordCache } from "../../moderation/keyword-cache";
 import { moderationRepository } from "../../repositories/moderation.repository";
+import { hasAdminAccess } from "../../utils/roles.util";
+import {
+  getConversationSuspension,
+  suspensionRejectionReason,
+} from "../../utils/suspension.util";
 import {
   WS_EVENTS,
   WS_ERROR_CODES,
@@ -80,15 +85,40 @@ export async function handleMessageSend(
       return;
     }
 
+    const conversation = await conversationRepository.getById(conversationId);
+
+    // ── 2a-bis. Group suspension gate ──────────────────────────
+    // Runs BEFORE the admin permission gate on purpose: a suspension is a
+    // moderator action against the whole group, so it must also stop the
+    // group's own OWNER/ADMIN/CAREGIVER. Checking it after (or expressing it
+    // as sendMessages=ADMINS_ONLY, as the admin panel used to) leaves group
+    // admins able to post in a suspended group.
+    if (conversation) {
+      const suspension = getConversationSuspension(conversation);
+      if (suspension) {
+        logger.info("Message rejected — group suspended", {
+          userId,
+          conversationId,
+          suspendedUntil: suspension.suspendedUntil,
+        });
+        sendAck(ws, {
+          clientMessageId,
+          messageId: "",
+          sequenceNo: 0,
+          status: "rejected",
+          reason: suspensionRejectionReason(suspension),
+          timestamp: Date.now(),
+        }, requestId);
+        return;
+      }
+    }
+
     // ── 2b. Verify send permission (WhatsApp-style admin gate) ──
     // Blocks ALL message types (text, image, file, audio, video)
     // since they all flow through this single handler.
-    const conversation = await conversationRepository.getById(conversationId);
     if (conversation && conversation.sendMessages === "ADMINS_ONLY") {
       const senderRole = await conversationRepository.getMemberRole(conversationId, userId);
-      const isSenderAdmin = conversation.subType === "CARE_CIRCLE"
-        ? (senderRole === "OWNER" || senderRole === "CAREGIVER")
-        : (senderRole === "OWNER" || senderRole === "ADMIN");
+      const isSenderAdmin = senderRole ? hasAdminAccess(senderRole, conversation.subType) : false;
 
       if (!isSenderAdmin) {
         sendAck(ws, {

@@ -199,9 +199,22 @@ export function ReviewQueue({
                     {/* CONTENT & REASON */}
                     <td className="px-6 py-4">
                       <div className="max-w-lg">
-                        <p className="text-sm font-bold text-[#1A1C1C] leading-snug line-clamp-2 group-hover:text-[#7004DC] transition">
-                          "{item.contentPreview}"
-                        </p>
+                        {item.imageUrl ? (
+                          <div className="flex items-center gap-2">
+                            <img
+                              src={item.imageUrl}
+                              alt="Reported media"
+                              className="w-10 h-10 rounded-lg object-cover border border-gray-200 shrink-0"
+                            />
+                            <p className="text-sm font-bold text-[#1A1C1C] leading-snug line-clamp-2 group-hover:text-[#7004DC] transition">
+                              Image attachment
+                            </p>
+                          </div>
+                        ) : (
+                          <p className="text-sm font-bold text-[#1A1C1C] leading-snug line-clamp-2 group-hover:text-[#7004DC] transition">
+                            "{item.contentPreview}"
+                          </p>
+                        )}
                         <div className="mt-1.5 flex items-center gap-2">
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-red-50 text-red-700 text-[10px] font-extrabold border border-red-100">
                             <AlertTriangle className="w-3 h-3" />

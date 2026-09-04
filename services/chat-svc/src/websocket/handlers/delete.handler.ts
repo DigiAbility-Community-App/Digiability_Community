@@ -14,13 +14,10 @@ import { messageRepository } from "../../repositories/message.repository";
 import { conversationRepository } from "../../repositories/conversation.repository";
 import { connectionManager } from "../connection-manager";
 import { WS_EVENTS, WS_ERROR_CODES, WsEnvelope, MessageDeletePayload } from "../../types/ws-events";
+import { hasAdminAccess } from "../../utils/roles.util";
 
 // 48 hours in milliseconds — messages older than this cannot be deleted for everyone
 const DELETE_FOR_EVERYONE_WINDOW_MS = 48 * 60 * 60 * 1000;
-
-// Roles with admin-level access per group type
-const CARE_CIRCLE_ADMIN_ROLES = ["OWNER", "CAREGIVER"];
-const GROUP_ADMIN_ROLES = ["OWNER", "ADMIN"];
 
 export async function handleMessageDelete(
   ws: WebSocket,
@@ -86,9 +83,7 @@ export async function handleMessageDelete(
       const conversation = await conversationRepository.getById(conversationId);
       const role = await conversationRepository.getMemberRole(conversationId, userId);
       if (role && conversation) {
-        isAdmin = conversation.subType === "CARE_CIRCLE"
-          ? CARE_CIRCLE_ADMIN_ROLES.includes(role)
-          : GROUP_ADMIN_ROLES.includes(role);
+        isAdmin = hasAdminAccess(role, conversation.subType);
       }
     }
 

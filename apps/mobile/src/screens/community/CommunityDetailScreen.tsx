@@ -1,5 +1,5 @@
-import React, { useState, useMemo } from "react";
-import { View, StyleSheet, TouchableOpacity, Dimensions } from "react-native";
+import React, { useState, useMemo, useRef } from "react";
+import { View, StyleSheet, TouchableOpacity, Dimensions, ScrollView } from "react-native";
 import { TabView } from "react-native-tab-view";
 import { useFocusEffect } from "@react-navigation/native";
 import { useChatStore } from "@store/chatStore";
@@ -69,39 +69,45 @@ const CommunityDetailScreen = ({ navigation, route }: any) => {
   };
 
   const renderTabBar = (props: any) => (
-    <View style={[styles.tabBar, { backgroundColor: colors.background, borderBottomColor: colors.border }]}>
-      {props.navigationState.routes.map((r: any, i: number) => {
-        const active = index === i;
-        const count = sectionUnread[r.key as RouteKey] || 0;
-        return (
-          <TouchableOpacity
-            key={r.key}
-            style={styles.tabItem}
-            onPress={() => setIndex(i)}
-            activeOpacity={0.8}
-            accessibilityRole="tab"
-            accessibilityLabel={`${r.title} tab${count > 0 ? `, ${count} unread` : ""}`}
-            accessibilityState={{ selected: active }}
-          >
-            <View style={styles.tabLabelRow}>
-              <AccessibleText
-                variant="body"
-                style={[styles.tabText, { color: active ? colors.primary : colors.subtext }, active && styles.activeTabText]}
-              >
-                {r.title}
-              </AccessibleText>
-              {count > 0 && (
-                <View style={[styles.tabBadge, { backgroundColor: colors.secondary }]}>
-                  <AccessibleText variant="overline" style={styles.tabBadgeText}>
-                    {count > 99 ? "99+" : count}
-                  </AccessibleText>
-                </View>
-              )}
-            </View>
-            {active && <View style={[styles.activeIndicator, { backgroundColor: colors.secondary }]} />}
-          </TouchableOpacity>
-        );
-      })}
+    <View style={[styles.tabBarWrapper, { backgroundColor: colors.background, borderBottomColor: colors.border }]}>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.tabBarScrollContent}
+      >
+        {props.navigationState.routes.map((r: any, i: number) => {
+          const active = index === i;
+          const count = sectionUnread[r.key as RouteKey] || 0;
+          return (
+            <TouchableOpacity
+              key={r.key}
+              style={styles.tabItem}
+              onPress={() => setIndex(i)}
+              activeOpacity={0.8}
+              accessibilityRole="tab"
+              accessibilityLabel={`${r.title} tab${count > 0 ? `, ${count} unread` : ""}`}
+              accessibilityState={{ selected: active }}
+            >
+              <View style={styles.tabLabelRow}>
+                <AccessibleText
+                  variant="body"
+                  style={[styles.tabText, { color: active ? colors.primary : colors.subtext }, active && styles.activeTabText]}
+                >
+                  {r.title}
+                </AccessibleText>
+                {count > 0 && (
+                  <View style={[styles.tabBadge, { backgroundColor: colors.secondary }]}>
+                    <AccessibleText variant="overline" style={styles.tabBadgeText}>
+                      {count > 99 ? "99+" : count}
+                    </AccessibleText>
+                  </View>
+                )}
+              </View>
+              {active && <View style={[styles.activeIndicator, { backgroundColor: colors.secondary }]} />}
+            </TouchableOpacity>
+          );
+        })}
+      </ScrollView>
     </View>
   );
 
@@ -141,13 +147,16 @@ const CommunityDetailScreen = ({ navigation, route }: any) => {
 export default CommunityDetailScreen;
 
 const styles = StyleSheet.create({
-  tabBar: {
-    flexDirection: "row",
-    paddingHorizontal: 16,
+  tabBarWrapper: {
     borderBottomWidth: 1,
   },
+  tabBarScrollContent: {
+    paddingHorizontal: 12,
+    flexDirection: "row",
+  },
   tabItem: {
-    marginRight: 20,
+    marginRight: 4,
+    paddingHorizontal: 8,
     paddingVertical: 14,
     alignItems: "center",
     justifyContent: "center",

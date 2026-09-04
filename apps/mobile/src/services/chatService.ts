@@ -40,10 +40,16 @@ export const chatService = {
   },
 
   /**
-   * Self-join an open community group
+   * Self-join an open community group. When the group has "require approval"
+   * enabled, this creates a pending join request instead of joining directly
+   * — callers must check the returned status rather than assuming success
+   * means membership.
    */
-  joinGroup: async (conversationId: string): Promise<void> => {
-    await apiClient.post(`${CHAT_BASE_URL}/api/conversations/${conversationId}/join`);
+  joinGroup: async (
+    conversationId: string
+  ): Promise<{ status: 'joined' | 'pending_approval'; inviteId?: string }> => {
+    const res = await apiClient.post(`${CHAT_BASE_URL}/api/conversations/${conversationId}/join`);
+    return res.data.data;
   },
 
   getConversations: async () => {
@@ -75,23 +81,26 @@ export const chatService = {
         const lookupRes = await apiClient.post('/api/auth/users/batch', {
           ids: [...allUserIds],
         });
-        const userMap = new Map<string, string>();
+        const userMap = new Map<string, { name: string; deletedAt: string | null }>();
         for (const u of lookupRes.data.data.users) {
-          userMap.set(u.id, u.name);
+          userMap.set(u.id, { name: u.name, deletedAt: u.deletedAt ?? null });
         }
 
         // Attach user info to each participant
         for (const conv of conversations) {
           const members = conv.members || conv.participants || [];
-          conv.participants = members.map((m: any) => ({
-            ...m,
-            user: {
-              id: m.userId,
-              name: m.userId === '00000000-0000-0000-0000-000000000001' 
-                ? 'DigiBot' 
-                : (userMap.get(m.userId) || 'Unknown'),
-            },
-          }));
+          conv.participants = members.map((m: any) => {
+            const isBot = m.userId === '00000000-0000-0000-0000-000000000001';
+            const looked = userMap.get(m.userId);
+            return {
+              ...m,
+              user: {
+                id: m.userId,
+                name: isBot ? 'DigiBot' : (looked?.name || 'Unknown'),
+                deletedAt: isBot ? null : (looked?.deletedAt ?? null),
+              },
+            };
+          });
         }
       }
     } catch (err) {
@@ -101,9 +110,10 @@ export const chatService = {
         const members = conv.members || conv.participants || [];
         conv.participants = members.map((m: any) => ({
           ...m,
-          user: { 
-            id: m.userId, 
-            name: m.userId === '00000000-0000-0000-0000-000000000001' ? 'DigiBot' : 'Unknown' 
+          user: {
+            id: m.userId,
+            name: m.userId === '00000000-0000-0000-0000-000000000001' ? 'DigiBot' : 'Unknown',
+            deletedAt: null,
           },
         }));
       }

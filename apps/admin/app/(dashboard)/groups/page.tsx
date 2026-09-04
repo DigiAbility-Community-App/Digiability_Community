@@ -6,8 +6,9 @@ import {
   Users, Heart, MessageCircle, RefreshCw, Search,
   Clock, Plus, X, ChevronDown, Loader2, CheckCircle2,
   AlertTriangle, Settings, MessageSquare, Ban, Send,
-  ChevronLeft, ChevronRight,
+  ChevronLeft, ChevronRight, Crown,
 } from "lucide-react";
+import { DateRangePicker, isWithinDateRange } from "@/components/shared/DateRangePicker";
 
 interface Group {
   id: string;
@@ -15,12 +16,15 @@ interface Group {
   description: string | null;
   subType: "GENERAL" | "CARE_CIRCLE" | null;
   createdAt: string;
+  createdAtISO: string;
   lastMessageAt: string | null;
   lastMessageText: string | null;
   maxMembers: number;
   memberCount: string;
   sendMessages?: string;
   isSuspended?: boolean;
+  suspendedUntil?: string | null;
+  suspensionReason?: string | null;
 }
 
 interface GroupStats {
@@ -138,7 +142,10 @@ function GroupSectionTable({
             <tbody className="divide-y divide-[#F0EDF5]">
               {pageItems.map(group => {
                 const isCareCircle = group.subType === "CARE_CIRCLE";
-                const isSuspended = group.isSuspended || group.sendMessages === "ADMINS_ONLY";
+                // Read the real suspension flag only. The old
+                // `|| group.sendMessages === "ADMINS_ONLY"` fallback conflated
+                // an announcement-only group with a suspended one.
+                const isSuspended = !!group.isSuspended;
                 return (
                   <tr
                     key={group.id}
@@ -317,6 +324,8 @@ export default function GroupsPage() {
   const [stats, setStats]     = useState<GroupStats>({ totalGroups:"0", careCircles:"0", generalGroups:"0", directMessages:"0" });
   const [loading, setLoading] = useState(true);
   const [search, setSearch]   = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo]   = useState("");
   const [activeTab, setActiveTab] = useState<"CARE_CIRCLE" | "GENERAL">("CARE_CIRCLE");
   const [showCreate, setShowCreate] = useState(false);
 
@@ -461,8 +470,10 @@ export default function GroupsPage() {
     return (g.name || "").toLowerCase().includes(q) || (g.description || "").toLowerCase().includes(q);
   });
 
-  const careCircles = searchFiltered.filter(g => g.subType === "CARE_CIRCLE");
-  const generalGroups = searchFiltered.filter(g => g.subType !== "CARE_CIRCLE");
+  const dateFiltered = searchFiltered.filter(g => isWithinDateRange(g.createdAtISO, dateFrom, dateTo));
+
+  const careCircles = dateFiltered.filter(g => g.subType === "CARE_CIRCLE");
+  const generalGroups = dateFiltered.filter(g => g.subType !== "CARE_CIRCLE");
 
   const statsCards = [
     { label: "Total Groups",    value: stats.totalGroups,    icon: <Users className="w-5 h-5" />,         bg: "bg-violet-50",  text: "text-violet-600" },
@@ -571,14 +582,24 @@ export default function GroupsPage() {
           </button>
         </div>
 
-        {/* SEARCH INPUT */}
-        <div className="relative w-full sm:w-72">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-[#7D7387]" />
-          <input
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            placeholder={`Search ${activeTab === "CARE_CIRCLE" ? "care circles" : "community groups"}...`}
-            className="w-full h-11 rounded-2xl bg-white pl-11 pr-4 text-sm outline-none border border-gray-200 focus:border-[#8A38F5] shadow-xs"
+        {/* SEARCH + DATE RANGE */}
+        <div className="flex items-center gap-3 flex-wrap justify-end">
+          <div className="relative w-full sm:w-72">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-[#7D7387]" />
+            <input
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder={`Search ${activeTab === "CARE_CIRCLE" ? "care circles" : "community groups"}...`}
+              className="w-full h-11 rounded-2xl bg-white pl-11 pr-4 text-sm outline-none border border-gray-200 focus:border-[#8A38F5] shadow-xs"
+            />
+          </div>
+
+          <DateRangePicker
+            from={dateFrom}
+            to={dateTo}
+            onFromChange={setDateFrom}
+            onToChange={setDateTo}
+            className="h-11 rounded-2xl bg-white text-sm outline-none border border-gray-200 focus:border-[#8A38F5] shadow-xs"
           />
         </div>
       </div>
@@ -784,6 +805,8 @@ function CreateGroupModal({ onClose, onCreated }: { onClose: () => void; onCreat
   const [memberSearch, setMemberSearch] = useState("");
   const [selectedMembers, setSelectedMembers] = useState<{ user: UserOption; role: string }[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
+  // Every group must be created with exactly one designated group admin/owner.
+  const [ownerId, setOwnerId] = useState<string | null>(null);
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -809,13 +832,36 @@ function CreateGroupModal({ onClose, onCreated }: { onClose: () => void; onCreat
       if (exists) return prev.filter(m => m.user.id !== user.id);
       return [...prev, { user, role: "MEMBER" }];
     });
+    // Deselecting the designated owner clears the designation — a group
+    // can't be created with an owner who isn't actually a member.
+    if (ownerId === user.id) setOwnerId(null);
   };
 
   const updateRole = (userId: string, role: string) => {
     setSelectedMembers(prev => prev.map(m => m.user.id === userId ? { ...m, role } : m));
+    // Picking the group's admin role for the first time already reads as
+    // "mark this person the group admin" — it shouldn't ALSO require
+    // separately clicking the avatar to designate ownership (that's still
+    // there for reassigning which admin is the true owner once more than
+    // one is picked).
+    const adminRoleForSubType = subType === "CARE_CIRCLE" ? "CAREGIVER" : "ADMIN";
+    if (role === adminRoleForSubType && !ownerId) {
+      setOwnerId(userId);
+    } else if (role !== adminRoleForSubType && ownerId === userId) {
+      // Demoting the current owner away from the admin role clears the
+      // designation, so the "admin required" warning correctly reappears.
+      setOwnerId(null);
+    }
   };
 
+  // Mirrors the server-side MAX_ADMINS_PER_GROUP cap for immediate feedback
+  // instead of only finding out on submit.
+  const MAX_ADMINS_PER_GROUP = 3;
+  const adminRole = subType === "CARE_CIRCLE" ? "CAREGIVER" : "ADMIN";
+  const adminCount = (ownerId ? 1 : 0) + selectedMembers.filter(m => m.user.id !== ownerId && m.role === adminRole).length;
+
   const handleCreate = async () => {
+    if (!ownerId) { setError("Select a group admin before creating the group."); return; }
     setSubmitting(true);
     setError("");
     try {
@@ -831,6 +877,7 @@ function CreateGroupModal({ onClose, onCreated }: { onClose: () => void; onCreat
           addMembers: addMembersPerm,
           sendMessages,
           approveNewMembers,
+          ownerId,
           initialMembers: selectedMembers.map(m => ({ userId: m.user.id, role: m.role })),
         }),
       });
@@ -846,6 +893,11 @@ function CreateGroupModal({ onClose, onCreated }: { onClose: () => void; onCreat
     u.name.toLowerCase().includes(memberSearch.toLowerCase()) ||
     u.email.toLowerCase().includes(memberSearch.toLowerCase())
   );
+  // Unfiltered browse view stays capped so the picker isn't an unbroken wall
+  // of every user — searching (which filters the already-fetched allUsers,
+  // so it's instant) surfaces everyone, uncapped.
+  const MEMBER_BROWSE_LIMIT = 25;
+  const displayedUsers = memberSearch ? filteredUsers : filteredUsers.slice(0, MEMBER_BROWSE_LIMIT);
 
   const PermToggle = ({ label, value, onChange }: { label: string; value: "ADMINS_ONLY"|"ALL_MEMBERS"; onChange: (v: "ADMINS_ONLY"|"ALL_MEMBERS") => void }) => (
     <div>
@@ -958,7 +1010,7 @@ function CreateGroupModal({ onClose, onCreated }: { onClose: () => void; onCreat
                 <div className="flex items-center justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-[#7004DC]" /></div>
               ) : (
                 <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
-                  {filteredUsers.slice(0, 30).map(user => {
+                  {displayedUsers.map(user => {
                     const selected = selectedMembers.find(m => m.user.id === user.id);
                     return (
                       <div key={user.id} className={`flex items-center gap-3 p-3 rounded-xl border-2 transition cursor-pointer ${selected ? "border-[#7004DC] bg-violet-50" : "border-transparent bg-[#F7F5FA] hover:bg-[#F0EDFA]"}`} onClick={() => toggleMember(user)}>
@@ -974,31 +1026,66 @@ function CreateGroupModal({ onClose, onCreated }: { onClose: () => void; onCreat
                     );
                   })}
                   {filteredUsers.length === 0 && <p className="text-sm text-slate-400 text-center py-4">No users found</p>}
+                  {!memberSearch && filteredUsers.length > MEMBER_BROWSE_LIMIT && (
+                    <p className="text-xs text-slate-400 text-center py-2">
+                      Showing {MEMBER_BROWSE_LIMIT} of {filteredUsers.length} — search by name or email to find someone else
+                    </p>
+                  )}
                 </div>
               )}
 
               {/* SELECTED MEMBERS + ROLE ASSIGNMENT */}
               {selectedMembers.length > 0 && (
                 <div>
-                  <p className="text-xs font-extrabold uppercase tracking-[0.15em] text-slate-500 mb-3">Selected ({selectedMembers.length}) — Assign Roles</p>
+                  <p className="text-xs font-extrabold uppercase tracking-[0.15em] text-slate-500 mb-1">Selected ({selectedMembers.length}) — Assign Roles</p>
+                  <p className="text-xs text-slate-500 mb-3">
+                    {ownerId ? (
+                      <>Group admin: <span className="font-bold text-[#7004DC]">{selectedMembers.find(m => m.user.id === ownerId)?.user.name}</span></>
+                    ) : (
+                      <span className="text-amber-600 font-semibold">A group admin is required — mark one member below.</span>
+                    )}
+                    {" "}· {adminCount}/{MAX_ADMINS_PER_GROUP} admins
+                  </p>
                   <div className="space-y-2">
-                    {selectedMembers.map(({ user, role }) => (
-                      <div key={user.id} className="flex items-center gap-3 bg-[#F7F5FA] rounded-xl p-3">
-                        <div className="w-8 h-8 rounded-full bg-[#EDDCFF] text-[#7004DC] flex items-center justify-center text-xs font-bold shrink-0">
-                          {user.name.split(" ").map(n=>n[0]).join("").slice(0,2).toUpperCase()}
+                    {selectedMembers.map(({ user, role }) => {
+                      const isOwner = ownerId === user.id;
+                      const wouldExceedCap = role !== adminRole && !isOwner && adminCount >= MAX_ADMINS_PER_GROUP;
+                      return (
+                        <div key={user.id} className={`flex items-center gap-3 rounded-xl p-3 ${isOwner ? "bg-violet-50 border border-[#7004DC]" : "bg-[#F7F5FA]"}`}>
+                          <button
+                            type="button"
+                            onClick={() => setOwnerId(user.id)}
+                            title="Set as group admin"
+                            className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0 transition ${isOwner ? "bg-[#7004DC] text-white" : "bg-[#EDDCFF] text-[#7004DC] hover:bg-[#DEC4FA]"}`}
+                          >
+                            {isOwner ? <Crown className="w-4 h-4" /> : user.name.split(" ").map(n=>n[0]).join("").slice(0,2).toUpperCase()}
+                          </button>
+                          <p className="text-sm font-semibold text-[#1A1C1C] flex-1 truncate">
+                            {user.name}
+                            {isOwner && <span className="ml-2 text-[10px] font-extrabold uppercase text-[#7004DC]">Group Admin</span>}
+                          </p>
+                          {!isOwner && (
+                            <div className="relative shrink-0">
+                              <select
+                                value={role}
+                                onChange={e => updateRole(user.id, e.target.value)}
+                                disabled={wouldExceedCap && role !== adminRole}
+                                title={wouldExceedCap ? `Already at the ${MAX_ADMINS_PER_GROUP}-admin limit` : undefined}
+                                className="h-8 pl-3 pr-7 rounded-lg bg-white border border-gray-200 text-xs font-bold outline-none focus:border-[#8A38F5] appearance-none disabled:opacity-50"
+                              >
+                                {roles.map(r => (
+                                  <option key={r} value={r} disabled={r === adminRole && wouldExceedCap}>{r}</option>
+                                ))}
+                              </select>
+                              <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-400 pointer-events-none" />
+                            </div>
+                          )}
+                          <button onClick={() => toggleMember(user)} className="w-6 h-6 rounded-full hover:bg-red-100 flex items-center justify-center text-slate-400 hover:text-red-500 transition">
+                            <X className="w-3 h-3" />
+                          </button>
                         </div>
-                        <p className="text-sm font-semibold text-[#1A1C1C] flex-1 truncate">{user.name}</p>
-                        <div className="relative shrink-0">
-                          <select value={role} onChange={e => updateRole(user.id, e.target.value)} className="h-8 pl-3 pr-7 rounded-lg bg-white border border-gray-200 text-xs font-bold outline-none focus:border-[#8A38F5] appearance-none">
-                            {roles.map(r => <option key={r} value={r}>{r}</option>)}
-                          </select>
-                          <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-400 pointer-events-none" />
-                        </div>
-                        <button onClick={() => toggleMember(user)} className="w-6 h-6 rounded-full hover:bg-red-100 flex items-center justify-center text-slate-400 hover:text-red-500 transition">
-                          <X className="w-3 h-3" />
-                        </button>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               )}
@@ -1016,7 +1103,7 @@ function CreateGroupModal({ onClose, onCreated }: { onClose: () => void; onCreat
               Next: Add Members →
             </button>
           ) : (
-            <button onClick={handleCreate} disabled={submitting} className="h-11 px-6 rounded-xl bg-[#D2A500] hover:bg-[#b89300] disabled:bg-yellow-200 text-white font-bold text-sm flex items-center gap-2 transition">
+            <button onClick={handleCreate} disabled={submitting || !ownerId} title={!ownerId ? "Select a group admin first" : undefined} className="h-11 px-6 rounded-xl bg-[#D2A500] hover:bg-[#b89300] disabled:bg-yellow-200 text-white font-bold text-sm flex items-center gap-2 transition">
               {submitting ? <><Loader2 className="w-4 h-4 animate-spin" /> Creating...</> : "Create Group"}
             </button>
           )}

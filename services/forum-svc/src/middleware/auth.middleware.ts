@@ -92,3 +92,28 @@ export async function authenticate(
   req.user = payload;
   next();
 }
+
+/**
+ * Optional authentication: decodes user if token provided, but doesn't reject if unauthenticated.
+ */
+export async function optionalAuth(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    return next();
+  }
+
+  const token = authHeader.split(" ")[1];
+  try {
+    const payload = jwt.verify(token, getPublicKey(), {
+      algorithms: ["RS256"],
+    }) as AccessTokenPayload;
+    req.user = payload;
+  } catch {
+    // Fail silently on invalid token for optional auth
+  }
+  next();
+}

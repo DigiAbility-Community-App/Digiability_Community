@@ -94,11 +94,16 @@ export async function GET(
     const isCurrentlySuspended =
       row.isSuspended && (row.suspendedUntil === null || new Date(row.suspendedUntil) > new Date());
 
-    // Status: Suspended takes priority over Active/Inactive
+    // Status: Suspended takes priority; an account that never verified its
+    // OTP is "Pending Verification", distinct from "Inactive" (verified but
+    // onboarding unfinished, or just dormant). Must stay in sync with the
+    // same derivation in app/api/users/route.ts so list and detail agree.
     let status = "Inactive";
     if (isCurrentlySuspended) {
       status = "Suspended";
-    } else if (row.isEmailVerified && row.profileComplete) {
+    } else if (!row.isEmailVerified) {
+      status = "Pending Verification";
+    } else if (row.profileComplete) {
       status = "Active";
     }
 
@@ -208,6 +213,30 @@ export async function PATCH(
       }
 
       await writeAudit({ userId: realUserId, action: "suspend", reason, message });
+
+      // Suspension deliberately does NOT remove group memberships (unlike
+      // a ban) — the suspended user keeps their seat for when they return.
+      // But if they currently hold an admin-capable role, promote a
+      // stand-in so their groups aren't stuck approving members / moderating
+      // chat while they're unable to act.
+      const chatSvcUrl = process.env.CHAT_SVC_URL;
+      const internalSecret = process.env.INTERNAL_API_SECRET;
+      if (chatSvcUrl && internalSecret) {
+        try {
+          const svcRes = await fetch(`${chatSvcUrl}/api/internal/users/${realUserId}/admin-succession-check`, {
+            method: "POST",
+            headers: {
+              "x-internal-secret": internalSecret,
+              "x-internal-ts": String(Date.now()),
+            },
+          });
+          if (!svcRes.ok) {
+            console.warn(`chat-svc admin-succession-check returned status ${svcRes.status} for suspended user ${realUserId}.`);
+          }
+        } catch (svcErr) {
+          console.warn("Failed to reach chat-svc for admin succession check on suspend:", svcErr);
+        }
+      }
     } else if (action === "unsuspend") {
       await dbPool.query(
         `UPDATE users SET "isSuspended" = false, "suspendedUntil" = NULL, "suspensionReason" = NULL WHERE id = $1`,
@@ -425,6 +454,31 @@ export async function DELETE(
     );
 
     await writeAudit({ userId: realUserId, action: "delete_user", reason: "admin deletion (soft-delete + PII scrub)" });
+
+    // Best-effort: remove the deleted user from every chat group they
+    // belonged to, and auto-promote a stand-in admin in any group where
+    // they were the only OWNER/ADMIN/CAREGIVER — otherwise they linger as
+    // an active "Deleted User" member (possibly still shown as group
+    // admin) since nothing else in this codebase cleans up chat.
+    // conversation_members on admin-initiated deletion.
+    const chatSvcUrl = process.env.CHAT_SVC_URL;
+    const internalSecret = process.env.INTERNAL_API_SECRET;
+    if (chatSvcUrl && internalSecret) {
+      try {
+        const res = await fetch(`${chatSvcUrl}/api/internal/users/${realUserId}/memberships`, {
+          method: "DELETE",
+          headers: {
+            "x-internal-secret": internalSecret,
+            "x-internal-ts": String(Date.now()),
+          },
+        });
+        if (!res.ok) {
+          console.warn(`chat-svc internal memberships delete returned status ${res.status} for deleted user ${realUserId}.`);
+        }
+      } catch (svcErr) {
+        console.warn("Failed to reach chat-svc to clean up group memberships on user deletion:", svcErr);
+      }
+    }
 
     return NextResponse.json({ success: true });
   } catch (error) {

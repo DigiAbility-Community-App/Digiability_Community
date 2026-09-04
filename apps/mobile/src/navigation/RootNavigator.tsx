@@ -58,15 +58,15 @@ const RootNavigator = () => {
     let isMounted = true;
 
     const restoreSession = async () => {
-      const storedRefreshToken = await SecureStore.getItemAsync(REFRESH_TOKEN_KEY);
-      if (!storedRefreshToken) {
-        if (isMounted) {
-          setIsRestoringSession(false);
-        }
-        return;
-      }
-
       try {
+        const storedRefreshToken = await SecureStore.getItemAsync(REFRESH_TOKEN_KEY).catch(() => null);
+        if (!storedRefreshToken) {
+          if (isMounted) {
+            setIsRestoringSession(false);
+          }
+          return;
+        }
+
         const restoredUser = await getMe();
         if (isMounted) {
           setUser(restoredUser);

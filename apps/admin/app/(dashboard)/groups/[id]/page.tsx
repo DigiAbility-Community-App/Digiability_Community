@@ -41,8 +41,10 @@ interface UserOption {
   email: string;
 }
 
-const GENERAL_ROLES   = ["MEMBER","ADMIN","OWNER"] as const;
-const CARE_CIRCLE_ROLES = ["MEMBER","CAREGIVER","MENTOR","PROFESSIONAL","OWNER"] as const;
+// OWNER is intentionally excluded — ownership is changed only via the
+// dedicated "Transfer Ownership" action, never the generic role picker.
+const GENERAL_ROLES   = ["MEMBER","ADMIN"] as const;
+const CARE_CIRCLE_ROLES = ["MEMBER","CAREGIVER","MENTOR","PROFESSIONAL"] as const;
 
 export default function GroupDetailPage() {
   const params  = useParams();
@@ -120,12 +122,26 @@ export default function GroupDetailPage() {
         setEditAM(data.group.addMembers || "ADMINS_ONLY");
         setEditSM(data.group.sendMessages || "ALL_MEMBERS");
         setEditApprove(data.group.approveNewMembers || false);
-        if (data.group.sendMessages === "ADMINS_ONLY") {
-          setSuspensionInfo((prev) => prev || {
+        // Real suspension state, straight from the group's own suspension
+        // columns. This used to be inferred from sendMessages === "ADMINS_ONLY",
+        // which showed every announcement-only group as suspended and cleared
+        // the banner as soon as an admin edited the permission.
+        const until: string | null = data.group.suspendedUntil ?? null;
+        const stillActive =
+          !!data.group.isSuspended &&
+          (until === null || new Date(until).getTime() > Date.now());
+
+        if (stillActive) {
+          setSuspensionInfo({
             isSuspended: true,
-            period: "Active Suspension",
-            reason: "Moderator Administrative Action",
-            suspendedAt: data.group.updatedAt,
+            period: until
+              ? `Until ${new Date(until).toLocaleString("en-GB")}`
+              : "Indefinite",
+            reason: data.group.suspensionReason || "Moderator Administrative Action",
+            suspendedAt: data.group.suspendedAt
+              ? new Date(data.group.suspendedAt).toLocaleDateString("en-GB")
+              : undefined,
+            note: data.group.suspensionNote || undefined,
           });
         } else {
           setSuspensionInfo(null);
@@ -197,10 +213,63 @@ export default function GroupDetailPage() {
   const handleRemove = async (userId: string) => {
     setRemovingId(userId);
     try {
-      await fetch(`/api/groups/${id}/members?userId=${userId}`, { method: "DELETE" });
-      setMembers(prev => prev.filter(m => m.userId !== userId));
-      setActionMsg("Member removed.");
+      const res = await fetch(`/api/groups/${id}/members?userId=${userId}`, { method: "DELETE" });
+      const data = await res.json();
+      if (data.success) {
+        setActionMsg("Member removed.");
+        fetchGroup();
+      } else {
+        setActionMsg(data.message || "Failed to remove member.");
+      }
     } finally { setRemovingId(null); }
+  };
+
+  // ── change an existing member's role ──
+  const [changingRoleId, setChangingRoleId] = useState<string | null>(null);
+  const handleRoleChange = async (userId: string, role: string) => {
+    setChangingRoleId(userId);
+    try {
+      const res = await fetch(`/api/groups/${id}/members`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, role }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setActionMsg("Member role updated.");
+        fetchGroup();
+      } else {
+        setActionMsg(data.message || "Failed to update role.");
+      }
+    } finally { setChangingRoleId(null); }
+  };
+
+  // ── transfer ownership ──
+  const [showTransferModal, setShowTransferModal] = useState(false);
+  const [transferTargetId, setTransferTargetId] = useState("");
+  const [transferring, setTransferring] = useState(false);
+  const [transferError, setTransferError] = useState("");
+  const handleTransferOwnership = async () => {
+    if (!transferTargetId) return;
+    setTransferring(true);
+    setTransferError("");
+    try {
+      const res = await fetch(`/api/groups/${id}/transfer-ownership`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ newOwnerId: transferTargetId }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setShowTransferModal(false);
+        setTransferTargetId("");
+        setActionMsg("Ownership transferred.");
+        fetchGroup();
+      } else {
+        setTransferError(data.message || "Failed to transfer ownership.");
+      }
+    } catch { setTransferError("Network error"); }
+    finally { setTransferring(false); }
   };
 
   // ── delete group ──
@@ -335,6 +404,13 @@ export default function GroupDetailPage() {
     u.name.toLowerCase().includes(memberSearch.toLowerCase()) ||
     u.email.toLowerCase().includes(memberSearch.toLowerCase())
   );
+  // Exclude existing members first so the browse cap counts only users who
+  // are actually addable — then cap the unfiltered browse view; searching
+  // (filters the already-fetched allUsers, so it's instant) surfaces
+  // everyone addable, uncapped.
+  const MEMBER_BROWSE_LIMIT = 25;
+  const addableUsers = filteredUsers.filter(u => !members.find(m => m.userId === u.id));
+  const displayedUsers = memberSearch ? addableUsers : addableUsers.slice(0, MEMBER_BROWSE_LIMIT);
 
   const roleColors: Record<string, string> = {
     OWNER: "bg-[#7004DC] text-white",
@@ -626,9 +702,9 @@ export default function GroupDetailPage() {
                   placeholder="Search users..."
                   className="w-full h-11 rounded-xl bg-[#F7F5FA] pl-9 pr-4 text-sm outline-none border border-transparent focus:border-[#8A38F5]"
                 />
-                {userDropOpen && !selectedUser && filteredUsers.length > 0 && (
+                {userDropOpen && !selectedUser && addableUsers.length > 0 && (
                   <div className="absolute top-12 left-0 right-0 bg-white border border-gray-100 rounded-xl shadow-lg z-50 max-h-48 overflow-y-auto">
-                    {filteredUsers.slice(0, 20).filter(u => !members.find(m => m.userId === u.id)).map(user => (
+                    {displayedUsers.map(user => (
                       <button key={user.id} className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-[#F7F5FA] text-left transition"
                         onClick={() => { setSelectedUser(user); setUserDropOpen(false); setMemberSearch(""); }}>
                         <div className="w-7 h-7 rounded-full bg-[#EDDCFF] text-[#7004DC] flex items-center justify-center text-xs font-bold shrink-0">
@@ -640,6 +716,11 @@ export default function GroupDetailPage() {
                         </div>
                       </button>
                     ))}
+                    {!memberSearch && addableUsers.length > MEMBER_BROWSE_LIMIT && (
+                      <p className="text-xs text-slate-400 text-center py-2">
+                        Showing {MEMBER_BROWSE_LIMIT} of {addableUsers.length} — search by name or email to find someone else
+                      </p>
+                    )}
                   </div>
                 )}
               </div>
@@ -700,15 +781,37 @@ export default function GroupDetailPage() {
                     </div>
                     {/* ROLE */}
                     <div className="px-5 py-4">
-                      <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase ${roleColors[m.role] || "bg-[#F3F3F3] text-[#4B4355]"}`}>
-                        {m.role}
-                      </span>
+                      {m.role === "OWNER" ? (
+                        <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase ${roleColors[m.role] || "bg-[#F3F3F3] text-[#4B4355]"}`}>
+                          {m.role}
+                        </span>
+                      ) : (
+                        <div className="relative inline-block">
+                          <select
+                            value={m.role}
+                            onChange={e => handleRoleChange(m.userId, e.target.value)}
+                            disabled={changingRoleId === m.userId}
+                            className="h-8 pl-3 pr-7 rounded-lg bg-white border border-gray-200 text-[10px] font-bold uppercase outline-none focus:border-[#8A38F5] appearance-none disabled:opacity-50"
+                          >
+                            {roles.map(r => <option key={r} value={r}>{r}</option>)}
+                          </select>
+                          <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-400 pointer-events-none" />
+                        </div>
+                      )}
                     </div>
                     {/* JOINED */}
                     <div className="px-5 py-4 text-xs text-[#7D7387]">{m.joinedAt}</div>
-                    {/* REMOVE */}
+                    {/* ACTIONS */}
                     <div className="px-5 py-4">
-                      {m.role !== "OWNER" && (
+                      {m.role === "OWNER" ? (
+                        <button
+                          onClick={() => { setTransferTargetId(""); setTransferError(""); setShowTransferModal(true); }}
+                          title="Transfer ownership"
+                          className="h-8 px-2.5 rounded-lg bg-violet-50 hover:bg-violet-100 flex items-center justify-center text-[#7004DC] text-[10px] font-bold uppercase transition"
+                        >
+                          Transfer
+                        </button>
+                      ) : (
                         <button
                           onClick={() => handleRemove(m.userId)}
                           disabled={removingId === m.userId}
@@ -907,6 +1010,55 @@ export default function GroupDetailPage() {
                 </button>
                 <button onClick={handleSuspend} disabled={suspending} className="flex-1 h-11 rounded-xl bg-red-600 hover:bg-red-700 disabled:bg-red-300 text-white font-bold text-sm transition flex items-center justify-center gap-2">
                   {suspending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Ban className="w-4 h-4" />} Confirm Suspension
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TRANSFER OWNERSHIP MODAL */}
+      {showTransferModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+          <div className="bg-white rounded-[24px] w-full max-w-md shadow-2xl overflow-hidden">
+            <div className="px-7 py-6">
+              <div className="flex items-center gap-2 mb-4">
+                <Shield className="w-5 h-5 text-[#7004DC]" />
+                <h3 className="text-xl font-extrabold text-[#1A1C1C]">Transfer Ownership</h3>
+              </div>
+              <p className="text-sm text-[#7D7387] mb-4">
+                The current owner will become {group.subType === "CARE_CIRCLE" ? "a CAREGIVER" : "an ADMIN"}. This cannot be undone from here — transfer again to reverse it.
+              </p>
+
+              <div className="mb-4">
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">
+                  New Owner *
+                </label>
+                <div className="relative">
+                  <select
+                    value={transferTargetId}
+                    onChange={e => setTransferTargetId(e.target.value)}
+                    className="w-full h-11 rounded-xl border border-gray-200 px-4 text-sm font-semibold outline-none focus:border-[#8A38F5] bg-white appearance-none pr-8"
+                  >
+                    <option value="">Select a member…</option>
+                    {members.filter(m => m.role !== "OWNER").map(m => (
+                      <option key={m.userId} value={m.userId}>{m.name} ({m.role})</option>
+                    ))}
+                  </select>
+                  <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                </div>
+              </div>
+
+              {transferError && (
+                <p className="text-xs font-semibold text-red-600 mb-4">{transferError}</p>
+              )}
+
+              <div className="flex gap-3">
+                <button onClick={() => setShowTransferModal(false)} className="flex-1 h-11 rounded-xl border border-gray-200 text-[#4B4355] font-semibold text-sm hover:bg-gray-50 transition">
+                  Cancel
+                </button>
+                <button onClick={handleTransferOwnership} disabled={transferring || !transferTargetId} className="flex-1 h-11 rounded-xl bg-[#7004DC] hover:bg-[#5c03b7] disabled:bg-violet-200 text-white font-bold text-sm transition flex items-center justify-center gap-2">
+                  {transferring ? <Loader2 className="w-4 h-4 animate-spin" /> : <Shield className="w-4 h-4" />} Transfer
                 </button>
               </div>
             </div>

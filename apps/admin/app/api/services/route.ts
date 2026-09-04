@@ -1,6 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { dbPool } from "@/lib/db";
-import { requireAdminAuth } from "@/lib/auth";
+import { requireAdminAuth, isAdminRequest } from "@/lib/auth";
+import { isValidIndianPhone, INVALID_PHONE_MESSAGE } from "@/lib/validation";
+import {
+  WeeklySchedule,
+  defaultWeeklySchedule,
+  isValidWeeklySchedule,
+  formatAvailabilitySummary,
+} from "@/lib/availabilitySchedule";
 
 async function ensureServicesTable() {
   await dbPool.query(`
@@ -27,9 +34,36 @@ async function ensureServicesTable() {
     )
   `);
 
+  // CREATE TABLE IF NOT EXISTS above is a no-op once the table already
+  // exists — this is what actually adds the column to an already-provisioned
+  // database. Nullable, no backfill: existing rows just get NULL and keep
+  // showing their existing `availability` text untouched.
+  await dbPool.query(`
+    ALTER TABLE services ADD COLUMN IF NOT EXISTS "availabilitySchedule" JSONB
+  `);
+
   // Seed default items if empty
   const countRes = await dbPool.query(`SELECT COUNT(*) FROM services`);
   if (parseInt(countRes.rows[0].count, 10) === 0) {
+    // Small local builder so the seed data below can express a schedule
+    // concisely instead of spelling out all 7 days per service.
+    const openDays = (dayKeys: (keyof WeeklySchedule)[], from: string, to: string): WeeklySchedule => {
+      const s = defaultWeeklySchedule();
+      for (const key of dayKeys) s[key] = { open: true, from, to };
+      return s;
+    };
+    const ALL_DAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"] as const;
+    const WEEKDAYS = ["monday", "tuesday", "wednesday", "thursday", "friday"] as const;
+    const WEEK_MINUS_SUNDAY = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday"] as const;
+
+    const schedules = {
+      "srv-1": openDays([...WEEKDAYS], "09:00", "17:00"),
+      "srv-2": openDays([...WEEK_MINUS_SUNDAY], "09:00", "18:00"),
+      "srv-3": openDays([...ALL_DAYS], "00:00", "23:59"),
+      "srv-4": openDays([...WEEKDAYS], "10:00", "16:00"),
+      "srv-5": openDays([...WEEK_MINUS_SUNDAY], "07:00", "21:00"),
+    } as const;
+
     const defaultServices = [
       {
         id: "srv-1",
@@ -44,7 +78,7 @@ async function ensureServicesTable() {
         contactEmail: "sarah.jenkins@therapy.org",
         contactUrl: "https://services.digiability.org/sarah-jenkins",
         price: "₹500 - ₹1,500 / session",
-        availability: "Next available: Tomorrow",
+        availabilitySchedule: schedules["srv-1"],
         rating: 4.9,
         reviews: 124,
         verified: true,
@@ -63,7 +97,7 @@ async function ensureServicesTable() {
         contactEmail: "info@mobilitysolutions.com",
         contactUrl: "https://services.digiability.org/mobility-solutions",
         price: "Varies by equipment",
-        availability: "Open 9AM - 6PM",
+        availabilitySchedule: schedules["srv-2"],
         rating: 4.7,
         reviews: 89,
         verified: true,
@@ -82,7 +116,7 @@ async function ensureServicesTable() {
         contactEmail: "contact@carebridge.org",
         contactUrl: "https://services.digiability.org/carebridge",
         price: "₹200 - ₹350 / hour",
-        availability: "24/7 Availability",
+        availabilitySchedule: schedules["srv-3"],
         rating: 4.8,
         reviews: 210,
         verified: true,
@@ -101,7 +135,7 @@ async function ensureServicesTable() {
         contactEmail: "legal@disabilityadvocates.org",
         contactUrl: "https://services.digiability.org/legal-advocates",
         price: "Free consultation",
-        availability: "By appointment",
+        availabilitySchedule: schedules["srv-4"],
         rating: 4.6,
         reviews: 45,
         verified: true,
@@ -120,7 +154,7 @@ async function ensureServicesTable() {
         contactEmail: "dispatch@accessibletransit.com",
         contactUrl: "https://services.digiability.org/accessible-transit",
         price: "₹20 / km",
-        availability: "Book 24h in advance",
+        availabilitySchedule: schedules["srv-5"],
         rating: 4.9,
         reviews: 312,
         verified: true,
@@ -133,27 +167,35 @@ async function ensureServicesTable() {
         INSERT INTO services (
           id, name, type, category, logo, image, description,
           location, "contactPhone", "contactEmail", "contactUrl",
-          price, availability, rating, reviews, verified, status,
+          price, availability, "availabilitySchedule", rating, reviews, verified, status,
           "createdAt", "updatedAt"
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, NOW(), NOW())
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, NOW(), NOW())
         ON CONFLICT (id) DO NOTHING
       `, [
         s.id, s.name, s.type, s.category, s.logo, s.image, s.description,
         s.location, s.contactPhone, s.contactEmail, s.contactUrl,
-        s.price, s.availability, s.rating, s.reviews, s.verified, s.status,
+        s.price, formatAvailabilitySummary(s.availabilitySchedule), JSON.stringify(s.availabilitySchedule),
+        s.rating, s.reviews, s.verified, s.status,
       ]);
     }
   }
 }
 
+// GET is intentionally public for published services — this is the mobile
+// app's services-directory read API (serviceService.ts), which has no admin
+// session and was never meant to need one. A logged-in admin sees drafts
+// too (needed for the admin panel's own Services tab); an unauthenticated
+// caller only ever sees status='published' rows, so drafts never leak.
 export async function GET(request: NextRequest) {
   try {
     await ensureServicesTable();
-    const result = await dbPool.query(`
-      SELECT * FROM services ORDER BY "createdAt" DESC
-    `);
-    
+    const isAdmin = await isAdminRequest(request);
+
+    const result = isAdmin
+      ? await dbPool.query(`SELECT * FROM services ORDER BY "createdAt" DESC`)
+      : await dbPool.query(`SELECT * FROM services WHERE status = 'published' ORDER BY "createdAt" DESC`);
+
     return NextResponse.json({
       success: true,
       services: result.rows,
@@ -186,7 +228,7 @@ export async function POST(request: NextRequest) {
       contactEmail,
       contactUrl,
       price,
-      availability,
+      availabilitySchedule,
       verified,
       status,
     } = body;
@@ -197,6 +239,20 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
+    if (!isValidIndianPhone(contactPhone)) {
+      return NextResponse.json(
+        { success: false, message: INVALID_PHONE_MESSAGE },
+        { status: 400 }
+      );
+    }
+
+    const schedule: WeeklySchedule = availabilitySchedule ?? defaultWeeklySchedule();
+    if (!isValidWeeklySchedule(schedule)) {
+      return NextResponse.json(
+        { success: false, message: "Invalid availability schedule — every open day needs both a From and To time." },
+        { status: 400 }
+      );
+    }
 
     const id = `srv-${crypto.randomUUID().slice(0, 8)}`;
 
@@ -204,10 +260,10 @@ export async function POST(request: NextRequest) {
       INSERT INTO services (
         id, name, type, category, logo, image, description,
         location, "contactPhone", "contactEmail", "contactUrl",
-        price, availability, rating, reviews, verified, status,
+        price, availability, "availabilitySchedule", rating, reviews, verified, status,
         "createdAt", "updatedAt"
       )
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,5.0,0,$14,$15,NOW(),NOW())
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,5.0,0,$15,$16,NOW(),NOW())
       RETURNING *
     `, [
       id,
@@ -222,7 +278,8 @@ export async function POST(request: NextRequest) {
       contactEmail || null,
       contactUrl || null,
       price || "Contact for pricing",
-      availability || "By appointment",
+      formatAvailabilitySummary(schedule),
+      JSON.stringify(schedule),
       verified !== undefined ? verified : true,
       status || "published",
     ]);

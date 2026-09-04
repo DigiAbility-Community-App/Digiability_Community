@@ -1,9 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAdminAuth } from "@/lib/auth";
+import { requireAdminAuth, isAdminRequest } from "@/lib/auth";
 import { dbPool } from "@/lib/db";
+import { isValidIndianPhone, INVALID_PHONE_MESSAGE } from "@/lib/validation";
+import { isValidWeeklySchedule, formatAvailabilitySummary } from "@/lib/availabilitySchedule";
 
+// Public for a published service (mobile detail view); a draft is only
+// visible to a logged-in admin — treated as 404 for anyone else, same as a
+// nonexistent id, so drafts don't even reveal their existence.
 export async function GET(
-  _request: Request,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
@@ -12,7 +17,13 @@ export async function GET(
     if (result.rows.length === 0) {
       return NextResponse.json({ success: false, message: "Service not found" }, { status: 404 });
     }
-    return NextResponse.json({ success: true, service: result.rows[0] });
+
+    const service = result.rows[0];
+    if (service.status !== "published" && !(await isAdminRequest(request))) {
+      return NextResponse.json({ success: false, message: "Service not found" }, { status: 404 });
+    }
+
+    return NextResponse.json({ success: true, service });
   } catch (error) {
     console.error("Failed to fetch service:", error);
     return NextResponse.json({ success: false, message: "Failed to fetch service" }, { status: 500 });
@@ -20,9 +31,12 @@ export async function GET(
 }
 
 export async function PATCH(
-  request: Request,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const authError = await requireAdminAuth(request);
+  if (authError) return authError;
+
   try {
     const { id } = await params;
     const body = await request.json();
@@ -38,10 +52,27 @@ export async function PATCH(
       contactEmail,
       contactUrl,
       price,
-      availability,
+      availabilitySchedule,
       verified,
       status,
     } = body;
+
+    if (contactPhone !== undefined && !isValidIndianPhone(contactPhone)) {
+      return NextResponse.json(
+        { success: false, message: INVALID_PHONE_MESSAGE },
+        { status: 400 }
+      );
+    }
+
+    if (availabilitySchedule !== undefined && !isValidWeeklySchedule(availabilitySchedule)) {
+      return NextResponse.json(
+        { success: false, message: "Invalid availability schedule — every open day needs both a From and To time." },
+        { status: 400 }
+      );
+    }
+    const availability = availabilitySchedule !== undefined
+      ? formatAvailabilitySummary(availabilitySchedule)
+      : undefined;
 
     const result = await dbPool.query(`
       UPDATE services SET
@@ -57,10 +88,11 @@ export async function PATCH(
         "contactUrl" = COALESCE($10, "contactUrl"),
         price = COALESCE($11, price),
         availability = COALESCE($12, availability),
-        verified = COALESCE($13, verified),
-        status = COALESCE($14, status),
+        "availabilitySchedule" = COALESCE($13, "availabilitySchedule"),
+        verified = COALESCE($14, verified),
+        status = COALESCE($15, status),
         "updatedAt" = NOW()
-      WHERE id = $15
+      WHERE id = $16
       RETURNING *
     `, [
       name,
@@ -75,6 +107,7 @@ export async function PATCH(
       contactUrl,
       price,
       availability,
+      availabilitySchedule !== undefined ? JSON.stringify(availabilitySchedule) : undefined,
       verified,
       status,
       id,
@@ -91,9 +124,12 @@ export async function PATCH(
 }
 
 export async function DELETE(
-  _request: Request,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const authError = await requireAdminAuth(request);
+  if (authError) return authError;
+
   try {
     const { id } = await params;
     const result = await dbPool.query(`DELETE FROM services WHERE id = $1 RETURNING id`, [id]);

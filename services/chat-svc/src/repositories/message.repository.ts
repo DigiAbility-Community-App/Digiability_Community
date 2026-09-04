@@ -145,11 +145,20 @@ class MessageRepository {
     }
 
     // ── Step 5: Update conversation last message preview ──
+    // Non-text messages store the uploaded file's path/URL as `content` —
+    // show a friendly label instead of leaking that raw path into the list.
+    const previewText =
+      type === "IMAGE" ? "📷 Photo" :
+      type === "VIDEO" ? "🎥 Video" :
+      type === "AUDIO" ? "🎤 Voice message" :
+      type === "FILE" ? "📎 File" :
+      content.substring(0, 200);
+
     await prisma.conversation.update({
       where: { id: conversationId },
       data: {
         lastMessageId: messageId,
-        lastMessageText: content.substring(0, 200),
+        lastMessageText: previewText,
         lastMessageAt: msgCreatedAt,
       },
     });

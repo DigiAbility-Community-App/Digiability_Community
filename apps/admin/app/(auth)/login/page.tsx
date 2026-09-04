@@ -249,7 +249,7 @@ const AdminLoginPage = () => {
                                 </div>
 
                                 {/* UTILITIES */}
-                                <div className="flex items-center justify-between">
+                                <div className="flex items-center">
 
                                     <label className="flex items-center gap-2 cursor-pointer">
                                         <input
@@ -261,13 +261,6 @@ const AdminLoginPage = () => {
                                             Remember me
                                         </span>
                                     </label>
-
-                                    <Link
-                                        href="/forgot-password"
-                                        className="text-sm font-bold text-[#8A38F5] hover:opacity-80 transition"
-                                    >
-                                        Forgot Password?
-                                    </Link>
                                 </div>
 
                                 {/* LOGIN BUTTON */}

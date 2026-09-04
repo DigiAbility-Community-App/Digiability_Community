@@ -14,6 +14,8 @@ import { AccessibleText } from "../../components/shared/AccessibleText";
 import { AccessibleButton } from "../../components/shared/AccessibleButton";
 import { useTheme, getFontScale } from "../../theme/ThemeContext";
 
+import { Check } from "lucide-react-native";
+
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
 const FEATURES = [
@@ -71,35 +73,7 @@ const CareCircleScreen = () => {
         <View style={styles.checkCircleShadow} />
 
         <View style={styles.checkCircle}>
-          <View style={styles.tickWrapper}>
-            <View
-              style={[
-                styles.tickArm,
-                { backgroundColor: colors.primary },
-                {
-                  width: 14,
-                  transform: [
-                    { rotate: "45deg" },
-                    { translateY: 3 },
-                  ],
-                },
-              ]}
-            />
-
-            <View
-              style={[
-                styles.tickArm,
-                { backgroundColor: colors.primary },
-                {
-                  width: 30,
-                  transform: [
-                    { rotate: "-55deg" },
-                    { translateY: -5 },
-                  ],
-                },
-              ]}
-            />
-          </View>
+          <Check size={42} color={colors.primary} strokeWidth={3.5} />
         </View>
 
         {/* Text */}
@@ -270,15 +244,11 @@ const styles = StyleSheet.create({
     textAlign: "center",
     letterSpacing: -0.8,
     marginBottom: 8,
-
-    fontFamily: "PlusJakartaSans-Bold",
   },
 
   heroSubtitle: {
     fontWeight: "500",
     textAlign: "center",
-
-    fontFamily: "PlusJakartaSans-Regular",
   },
 
   // CARD
@@ -335,14 +305,10 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     letterSpacing: -0.6,
     textAlign: "center",
-
-    fontFamily: "PlusJakartaSans-Bold",
   },
 
   cardDescription: {
     textAlign: "center",
-
-    fontFamily: "PlusJakartaSans-Regular",
   },
 
   // FEATURES
@@ -379,13 +345,9 @@ const styles = StyleSheet.create({
 
   featureTitle: {
     fontWeight: "700",
-
-    fontFamily: "PlusJakartaSans-Bold",
   },
 
-  featureDesc: {
-    fontFamily: "PlusJakartaSans-Regular",
-  },
+  featureDesc: {},
 
   // ACTIONS
   actions: {
@@ -413,7 +375,5 @@ const styles = StyleSheet.create({
 
   skipText: {
     fontWeight: "600",
-
-    fontFamily: "PlusJakartaSans-Regular",
   },
 });

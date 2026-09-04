@@ -100,6 +100,24 @@ model Conversation {
   // WhatsApp-style: when enabled, non-admin joins require admin approval
   approveNewMembers Boolean    @default(false)
 
+  // ─── Admin suspension state ───────────────────────────────
+  // Deliberately separate from `sendMessages`. `sendMessages` is a
+  // group-owner permission setting; suspension is a platform-admin
+  // enforcement action. Overloading one onto the other let an owner
+  // clear a suspension just by editing group permissions.
+  // `suspendedUntil == null` while `isSuspended` is true means indefinite.
+  // timestamptz, not Prisma's default `timestamp` — these columns are written
+  // by the admin panel over node-pg and read here by Prisma. For a naked
+  // `timestamp without time zone`, node-pg writes a LOCAL-time literal while
+  // Prisma reads it back as UTC, so on a UTC+5:30 host a 24h suspension was
+  // enforced for 29.5h (and would expire early west of UTC). timestamptz
+  // stores an absolute instant, so both drivers agree.
+  isSuspended      Boolean   @default(false)
+  suspendedAt      DateTime? @db.Timestamptz(3)
+  suspendedUntil   DateTime? @db.Timestamptz(3)
+  suspensionReason String?
+  suspensionNote   String?
+
   // Denormalized for fast query: last message preview
   lastMessageId   String?
   lastMessageAt   DateTime?
@@ -111,6 +129,7 @@ model Conversation {
 
   @@index([type])
   @@index([subType])
+  @@index([isSuspended])
   @@index([lastMessageAt(sort: Desc)])
   @@index([createdBy])
   @@map("conversations")

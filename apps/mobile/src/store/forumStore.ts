@@ -26,6 +26,7 @@ export interface ForumAnswer {
   isAccepted: boolean;
   upvotes: number;
   downvotes: number;
+  isLiked?: boolean;
   author: ForumUserRef;
 }
 
@@ -123,6 +124,7 @@ const initialFilters: QuestionFilters = {
   tag: "",
   status: undefined,
   sort: "newest",
+  order: "desc",
   limit: 10
 };
 
@@ -297,22 +299,55 @@ export const useForumStore = create<ForumState>((set, get) => ({
   },
 
   voteAnswer: async (id, type) => {
+    // Optimistic update
+    const previousQuestion = get().currentQuestion;
+    if (previousQuestion && previousQuestion.answers) {
+      const currentAns = previousQuestion.answers.find((a) => a.id === id);
+      if (currentAns) {
+        const currentlyLiked = Boolean(currentAns.isLiked);
+        const nextLiked = !currentlyLiked;
+        const delta = nextLiked ? 1 : -1;
+        const nextUpvotes = Math.max(0, currentAns.upvotes + delta);
+        set((state) => {
+          if (!state.currentQuestion || !state.currentQuestion.answers) return {};
+          return {
+            currentQuestion: {
+              ...state.currentQuestion,
+              answers: state.currentQuestion.answers.map((a) =>
+                a.id === id ? { ...a, upvotes: nextUpvotes, isLiked: nextLiked } : a
+              ),
+            },
+          };
+        });
+      }
+    }
+
     try {
       const updated = await forumService.voteAnswer(id, type);
       set((state) => {
         if (!state.currentQuestion || !state.currentQuestion.answers) return {};
         const updatedAnswers = state.currentQuestion.answers.map((ans) =>
-          ans.id === id ? { ...ans, upvotes: updated.upvotes, downvotes: updated.downvotes } : ans
+          ans.id === id
+            ? {
+                ...ans,
+                upvotes: updated.upvotes,
+                downvotes: updated.downvotes,
+                isLiked: updated.isLiked !== undefined ? updated.isLiked : ans.isLiked,
+              }
+            : ans
         );
         return {
           currentQuestion: {
             ...state.currentQuestion,
-            answers: updatedAnswers
-          }
+            answers: updatedAnswers,
+          },
         };
       });
     } catch (err: any) {
       console.error("Failed to vote:", err);
+      if (previousQuestion) {
+        set({ currentQuestion: previousQuestion });
+      }
     }
   },
 

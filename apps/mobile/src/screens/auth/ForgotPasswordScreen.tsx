@@ -120,6 +120,11 @@ const ForgotPasswordScreen = ({ navigation }: Props) => {
       return;
     }
 
+    if (newPassword.length > 16) {
+      setError("Password must be at most 16 characters.");
+      return;
+    }
+
     if (!/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/.test(newPassword)) {
       setError("Password must include uppercase, lowercase, and a number.");
       return;

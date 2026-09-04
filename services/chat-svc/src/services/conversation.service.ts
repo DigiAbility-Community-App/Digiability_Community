@@ -5,28 +5,20 @@
 // Orchestrates between repository and validation.
 // ─────────────────────────────────────────────────────────────
 
+import prisma from "../models/prisma.client";
 import { conversationRepository, CreateConversationInput, ConversationWithMembers } from "../repositories/conversation.repository";
 import { MemberRole, ConversationType, GroupSubType } from "../generated/client";
 import { logger } from "../config/logger";
 import { connectionManager } from "../websocket/connection-manager";
 import { WS_EVENTS } from "../types/ws-events";
-
-// Roles that have admin-level access in Care Circles
-const CARE_CIRCLE_ADMIN_ROLES: MemberRole[] = ["OWNER", "CAREGIVER"];
-// Roles that have admin-level access in General Groups
-const GROUP_ADMIN_ROLES: MemberRole[] = ["OWNER", "ADMIN"];
-
-/**
- * Check if a role has admin-level permissions.
- * For Care Circles: OWNER and CAREGIVER have admin access.
- * For General Groups: OWNER and ADMIN have admin access.
- */
-function hasAdminAccess(role: MemberRole, subType?: GroupSubType | null): boolean {
-  if (subType === "CARE_CIRCLE") {
-    return CARE_CIRCLE_ADMIN_ROLES.includes(role);
-  }
-  return GROUP_ADMIN_ROLES.includes(role);
-}
+import {
+  CARE_CIRCLE_ADMIN_ROLES,
+  GROUP_ADMIN_ROLES,
+  MAX_ADMINS_PER_GROUP,
+  hasAdminAccess,
+  adminRolesFor,
+  adminRoleToPromoteTo,
+} from "../utils/roles.util";
 
 async function broadcastToConversation(conversationId: string, event: string, data: any): Promise<void> {
   const memberIds = await conversationRepository.getMemberIds(conversationId);
@@ -50,7 +42,14 @@ class ConversationService {
     name?: string,
     subType?: "GENERAL" | "CARE_CIRCLE",
     description?: string,
-    memberRoles?: Array<{ userId: string; role: string }>
+    memberRoles?: Array<{ userId: string; role: string }>,
+    groupSettings?: {
+      maxMembers?: number;
+      editGroupInfo?: string;
+      addMembers?: string;
+      sendMessages?: string;
+      approveNewMembers?: boolean;
+    }
   ): Promise<ConversationWithMembers> {
     // Self-conversation: user messaging themselves
     const isSelfConversation =
@@ -79,6 +78,17 @@ class ConversationService {
       }
     }
 
+    // The creator always becomes OWNER (below), which already counts toward
+    // the admin cap — reject up front if the requested initial roles would
+    // push the group over MAX_ADMINS_PER_GROUP before anything is written.
+    if (type === "GROUP") {
+      const adminRoles = adminRolesFor((subType || "GENERAL") as GroupSubType);
+      const initialAdminCount = 1 + (memberRoles || []).filter((mr) => adminRoles.includes(mr.role as MemberRole)).length;
+      if (initialAdminCount > MAX_ADMINS_PER_GROUP) {
+        throw new Error(`A group can have at most ${MAX_ADMINS_PER_GROUP} admins (including the owner).`);
+      }
+    }
+
     // For self-conversations, pass empty uniqueMembers — repository handles it
     const uniqueMembers = isSelfConversation
       ? [] // creator-only conversation
@@ -99,6 +109,7 @@ class ConversationService {
         userId: mr.userId,
         role: mr.role as MemberRole,
       })),
+      ...groupSettings,
     });
 
     logger.info("Conversation created via service", {
@@ -195,6 +206,10 @@ class ConversationService {
       }
       await conversationRepository.removeMember(conversationId, targetMemberId);
       broadcastToConversation(conversationId, WS_EVENTS.MEMBER_LEFT, { conversationId, userId: targetMemberId });
+      // ADMIN/CAREGIVER just left — make sure the group still has an admin.
+      if (requesterRole === "ADMIN" || requesterRole === "CAREGIVER") {
+        await this.ensureAdminSuccession(conversationId);
+      }
       return;
     }
 
@@ -229,6 +244,12 @@ class ConversationService {
     });
 
     broadcastToConversation(conversationId, WS_EVENTS.MEMBER_REMOVED, { conversationId, userId: targetMemberId });
+
+    // The removed member held an admin-capable role — make sure the group
+    // still has an admin left to approve members / moderate chat.
+    if (targetRole === "ADMIN" || targetRole === "CAREGIVER") {
+      await this.ensureAdminSuccession(conversationId);
+    }
   }
 
   /**
@@ -279,6 +300,24 @@ class ConversationService {
       }
     }
 
+    const adminRoles = adminRolesFor(conversation.subType);
+    const targetWasAdmin = adminRoles.includes(targetRole);
+    const newRoleIsAdmin = adminRoles.includes(newRole);
+
+    // Promoting to an admin-capable role — enforce the max-3-admin cap.
+    if (newRoleIsAdmin && !targetWasAdmin) {
+      await this.ensureAdminCapacity(conversationId, conversation.subType);
+    }
+
+    // Demoting the group's only remaining admin-capable member would leave
+    // it unmanageable — block it, mirroring the existing OWNER protection.
+    if (targetWasAdmin && !newRoleIsAdmin) {
+      const remainingAdmins = await conversationRepository.countActiveAdmins(conversationId, adminRoles, targetUserId);
+      if (remainingAdmins === 0) {
+        throw new Error("Cannot demote the group's only remaining admin. Promote another member first.");
+      }
+    }
+
     await conversationRepository.updateMemberRole(conversationId, targetUserId, newRole);
 
     logger.info("Member role updated", {
@@ -289,6 +328,77 @@ class ConversationService {
     });
 
     broadcastToConversation(conversationId, WS_EVENTS.MEMBER_ROLE_UPDATED, { conversationId, userId: targetUserId, role: newRole });
+  }
+
+  /**
+   * Throws if the group is already at MAX_ADMINS_PER_GROUP admin-capable
+   * members. Call before any promotion (manual or automatic) that would add
+   * one more.
+   */
+  async ensureAdminCapacity(conversationId: string, subType: GroupSubType | null): Promise<void> {
+    const adminRoles = adminRolesFor(subType);
+    const count = await conversationRepository.countActiveAdmins(conversationId, adminRoles);
+    if (count >= MAX_ADMINS_PER_GROUP) {
+      throw new Error(`This group already has the maximum of ${MAX_ADMINS_PER_GROUP} admins.`);
+    }
+  }
+
+  /**
+   * Makes sure a group always has at least one active, admin-capable member
+   * so it never becomes stuck (no one able to approve members, moderate
+   * chat, or manage the group). Called whenever an admin-capable member
+   * might have just become unavailable — they left, were removed, were
+   * deleted, suspended, or banned.
+   *
+   * `excludeUserId` lets a caller say "treat this specific user as
+   * unavailable even though their membership row is still active" — needed
+   * for suspension, which (per product decision) does NOT strip group
+   * membership, only the ability to act as an admin while suspended.
+   *
+   * Promotes the earliest-joined eligible member ("the next member added to
+   * the group after admin") to the group's admin role (ADMIN for General
+   * Groups, CAREGIVER for Care Circles) — never OWNER, which stays a
+   * deliberate transfer. No-ops if the group already has an active admin,
+   * or if there's no one left to promote.
+   */
+  async ensureAdminSuccession(
+    conversationId: string,
+    excludeUserId?: string
+  ): Promise<{ userId: string; role: MemberRole } | null> {
+    const conversation = await conversationRepository.getById(conversationId);
+    if (!conversation || conversation.type !== "GROUP") return null;
+
+    const adminRoles = adminRolesFor(conversation.subType);
+    const activeAdmins = await conversationRepository.countActiveAdmins(conversationId, adminRoles, excludeUserId);
+    if (activeAdmins > 0) return null;
+
+    // Defensive — shouldn't be reachable since we only get here when the
+    // active-admin count just dropped to zero, but never exceed the cap.
+    if (activeAdmins >= MAX_ADMINS_PER_GROUP) return null;
+
+    const candidate = await conversationRepository.getEarliestActiveNonAdmin(conversationId, adminRoles, excludeUserId);
+    if (!candidate) {
+      logger.warn("No eligible member to auto-promote — group has no active admin", { conversationId });
+      return null;
+    }
+
+    const promoteRole = adminRoleToPromoteTo(conversation.subType);
+    await conversationRepository.updateMemberRole(conversationId, candidate.userId, promoteRole);
+
+    logger.info("Auto-promoted member to admin (succession)", {
+      conversationId,
+      userId: candidate.userId,
+      role: promoteRole,
+      excludedUserId: excludeUserId,
+    });
+
+    broadcastToConversation(conversationId, WS_EVENTS.MEMBER_ROLE_UPDATED, {
+      conversationId,
+      userId: candidate.userId,
+      role: promoteRole,
+    });
+
+    return { userId: candidate.userId, role: promoteRole };
   }
 
   /**
@@ -372,15 +482,38 @@ class ConversationService {
       throw new Error("Target user is not an active member of this group");
     }
 
-    // Swap roles: current owner → ADMIN, target → OWNER
-    await conversationRepository.updateMemberRole(conversationId, currentOwnerId, "ADMIN");
-    await conversationRepository.updateMemberRole(conversationId, newOwnerId, "OWNER");
+    if (currentOwnerId === newOwnerId) {
+      throw new Error("Already the owner");
+    }
+
+    // Swap roles: current owner → the group's admin role (ADMIN for General
+    // Groups, CAREGIVER for Care Circles — never a role with no admin
+    // access), target → OWNER. Both writes in one transaction so a failure
+    // partway through can never leave the group with zero owners.
+    const demotedRole = adminRoleToPromoteTo(conversation.subType);
+    await prisma.$transaction([
+      prisma.conversationMember.update({
+        where: { conversationId_userId: { conversationId, userId: currentOwnerId } },
+        data: { role: demotedRole },
+      }),
+      prisma.conversationMember.update({
+        where: { conversationId_userId: { conversationId, userId: newOwnerId } },
+        data: { role: "OWNER" },
+      }),
+      prisma.conversation.update({
+        where: { id: conversationId },
+        data: { createdBy: newOwnerId },
+      }),
+    ]);
 
     logger.info("Ownership transferred", {
       conversationId,
       previousOwner: currentOwnerId,
       newOwner: newOwnerId,
     });
+
+    broadcastToConversation(conversationId, WS_EVENTS.MEMBER_ROLE_UPDATED, { conversationId, userId: currentOwnerId, role: demotedRole });
+    broadcastToConversation(conversationId, WS_EVENTS.MEMBER_ROLE_UPDATED, { conversationId, userId: newOwnerId, role: "OWNER" });
   }
 
   /**
@@ -411,6 +544,90 @@ class ConversationService {
     if (conversation.type !== "GROUP") throw new Error("Only groups can be deleted");
 
     await this.softDeleteAndNotify(conversationId, "admin");
+  }
+
+  /**
+   * Admin-initiated ownership transfer — the moderation panel isn't a group
+   * member, so this skips the "requester must already be the owner" check
+   * that the member-initiated transferOwnership() enforces, but keeps every
+   * other invariant (target must be an active member, single transaction,
+   * WS broadcast, createdBy updated). Lets a Super Admin reassign a group's
+   * admin/owner directly.
+   */
+  async adminTransferOwnership(conversationId: string, newOwnerId: string): Promise<void> {
+    const conversation = await conversationRepository.getById(conversationId);
+    if (!conversation) throw new Error("Conversation not found");
+    if (conversation.type !== "GROUP") throw new Error("Ownership transfer is only for groups");
+
+    const targetRole = await conversationRepository.getMemberRole(conversationId, newOwnerId);
+    if (!targetRole) throw new Error("Target user is not an active member of this group");
+
+    const currentOwner = conversation.members.find((m) => m.role === "OWNER");
+
+    if (currentOwner?.userId === newOwnerId) {
+      throw new Error("Already the owner");
+    }
+
+    const demotedRole = adminRoleToPromoteTo(conversation.subType);
+    const writes = [
+      prisma.conversationMember.update({
+        where: { conversationId_userId: { conversationId, userId: newOwnerId } },
+        data: { role: "OWNER" },
+      }),
+      prisma.conversation.update({
+        where: { id: conversationId },
+        data: { createdBy: newOwnerId },
+      }),
+      ...(currentOwner
+        ? [
+            prisma.conversationMember.update({
+              where: { conversationId_userId: { conversationId, userId: currentOwner.userId } },
+              data: { role: demotedRole },
+            }),
+          ]
+        : []),
+    ];
+    await prisma.$transaction(writes);
+
+    logger.info("Ownership transferred by admin", {
+      conversationId,
+      previousOwner: currentOwner?.userId ?? null,
+      newOwner: newOwnerId,
+    });
+
+    broadcastToConversation(conversationId, WS_EVENTS.MEMBER_ROLE_UPDATED, { conversationId, userId: newOwnerId, role: "OWNER" });
+    if (currentOwner) {
+      broadcastToConversation(conversationId, WS_EVENTS.MEMBER_ROLE_UPDATED, { conversationId, userId: currentOwner.userId, role: demotedRole });
+    }
+  }
+
+  /**
+   * Admin-privileged member removal — no "requester must be an admin
+   * member" check (the caller is the moderation panel, not a group member),
+   * but still refuses to remove the OWNER (transfer ownership first) and
+   * runs the same succession check as the member-initiated removeMember()
+   * if the removed member was admin-capable.
+   */
+  async adminRemoveMember(conversationId: string, targetUserId: string): Promise<void> {
+    const conversation = await conversationRepository.getById(conversationId);
+    if (!conversation) throw new Error("Conversation not found");
+
+    const targetRole = await conversationRepository.getMemberRole(conversationId, targetUserId);
+    if (!targetRole) throw new Error("Target user is not a member");
+
+    if (targetRole === "OWNER") {
+      throw new Error("Cannot remove the owner. Transfer ownership first.");
+    }
+
+    await conversationRepository.removeMember(conversationId, targetUserId);
+
+    logger.info("Member removed by admin", { conversationId, userId: targetUserId });
+
+    broadcastToConversation(conversationId, WS_EVENTS.MEMBER_REMOVED, { conversationId, userId: targetUserId });
+
+    if (targetRole === "ADMIN" || targetRole === "CAREGIVER") {
+      await this.ensureAdminSuccession(conversationId);
+    }
   }
 
   private async softDeleteAndNotify(conversationId: string, deletedBy: string): Promise<void> {

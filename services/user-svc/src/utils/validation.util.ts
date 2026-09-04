@@ -16,7 +16,7 @@ export const RegisterSchema = z.object({
   password: z
     .string({ required_error: "Password is required" })
     .min(8, "Password must be at least 8 characters")
-    .max(128)
+    .max(16, "Password must be at most 16 characters")
     .regex(
       /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/,
       "Password must include uppercase, lowercase, and a number"
@@ -26,7 +26,7 @@ export const RegisterSchema = z.object({
   // from req.body before registerUser can persist it.
   phoneNo: z
     .string()
-    .regex(/^[0-9]{10}$/, "Phone number must be 10 digits")
+    .regex(/^[6-9]\d{9}$/, "Enter a valid 10-digit Indian mobile number")
     .optional(),
   role: z.enum(["pwd", "caregiver", "therapist", "ngo", "volunteer", "student", "other"]).optional(),
   roles: z.array(z.enum(["pwd", "caregiver", "therapist", "ngo", "volunteer", "student", "other"])).optional(),
@@ -59,7 +59,7 @@ export const ResetPasswordSchema = z.object({
   password: z
     .string({ required_error: "New password is required" })
     .min(8, "Password must be at least 8 characters")
-    .max(128)
+    .max(16, "Password must be at most 16 characters")
     .regex(
       /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/,
       "Password must include uppercase, lowercase, and a number"

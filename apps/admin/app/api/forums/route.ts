@@ -44,6 +44,7 @@ export async function GET(request: NextRequest) {
       views: row.views,
       answerCount: row.answerCount,
       status: row.status,
+      createdAtISO: row.createdAt,
       createdAt: new Date(row.createdAt).toLocaleDateString("en-GB", {
         day: "2-digit",
         month: "short",

@@ -105,16 +105,16 @@ export async function handleMessageRead(
       // Create audit receipt
       await messageRepository.createReceipt(messageId, userId, "READ");
 
-      // Broadcast receipt to sender
-      // Deliberately disabled to prevent read receipts from leaking to senders, ensuring privacy.
-      // await broadcastReceipt({
-      //   targetUserId: result.senderId,
-      //   messageId,
-      //   conversationId,
-      //   userId,
-      //   type: "read",
-      //   timestamp: Date.now(),
-      // });
+      // Broadcast read receipt to the message sender so their UI can update
+      // the double-tick to the "seen" (blue / coloured) state in real time.
+      await broadcastReceipt({
+        targetUserId: result.senderId,
+        messageId,
+        conversationId,
+        userId,
+        type: "read",
+        timestamp: Date.now(),
+      });
     }
 
     logger.debug("Read receipt processed", { messageId, conversationId, userId, connId });

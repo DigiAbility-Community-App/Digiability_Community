@@ -13,9 +13,9 @@
     "axios": "^1.6.7",
     "clsx": "^2.1.0",
     "date-fns": "^3.3.1",
-    "lucide-react": "^0.344.0",
-    "react": "^19.2.7",
-    "react-dom": "^19.2.7",
+    "lucide-react": "^1.16.0",
+    "react": "19.1.4",
+    "react-dom": "19.1.4",
     "react-router-dom": "^6.22.2",
     "socket.io-client": "^4.7.4",
     "zustand": "^4.5.2"

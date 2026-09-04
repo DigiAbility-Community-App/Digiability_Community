@@ -352,7 +352,7 @@ const HomeProfileScreen = () => {
                     <MenuItem
                         icon="❓"
                         title="Help Center & FAQs"
-                        onPress={() => navigation.navigate("ContactSupport" as any)}
+                        onPress={() => navigation.navigate("ContactSupport", { initialSection: "faq" } as any)}
                         colors={colors}
                         highContrast={highContrast}
                         cardBorder={cardBorder}
@@ -360,7 +360,7 @@ const HomeProfileScreen = () => {
                     <MenuItem
                         icon="📞"
                         title="Contact Support"
-                        onPress={() => navigation.navigate("ContactSupport" as any)}
+                        onPress={() => navigation.navigate("ContactSupport", { initialSection: "contact" } as any)}
                         colors={colors}
                         highContrast={highContrast}
                         cardBorder={cardBorder}

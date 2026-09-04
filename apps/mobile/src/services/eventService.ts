@@ -52,3 +52,19 @@ export async function registerForEvent(id: string): Promise<void> {
   }
 }
 
+/**
+ * Fetch active event category names from Master Data (admin-managed).
+ * Returns an empty array on failure — callers should fall back to a
+ * hardcoded default list rather than leaving the category picker empty.
+ */
+export async function fetchEventCategories(): Promise<string[]> {
+  try {
+    const response = await apiClient.get<{ success: boolean; data: { id: string; name: string }[] }>(
+      '/api/master/event-categories'
+    );
+    return (response.data.data || []).map((c) => c.name);
+  } catch {
+    return [];
+  }
+}
+

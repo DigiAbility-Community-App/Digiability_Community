@@ -499,16 +499,12 @@ const styles = StyleSheet.create({
         fontWeight: "700",
         color: "#1A1B20",
         marginBottom: 8,
-
-        fontFamily: "Inter-Bold",
     },
 
     heroSubtitle: {
         fontSize: 16,
         lineHeight: 24,
         color: "#4C4452",
-
-        fontFamily: "Inter-Regular",
     },
 
     // SECTION
@@ -549,16 +545,12 @@ const styles = StyleSheet.create({
         fontWeight: "700",
         color: "#1A1B20",
         marginBottom: 4,
-
-        fontFamily: "Inter-Bold",
     },
 
     cardSubtitle: {
         fontSize: 14,
         lineHeight: 20,
         color: "#4C4452",
-
-        fontFamily: "Inter-Regular",
     },
 
     // SEGMENT
@@ -644,7 +636,5 @@ const styles = StyleSheet.create({
         color: "#FFFFFF",
         fontSize: 16,
         fontWeight: "700",
-
-        fontFamily: "Inter-Bold",
     },
 });

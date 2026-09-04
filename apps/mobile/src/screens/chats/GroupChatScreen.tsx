@@ -27,6 +27,7 @@ import { useChatMedia } from "@hooks/useChatMedia";
 import { MessageMedia } from "../../components/chat/MessageMedia";
 import { MediaViewer } from "../../components/chat/MediaViewer";
 import { AltTextModal } from "../../components/chat/AltTextModal";
+import { ReportModal } from "../../components/chat/ReportModal";
 import { ActionSheet, ActionSheetOption } from "../../components/chat/ActionSheet";
 import { ConfirmDialog } from "../../components/chat/ConfirmDialog";
 import ScreenWrapper from "../../components/layout/ScreenWrapper";
@@ -34,12 +35,13 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   Check, CheckCheck, Plus, Mic, Send, Square,
   ArrowLeft, Settings, Trash2, Volume2, Users, Accessibility, Heart, HeartHandshake,
-  Flag, CircleCheck, TriangleAlert, CornerUpLeft, X
+  Flag, CircleCheck, TriangleAlert, AlertCircle, CornerUpLeft, X
 } from "lucide-react-native";
 import { useTheme } from "../../theme/ThemeContext";
 import { AccessibleText } from "../../components/shared/AccessibleText";
 import { LinkifiedText } from "../../components/shared/LinkifiedText";
 import { istDateKey, formatDateLabel } from "../../utils/dateHelpers";
+import { formatUserDisplayName } from "../../utils/formatUserName";
 
 // ─────────────────────────────────────────────────────────
 // Group Chat Screen — Care Circle / Group Thread
@@ -83,17 +85,52 @@ const GroupChatScreen = ({ navigation, route }: Props) => {
   const removeMessage = useChatStore((s) => s.removeMessage);
   const conversation = useChatStore((s) => s.conversations[conversationId]);
   const clearUnreadCount = useChatStore((s) => s.clearUnreadCount);
+  const [messageText, setMessageText] = useState("");
+  const [isLoading, setIsLoading] = useState(true);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const [mediaViewer, setMediaViewer] = useState<{ src: string; alt: string; isVideo: boolean } | null>(null);
+  const [replyingTo, setReplyingTo] = useState<ChatMessage | null>(null);
+  const [speakingId, setSpeakingId] = useState<string | null>(null);
 
-  // Opening the group marks it read: clear the local badge + advance read cursor.
+  // Stop any active speech when the screen unmounts or the user navigates away.
+  // This prevents speech from looping or playing in the background.
   useEffect(() => {
-    if (!conversation) return;
-    clearUnreadCount(conversationId);
+    return () => {
+      Speech.stop();
+    };
+  }, []);
+  // Track whether this screen is currently focused (visible to the user).
+  // We only send read receipts when the screen is focused so that navigating
+  // away does NOT incorrectly mark group messages as seen.
+  const isFocusedRef = useRef(false);
+  useFocusEffect(
+    useCallback(() => {
+      isFocusedRef.current = true;
+      if (!conversation) return;
+      clearUnreadCount(conversationId);
+      const msgs = useChatStore.getState().messages[conversationId] || [];
+      const lastFromOther = [...msgs].reverse().find((m) => m.senderId !== user?.id);
+      if (lastFromOther?.id) {
+        sendSocketMessage("message.read", { messageId: lastFromOther.id, conversationId });
+      }
+      return () => {
+        // Screen is losing focus — stop marking new arrivals as read
+        isFocusedRef.current = false;
+      };
+    }, [conversationId, user?.id, conversation])
+  );
+
+  // When new messages arrive while this screen is already focused, mark them
+  // read immediately. Without focus the effect is a no-op.
+  useEffect(() => {
+    if (!isFocusedRef.current || !conversation) return;
     const msgs = useChatStore.getState().messages[conversationId] || [];
     const lastFromOther = [...msgs].reverse().find((m) => m.senderId !== user?.id);
     if (lastFromOther?.id) {
+      clearUnreadCount(conversationId);
       sendSocketMessage("message.read", { messageId: lastFromOther.id, conversationId });
     }
-  }, [conversationId, storeMessages.length, conversation]);
+  }, [storeMessages.length]);
 
   // Auto-dismiss if group is deleted
   useEffect(() => {
@@ -108,19 +145,14 @@ const GroupChatScreen = ({ navigation, route }: Props) => {
   const hasAdminRights = subType === "CARE_CIRCLE"
     ? myRole === "OWNER" || myRole === "CAREGIVER"
     : myRole === "OWNER" || myRole === "ADMIN";
+  // Super Admin / Admin at platform level — can delete ANY message for everyone
+  const isSuperAdmin = user?.role === "SUPER_ADMIN" || user?.role === "ADMIN";
 
   const typingUserIds = useChatStore((s) => s.typing[conversationId]);
   const someoneTyping = (typingUserIds || []).some((id) => id !== user?.id);
 
   // Voice notes + image sharing.
   const media = useChatMedia(conversationId, user?.id);
-
-  const [messageText, setMessageText] = useState("");
-  const [isLoading, setIsLoading] = useState(true);
-  const [keyboardHeight, setKeyboardHeight] = useState(0);
-  const [mediaViewer, setMediaViewer] = useState<{ src: string; alt: string; isVideo: boolean } | null>(null);
-  const [replyingTo, setReplyingTo] = useState<ChatMessage | null>(null);
-  const [speakingId, setSpeakingId] = useState<string | null>(null);
 
   const openMediaViewer = useCallback((src: string, alt: string, isVideo: boolean) => {
     setMediaViewer({ src, alt, isVideo });
@@ -179,7 +211,7 @@ const GroupChatScreen = ({ navigation, route }: Props) => {
     const map: Record<string, string> = {};
     if (conversation?.participants) {
       conversation.participants.forEach((p) => {
-        map[p.userId] = p.user?.name || "Unknown";
+        map[p.userId] = formatUserDisplayName(p.user);
       });
     }
     return map;
@@ -430,17 +462,42 @@ const GroupChatScreen = ({ navigation, route }: Props) => {
     onConfirm: () => void;
   } | null>(null);
 
+  // Surface a themed dialog the moment a message we sent gets rejected
+  // (group suspended, blocked, moderation, ...) — failMessage() in the
+  // store sets status:'failed' + failureReason, this just watches for it.
+  // The acknowledged flag lives in the store (not a local ref) so it
+  // survives leaving and re-entering this screen — a ref resets on every
+  // remount and would otherwise re-show the dialog for the same message
+  // each time you come back to the group.
+  useEffect(() => {
+    const latestFailed = [...storeMessages].reverse().find(
+      (m) => m.status === "failed" && !m.failureAcknowledged
+    );
+    if (latestFailed) {
+      useChatStore.getState().acknowledgeMessageFailure(latestFailed.clientMessageId);
+      setConfirmState({
+        title: "Message Not Sent",
+        message: latestFailed.failureReason || "Your message could not be delivered.",
+        confirmLabel: "OK",
+        destructive: true,
+        hideCancel: true,
+        onConfirm: () => setConfirmState(null),
+      });
+    }
+  }, [storeMessages]);
+
   // Reporting a specific message — captures messageId + sender so the admin
   // moderation queue gets full context, not just a bare user-level report.
   const [reportTarget, setReportTarget] = useState<ChatMessage | null>(null);
-  const submitMessageReport = (reason: string) => {
+  const submitMessageReport = (reason: string, details?: string) => {
     if (!reportTarget) return;
+    const finalReason = details ? `${reason} — ${details}` : reason;
     chatService
       .reportUser({
         reportedUserId: reportTarget.senderId,
         conversationId,
         messageId: reportTarget.id,
-        reason,
+        reason: finalReason,
       })
       .then(() =>
         setConfirmState({
@@ -486,7 +543,8 @@ const GroupChatScreen = ({ navigation, route }: Props) => {
     if (!messageMenu) return [];
     const item = messageMenu;
     const isMine = item.senderId === user?.id;
-    const canDeleteForEveryone = isMine || hasAdminRights;
+    // Super Admins can delete any message for everyone
+    const canDeleteForEveryone = isMine || hasAdminRights || isSuperAdmin;
     const opts: ActionSheetOption[] = [];
     opts.push({ label: "Reply", icon: CornerUpLeft, onPress: () => setReplyingTo(item) });
     if (item.type === "TEXT" && item.content?.trim()) {
@@ -500,6 +558,7 @@ const GroupChatScreen = ({ navigation, route }: Props) => {
           Speech.stop();
           setSpeakingId(item.id);
           Speech.speak(item.content, {
+            language: "en-IN",
             onDone: () => setSpeakingId(null),
             onStopped: () => setSpeakingId(null),
             onError: () => setSpeakingId(null),
@@ -507,7 +566,17 @@ const GroupChatScreen = ({ navigation, route }: Props) => {
         }});
       }
     }
-    if (!isMine) {
+    // Do NOT allow reporting messages sent by platform admins/super admins
+    const senderIsAdmin = (
+      item.senderId === "admin" ||
+      item.senderId === "system" ||
+      item.senderId === "digiability-admin" ||
+      item.type === "SYSTEM"
+    );
+    let meta: any = null;
+    try { meta = item.metadata ? (typeof item.metadata === "string" ? JSON.parse(item.metadata) : item.metadata) : null; } catch {}
+    const senderIsPlatformAdmin = senderIsAdmin || meta?.isAdmin === true || meta?.senderName === "DigiAbility Admin";
+    if (!isMine && !senderIsPlatformAdmin) {
       opts.push({
         label: "Report message",
         icon: Flag,
@@ -523,9 +592,34 @@ const GroupChatScreen = ({ navigation, route }: Props) => {
   })();
 
   const renderMessage = ({ item, index }: { item: ChatMessage; index: number }) => {
+    let meta: any = null;
+    try {
+      meta = item.metadata ? (typeof item.metadata === "string" ? JSON.parse(item.metadata) : item.metadata) : null;
+    } catch {}
+
     const isMine = item.senderId === user?.id;
-    const senderName = isMine ? "You" : (nameMap[item.senderId] || "Unknown");
-    const senderColor = colorMap[item.senderId] || colors.primary;
+    const isAdmin =
+      item.senderId === "admin" ||
+      item.senderId === "system" ||
+      item.senderId === "digiability-admin" ||
+      item.type === "SYSTEM" ||
+      meta?.isAdmin === true ||
+      meta?.senderName === "DigiAbility Admin" ||
+      item.content?.startsWith("📢 [");
+
+    const senderName = isMine
+      ? "You"
+      : isAdmin
+      ? (meta?.senderName || "DigiAbility Admin")
+      : nameMap[item.senderId] || "Unknown";
+
+    const senderColor = isMine
+      ? colors.primary
+      : isAdmin
+      ? (highContrast ? "#000000" : "#7004DC")
+      : colorMap[item.senderId] || colors.primary;
+
+    const senderInitials = isAdmin ? "DA" : getInitials(senderName);
 
     // List is inverted (newest first), so the chronologically-previous (older)
     // message — the one rendered directly above — is at index + 1. Show the
@@ -559,107 +653,192 @@ const GroupChatScreen = ({ navigation, route }: Props) => {
             <View style={[styles.dateLine, { backgroundColor: dateLineColor }]} />
           </View>
         )}
-        <View
-          style={[
-            styles.messageRow,
-            isMine ? styles.myMessageRow : styles.theirMessageRow,
-          ]}
-        >
-        {/* Sender Avatar (only for others, first in sequence) */}
-        {!isMine && (
-          <View style={styles.avatarSlot}>
-            {showSender ? (
-              <View style={[styles.msgAvatar, { backgroundColor: senderColor + "20" }]}>
-                <AccessibleText variant="caption" style={[styles.msgAvatarText, { color: senderColor }]}>
-                  {getInitials(senderName)}
-                </AccessibleText>
-              </View>
-            ) : null}
-          </View>
-        )}
-
-        <SwipeableMessageRow onReply={() => setReplyingTo(item)} colors={colors}>
-          <View style={[styles.bubbleWrapper, isMine && { alignItems: "flex-end" }]}>
-          {/* Sender name */}
-          {showSender && (
-            <AccessibleText variant="caption" style={[styles.senderName, { color: senderColor }]}>
-              {senderName}
-            </AccessibleText>
-          )}
-
-          <TouchableOpacity
-            activeOpacity={0.8}
-            onLongPress={() => handleMessageLongPress(item)}
-            delayLongPress={300}
-            accessibilityRole="button"
-            accessibilityLabel={isMine ? "Your message" : `Message from ${senderName}`}
-            accessibilityHint="Double tap and hold for message options"
+        <SwipeableMessageRow onReply={() => setReplyingTo(item)} colors={colors} isMine={isMine}>
+          <View
             style={[
-              styles.messageBubble,
-              isMine ? styles.myBubble : styles.theirBubble,
-              isMine
-                ? { backgroundColor: colors.primary }
-                : { backgroundColor: colors.card, shadowColor: colors.primary },
-              !isMine && cardBorder,
+              styles.messageRow,
+              isMine ? styles.myMessageRow : styles.theirMessageRow,
             ]}
           >
-            {(() => {
-              const meta = item.metadata ? JSON.parse(item.metadata) : null;
-              if (meta?.replyTo) {
-                return (
-                  <View style={{ backgroundColor: 'rgba(0,0,0,0.1)', padding: 8, borderRadius: 8, marginBottom: 6, borderLeftWidth: 3, borderLeftColor: isMine ? '#fff' : colors.primary }}>
-                    <AccessibleText variant="caption" style={{ color: isMine ? '#fff' : colors.primary, fontWeight: 'bold', marginBottom: 2 }}>
-                      {meta.replyTo.senderName}
-                    </AccessibleText>
-                    <AccessibleText variant="caption" numberOfLines={1} style={{ color: isMine ? 'rgba(255,255,255,0.9)' : colors.text }}>
-                      {meta.replyTo.content}
+            {/* Sender Avatar (only for others, first in sequence) */}
+            {!isMine && (
+              <View style={styles.avatarSlot}>
+                {showSender ? (
+                  <View style={[styles.msgAvatar, { backgroundColor: isAdmin ? (highContrast ? "#000" : "#EDE1FF") : senderColor + "20" }]}>
+                    <AccessibleText variant="caption" style={[styles.msgAvatarText, { color: isAdmin ? (highContrast ? "#FFF" : "#7004DC") : senderColor, fontWeight: "700" }]}>
+                      {senderInitials}
                     </AccessibleText>
                   </View>
-                );
-              }
-              return null;
-            })()}
-            {item.type === "IMAGE" || item.type === "VIDEO" || item.type === "AUDIO" ? (
-              <MessageMedia message={item} isMine={isMine} onOpenViewer={openMediaViewer} onLongPress={() => handleMessageLongPress(item)} />
-            ) : (
-              <LinkifiedText
-                variant="body"
-                text={item.content}
-                style={[
-                  styles.messageText,
-                  { color: isMine ? colors.white : colors.text },
-                ]}
-                linkStyle={{ color: isMine ? "rgba(255,255,255,0.9)" : colors.primary }}
-              />
+                ) : null}
+              </View>
             )}
-            <View style={styles.messageFooter}>
-              <AccessibleText
-                variant="caption"
-                style={[
-                  styles.messageTime,
-                  { color: isMine ? "rgba(255,255,255,0.6)" : colors.subtext },
-                ]}
-              >
-                {timeString}
-              </AccessibleText>
-              {isMine && (
-                <View style={{ marginLeft: 4 }}>
-                  {item.status === "sending" ? (
-                    <AccessibleText variant="caption" style={{ color: "rgba(255,255,255,0.7)", fontSize: 10 }}>...</AccessibleText>
-                  ) : item.status === "read" ? (
-                    <CheckCheck size={14} color="#38bdf8" />
-                  ) : item.status === "delivered" ? (
-                    <CheckCheck size={14} color="rgba(255,255,255,0.8)" />
-                  ) : (
-                    <Check size={14} color="rgba(255,255,255,0.8)" />
+
+            <View style={[styles.bubbleWrapper, isMine ? { alignItems: "flex-end" } : { alignItems: "flex-start" }]}>
+              {/* Sender name */}
+              {showSender && (
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 4, marginBottom: 3, marginLeft: 4 }}>
+                  <AccessibleText variant="caption" style={[styles.senderName, { color: senderColor, fontWeight: isAdmin ? "800" : "600" }]}>
+                    {senderName}
+                  </AccessibleText>
+                  {isAdmin && (
+                    <View style={{ backgroundColor: "#7004DC", paddingHorizontal: 5, paddingVertical: 1, borderRadius: 4 }}>
+                      <AccessibleText style={{ color: "#FFFFFF", fontSize: 9, fontWeight: "800" }}>
+                        ADMIN
+                      </AccessibleText>
+                    </View>
                   )}
                 </View>
               )}
+
+              <TouchableOpacity
+                activeOpacity={0.8}
+                onLongPress={() => handleMessageLongPress(item)}
+                delayLongPress={300}
+                accessibilityRole="button"
+                accessibilityLabel={isMine ? "Your message" : `Message from ${senderName}`}
+                accessibilityHint="Double tap and hold for message options"
+                style={[
+                  styles.messageBubble,
+                  isMine ? styles.myBubble : styles.theirBubble,
+                  isMine
+                    ? { backgroundColor: colors.primary }
+                    : { backgroundColor: colors.card, shadowColor: colors.primary },
+                  !isMine && cardBorder,
+                  (item.type === "IMAGE" || item.type === "VIDEO") && styles.mediaBubble,
+                ]}
+              >
+                {(() => {
+                  const meta = item.metadata ? JSON.parse(item.metadata) : null;
+                  if (meta?.replyTo) {
+                    return (
+                      <View style={{ backgroundColor: 'rgba(0,0,0,0.1)', padding: 8, borderRadius: 8, marginBottom: 6, borderLeftWidth: 3, borderLeftColor: isMine ? '#fff' : colors.primary }}>
+                        <AccessibleText variant="caption" style={{ color: isMine ? '#fff' : colors.primary, fontWeight: 'bold', marginBottom: 2 }}>
+                          {meta.replyTo.senderName}
+                        </AccessibleText>
+                        <AccessibleText variant="caption" numberOfLines={1} style={{ color: isMine ? 'rgba(255,255,255,0.9)' : colors.text }}>
+                          {meta.replyTo.content}
+                        </AccessibleText>
+                      </View>
+                    );
+                  }
+                  return null;
+                })()}
+                {item.deletedAt ? (
+                  <View style={styles.textBubbleContainer}>
+                    <AccessibleText
+                      variant="body"
+                      style={[
+                        styles.messageText,
+                        { color: isMine ? "rgba(255,255,255,0.7)" : colors.subtext, fontStyle: "italic" },
+                      ]}
+                    >
+                      This message was removed
+                    </AccessibleText>
+                    <View style={styles.messageFooter}>
+                      <AccessibleText
+                        variant="caption"
+                        numberOfLines={1}
+                        style={[
+                          styles.messageTime,
+                          { color: isMine ? "rgba(255,255,255,0.7)" : colors.subtext },
+                        ]}
+                      >
+                        {timeString}
+                      </AccessibleText>
+                    </View>
+                  </View>
+                ) : (item.type === "IMAGE" || item.type === "VIDEO") ? (
+                  <View style={styles.mediaBubbleInner}>
+                    <MessageMedia message={item} isMine={isMine} onOpenViewer={openMediaViewer} onLongPress={() => handleMessageLongPress(item)} />
+                    <View style={styles.mediaTimeOverlay}>
+                      <AccessibleText style={styles.mediaTimeText}>
+                        {timeString}
+                      </AccessibleText>
+                      {isMine && (
+                        <View style={{ marginLeft: 2 }}>
+                          {item.status === "sending" ? (
+                            <AccessibleText style={{ color: "rgba(255,255,255,0.8)", fontSize: 10 }}>...</AccessibleText>
+                          ) : item.status === "read" ? (
+                            <CheckCheck size={12} color="#38bdf8" />
+                          ) : item.status === "delivered" ? (
+                            <CheckCheck size={12} color="rgba(255,255,255,0.9)" />
+                          ) : item.status === "failed" ? (
+                            <AlertCircle size={12} color="#EF4444" />
+                          ) : (
+                            <Check size={12} color="rgba(255,255,255,0.9)" />
+                          )}
+                        </View>
+                      )}
+                    </View>
+                  </View>
+                ) : item.type === "AUDIO" ? (
+                  <View>
+                    <MessageMedia message={item} isMine={isMine} onOpenViewer={openMediaViewer} onLongPress={() => handleMessageLongPress(item)} />
+                    <View style={styles.messageFooter}>
+                      <AccessibleText variant="caption" style={[styles.messageTime, { color: isMine ? "rgba(255,255,255,0.6)" : colors.subtext }]}>
+                        {timeString}
+                      </AccessibleText>
+                      {isMine && (
+                        <View style={{ marginLeft: 2 }}>
+                          {item.status === "sending" ? (
+                            <AccessibleText variant="caption" style={{ color: "rgba(255,255,255,0.7)", fontSize: 10 }}>...</AccessibleText>
+                          ) : item.status === "read" ? (
+                            <CheckCheck size={13} color="#38bdf8" />
+                          ) : item.status === "delivered" ? (
+                            <CheckCheck size={13} color="rgba(255,255,255,0.8)" />
+                          ) : item.status === "failed" ? (
+                            <AlertCircle size={13} color="#EF4444" />
+                          ) : (
+                            <Check size={13} color="rgba(255,255,255,0.8)" />
+                          )}
+                        </View>
+                      )}
+                    </View>
+                  </View>
+                ) : (
+                  <View style={styles.textBubbleContainer}>
+                    <LinkifiedText
+                      variant="body"
+                      text={item.content}
+                      style={[
+                        styles.messageText,
+                        { color: isMine ? colors.white : colors.text },
+                      ]}
+                      linkStyle={{ color: isMine ? "rgba(255,255,255,0.9)" : colors.primary }}
+                    />
+                    <View style={styles.messageFooter}>
+                      <AccessibleText
+                        variant="caption"
+                        numberOfLines={1}
+                        style={[
+                          styles.messageTime,
+                          { color: isMine ? "rgba(255,255,255,0.7)" : colors.subtext },
+                        ]}
+                      >
+                        {timeString}
+                      </AccessibleText>
+                      {isMine && (
+                        <View style={{ marginLeft: 2 }}>
+                          {item.status === "sending" ? (
+                            <AccessibleText variant="caption" style={{ color: "rgba(255,255,255,0.7)", fontSize: 10 }}>...</AccessibleText>
+                          ) : item.status === "read" ? (
+                            <CheckCheck size={13} color="#38bdf8" />
+                          ) : item.status === "delivered" ? (
+                            <CheckCheck size={13} color="rgba(255,255,255,0.85)" />
+                          ) : item.status === "failed" ? (
+                            <AlertCircle size={13} color="#EF4444" />
+                          ) : (
+                            <Check size={13} color="rgba(255,255,255,0.85)" />
+                          )}
+                        </View>
+                      )}
+                    </View>
+                  </View>
+                )}
+              </TouchableOpacity>
             </View>
-          </TouchableOpacity>
           </View>
         </SwipeableMessageRow>
-        </View>
       </View>
     );
   };
@@ -928,60 +1107,70 @@ const GroupChatScreen = ({ navigation, route }: Props) => {
                 </TouchableOpacity>
               </View>
             )}
-            <View style={[styles.composer, { paddingBottom: Math.max(insets.bottom, 10) }]}>
-              <View style={[styles.composerCard, { backgroundColor: colors.card, shadowColor: colors.secondary }, cardBorder]}>
-                <TouchableOpacity
-                  style={styles.plusBtn}
-                  onPress={media.pickMedia}
-                  disabled={media.isUploading}
-                  accessibilityRole="button"
-                  accessibilityLabel="Attach image"
-                  accessibilityHint="Opens your photo library to attach an image"
-                >
-                  {media.isUploading
-                    ? <ActivityIndicator size="small" color={colors.primary} />
-                    : <Plus size={24} color={colors.primary} strokeWidth={2.5} />}
-                </TouchableOpacity>
-
-                <View style={[styles.inputPill, { backgroundColor: colors.surface }, cardBorder]}>
-                  <TextInput
-                    style={[styles.textInput, { color: colors.text }]}
-                    placeholder="Message the group..."
-                    placeholderTextColor={colors.subtext}
-                    value={messageText}
-                    onChangeText={handleTextChange}
-                    multiline
-                    maxLength={5000}
-                    accessibilityLabel="Message input"
-                  />
+            {conversation?.sendMessages === "ADMINS_ONLY" && !hasAdminRights ? (
+              <View style={[styles.composer, { paddingBottom: Math.max(insets.bottom, 10) }]}>
+                <View style={[styles.suspendedComposerCard, { backgroundColor: colors.surface }, cardBorder]}>
+                  <AccessibleText variant="caption" style={[styles.suspendedComposerText, { color: colors.subtext }]}>
+                    Only admins can send messages in this {subType === "CARE_CIRCLE" ? "care circle" : "group"}.
+                  </AccessibleText>
                 </View>
-
-                <TouchableOpacity
-                  style={[
-                    styles.micBtn,
-                    media.isRecording && [styles.micBtnRecording, { backgroundColor: colors.error }],
-                  ]}
-                  onPress={() => (media.isRecording ? media.stopAndSendRecording() : media.startRecording())}
-                  accessibilityRole="button"
-                  accessibilityLabel={media.isRecording ? "Stop and send voice note" : "Record voice note"}
-                >
-                  {media.isRecording
-                    ? <Square size={16} color={colors.white} fill={colors.white} />
-                    : <Mic size={20} color={colors.white} />}
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[styles.sendCircle, { backgroundColor: colors.primary }, !messageText.trim() && styles.sendCircleDisabled]}
-                  onPress={handleSend}
-                  disabled={!messageText.trim()}
-                  accessibilityRole="button"
-                  accessibilityLabel="Send message"
-                  accessibilityHint="Sends the typed message"
-                >
-                  <Send size={19} color={colors.white} />
-                </TouchableOpacity>
               </View>
-            </View>
+            ) : (
+              <View style={[styles.composer, { paddingBottom: Math.max(insets.bottom, 10) }]}>
+                <View style={[styles.composerCard, { backgroundColor: colors.card, shadowColor: colors.secondary }, cardBorder]}>
+                  <TouchableOpacity
+                    style={styles.plusBtn}
+                    onPress={media.pickMedia}
+                    disabled={media.isUploading}
+                    accessibilityRole="button"
+                    accessibilityLabel="Attach image"
+                    accessibilityHint="Opens your photo library to attach an image"
+                  >
+                    {media.isUploading
+                      ? <ActivityIndicator size="small" color={colors.primary} />
+                      : <Plus size={24} color={colors.primary} strokeWidth={2.5} />}
+                  </TouchableOpacity>
+
+                  <View style={[styles.inputPill, { backgroundColor: colors.surface }, cardBorder]}>
+                    <TextInput
+                      style={[styles.textInput, { color: colors.text }]}
+                      placeholder="Message the group..."
+                      placeholderTextColor={colors.subtext}
+                      value={messageText}
+                      onChangeText={handleTextChange}
+                      multiline
+                      maxLength={5000}
+                      accessibilityLabel="Message input"
+                    />
+                  </View>
+
+                  <TouchableOpacity
+                    style={[
+                      styles.micBtn,
+                      media.isRecording && [styles.micBtnRecording, { backgroundColor: colors.error }],
+                    ]}
+                    onPress={() => (media.isRecording ? media.stopAndSendRecording() : media.startRecording())}
+                    accessibilityRole="button"
+                    accessibilityLabel={media.isRecording ? "Stop and send voice note" : "Record voice note"}
+                  >
+                    {media.isRecording
+                      ? <Square size={16} color={colors.white} fill={colors.white} />
+                      : <Mic size={20} color={colors.white} />}
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.sendCircle, { backgroundColor: colors.primary }, !messageText.trim() && styles.sendCircleDisabled]}
+                    onPress={handleSend}
+                    disabled={!messageText.trim()}
+                    accessibilityRole="button"
+                    accessibilityLabel="Send message"
+                    accessibilityHint="Sends the typed message"
+                  >
+                    <Send size={19} color={colors.white} />
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
           </>
         )}
       </View>
@@ -1014,16 +1203,13 @@ const GroupChatScreen = ({ navigation, route }: Props) => {
         onCancel={() => setConfirmState(null)}
       />
 
-      {/* Report reason picker */}
-      <ActionSheet
+      {/* Report reason picker with description & custom category */}
+      <ReportModal
         visible={!!reportTarget}
         title="Report reason"
-        message="Why are you reporting this message?"
-        options={["Spam", "Harassment", "Inappropriate content", "Other"].map((r) => ({
-          label: r,
-          onPress: () => submitMessageReport(r),
-        }))}
+        subtitle="Why are you reporting this message?"
         onClose={() => setReportTarget(null)}
+        onSubmit={submitMessageReport}
       />
       {/* Full-screen Media Viewer */}
       {mediaViewer && (
@@ -1039,7 +1225,7 @@ const GroupChatScreen = ({ navigation, route }: Props) => {
   );
 };
 
-const SwipeableMessageRow = React.memo(({ children, onReply, colors }: any) => {
+const SwipeableMessageRow = React.memo(({ children, onReply, colors, isMine }: any) => {
   const swipeableRef = useRef<Swipeable>(null);
 
   const renderLeftActions = (progress: Animated.AnimatedInterpolation<number>, dragX: Animated.AnimatedInterpolation<number>) => {
@@ -1049,9 +1235,9 @@ const SwipeableMessageRow = React.memo(({ children, onReply, colors }: any) => {
       extrapolate: 'clamp',
     });
     return (
-      <View style={{ justifyContent: 'center', alignItems: 'center', width: 60 }}>
+      <View style={{ justifyContent: 'center', alignItems: 'center', width: 50 }}>
         <Animated.View style={{ transform: [{ scale }] }}>
-          <CornerUpLeft color={colors.primary} size={24} />
+          <CornerUpLeft color={colors.primary} size={22} />
         </Animated.View>
       </View>
     );
@@ -1061,12 +1247,19 @@ const SwipeableMessageRow = React.memo(({ children, onReply, colors }: any) => {
     <Swipeable
       ref={swipeableRef}
       renderLeftActions={renderLeftActions}
+      containerStyle={{ width: "100%" }}
+      childrenContainerStyle={{
+        width: "100%",
+        flexDirection: "row",
+        justifyContent: isMine ? "flex-end" : "flex-start",
+        alignItems: "flex-end",
+      }}
       onSwipeableOpen={() => {
         onReply();
         swipeableRef.current?.close();
       }}
       friction={2}
-      leftThreshold={40}
+      leftThreshold={35}
     >
       {children}
     </Swipeable>
@@ -1095,27 +1288,22 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 12,
-    backgroundColor: "rgba(255,255,255,0.15)",
+    backgroundColor: "rgba(255,255,255,0.2)",
     justifyContent: "center",
     alignItems: "center",
-    marginRight: 10,
-  },
-  backText: {
-    color: "#fff",
-    fontSize: 20,
-    fontWeight: "700",
   },
   headerCenter: {
     flex: 1,
     flexDirection: "row",
     alignItems: "center",
+    marginLeft: 8,
   },
   groupIconContainer: {
     marginRight: 10,
   },
   groupIcon: {
-    width: 42,
-    height: 42,
+    width: 40,
+    height: 40,
     borderRadius: 14,
     backgroundColor: "rgba(255,255,255,0.2)",
     justifyContent: "center",
@@ -1174,7 +1362,7 @@ const styles = StyleSheet.create({
   // ── Messages ────────────────────────────────────────────
   messageList: {
     paddingHorizontal: 12,
-    paddingVertical: 12,
+    paddingVertical: 10,
     paddingBottom: 8,
   },
 
@@ -1182,6 +1370,7 @@ const styles = StyleSheet.create({
   messageRow: {
     flexDirection: "row",
     marginBottom: 6,
+    width: "100%",
   },
   myMessageRow: {
     justifyContent: "flex-end",
@@ -1211,42 +1400,91 @@ const styles = StyleSheet.create({
 
   // Bubble
   bubbleWrapper: {
-    maxWidth: "75%",
+    maxWidth: "80%",
+    minWidth: 80,
   },
   senderName: {
     fontSize: 12,
     fontWeight: "700",
-    marginBottom: 2,
-    marginLeft: 4,
   },
+  // Base bubble style
   messageBubble: {
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 18,
+    paddingHorizontal: 12,
+    paddingTop: 7,
+    paddingBottom: 6,
+    borderRadius: 16,
+    minWidth: 80,
+  },
+  // No padding for image/video bubbles
+  mediaBubble: {
+    paddingHorizontal: 0,
+    paddingTop: 0,
+    paddingBottom: 0,
+    overflow: "hidden",
+    minWidth: 0,
+  },
+  mediaBubbleInner: {
+    position: "relative",
+  },
+  // Time overlaid at bottom-right of image
+  mediaTimeOverlay: {
+    position: "absolute",
+    bottom: 6,
+    right: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 10,
+  },
+  mediaTimeText: {
+    fontSize: 11,
+    fontWeight: "600",
+    fontVariant: ["tabular-nums"],
+    color: "#FFFFFF",
   },
   myBubble: {
-    borderBottomRightRadius: 6,
+    borderBottomRightRadius: 4,
   },
   theirBubble: {
-    borderBottomLeftRadius: 6,
+    borderBottomLeftRadius: 4,
     shadowOpacity: 0.05,
-    shadowOffset: { width: 0, height: 2 },
-    shadowRadius: 6,
-    elevation: 2,
+    shadowOffset: { width: 0, height: 1 },
+    shadowRadius: 4,
+    elevation: 1,
+  },
+  textBubbleContainer: {
+    flexDirection: "column",
   },
   messageText: {
     fontSize: 15,
     lineHeight: 21,
+    flexShrink: 1,
   },
+  // Inline time row — sits nicely to the right or below
+  inlineTimeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "flex-end",
+    marginLeft: "auto",
+    paddingLeft: 4,
+    paddingBottom: 1,
+    gap: 2,
+    flexShrink: 0,
+  },
+  // Time row used for audio messages
   messageFooter: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "flex-end",
-    marginTop: 4,
-    gap: 4,
+    marginTop: 5,
+    gap: 3,
   },
   messageTime: {
     fontSize: 11,
+    fontVariant: ["tabular-nums"],
   },
   statusIcon: {
     fontSize: 11,
@@ -1320,6 +1558,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingTop: 8,
     backgroundColor: "transparent",
+  },
+  suspendedComposerCard: {
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 24,
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+  },
+  suspendedComposerText: {
+    fontSize: 13,
+    fontWeight: "600",
+    textAlign: "center",
   },
   composerCard: {
     flexDirection: "row",

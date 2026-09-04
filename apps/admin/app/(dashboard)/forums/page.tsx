@@ -1,13 +1,19 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
+import { useRouter } from "next/navigation";
+import { apiFetch } from "@/lib/api";
+import { isValidIndianPhone, INVALID_PHONE_MESSAGE } from "@/lib/validation";
 import {
   Search, ChevronDown, X, Trash2,
   RefreshCw, Users, MessageSquare, CheckCircle2,
   Calendar, User, Send, Plus, Download, Edit3,
   Eye, EyeOff, Upload, Phone, Mail, Globe, MapPin,
-  Clock, ShieldCheck, Tag, Loader2, Image as ImageIcon,
+  ShieldCheck, Tag, Loader2, Image as ImageIcon,
 } from "lucide-react";
+import { DateRangePicker, isWithinDateRange } from "@/components/shared/DateRangePicker";
+import { WeeklyScheduleEditor } from "@/components/shared/WeeklyScheduleEditor";
+import { WeeklySchedule, defaultWeeklySchedule, isValidWeeklySchedule } from "@/lib/availabilitySchedule";
 
 // ─────────────────────────────────────────────
 // FORUM QUESTION TYPES
@@ -20,6 +26,7 @@ interface ForumQuestion {
   answerCount: number;
   status: "SOLVED" | "UNSOLVED";
   createdAt: string;
+  createdAtISO: string;
   isDeleted: boolean;
   authorName: string;
   authorEmail: string;
@@ -58,6 +65,7 @@ interface ServiceItem {
   contactUrl: string | null;
   price: string;
   availability: string;
+  availabilitySchedule: WeeklySchedule | null;
   rating: number;
   reviews: number;
   verified: boolean;
@@ -80,8 +88,11 @@ const SERVICE_CATEGORIES = [
 // MAIN COMPONENT
 // ─────────────────────────────────────────────
 export default function CommunityPage() {
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState<"Forums" | "Services">("Forums");
   const [search, setSearch] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
 
   // ── Forum data ──
   const [questions, setQuestions] = useState<ForumQuestion[]>([]);
@@ -107,7 +118,7 @@ export default function CommunityPage() {
 
   const [serviceFormData, setServiceFormData] = useState({
     name: "",
-    type: "Occupational Therapist",
+    type: "",
     category: "Therapists",
     logo: "🏢",
     image: "",
@@ -117,7 +128,7 @@ export default function CommunityPage() {
     contactEmail: "",
     contactUrl: "",
     price: "₹500 - ₹1,500 / session",
-    availability: "Next available: Tomorrow",
+    availabilitySchedule: defaultWeeklySchedule(),
     verified: true,
     status: "published" as "published" | "unpublished",
   });
@@ -150,8 +161,8 @@ export default function CommunityPage() {
   const fetchServices = async () => {
     setServicesLoading(true);
     try {
-      const res = await fetch("/api/services");
-      const data = await res.json();
+      const { sessionExpired, data } = await apiFetch("/api/services");
+      if (sessionExpired) { router.push("/login"); return; }
       if (data.success) {
         setServices(data.services || []);
       }
@@ -220,12 +231,13 @@ export default function CommunityPage() {
   const handleToggleServiceStatus = async (srv: ServiceItem) => {
     const newStatus = srv.status === "unpublished" ? "published" : "unpublished";
     try {
-      const res = await fetch(`/api/services/${srv.id}`, {
+      const { ok, sessionExpired } = await apiFetch(`/api/services/${srv.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: newStatus }),
       });
-      if (res.ok) {
+      if (sessionExpired) { router.push("/login"); return; }
+      if (ok) {
         setServices(prev => prev.map(s => s.id === srv.id ? { ...s, status: newStatus } : s));
       }
     } catch (e) {
@@ -237,7 +249,7 @@ export default function CommunityPage() {
     setEditingServiceId(null);
     setServiceFormData({
       name: "",
-      type: "Occupational Therapist",
+      type: "",
       category: "therapists",
       logo: "👩‍⚕️",
       image: "",
@@ -247,7 +259,7 @@ export default function CommunityPage() {
       contactEmail: "",
       contactUrl: "",
       price: "₹500 - ₹1,500 / session",
-      availability: "Next available: Tomorrow",
+      availabilitySchedule: defaultWeeklySchedule(),
       verified: true,
       status: "published",
     });
@@ -270,7 +282,7 @@ export default function CommunityPage() {
       contactEmail: srv.contactEmail || "",
       contactUrl: srv.contactUrl || "",
       price: srv.price || "₹500 - ₹1,500 / session",
-      availability: srv.availability || "Next available: Tomorrow",
+      availabilitySchedule: srv.availabilitySchedule || defaultWeeklySchedule(),
       verified: srv.verified !== undefined ? srv.verified : true,
       status: srv.status || "published",
     });
@@ -303,6 +315,14 @@ export default function CommunityPage() {
       setServiceErrorMsg("Please fill in all required fields (Name, Description, Location).");
       return;
     }
+    if (!isValidIndianPhone(serviceFormData.contactPhone)) {
+      setServiceErrorMsg(INVALID_PHONE_MESSAGE);
+      return;
+    }
+    if (!isValidWeeklySchedule(serviceFormData.availabilitySchedule)) {
+      setServiceErrorMsg("Every day marked Open needs both a From and To time.");
+      return;
+    }
 
     setServiceSubmitting(true);
     setServiceErrorMsg("");
@@ -313,13 +333,18 @@ export default function CommunityPage() {
       const url = isEdit ? `/api/services/${editingServiceId}` : "/api/services";
       const method = isEdit ? "PATCH" : "POST";
 
-      const res = await fetch(url, {
+      const { sessionExpired, data } = await apiFetch(url, {
         method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(serviceFormData),
       });
 
-      const data = await res.json();
+      if (sessionExpired) {
+        setServiceErrorMsg("Your session has expired. Redirecting to login…");
+        setTimeout(() => router.push("/login"), 1200);
+        return;
+      }
+
       if (data.success) {
         setServiceSuccessMsg(isEdit ? "Service updated successfully!" : "Service published successfully!");
         setTimeout(() => {
@@ -339,8 +364,8 @@ export default function CommunityPage() {
   const handleDeleteService = async (id: string, name: string) => {
     if (!confirm(`Are you sure you want to delete service "${name}"?`)) return;
     try {
-      const res = await fetch(`/api/services/${id}`, { method: "DELETE" });
-      const data = await res.json();
+      const { sessionExpired, data } = await apiFetch(`/api/services/${id}`, { method: "DELETE" });
+      if (sessionExpired) { router.push("/login"); return; }
       if (data.success) {
         setServices(prev => prev.filter(s => s.id !== id));
       } else {
@@ -381,6 +406,12 @@ export default function CommunityPage() {
   };
 
   const TABS = ["Forums", "Services"] as const;
+
+  const filteredQuestions = questions.filter(q => {
+    const matchesSearch = !search || q.title.toLowerCase().includes(search.toLowerCase()) || q.authorName.toLowerCase().includes(search.toLowerCase());
+    const matchesDate = isWithinDateRange(q.createdAtISO, dateFrom, dateTo);
+    return matchesSearch && matchesDate;
+  });
 
   const filteredServices = services.filter(s => {
     const matchesSearch = !search ||
@@ -450,6 +481,16 @@ export default function CommunityPage() {
           />
         </div>
 
+        {activeTab === "Forums" && (
+          <DateRangePicker
+            from={dateFrom}
+            to={dateTo}
+            onFromChange={setDateFrom}
+            onToChange={setDateTo}
+            className="h-9 rounded-lg border border-gray-200 text-xs font-semibold text-[#4B4355] bg-white outline-none focus:border-[#7004DC]"
+          />
+        )}
+
         {activeTab === "Services" && (
           <>
             <select
@@ -514,9 +555,7 @@ export default function CommunityPage() {
                       <MessageSquare className="w-12 h-12 mb-3 text-slate-300" />
                       <p className="font-semibold">No forum questions yet</p>
                     </div>
-                  ) : questions
-                    .filter(q => !search || q.title.toLowerCase().includes(search.toLowerCase()) || q.authorName.toLowerCase().includes(search.toLowerCase()))
-                    .map(q => (
+                  ) : filteredQuestions.map(q => (
                       <div
                         key={q.id}
                         onClick={() => openQuestion(q.id)}
@@ -589,7 +628,7 @@ export default function CommunityPage() {
                           <th className="px-5 py-4 text-[10px] font-bold uppercase tracking-[0.12em] text-[#7D7387] min-w-[140px]">Category &amp; Type</th>
                           <th className="px-5 py-4 text-[10px] font-bold uppercase tracking-[0.12em] text-[#7D7387] min-w-[160px]">Location &amp; Address</th>
                           <th className="px-5 py-4 text-[10px] font-bold uppercase tracking-[0.12em] text-[#7D7387] min-w-[170px]">Contact Info</th>
-                          <th className="px-5 py-4 text-[10px] font-bold uppercase tracking-[0.12em] text-[#7D7387] min-w-[140px]">Pricing &amp; Availability</th>
+                          <th className="px-5 py-4 text-[10px] font-bold uppercase tracking-[0.12em] text-[#7D7387] min-w-[140px]">Pricing</th>
                           <th className="px-5 py-4 text-[10px] font-bold uppercase tracking-[0.12em] text-[#7D7387] min-w-[110px]">Status</th>
                           <th className="px-5 py-4 text-[10px] font-bold uppercase tracking-[0.12em] text-[#7D7387] text-right pr-6 min-w-[120px]">Actions</th>
                         </tr>
@@ -659,10 +698,6 @@ export default function CommunityPage() {
 
                             <td className="px-5 py-4 whitespace-nowrap">
                               <p className="text-xs font-bold text-[#1A1C1C]">{srv.price}</p>
-                              <div className="flex items-center gap-1 text-[11px] text-[#7D7387] mt-0.5">
-                                <Clock className="w-3 h-3" />
-                                <span>{srv.availability}</span>
-                              </div>
                             </td>
 
                             <td className="px-5 py-4 whitespace-nowrap">
@@ -981,16 +1016,13 @@ export default function CommunityPage() {
                   />
                 </div>
 
-                <div>
+                <div className="md:col-span-2">
                   <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">
                     Availability *
                   </label>
-                  <input
-                    required
-                    value={serviceFormData.availability}
-                    onChange={e => setServiceFormData(prev => ({ ...prev, availability: e.target.value }))}
-                    placeholder="e.g. Next available: Tomorrow, Open 9AM - 6PM"
-                    className="w-full h-11 rounded-xl border border-slate-200 px-4 text-sm outline-none focus:border-[#7004DC]"
+                  <WeeklyScheduleEditor
+                    value={serviceFormData.availabilitySchedule}
+                    onChange={(next) => setServiceFormData(prev => ({ ...prev, availabilitySchedule: next }))}
                   />
                 </div>
 

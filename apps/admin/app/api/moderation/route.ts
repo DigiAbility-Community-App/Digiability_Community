@@ -63,21 +63,134 @@ async function suspendUser(userId: string, interval: string | null, reason?: str
     );
   }
 
-  // Remove banned user from active group memberships
-  try {
-    await dbPool.query(
-      `UPDATE chat.conversation_members SET "leftAt" = NOW() WHERE "userId" = $1 AND "leftAt" IS NULL`,
-      [userId]
-    );
-  } catch {}
+  // Remove the banned/suspended user from active group memberships and, for
+  // any group where they were the only admin-capable member, auto-promote
+  // a stand-in — otherwise a banned group admin leaves the group stuck
+  // with nobody able to approve members or moderate chat. Goes through
+  // chat-svc's internal API (which runs the succession check) with the
+  // previous raw-SQL strip kept as a fallback (no succession in that
+  // degraded case) if chat-svc/the internal secret aren't configured.
+  const chatSvcUrl = process.env.CHAT_SVC_URL;
+  const internalSecret = process.env.INTERNAL_API_SECRET;
+  let removedViaService = false;
+  if (chatSvcUrl && internalSecret) {
+    try {
+      const res = await fetch(`${chatSvcUrl}/api/internal/users/${userId}/memberships`, {
+        method: "DELETE",
+        headers: {
+          "x-internal-secret": internalSecret,
+          "x-internal-ts": String(Date.now()),
+        },
+      });
+      if (res.ok) {
+        removedViaService = true;
+      } else {
+        console.warn(`chat-svc internal memberships delete returned status ${res.status}, falling back to direct DB update.`);
+      }
+    } catch (svcErr) {
+      console.warn("Failed to reach chat-svc for membership removal, falling back to direct DB update:", svcErr);
+    }
+  }
+
+  if (!removedViaService) {
+    try {
+      await dbPool.query(
+        `UPDATE chat.conversation_members SET "leftAt" = NOW() WHERE "userId" = $1 AND "leftAt" IS NULL`,
+        [userId]
+      );
+    } catch {}
+  }
 }
 
-async function notifyUser(userId: string, type: string, title: string, message: string) {
+async function notifyUser(
+  userId: string,
+  type: string,
+  title: string,
+  message: string,
+  relatedId?: string | null
+) {
   await dbPool.query(
-    `INSERT INTO forum_notifications (id, "userId", type, title, message, read, "createdAt")
-     VALUES (gen_random_uuid()::text, $1, $2, $3, $4, false, NOW())`,
-    [userId, type, title, message]
+    `INSERT INTO forum_notifications (id, "userId", type, title, message, read, "relatedId", "createdAt")
+     VALUES (gen_random_uuid()::text, $1, $2, $3, $4, false, $5, NOW())`,
+    [userId, type, title, message, relatedId ?? null]
   );
+}
+
+// Looks up a group's display name for a chat-sourced moderation action, so
+// the notification can say WHICH group the flagged message was in instead
+// of leaving the user to guess. Returns null if not found/not a group.
+async function getConversationName(conversationId?: string | null): Promise<string | null> {
+  if (!conversationId) return null;
+  try {
+    const res = await dbPool.query(`SELECT name FROM chat.conversations WHERE id = $1`, [conversationId]);
+    return res.rows[0]?.name || null;
+  } catch {
+    return null;
+  }
+}
+
+// Shared message builder for warn/ban/removal notifications — always built
+// from the admin-chosen reason + a preview of the actual flagged content
+// (never from admin-only internal notes fields), so the user sees WHAT
+// triggered the action, WHICH group it happened in, and not just that
+// something happened.
+function buildModerationMessage(
+  intro: string,
+  reason?: string | null,
+  contentPreview?: string | null,
+  groupName?: string | null
+): string {
+  const parts = [`${intro} for: ${reason || "violating community guidelines"}.`];
+  if (groupName) parts.push(`Group: ${groupName}`);
+  if (contentPreview) parts.push(`Flagged content: "${contentPreview}"`);
+  return parts.join("\n\n");
+}
+
+// Deletes a chat message via chat-svc's internal API so conversation members
+// get a real-time MESSAGE_DELETED WS event, instead of the removal only
+// taking effect on their next fetch. Falls back to a direct DB soft-delete
+// if chat-svc/the internal secret aren't configured, mirroring the identical
+// pattern already used for admin group deletion (groups/[id]/route.ts).
+async function deleteMessage(messageId: string, conversationId?: string | null) {
+  const chatSvcUrl = process.env.CHAT_SVC_URL;
+  const internalSecret = process.env.INTERNAL_API_SECRET;
+
+  if (chatSvcUrl && internalSecret && conversationId) {
+    try {
+      const res = await fetch(`${chatSvcUrl}/api/internal/messages/${messageId}`, {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+          "x-internal-secret": internalSecret,
+          "x-internal-ts": String(Date.now()),
+        },
+        body: JSON.stringify({ conversationId }),
+      });
+      if (res.ok) return;
+      console.warn(
+        `chat-svc internal message delete returned status ${res.status}, falling back to direct DB soft-delete.`
+      );
+    } catch (svcErr) {
+      console.warn(
+        "Failed to reach chat-svc for internal message delete, falling back to direct DB soft-delete:",
+        svcErr
+      );
+    }
+  }
+
+  try {
+    await dbPool.query(
+      `UPDATE chat.messages SET status = 'DELETED', "deletedAt" = NOW(), content = '' WHERE id = $1`,
+      [messageId]
+    );
+  } catch (msgErr: any) {
+    // If status column update fails (e.g., enum constraint), fall back to just clearing content
+    console.error("[deleteMessage] status update error, retrying without status:", msgErr?.message);
+    await dbPool.query(
+      `UPDATE chat.messages SET "deletedAt" = NOW(), content = '' WHERE id = $1`,
+      [messageId]
+    );
+  }
 }
 
 async function recordHistory(entry: {
@@ -338,6 +451,7 @@ export async function POST(request: NextRequest) {
       questionId,
       answerId,
       messageId,
+      conversationId,
       userId,
       category,
       message,
@@ -346,6 +460,8 @@ export async function POST(request: NextRequest) {
       contentPreview,
       authorName,
       reporterName,
+      notifyAuthor,
+      internalNotes,
     } = body;
 
     if (action === "dismiss" || action === "approve") {
@@ -402,6 +518,14 @@ export async function POST(request: NextRequest) {
           adminNotes: message || "Question permanently removed from forum.",
         });
         await writeAudit({ action: "delete_post", reason: `question ${questionId}` });
+        if (userId && notifyAuthor !== false) {
+          await notifyUser(
+            userId,
+            "MODERATION_CONTENT_REMOVED",
+            "Your content was removed",
+            buildModerationMessage("Your question was removed", reason || category, contentPreview)
+          );
+        }
       }
       if (answerId) {
         await dbPool.query(
@@ -422,21 +546,17 @@ export async function POST(request: NextRequest) {
           adminNotes: message || "Answer permanently removed from forum.",
         });
         await writeAudit({ action: "delete_post", reason: `answer ${answerId}` });
-      }
-      if (messageId) {
-        try {
-          await dbPool.query(
-            `UPDATE chat.messages SET status = 'DELETED', "deletedAt" = NOW(), content = '' WHERE id = $1`,
-            [messageId]
-          );
-        } catch (msgErr: any) {
-          // If status column update fails (e.g., enum constraint), fall back to just clearing content
-          console.error("[delete_post] message status update error, retrying without status:", msgErr?.message);
-          await dbPool.query(
-            `UPDATE chat.messages SET "deletedAt" = NOW(), content = '' WHERE id = $1`,
-            [messageId]
+        if (userId && notifyAuthor !== false) {
+          await notifyUser(
+            userId,
+            "MODERATION_CONTENT_REMOVED",
+            "Your content was removed",
+            buildModerationMessage("Your answer was removed", reason || category, contentPreview)
           );
         }
+      }
+      if (messageId) {
+        await deleteMessage(messageId, conversationId);
         if (reportId) {
           await dbPool.query(`UPDATE chat.reports SET status = 'ACTIONED' WHERE id = $1`, [reportId]);
         }
@@ -453,6 +573,16 @@ export async function POST(request: NextRequest) {
           adminNotes: message || "Message permanently purged from group/chat conversation.",
         });
         await writeAudit({ action: "delete_post", reason: `chat message ${messageId}` });
+        if (userId && notifyAuthor !== false) {
+          const groupName = await getConversationName(conversationId);
+          await notifyUser(
+            userId,
+            "MODERATION_CONTENT_REMOVED",
+            "Your content was removed",
+            buildModerationMessage("Your message was removed", reason || category, contentPreview, groupName),
+            conversationId
+          );
+        }
       }
     } else if (action === "unsuspend" && userId) {
       await dbPool.query(
@@ -477,8 +607,13 @@ export async function POST(request: NextRequest) {
     } else if (action === "warn" && userId) {
       // Notify the offending user; optionally trigger a 7-day suspension.
       const title = `Warning: ${category || "Community Guidelines"}`;
-      const warnMessage = message || "Your content was flagged for violating community guidelines.";
-      await notifyUser(userId, "MODERATION_WARNING", title, warnMessage);
+      const warnGroupName = body.source === "chat" ? await getConversationName(conversationId) : null;
+      const baseWarnMessage = message || "Your content was flagged for violating community guidelines.";
+      const warnParts = [baseWarnMessage];
+      if (warnGroupName) warnParts.push(`Group: ${warnGroupName}`);
+      if (contentPreview) warnParts.push(`Flagged content: "${contentPreview}"`);
+      const warnMessage = warnParts.join("\n\n");
+      await notifyUser(userId, "MODERATION_WARNING", title, warnMessage, conversationId);
       if (body.triggerSuspend) {
         await suspendUser(userId, "7 days", warnMessage);
       }
@@ -503,11 +638,20 @@ export async function POST(request: NextRequest) {
       await writeAudit({ userId, action: "warn", reason: category, message });
     } else if (action === "ban" && userId) {
       // Suspend the offending user (permanent unless a duration is given).
+      // The user-facing message is always built from the ban reason +
+      // flagged content — never from internalNotes, which is an admin-only
+      // audit field (see buildModerationMessage) and must never reach the
+      // banned user's notification or their suspensionReason.
       const interval = duration ? durationToInterval(duration) : null;
-      const banMessage =
-        message || reason || "Your account has been suspended for violating community guidelines.";
+      const banGroupName = body.source === "chat" ? await getConversationName(conversationId) : null;
+      const banMessage = buildModerationMessage(
+        "Your account has been suspended",
+        reason,
+        contentPreview,
+        banGroupName
+      );
       await suspendUser(userId, interval, banMessage);
-      await notifyUser(userId, "MODERATION_BAN", "Your account has been suspended", banMessage);
+      await notifyUser(userId, "MODERATION_BAN", "Your account has been suspended", banMessage, conversationId);
       if (reportId) {
         await dbPool.query(`DELETE FROM forum_reports WHERE id = $1`, [reportId]);
         try {
@@ -524,9 +668,9 @@ export async function POST(request: NextRequest) {
         authorName: authorName || "User",
         reporterName: reporterName || "Reporter",
         actionTaken: interval ? `USER_SUSPENDED_${duration?.replace(/\s+/g, "_").toUpperCase()}` : "USER_PERMANENTLY_BANNED",
-        adminNotes: banMessage,
+        adminNotes: internalNotes || banMessage,
       });
-      await writeAudit({ userId, action: "ban", reason, message });
+      await writeAudit({ userId, action: "ban", reason, message: internalNotes });
     } else {
       return NextResponse.json(
         { success: false, message: "Invalid or incomplete moderation action" },

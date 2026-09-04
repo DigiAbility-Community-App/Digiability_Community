@@ -22,6 +22,16 @@ function getTransporter(): Transporter {
   return transporter;
 }
 
+/**
+ * Verify SMTP credentials once at startup, so a broken MAIL_USER/MAIL_PASS
+ * (revoked App Password, wrong host, etc.) shows up immediately in boot
+ * logs instead of only being discovered the first time a real user's OTP
+ * silently fails to arrive.
+ */
+export async function verifyEmailTransport(): Promise<void> {
+  await getTransporter().verify();
+}
+
 // ─── HTML Email Templates ──────────────────────────────
 
 function otpVerificationEmailHTML(otp: string, name: string): string {

@@ -40,8 +40,5 @@ export const AccessibleText: React.FC<AccessibleTextProps> = ({
 };
 
 const styles = StyleSheet.create({
-  base: {
-    // Shared fallback base styles
-    fontVariant: [],
-  },
+  base: {},
 });
