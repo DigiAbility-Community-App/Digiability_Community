@@ -9,7 +9,6 @@ import {
   ActivityIndicator,
   Platform,
   Alert,
-  Linking,
 } from "react-native";
 import { KeyboardAwareScrollView } from "react-native-keyboard-aware-scroll-view";
 
@@ -437,16 +436,15 @@ const WelcomeScreen = ({ navigation }: Props) => {
         )}
 
         {/* FOOTER — privacy notice required by DPDP Act 2023 §6 */}
-        {/* [LEGAL PLACEHOLDER] Replace EXPO_PUBLIC_WEB_BASE_URL with production URL before launch */}
+        {/* [LEGAL PLACEHOLDER] The documents themselves are still drafts.
+            These open in-app now — the old external links were built from
+            EXPO_PUBLIC_WEB_BASE_URL, which is defined nowhere, so every
+            build fell back to http://localhost:3000 and went nowhere. */}
         <AccessibleText variant="caption" style={{ marginTop: spacing.xl, textAlign: 'center', lineHeight: 22 }}>
           By continuing, you agree to our{" "}
           <Text
             style={{ color: colors.primary, fontWeight: '700' }}
-            onPress={() =>
-              Linking.openURL(
-                `${process.env.EXPO_PUBLIC_WEB_BASE_URL ?? "http://localhost:3000"}/terms`
-              )
-            }
+            onPress={() => navigation.navigate("Legal", { doc: "terms" })}
             accessibilityRole="link"
             accessibilityLabel="Terms of Service"
           >
@@ -455,11 +453,7 @@ const WelcomeScreen = ({ navigation }: Props) => {
           {" "}&{" "}
           <Text
             style={{ color: colors.primary, fontWeight: '700' }}
-            onPress={() =>
-              Linking.openURL(
-                `${process.env.EXPO_PUBLIC_WEB_BASE_URL ?? "http://localhost:3000"}/privacy-policy`
-              )
-            }
+            onPress={() => navigation.navigate("Legal", { doc: "privacy" })}
             accessibilityRole="link"
             accessibilityLabel="Privacy Policy"
           >

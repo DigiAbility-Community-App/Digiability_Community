@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { dbPool } from "@/lib/db";
 import { requireAdminAuth } from "@/lib/auth";
+import { isValidLocation, INVALID_LOCATION_MESSAGE } from "@/lib/validation";
 
 async function ensureEventsTable() {
   await dbPool.query(`
@@ -67,6 +68,12 @@ export async function POST(request: NextRequest) {
     if (!title || !category || !location || !date || !image || !description || !externalUrl) {
       return NextResponse.json(
         { success: false, message: "Missing required fields" },
+        { status: 400 }
+      );
+    }
+    if (!isValidLocation(location)) {
+      return NextResponse.json(
+        { success: false, message: INVALID_LOCATION_MESSAGE },
         { status: 400 }
       );
     }

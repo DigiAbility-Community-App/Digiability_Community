@@ -15,10 +15,22 @@ async function ensureTable() {
       require_special BOOLEAN DEFAULT true,
       max_failed_attempts INT DEFAULT 5,
       lockout_duration_mins INT DEFAULT 15,
-      session_timeout_mins INT DEFAULT 1440,
+      session_timeout_mins INT DEFAULT 30,
       updated_at TIMESTAMPTZ DEFAULT NOW()
     );
     ALTER TABLE admin_security_settings ADD COLUMN IF NOT EXISTS max_password_len INT DEFAULT 16;
+    ALTER TABLE admin_security_settings ALTER COLUMN session_timeout_mins SET DEFAULT 30;
+  `);
+
+  // Until now `session_timeout_mins` was stored and served but read by nothing,
+  // so the 1440 sitting in existing rows is a dead default rather than a choice
+  // any admin made. Now that it actually controls the idle timeout, a full day
+  // would defeat the point — move only that exact stale value to 30 minutes and
+  // leave any deliberately-chosen value alone.
+  await dbPool.query(`
+    UPDATE admin_security_settings
+    SET session_timeout_mins = 30
+    WHERE id = 'default' AND session_timeout_mins = 1440
   `);
 }
 

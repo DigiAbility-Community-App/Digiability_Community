@@ -12,6 +12,7 @@ import {
   Image,
   TextInput,
   TouchableOpacity,
+  ScrollView,
   StyleSheet,
   KeyboardAvoidingView,
   Platform,
@@ -41,24 +42,35 @@ export function AltTextModal({
         activeOpacity={1}
         onPress={onCancel}
       >
+        {/* Android needs an explicit behavior too — leaving it undefined
+            meant no avoidance at all there, so the keyboard covered the
+            description field. The preview/description also scroll now, so
+            the sheet can shrink instead of being pushed off-screen. */}
         <KeyboardAvoidingView
-          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
           style={{ width: "100%", justifyContent: "flex-end", flex: 1 }}
         >
           <TouchableOpacity activeOpacity={1} style={styles.card} onPress={() => {}}>
             <Text style={styles.title}>Share image</Text>
-            {imageUri ? <Image source={{ uri: imageUri }} style={styles.preview} resizeMode="cover" /> : null}
-            <Text style={styles.label}>Describe this image (for screen readers)</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="e.g. My new wheelchair ramp at the entrance"
-              placeholderTextColor="#999"
-              value={altText}
-              onChangeText={setAltText}
-              multiline
-              maxLength={300}
-              accessibilityLabel="Image description"
-            />
+            <ScrollView
+              style={styles.scrollArea}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+            >
+              {imageUri ? <Image source={{ uri: imageUri }} style={styles.preview} resizeMode="cover" /> : null}
+              <Text style={styles.label}>Describe this image (for screen readers)</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="e.g. My new wheelchair ramp at the entrance"
+                placeholderTextColor="#999"
+                value={altText}
+                onChangeText={setAltText}
+                multiline
+                maxLength={300}
+                accessibilityLabel="Image description"
+              />
+            </ScrollView>
+            {/* Kept outside the scroll area so the buttons stay reachable. */}
             <View style={styles.actions}>
               <TouchableOpacity style={styles.cancelBtn} onPress={onCancel}>
                 <Text style={styles.cancelText}>Cancel</Text>
@@ -85,6 +97,11 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     padding: 20,
+    // Cap the sheet so a tall image can't push the input under the keyboard.
+    maxHeight: "85%",
+  },
+  scrollArea: {
+    flexGrow: 0,
   },
   title: {
     fontSize: 18,

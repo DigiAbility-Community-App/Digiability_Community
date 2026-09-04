@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { ReviewQueue } from "./ReviewQueue";
 import { DateRangePicker, isWithinDateRange } from "@/components/shared/DateRangePicker";
+import { ConfirmModal } from "@/components/shared/ConfirmModal";
 
 interface Report {
   id: string;
@@ -62,6 +63,8 @@ interface ContextMessage {
 
 interface ModerationStats {
   totalReports: string;
+  pendingForum?: string;
+  pendingChat?: string;
   deletedPosts: string;
   suspendedUsers: string;
   reportsToday: string;
@@ -263,6 +266,7 @@ export default function ModerationPage() {
   const [historyDateFrom, setHistoryDateFrom] = useState("");
   const [historyDateTo, setHistoryDateTo] = useState("");
   const [selectedHistoryEntry, setSelectedHistoryEntry] = useState<ModerationHistoryEntry | null>(null);
+  const [actionErrorMsg, setActionErrorMsg] = useState("");
 
   // The Forum Reports tab shows forum-sourced reports only — chat/DM reports
   // are handled from the unified Review Queue tab.
@@ -270,7 +274,7 @@ export default function ModerationPage() {
 
   // Send a warning to the offending user (the reported content's author).
   const handleWarn = async () => {
-    if (!workflowReport?.authorId) { alert("This report has no identifiable author to warn."); return; }
+    if (!workflowReport?.authorId) { setActionErrorMsg("This report has no identifiable author to warn."); return; }
     setActionLoading("warn");
     const contentPreview = (workflowReport.questionTitle || workflowReport.answerContent || workflowReport.fullContent || "Reported content").slice(0, 120);
     try {
@@ -294,13 +298,13 @@ export default function ModerationPage() {
       setWarnMessage("");
       await fetchData();
     } catch (e: any) {
-      alert(e?.message || "Failed to send warning.");
+      setActionErrorMsg(e?.message || "Failed to send warning.");
     } finally { setActionLoading(null); }
   };
 
   // Ban (suspend) the offending user.
   const handleBan = async () => {
-    if (!workflowReport?.authorId) { alert("This report has no identifiable author to ban."); return; }
+    if (!workflowReport?.authorId) { setActionErrorMsg("This report has no identifiable author to ban."); return; }
     setActionLoading("ban");
     const contentPreview = (workflowReport.questionTitle || workflowReport.answerContent || workflowReport.fullContent || "User account").slice(0, 120);
     try {
@@ -324,7 +328,7 @@ export default function ModerationPage() {
       setBanInternalNotes("");
       await fetchData();
     } catch (e: any) {
-      alert(e?.message || "Failed to ban user.");
+      setActionErrorMsg(e?.message || "Failed to ban user.");
     } finally { setActionLoading(null); }
   };
 
@@ -332,7 +336,10 @@ export default function ModerationPage() {
     const report: Report = {
       id: item.id,
       reason: item.summary || item.reason || "Reported content",
-      createdAt: item.createdAt,
+      // Prefer the raw timestamp. /api/moderation sends a pre-formatted
+      // date-only string, which the header below would parse as midnight
+      // and render with the wrong time; /api/moderation/review sends ISO.
+      createdAt: item.createdAtISO || item.createdAt,
       type: item.contentType === "question" ? "question" : item.contentType === "answer" ? "answer" : "chat",
       source: item.source || (item.kind === "chat_report" ? "chat" : "forum"),
       questionId: item.questionId || (item.contentType === "question" ? item.contentId : null),
@@ -603,7 +610,7 @@ export default function ModerationPage() {
                     setRemoveReason("");
                     await fetchData();
                   } catch (e: any) {
-                    alert(e?.message || "Failed to remove content.");
+                    setActionErrorMsg(e?.message || "Failed to remove content.");
                   } finally { setActionLoading(null); }
                 }}
                 className="flex-1 h-11 rounded-xl bg-red-600 hover:bg-red-700 disabled:bg-red-300 disabled:cursor-not-allowed text-white font-bold text-sm transition shadow-sm"
@@ -788,6 +795,17 @@ export default function ModerationPage() {
             </button>
           </div>
         </div>
+
+        <ConfirmModal
+          open={!!actionErrorMsg}
+          title="Action failed"
+          message={actionErrorMsg}
+          confirmLabel="OK"
+          hideCancel
+          destructive
+          onConfirm={() => setActionErrorMsg("")}
+          onCancel={() => setActionErrorMsg("")}
+        />
       </div>
     );
   }
@@ -978,9 +996,15 @@ export default function ModerationPage() {
           <div className="bg-[#7004DC] rounded-2xl p-6 text-white text-center shadow-lg shadow-violet-200/50">
             <p className="text-sm font-semibold text-white/70 mb-1">Pending Reports</p>
             <h2 className="text-5xl font-extrabold">{stats.totalReports}</h2>
+            {/* This total spans forum AND chat reports, so it can read 2 while
+                the forum-only tab badge reads 0. Show where it comes from. */}
+            <p className="mt-1.5 text-xs font-semibold text-white/70">
+              Forum {stats.pendingForum ?? "0"} · Chat {stats.pendingChat ?? "0"}
+            </p>
             {Number(stats.reportsToday) > 0 && (
               <span className="mt-2 inline-block px-3 py-1 rounded-full bg-white/20 text-xs font-bold uppercase">
-                {stats.reportsToday > "3" ? "URGENT" : "PENDING"}
+                {/* Numeric compare — this was a string compare, so "10" > "3" was false. */}
+                {Number(stats.reportsToday) > 3 ? "URGENT" : "PENDING"}
               </span>
             )}
           </div>

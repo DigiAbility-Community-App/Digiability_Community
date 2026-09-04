@@ -3,10 +3,17 @@ import fs from "fs";
 import path from "path";
 import bcrypt from "bcryptjs";
 import { signJWT } from "@/lib/jwt";
+import {
+  ABSOLUTE_SESSION_HOURS,
+  SESSION_COOKIE,
+  requestIsHttps,
+  sessionCookieOptions,
+} from "@/lib/session";
+import { getIdleTimeoutMinutes } from "@/lib/sessionPolicy.server";
 
 export async function POST(request: Request) {
   try {
-    const { email, password } = await request.json();
+    const { email, password, rememberMe } = await request.json();
 
     if (!email || !password) {
       return NextResponse.json(
@@ -44,9 +51,18 @@ export async function POST(request: Request) {
         return NextResponse.json({ success: false, message: "Server configuration error" }, { status: 500 });
       }
       
-      // Create session payload with 1 day expiration
-      const exp = Math.floor(Date.now() / 1000) + 60 * 60 * 24;
-      const token = await signJWT({ email: email.toLowerCase(), role: "admin", exp }, secret);
+      // `exp` is the IDLE deadline (slides while the admin is active, see
+      // /api/auth/session); `abs` is the hard ceiling for this login. It used
+      // to be a flat 24h with no idle concept at all.
+      const idleMinutes = await getIdleTimeoutMinutes();
+      const nowSec = Math.floor(Date.now() / 1000);
+      const exp = nowSec + idleMinutes * 60;
+      const abs = nowSec + ABSOLUTE_SESSION_HOURS * 60 * 60;
+      const remember = rememberMe === true;
+      const token = await signJWT(
+        { email: email.toLowerCase(), role: "admin", exp, abs, remember },
+        secret
+      );
 
       const response = NextResponse.json(
         { success: true, message: "Login successful" },
@@ -64,17 +80,12 @@ export async function POST(request: Request) {
       // alone was wrong here. x-forwarded-proto is checked first so this
       // still resolves to Secure automatically once a TLS-terminating
       // proxy/ingress is added in front.
-      const isHttps =
-        request.headers.get("x-forwarded-proto") === "https" ||
-        new URL(request.url).protocol === "https:";
+      const isHttps = requestIsHttps(request);
 
-      response.cookies.set("admin-session", token, {
-        path: "/",
-        httpOnly: true,
-        secure: isHttps,
-        sameSite: "strict",
-        maxAge: 60 * 60 * 24, // 1 day
-      });
+      // No maxAge unless "Remember me" was ticked — a session cookie dies with
+      // the browser. It was previously always persistent for a full day, which
+      // is why closing the laptop and reopening left the admin still signed in.
+      response.cookies.set(SESSION_COOKIE, token, sessionCookieOptions({ isHttps, remember }));
 
       return response;
     }

@@ -207,36 +207,12 @@ class InviteService {
         throw new Error("Group has reached its maximum capacity");
       }
 
-      // 3b. WhatsApp-style: if approveNewMembers is enabled, queue for admin approval
-      if (conversation && conversation.approveNewMembers) {
-        // Check if the invitee would be an admin (admins bypass approval)
-        const inviteeIsAdmin = conversation.subType === "CARE_CIRCLE"
-          ? (invite.role === "OWNER" || invite.role === "CAREGIVER")
-          : (invite.role === "OWNER" || invite.role === "ADMIN");
-
-        if (!inviteeIsAdmin) {
-          // Mark invite as awaiting approval instead of directly adding
-          await inviteRepository.updateStatus(inviteId, "AWAITING_APPROVAL");
-
-          // Notify all admins about the join request
-          const members = await this.getAdminMembers(invite.conversationId, conversation.subType);
-          for (const adminId of members) {
-            this.notifyUser(adminId, "member.join_request" as any, {
-              inviteId,
-              conversationId: invite.conversationId,
-              groupName: conversation.name,
-              userId: inviteeId,
-              requestedRole: invite.role,
-            });
-          }
-
-          logger.info("Invite accepted but awaiting admin approval", {
-            inviteId, inviteeId, conversationId: invite.conversationId,
-          });
-
-          return inviteRepository.findById(inviteId);
-        }
-      }
+      // 3b. `approveNewMembers` deliberately does NOT gate this path. It gates
+      // the self-serve join path (requestToJoin, above), where a stranger asks
+      // to be let in. An invite is the opposite direction: an admin already
+      // chose this person, so accepting it joins them directly. Gating here
+      // meant an invitee accepted, was silently left out of the member list,
+      // and then saw an empty conversation with no explanation.
 
       // 4a. Add member with the assigned role — enforce the max-3-admin cap
       // if this invite carries an admin-capable role.

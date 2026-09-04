@@ -39,6 +39,14 @@ function parseMeta(metadata?: string): Record<string, any> {
   }
 }
 
+/**
+ * True when a media message carries caption text rendered below the image.
+ * Chat screens use this to keep the timestamp out of the caption's way.
+ */
+export function hasCaption(message: ChatMessage): boolean {
+  return Boolean(parseMeta(message.metadata).altText);
+}
+
 function formatDuration(ms?: number): string {
   if (!ms || ms <= 0) return "0:00";
   const totalSec = Math.round(ms / 1000);
@@ -138,10 +146,7 @@ export function MessageMedia({ message, isMine, onOpenViewer, onLongPress }: Mes
           />
         </TouchableOpacity>
         {meta.altText ? (
-          <Text
-            style={[styles.caption, isMine ? styles.captionMine : undefined]}
-            numberOfLines={3}
-          >
+          <Text style={[styles.caption, isMine ? styles.captionMine : undefined]}>
             {meta.altText}
           </Text>
         ) : null}
@@ -310,7 +315,14 @@ const styles = StyleSheet.create({
 
   caption: {
     marginTop: 6,
+    // The bubble zeroes its padding for media, so the caption has to supply
+    // its own — without this the text ran edge-to-edge. The bottom padding
+    // also keeps the last line clear of the timestamp pill.
+    paddingHorizontal: 10,
+    paddingBottom: 4,
+    maxWidth: MEDIA_WIDTH,
     fontSize: 13,
+    lineHeight: 18,
     color: "#333",
   },
   captionMine: {

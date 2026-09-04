@@ -9,6 +9,7 @@ import {
   Search, Shield, MessageSquare, ChevronRight, Pencil, Save,
   Ban, Send, Clock, BellRing,
 } from "lucide-react";
+import { ConfirmModal } from "@/components/shared/ConfirmModal";
 
 interface GroupDetail {
   id: string;
@@ -246,6 +247,7 @@ export default function GroupDetailPage() {
 
   // ── transfer ownership ──
   const [showTransferModal, setShowTransferModal] = useState(false);
+  const [showUnsuspendModal, setShowUnsuspendModal] = useState(false);
   const [transferTargetId, setTransferTargetId] = useState("");
   const [transferring, setTransferring] = useState(false);
   const [transferError, setTransferError] = useState("");
@@ -376,7 +378,7 @@ export default function GroupDetailPage() {
 
   // ── unsuspend group ──
   const handleUnsuspend = async () => {
-    if (!confirm("Are you sure you want to reactivate and unsuspend this group?")) return;
+    setShowUnsuspendModal(false);
     setSuspending(true);
     try {
       const res = await fetch(`/api/groups/${id}/suspend`, {
@@ -620,7 +622,7 @@ export default function GroupDetailPage() {
                 </div>
 
                 <button
-                  onClick={handleUnsuspend}
+                  onClick={() => setShowUnsuspendModal(true)}
                   disabled={suspending}
                   className="w-full h-10 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-300 text-white text-sm font-bold transition flex items-center justify-center gap-2 shadow-sm"
                 >
@@ -762,13 +764,13 @@ export default function GroupDetailPage() {
               </div>
             ) : (
               <>
-                <div className="grid grid-cols-[2fr_1fr_1fr_80px] bg-[#F7F5FA] border-b border-gray-100">
+                <div className="grid grid-cols-[2fr_1fr_1fr_120px] bg-[#F7F5FA] border-b border-gray-100">
                   {["Member","Role","Joined",""].map(h => (
                     <div key={h} className="px-5 py-3 text-[10px] font-bold uppercase tracking-[0.15em] text-[#7D7387]">{h}</div>
                   ))}
                 </div>
                 {members.map(m => (
-                  <div key={m.id} className="grid grid-cols-[2fr_1fr_1fr_80px] items-center border-b border-gray-100 hover:bg-[#FAFAFA] transition">
+                  <div key={m.id} className="grid grid-cols-[2fr_1fr_1fr_120px] items-center border-b border-gray-100 hover:bg-[#FAFAFA] transition">
                     {/* MEMBER */}
                     <div className="px-5 py-4 flex items-center gap-3">
                       <div className="w-9 h-9 rounded-full bg-[#EDDCFF] text-[#7004DC] flex items-center justify-center text-xs font-bold shrink-0">
@@ -802,12 +804,14 @@ export default function GroupDetailPage() {
                     {/* JOINED */}
                     <div className="px-5 py-4 text-xs text-[#7D7387]">{m.joinedAt}</div>
                     {/* ACTIONS */}
-                    <div className="px-5 py-4">
+                    {/* px-3 not px-5: the 120px track minus 40px of padding
+                        left too little room and clipped the Transfer label. */}
+                    <div className="px-3 py-4">
                       {m.role === "OWNER" ? (
                         <button
                           onClick={() => { setTransferTargetId(""); setTransferError(""); setShowTransferModal(true); }}
                           title="Transfer ownership"
-                          className="h-8 px-2.5 rounded-lg bg-violet-50 hover:bg-violet-100 flex items-center justify-center text-[#7004DC] text-[10px] font-bold uppercase transition"
+                          className="h-8 px-2.5 rounded-lg bg-violet-50 hover:bg-violet-100 flex items-center justify-center text-[#7004DC] text-[10px] font-bold uppercase whitespace-nowrap transition"
                         >
                           Transfer
                         </button>
@@ -1065,6 +1069,18 @@ export default function GroupDetailPage() {
           </div>
         </div>
       )}
+
+      {/* REACTIVATE CONFIRMATION */}
+      <ConfirmModal
+        open={showUnsuspendModal}
+        title="Reactivate group?"
+        message="This group will be unsuspended and its members will be able to post again immediately."
+        confirmLabel="Reactivate"
+        icon={CheckCircle2}
+        busy={suspending}
+        onConfirm={handleUnsuspend}
+        onCancel={() => setShowUnsuspendModal(false)}
+      />
     </div>
   );
 }

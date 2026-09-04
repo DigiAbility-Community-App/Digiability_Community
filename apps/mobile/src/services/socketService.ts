@@ -96,13 +96,21 @@ const cleanup = () => {
   }
 };
 
-export const sendSocketMessage = (event: string, data: any) => {
+/**
+ * Returns true if the payload actually went out over the socket.
+ *
+ * Callers that send a user's message MUST check this. Returning void here
+ * meant a send with a closed socket was dropped with only a console warning,
+ * while the optimistic bubble stayed on screen — the sender believed the
+ * message had been delivered and nobody else ever received it.
+ */
+export const sendSocketMessage = (event: string, data: any): boolean => {
   if (socket?.readyState === WebSocket.OPEN) {
     socket.send(JSON.stringify({ event, data, timestamp: Date.now() }));
-  } else {
-    console.warn('Socket not open. Cannot send:', event);
-    // Queue offline messages in store? (Advanced: implement later)
+    return true;
   }
+  console.warn('Socket not open. Cannot send:', event);
+  return false;
 };
 
 // ── Event Handlers ──────────────────────────────────────────

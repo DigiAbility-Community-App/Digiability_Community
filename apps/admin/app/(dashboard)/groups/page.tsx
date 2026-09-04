@@ -9,6 +9,7 @@ import {
   ChevronLeft, ChevronRight, Crown,
 } from "lucide-react";
 import { DateRangePicker, isWithinDateRange } from "@/components/shared/DateRangePicker";
+import { ConfirmModal } from "@/components/shared/ConfirmModal";
 
 interface Group {
   id: string;
@@ -326,6 +327,7 @@ export default function GroupsPage() {
   const [search, setSearch]   = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo]   = useState("");
+  const [unsuspendTarget, setUnsuspendTarget] = useState<Group | null>(null);
   const [activeTab, setActiveTab] = useState<"CARE_CIRCLE" | "GENERAL">("CARE_CIRCLE");
   const [showCreate, setShowCreate] = useState(false);
 
@@ -427,7 +429,7 @@ export default function GroupsPage() {
   };
 
   const handleUnsuspendGroup = async (group: Group) => {
-    if (!confirm(`Are you sure you want to reactivate and unsuspend "${group.name || "this group"}"?`)) return;
+    setUnsuspendTarget(null);
     setLoading(true);
     setActionMsg("");
     setActionError("");
@@ -618,9 +620,9 @@ export default function GroupsPage() {
           theme="pink"
           groups={careCircles}
           router={router}
-          onOpenMessage={g => { setMessageGroup(g); setMsgSubject(""); setMsgBody(""); }}
+          onOpenMessage={g => { setMessageGroup(g); setMsgSubject(""); setMsgBody(""); setActionError(""); }}
           onOpenSuspend={g => { setSuspendGroup(g); setSuspendPeriod("14 Days"); setSuspendNote(""); }}
-          onUnsuspend={handleUnsuspendGroup}
+          onUnsuspend={g => setUnsuspendTarget(g)}
         />
       ) : (
         <GroupSectionTable
@@ -631,9 +633,9 @@ export default function GroupsPage() {
           theme="violet"
           groups={generalGroups}
           router={router}
-          onOpenMessage={g => { setMessageGroup(g); setMsgSubject(""); setMsgBody(""); }}
+          onOpenMessage={g => { setMessageGroup(g); setMsgSubject(""); setMsgBody(""); setActionError(""); }}
           onOpenSuspend={g => { setSuspendGroup(g); setSuspendPeriod("14 Days"); setSuspendNote(""); }}
-          onUnsuspend={handleUnsuspendGroup}
+          onUnsuspend={g => setUnsuspendTarget(g)}
         />
       )}
 
@@ -768,8 +770,17 @@ export default function GroupsPage() {
                   </div>
                 </div>
               </div>
+              {/* The page-level actionError banner sits behind this fixed
+                  modal, so a failed send (e.g. 409 for a suspended group)
+                  looked like nothing happened. Surface it in here. */}
+              {actionError && (
+                <div className="flex items-start gap-2 p-3 rounded-xl bg-red-50 border border-red-200">
+                  <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                  <p className="text-xs font-semibold text-red-700">{actionError}</p>
+                </div>
+              )}
               <div className="flex gap-3 pt-2 border-t border-gray-100">
-                <button onClick={() => setMessageGroup(null)} className="flex-1 h-12 rounded-xl border border-gray-200 text-[#4B4355] font-semibold text-sm hover:bg-gray-50">Cancel</button>
+                <button onClick={() => { setMessageGroup(null); setActionError(""); }} className="flex-1 h-12 rounded-xl border border-gray-200 text-[#4B4355] font-semibold text-sm hover:bg-gray-50">Cancel</button>
                 <button
                   onClick={handleSendMessage}
                   disabled={!msgSubject.trim() || !msgBody.trim() || sendingMsg}
@@ -782,6 +793,22 @@ export default function GroupsPage() {
           </div>
         </div>
       )}
+
+      {/* REACTIVATE CONFIRMATION */}
+      <ConfirmModal
+        open={!!unsuspendTarget}
+        title="Reactivate group?"
+        message={
+          unsuspendTarget
+            ? `"${unsuspendTarget.name || "This group"}" will be unsuspended and members will be able to post again immediately.`
+            : undefined
+        }
+        confirmLabel="Reactivate"
+        icon={CheckCircle2}
+        busy={loading}
+        onConfirm={() => unsuspendTarget && handleUnsuspendGroup(unsuspendTarget)}
+        onCancel={() => setUnsuspendTarget(null)}
+      />
     </div>
   );
 }

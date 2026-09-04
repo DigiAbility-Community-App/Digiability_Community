@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { DateRangePicker, isWithinDateRange } from "@/components/shared/DateRangePicker";
 import { WeeklyScheduleEditor } from "@/components/shared/WeeklyScheduleEditor";
+import { ConfirmModal } from "@/components/shared/ConfirmModal";
 import { WeeklySchedule, defaultWeeklySchedule, isValidWeeklySchedule } from "@/lib/availabilitySchedule";
 
 // ─────────────────────────────────────────────
@@ -114,6 +115,9 @@ export default function CommunityPage() {
   const [serviceErrorMsg, setServiceErrorMsg] = useState("");
   const [serviceSuccessMsg, setServiceSuccessMsg] = useState("");
   const [serviceSubmitting, setServiceSubmitting] = useState(false);
+  const [deleteServiceTarget, setDeleteServiceTarget] = useState<{ id: string; name: string } | null>(null);
+  const [deletingService, setDeletingService] = useState(false);
+  const [deleteServiceError, setDeleteServiceError] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [serviceFormData, setServiceFormData] = useState({
@@ -361,19 +365,25 @@ export default function CommunityPage() {
     }
   };
 
-  const handleDeleteService = async (id: string, name: string) => {
-    if (!confirm(`Are you sure you want to delete service "${name}"?`)) return;
+  const handleDeleteService = async () => {
+    if (!deleteServiceTarget) return;
+    const { id } = deleteServiceTarget;
+    setDeletingService(true);
+    setDeleteServiceError("");
     try {
       const { sessionExpired, data } = await apiFetch(`/api/services/${id}`, { method: "DELETE" });
       if (sessionExpired) { router.push("/login"); return; }
       if (data.success) {
         setServices(prev => prev.filter(s => s.id !== id));
+        setDeleteServiceTarget(null);
       } else {
-        alert(data.message || "Failed to delete service");
+        setDeleteServiceError(data.message || "Failed to delete service");
       }
     } catch (e) {
       console.error(e);
-      alert("Failed to delete service");
+      setDeleteServiceError("Failed to delete service");
+    } finally {
+      setDeletingService(false);
     }
   };
 
@@ -620,17 +630,22 @@ export default function CommunityPage() {
                 </div>
               ) : (
                 <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+                  {/* table-fixed is what actually stops the overflow: with the
+                      default auto layout, columns size to max-content and the
+                      min-w-* floors cap nothing, so long names/descriptions/
+                      emails pushed the table past the container. Fixed layout
+                      makes the existing truncate/line-clamp classes effective. */}
                   <div className="overflow-x-auto">
-                    <table className="w-full text-left border-collapse">
+                    <table className="w-full table-fixed text-left border-collapse">
                       <thead className="bg-[#F7F5FA] border-b border-gray-100">
                         <tr>
-                          <th className="px-5 py-4 text-[10px] font-bold uppercase tracking-[0.12em] text-[#7D7387] min-w-[260px]">Service &amp; Provider</th>
-                          <th className="px-5 py-4 text-[10px] font-bold uppercase tracking-[0.12em] text-[#7D7387] min-w-[140px]">Category &amp; Type</th>
-                          <th className="px-5 py-4 text-[10px] font-bold uppercase tracking-[0.12em] text-[#7D7387] min-w-[160px]">Location &amp; Address</th>
-                          <th className="px-5 py-4 text-[10px] font-bold uppercase tracking-[0.12em] text-[#7D7387] min-w-[170px]">Contact Info</th>
-                          <th className="px-5 py-4 text-[10px] font-bold uppercase tracking-[0.12em] text-[#7D7387] min-w-[140px]">Pricing</th>
-                          <th className="px-5 py-4 text-[10px] font-bold uppercase tracking-[0.12em] text-[#7D7387] min-w-[110px]">Status</th>
-                          <th className="px-5 py-4 text-[10px] font-bold uppercase tracking-[0.12em] text-[#7D7387] text-right pr-6 min-w-[120px]">Actions</th>
+                          <th className="px-5 py-4 text-[10px] font-bold uppercase tracking-[0.12em] text-[#7D7387] w-[26%]">Service &amp; Provider</th>
+                          <th className="px-5 py-4 text-[10px] font-bold uppercase tracking-[0.12em] text-[#7D7387] w-[14%]">Category &amp; Type</th>
+                          <th className="px-5 py-4 text-[10px] font-bold uppercase tracking-[0.12em] text-[#7D7387] w-[14%] hidden xl:table-cell">Location &amp; Address</th>
+                          <th className="px-5 py-4 text-[10px] font-bold uppercase tracking-[0.12em] text-[#7D7387] w-[18%]">Contact Info</th>
+                          <th className="px-5 py-4 text-[10px] font-bold uppercase tracking-[0.12em] text-[#7D7387] w-[12%] hidden lg:table-cell">Pricing</th>
+                          <th className="px-5 py-4 text-[10px] font-bold uppercase tracking-[0.12em] text-[#7D7387] w-[10%]">Status</th>
+                          <th className="px-5 py-4 text-[10px] font-bold uppercase tracking-[0.12em] text-[#7D7387] text-right pr-6 w-[12%]">Actions</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-100">
@@ -659,45 +674,45 @@ export default function CommunityPage() {
                               </div>
                             </td>
 
-                            <td className="px-5 py-4 whitespace-nowrap">
-                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-lg text-xs font-bold bg-[#F3EEFF] text-[#7004DC] border border-[#E9D9FF] mb-1">
+                            <td className="px-5 py-4">
+                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-lg text-xs font-bold bg-[#F3EEFF] text-[#7004DC] border border-[#E9D9FF] mb-1 max-w-full truncate">
                                 {srv.category.toUpperCase()}
                               </span>
-                              <p className="text-xs text-[#4B4355] font-semibold">{srv.type}</p>
+                              <p className="text-xs text-[#4B4355] font-semibold truncate">{srv.type}</p>
                             </td>
 
-                            <td className="px-5 py-4">
-                              <div className="flex items-start gap-1.5 text-xs text-[#4B4355]">
+                            <td className="px-5 py-4 hidden xl:table-cell">
+                              <div className="flex items-start gap-1.5 text-xs text-[#4B4355] min-w-0">
                                 <MapPin className="w-3.5 h-3.5 text-amber-600 shrink-0 mt-0.5" />
                                 <span className="line-clamp-2">{srv.location}</span>
                               </div>
                             </td>
 
-                            <td className="px-5 py-4 whitespace-nowrap text-xs text-[#4B4355] space-y-1">
+                            <td className="px-5 py-4 text-xs text-[#4B4355] space-y-1">
                               {srv.contactPhone && (
-                                <div className="flex items-center gap-1.5">
+                                <div className="flex items-center gap-1.5 min-w-0">
                                   <Phone className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                                  <span>{srv.contactPhone}</span>
+                                  <span className="truncate">{srv.contactPhone}</span>
                                 </div>
                               )}
                               {srv.contactEmail && (
-                                <div className="flex items-center gap-1.5">
+                                <div className="flex items-center gap-1.5 min-w-0">
                                   <Mail className="w-3.5 h-3.5 text-sky-600 shrink-0" />
-                                  <span className="truncate max-w-[140px]">{srv.contactEmail}</span>
+                                  <span className="truncate">{srv.contactEmail}</span>
                                 </div>
                               )}
                               {srv.contactUrl && (
-                                <div className="flex items-center gap-1.5">
+                                <div className="flex items-center gap-1.5 min-w-0">
                                   <Globe className="w-3.5 h-3.5 text-[#7004DC] shrink-0" />
-                                  <a href={srv.contactUrl} target="_blank" rel="noreferrer" className="text-[#7004DC] hover:underline truncate max-w-[140px]">
+                                  <a href={srv.contactUrl} target="_blank" rel="noreferrer" className="text-[#7004DC] hover:underline truncate">
                                     Booking Link ↗
                                   </a>
                                 </div>
                               )}
                             </td>
 
-                            <td className="px-5 py-4 whitespace-nowrap">
-                              <p className="text-xs font-bold text-[#1A1C1C]">{srv.price}</p>
+                            <td className="px-5 py-4 hidden lg:table-cell">
+                              <p className="text-xs font-bold text-[#1A1C1C] truncate">{srv.price}</p>
                             </td>
 
                             <td className="px-5 py-4 whitespace-nowrap">
@@ -718,7 +733,7 @@ export default function CommunityPage() {
                                 <button onClick={() => handleOpenEditService(srv)} className="w-8 h-8 rounded-lg text-[#7004DC] hover:bg-violet-100/70 flex items-center justify-center transition" title="Edit Service">
                                   <Edit3 className="w-4 h-4" />
                                 </button>
-                                <button onClick={() => handleDeleteService(srv.id, srv.name)} className="w-8 h-8 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 flex items-center justify-center transition" title="Delete Service">
+                                <button onClick={() => { setDeleteServiceTarget({ id: srv.id, name: srv.name }); setDeleteServiceError(""); }} className="w-8 h-8 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 flex items-center justify-center transition" title="Delete Service">
                                   <Trash2 className="w-4 h-4" />
                                 </button>
                               </div>
@@ -1124,6 +1139,24 @@ export default function CommunityPage() {
           </div>
         </div>
       )}
+
+      {/* DELETE SERVICE CONFIRMATION */}
+      <ConfirmModal
+        open={!!deleteServiceTarget}
+        title="Delete this service?"
+        message={
+          deleteServiceTarget
+            ? `"${deleteServiceTarget.name}" will be permanently removed from the directory and will no longer appear in the mobile app. This cannot be undone.`
+            : undefined
+        }
+        confirmLabel="Delete Service"
+        destructive
+        busy={deletingService}
+        error={deleteServiceError}
+        icon={Trash2}
+        onConfirm={handleDeleteService}
+        onCancel={() => { setDeleteServiceTarget(null); setDeleteServiceError(""); }}
+      />
     </div>
   );
 }

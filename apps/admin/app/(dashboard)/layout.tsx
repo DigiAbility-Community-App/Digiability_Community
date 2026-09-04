@@ -20,6 +20,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
 } from "lucide-react";
+import { SessionGuard } from "@/components/shared/SessionGuard";
 
 const navItems = [
   {
@@ -107,6 +108,10 @@ export default function DashboardLayout({
 
   return (
     <div className="h-screen w-screen bg-[#F6F6F6] flex flex-col lg:flex-row overflow-hidden select-none">
+      {/* Idle-timeout enforcement for every dashboard page. Middleware only
+          gates navigation, so without this an open tab never expires. */}
+      <SessionGuard />
+
       {/* MOBILE TOP BAR (Fixed on Mobile/Tablet) */}
       <header className="lg:hidden h-16 bg-[#1A1A2E] text-white flex items-center justify-between px-4 shrink-0 z-40 shadow-md">
         <div className="flex items-center gap-3">

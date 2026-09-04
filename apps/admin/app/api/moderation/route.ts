@@ -343,6 +343,27 @@ export async function GET(request: NextRequest) {
       chatReportRows = [];
     }
 
+    // Counted separately rather than using chatReportRows.length — that list
+    // is capped at LIMIT 100, so the stat silently under-reported past 100
+    // open chat reports. Also counts today's, so reportsToday can cover the
+    // same population as the pending total instead of forum-only.
+    let pendingChat = 0;
+    let chatReportsToday = 0;
+    try {
+      const chatCounts = await dbPool.query(`
+        SELECT
+          COUNT(*) FILTER (WHERE status = 'OPEN') AS "pendingChat",
+          COUNT(*) FILTER (WHERE status = 'OPEN' AND "createdAt" >= NOW() - INTERVAL '24 hours') AS "chatReportsToday"
+        FROM chat.reports
+      `);
+      pendingChat = Number(chatCounts.rows[0]?.pendingChat ?? 0);
+      chatReportsToday = Number(chatCounts.rows[0]?.chatReportsToday ?? 0);
+    } catch {
+      // chat.reports only exists after `prisma db push` on chat-svc.
+      pendingChat = 0;
+      chatReportsToday = 0;
+    }
+
     const extractImageUrl = (text?: string | null): string | null => {
       if (!text) return null;
       const trimmed = text.trim();
@@ -365,6 +386,11 @@ export async function GET(request: NextRequest) {
     const forumReports = reportsResult.rows.map((r) => ({
       ...r,
       _ts: new Date(r.createdAt).getTime(),
+      // Keep the raw timestamp alongside the pretty date. The review-queue
+      // route returns raw ISO, so consumers that render date+time (the
+      // review workflow header) used to show 00:00 for anything opened from
+      // here, because "04 Sep 2026" parses as midnight.
+      createdAtISO: r.createdAt,
       createdAt: fmtDate(r.createdAt),
       type: r.questionId ? "question" : "answer",
       source: "forum" as const,
@@ -376,6 +402,7 @@ export async function GET(request: NextRequest) {
       id: r.id,
       reason: r.reason,
       _ts: new Date(r.createdAt).getTime(),
+      createdAtISO: r.createdAt,
       createdAt: fmtDate(r.createdAt),
       questionId: null,
       answerId: null,
@@ -401,9 +428,20 @@ export async function GET(request: NextRequest) {
       .map(({ _ts, ...rest }) => rest);
 
     const baseStats = statsResult.rows[0];
+    // `forum_reports` has no status column — resolved reports are hard-deleted,
+    // so COUNT(*) on it IS the pending-forum figure.
+    const pendingForum = Number(baseStats.totalReports);
     const stats = {
       ...baseStats,
-      totalReports: String(Number(baseStats.totalReports) + chatReports.length),
+      totalReports: String(pendingForum + pendingChat),
+      // Exposed so the UI can show which source the pending total came from —
+      // a combined number sitting next to a forum-only "0 pending" badge was
+      // the reported confusion.
+      pendingForum: String(pendingForum),
+      pendingChat: String(pendingChat),
+      // Was forum-only while totalReports counted forum+chat: two stats in the
+      // same card measuring different populations.
+      reportsToday: String(Number(baseStats.reportsToday) + chatReportsToday),
     };
 
     const history = historyResult.rows.map((h: any) => ({

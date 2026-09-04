@@ -21,7 +21,16 @@ export async function requireAdminAuth(request: NextRequest): Promise<NextRespon
   }
 
   const payload = await verifyJWT(sessionCookie.value, secret);
-  if (!payload || payload.role !== "admin") {
+
+  // An expired/invalid token is an authentication problem, not an
+  // authorisation one — it must be 401 so the client can tell "your session
+  // ended, log in again" apart from "you're logged in but not allowed here".
+  // This returned 403, while the client only treated 401 as session-expired,
+  // so expiry was never detected and requests just failed silently.
+  if (!payload) {
+    return NextResponse.json({ success: false, message: "Session expired" }, { status: 401 });
+  }
+  if (payload.role !== "admin") {
     return NextResponse.json({ success: false, message: "Forbidden" }, { status: 403 });
   }
 

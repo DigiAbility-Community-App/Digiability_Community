@@ -49,7 +49,7 @@ export function useChatMedia(conversationId: string, senderId: string | undefine
         createdAt: new Date().toISOString(),
       };
       addMessage(optimistic);
-      sendSocketMessage("message.send", {
+      const sent = sendSocketMessage("message.send", {
         conversationId,
         content: url,
         type,
@@ -57,6 +57,11 @@ export function useChatMedia(conversationId: string, senderId: string | undefine
         metadata: metaStr,
         senderName,
       });
+      if (!sent) {
+        // Never leave the optimistic bubble looking delivered when nothing
+        // left the device — the failed status drives the themed dialog.
+        useChatStore.getState().failMessage(clientMessageId, "You appear to be offline. The message wasn't sent.");
+      }
     },
     [conversationId, senderId, addMessage, senderName]
   );

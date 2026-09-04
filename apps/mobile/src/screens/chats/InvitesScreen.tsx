@@ -48,12 +48,24 @@ const InvitesScreen = ({ navigation }: Props) => {
   const handleRespond = useCallback(async (invite: GroupInvite, action: 'accept' | 'decline') => {
     setProcessingId(invite.id);
     try {
-      await chatService.respondToInvite(invite.id, action);
+      const result = await chatService.respondToInvite(invite.id, action);
 
       // Optimistically remove from the pending list
       removePendingInvite(invite.id);
 
       if (action === 'accept') {
+        // Accepting an invite normally joins immediately. If the server says
+        // the request still needs an admin's approval, we are NOT a member
+        // yet — walking into the chat anyway would just show an empty
+        // conversation with no explanation of why.
+        if (result?.status === 'AWAITING_APPROVAL') {
+          Alert.alert(
+            "Request sent",
+            "An admin needs to approve your request before you can open this group."
+          );
+          return;
+        }
+
         // Refresh conversations so the new group appears
         try {
           const convos = await chatService.getConversations();

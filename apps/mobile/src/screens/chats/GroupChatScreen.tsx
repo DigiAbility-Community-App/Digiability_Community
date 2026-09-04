@@ -24,7 +24,7 @@ import * as Speech from "expo-speech";
 import * as Location from "expo-location";
 import { generateUUID } from "../../utils/uuid";
 import { useChatMedia } from "@hooks/useChatMedia";
-import { MessageMedia } from "../../components/chat/MessageMedia";
+import { MessageMedia, hasCaption } from "../../components/chat/MessageMedia";
 import { MediaViewer } from "../../components/chat/MediaViewer";
 import { AltTextModal } from "../../components/chat/AltTextModal";
 import { ReportModal } from "../../components/chat/ReportModal";
@@ -304,8 +304,23 @@ const GroupChatScreen = ({ navigation, route }: Props) => {
         }
         merged.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
         setMessages(conversationId, merged);
-      } catch (err) {
+      } catch (err: any) {
+        // Don't fail silently — an error here used to render as an ordinary
+        // empty conversation, which is indistinguishable from "no messages
+        // yet". A 403 in particular means we aren't a member of this group.
         console.error("Failed to load group messages", err);
+        const status = err?.response?.status;
+        setConfirmState({
+          title: status === 403 ? "You're not in this group" : "Couldn't load messages",
+          message:
+            status === 403
+              ? "You are no longer a member of this group, so its messages can't be shown."
+              : err?.response?.data?.message || "Something went wrong loading this conversation. Pull down or reopen the chat to try again.",
+          icon: AlertCircle,
+          confirmLabel: "OK",
+          hideCancel: true,
+          onConfirm: () => setConfirmState(null),
+        });
       } finally {
         setIsLoading(false);
       }
@@ -354,7 +369,7 @@ const GroupChatScreen = ({ navigation, route }: Props) => {
     setReplyingTo(null);
 
     // Send via WebSocket
-    sendSocketMessage("message.send", {
+    const sent = sendSocketMessage("message.send", {
       conversationId,
       content,
       type: "TEXT",
@@ -362,6 +377,11 @@ const GroupChatScreen = ({ navigation, route }: Props) => {
       senderName: user.name,
       metadata,
     });
+    if (!sent) {
+      // Never leave the optimistic bubble looking delivered when nothing
+      // left the device — the failed status drives the themed dialog below.
+      useChatStore.getState().failMessage(clientMessageId, "You appear to be offline. The message wasn't sent.");
+    }
   }, [messageText, conversationId, user]);
 
   // Send button doubles as a voice-note mic when the input is empty.
@@ -393,7 +413,7 @@ const GroupChatScreen = ({ navigation, route }: Props) => {
         createdAt: new Date().toISOString(),
       };
       addMessage(optimistic);
-      sendSocketMessage("message.send", {
+      const sent = sendSocketMessage("message.send", {
         conversationId,
         content,
         type: "TEXT",
@@ -401,6 +421,11 @@ const GroupChatScreen = ({ navigation, route }: Props) => {
         metadata: JSON.stringify({ sos: true }),
         senderName: user.name,
       });
+      if (!sent) {
+        // An SOS that silently goes nowhere is the worst possible failure
+        // here — say so loudly rather than showing a delivered-looking alert.
+        useChatStore.getState().failMessage(clientMessageId, "You appear to be offline. Your SOS was NOT sent — please call for help directly.");
+      }
     },
     [user, conversationId, addMessage]
   );
@@ -750,22 +775,28 @@ const GroupChatScreen = ({ navigation, route }: Props) => {
                 ) : (item.type === "IMAGE" || item.type === "VIDEO") ? (
                   <View style={styles.mediaBubbleInner}>
                     <MessageMedia message={item} isMine={isMine} onOpenViewer={openMediaViewer} onLongPress={() => handleMessageLongPress(item)} />
-                    <View style={styles.mediaTimeOverlay}>
-                      <AccessibleText style={styles.mediaTimeText}>
+                    {/* With a caption the overlay would sit on top of the
+                        last line of text — use normal flow underneath. */}
+                    <View style={hasCaption(item) ? styles.mediaCaptionFooter : styles.mediaTimeOverlay}>
+                      <AccessibleText
+                        style={hasCaption(item)
+                          ? [styles.messageTime, { color: isMine ? "rgba(255,255,255,0.7)" : colors.subtext }]
+                          : styles.mediaTimeText}
+                      >
                         {timeString}
                       </AccessibleText>
                       {isMine && (
                         <View style={{ marginLeft: 2 }}>
                           {item.status === "sending" ? (
-                            <AccessibleText style={{ color: "rgba(255,255,255,0.8)", fontSize: 10 }}>...</AccessibleText>
+                            <AccessibleText style={{ color: hasCaption(item) ? colors.subtext : "rgba(255,255,255,0.8)", fontSize: 10 }}>...</AccessibleText>
                           ) : item.status === "read" ? (
                             <CheckCheck size={12} color="#38bdf8" />
                           ) : item.status === "delivered" ? (
-                            <CheckCheck size={12} color="rgba(255,255,255,0.9)" />
+                            <CheckCheck size={12} color={hasCaption(item) ? colors.subtext : "rgba(255,255,255,0.9)"} />
                           ) : item.status === "failed" ? (
                             <AlertCircle size={12} color="#EF4444" />
                           ) : (
-                            <Check size={12} color="rgba(255,255,255,0.9)" />
+                            <Check size={12} color={hasCaption(item) ? colors.subtext : "rgba(255,255,255,0.9)"} />
                           )}
                         </View>
                       )}
@@ -1427,6 +1458,16 @@ const styles = StyleSheet.create({
     position: "relative",
   },
   // Time overlaid at bottom-right of image
+  // Timestamp row used when a media message has a caption — normal flow
+  // under the text instead of an absolute pill overlapping it.
+  mediaCaptionFooter: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "flex-end",
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingBottom: 6,
+  },
   mediaTimeOverlay: {
     position: "absolute",
     bottom: 6,

@@ -55,13 +55,16 @@ const AdminLoginPage = () => {
             const formData = new FormData(e.currentTarget);
             const email = formData.get("email") as string;
             const password = formData.get("password") as string;
+            // The checkbox was previously unnamed and never read — ticking it
+            // did nothing, while the cookie was always persistent anyway.
+            const rememberMe = formData.get("rememberMe") === "on";
 
             const response = await fetch("/api/auth/login", {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
                 },
-                body: JSON.stringify({ email, password }),
+                body: JSON.stringify({ email, password, rememberMe }),
             });
 
             const data = await response.json();
@@ -254,11 +257,12 @@ const AdminLoginPage = () => {
                                     <label className="flex items-center gap-2 cursor-pointer">
                                         <input
                                             type="checkbox"
+                                            name="rememberMe"
                                             className="w-4 h-4 rounded border-[#CEC2D8]"
                                         />
 
                                         <span className="text-sm font-medium text-[#4B4355]">
-                                            Remember me
+                                            Keep me signed in on this device
                                         </span>
                                     </label>
                                 </div>
