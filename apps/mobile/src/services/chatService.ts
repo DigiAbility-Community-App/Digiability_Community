@@ -27,7 +27,38 @@ export interface CommunityGroup {
   avatarUrl: string | null;
 }
 
+const BOT_USER_ID = '00000000-0000-0000-0000-000000000001';
+
+export interface BatchLookupUser {
+  name: string;
+  deletedAt: string | null;
+  isSuspended: boolean | null;
+}
+
 export const chatService = {
+  /**
+   * Batch-resolve minimal user info (name, deletedAt, isSuspended) for a
+   * list of user IDs via user-svc's /auth/users/batch endpoint. Shared by
+   * getConversations() (current participants) and anywhere else that needs
+   * to resolve a handful of userIds to display names without N+1 requests
+   * (e.g. former group members — see getConversationMemberHistory).
+   */
+  batchLookupUsers: async (ids: string[]): Promise<Map<string, BatchLookupUser>> => {
+    const map = new Map<string, BatchLookupUser>();
+    const uniqueIds = [...new Set(ids)].filter((id) => id !== BOT_USER_ID);
+    if (uniqueIds.length === 0) return map;
+
+    const lookupRes = await apiClient.post('/api/auth/users/batch', { ids: uniqueIds });
+    for (const u of lookupRes.data.data.users) {
+      map.set(u.id, {
+        name: u.name,
+        deletedAt: u.deletedAt ?? null,
+        isSuspended: u.isSuspended ?? null,
+      });
+    }
+    return map;
+  },
+
   /**
    * Fetch ALL community groups (discovery — not filtered by membership).
    * Each group includes isMember: boolean for the requesting user.
@@ -78,19 +109,13 @@ export const chatService = {
 
       if (allUserIds.size > 0) {
         // Batch fetch user names from user-svc
-        const lookupRes = await apiClient.post('/api/auth/users/batch', {
-          ids: [...allUserIds],
-        });
-        const userMap = new Map<string, { name: string; deletedAt: string | null }>();
-        for (const u of lookupRes.data.data.users) {
-          userMap.set(u.id, { name: u.name, deletedAt: u.deletedAt ?? null });
-        }
+        const userMap = await chatService.batchLookupUsers([...allUserIds]);
 
         // Attach user info to each participant
         for (const conv of conversations) {
           const members = conv.members || conv.participants || [];
           conv.participants = members.map((m: any) => {
-            const isBot = m.userId === '00000000-0000-0000-0000-000000000001';
+            const isBot = m.userId === BOT_USER_ID;
             const looked = userMap.get(m.userId);
             return {
               ...m,
@@ -98,6 +123,7 @@ export const chatService = {
                 id: m.userId,
                 name: isBot ? 'DigiBot' : (looked?.name || 'Unknown'),
                 deletedAt: isBot ? null : (looked?.deletedAt ?? null),
+                isSuspended: isBot ? null : (looked?.isSuspended ?? null),
               },
             };
           });
@@ -112,14 +138,30 @@ export const chatService = {
           ...m,
           user: {
             id: m.userId,
-            name: m.userId === '00000000-0000-0000-0000-000000000001' ? 'DigiBot' : 'Unknown',
+            name: m.userId === BOT_USER_ID ? 'DigiBot' : 'Unknown',
             deletedAt: null,
+            isSuspended: null,
           },
         }));
       }
     }
 
     return conversations;
+  },
+
+  /**
+   * Returns membership records — { userId, leftAt } — for EVERY member a
+   * group conversation has ever had, including those who have since left or
+   * been removed. The normal conversation/participant list only ever
+   * contains active members, so a message from someone who later left would
+   * otherwise have no name to resolve against. Used by GroupChatScreen to
+   * label a former member's historical messages as "Name (Removed)".
+   */
+  getConversationMemberHistory: async (
+    conversationId: string
+  ): Promise<Array<{ userId: string; leftAt: string | null }>> => {
+    const res = await apiClient.get(`${CHAT_BASE_URL}/api/conversations/${conversationId}/member-history`);
+    return res.data.data || [];
   },
 
   getMessages: async (conversationId: string) => {
@@ -352,5 +394,12 @@ export const chatService = {
   }) => {
     const res = await apiClient.post(`${CHAT_BASE_URL}/api/moderation/report`, payload);
     return res.data;
+  },
+
+  getMyReportedMessageIds: async (conversationId: string): Promise<string[]> => {
+    const res = await apiClient.get(`${CHAT_BASE_URL}/api/moderation/reports/mine`, {
+      params: { conversationId },
+    });
+    return res.data.data.messageIds;
   },
 };

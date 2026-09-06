@@ -93,6 +93,7 @@ export default function GroupDetailPage() {
   const [msgType, setMsgType] = useState("General Update");
   const [msgSendTo, setMsgSendTo] = useState<string[]>(["All Members"]);
   const [sendingMsg, setSendingMsg] = useState(false);
+  const [msgError, setMsgError] = useState("");
 
   // Suspension state
   const [showSuspendModal, setShowSuspendModal] = useState(false);
@@ -331,10 +332,15 @@ export default function GroupDetailPage() {
         setMsgBody("");
         setMsgSendTo(["All Members"]);
       } else {
-        setActionMsg(data.message || "Failed to send message.");
+        // The page-level actionMsg banner sits behind this fixed modal, so a
+        // failed send (e.g. 409 for a suspended group) looked like nothing
+        // happened. Keep the modal open and surface the error inside it —
+        // same fix already applied to the Groups list page's own copy of
+        // this feature (see groups/page.tsx's actionError).
+        setMsgError(data.message || "Failed to send message.");
       }
     } catch {
-      setActionMsg("Network error — could not send message.");
+      setMsgError("Network error — could not send message.");
     } finally {
       setSendingMsg(false);
     }
@@ -585,7 +591,7 @@ export default function GroupDetailPage() {
             </div>
             <p className="text-xs text-[#7D7387] mb-3">Broadcast announcements or important updates directly to all active members of this group.</p>
             <button
-              onClick={() => { setShowMessageModal(true); setMsgSubject(""); setMsgBody(""); }}
+              onClick={() => { setShowMessageModal(true); setMsgSubject(""); setMsgBody(""); setMsgError(""); }}
               className="w-full h-10 rounded-xl bg-[#7004DC] hover:bg-[#5c03b7] text-white text-sm font-bold transition flex items-center justify-center gap-2 shadow-sm"
             >
               <Send className="w-4 h-4" /> Send Message to Group
@@ -848,7 +854,7 @@ export default function GroupDetailPage() {
                 <h3 className="text-xl font-extrabold text-[#1A1C1C]">Send Message to Group</h3>
                 <p className="text-xs text-[#7D7387] mt-0.5">Notify {group.memberCount} members in <strong className="text-[#1A1C1C]">{group.name}</strong></p>
               </div>
-              <button onClick={() => setShowMessageModal(false)} className="w-8 h-8 rounded-full hover:bg-gray-100 flex items-center justify-center transition"><X className="w-4 h-4 text-slate-500" /></button>
+              <button onClick={() => { setShowMessageModal(false); setMsgError(""); }} className="w-8 h-8 rounded-full hover:bg-gray-100 flex items-center justify-center transition"><X className="w-4 h-4 text-slate-500" /></button>
             </div>
             <div className="px-7 py-6 space-y-5">
               <div>
@@ -906,8 +912,17 @@ export default function GroupDetailPage() {
                 </div>
               </div>
 
+              {/* The page-level actionMsg banner sits behind this fixed
+                  modal, so a failed send (e.g. 409 for a suspended group)
+                  looked like nothing happened. Surface it in here. */}
+              {msgError && (
+                <div className="flex items-start gap-2 p-3 rounded-xl bg-red-50 border border-red-200">
+                  <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                  <p className="text-xs font-semibold text-red-700">{msgError}</p>
+                </div>
+              )}
               <div className="flex gap-3 pt-3 border-t border-gray-100">
-                <button onClick={() => setShowMessageModal(false)} className="flex-1 h-12 rounded-xl border border-gray-200 text-[#4B4355] font-semibold text-sm hover:bg-gray-50 transition">Cancel</button>
+                <button onClick={() => { setShowMessageModal(false); setMsgError(""); }} className="flex-1 h-12 rounded-xl border border-gray-200 text-[#4B4355] font-semibold text-sm hover:bg-gray-50 transition">Cancel</button>
                 <button onClick={handleSendMessage} disabled={!msgSubject.trim() || !msgBody.trim() || sendingMsg} className="flex-1 h-12 rounded-xl bg-[#7004DC] hover:bg-[#5c03b7] disabled:bg-violet-200 text-white font-bold text-sm transition flex items-center justify-center gap-2">
                   {sendingMsg ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />} Send Message
                 </button>

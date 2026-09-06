@@ -2,37 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAdminAuth } from "@/lib/auth";
 import { dbPool } from "@/lib/db";
 import { writeAudit } from "@/lib/audit";
-
-async function ensureTable() {
-  await dbPool.query(`
-    CREATE TABLE IF NOT EXISTS service_categories (
-      id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
-      name TEXT NOT NULL UNIQUE,
-      status TEXT NOT NULL DEFAULT 'Active',
-      created_at TIMESTAMPTZ DEFAULT NOW()
-    )
-  `);
-
-  // Seed default service categories if empty
-  const countRes = await dbPool.query(`SELECT COUNT(*) as count FROM service_categories`);
-  if (parseInt(countRes.rows[0].count, 10) === 0) {
-    const defaults = [
-      "Therapists",
-      "Equipment Vendor",
-      "Respite Care",
-      "Legal Services",
-      "Transportation",
-      "Medical Support",
-      "Accessibility Aids",
-    ];
-    for (const name of defaults) {
-      await dbPool.query(
-        `INSERT INTO service_categories (id, name, status) VALUES (gen_random_uuid()::text, $1, 'Active') ON CONFLICT DO NOTHING`,
-        [name]
-      );
-    }
-  }
-}
+import { generateCategoryId } from "@/lib/categoryId";
+import { ensureServiceCategoriesTable as ensureTable } from "@/lib/masterCategories";
 
 // ─────────────────────────────────────────────
 // GET — list all service categories
@@ -66,7 +37,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, message: "Category name is required" }, { status: 400 });
     }
 
-    const id = crypto.randomUUID();
+    const id = await generateCategoryId("service_categories", "SV");
     const result = await dbPool.query(
       `
       INSERT INTO service_categories (id, name, status, created_at)

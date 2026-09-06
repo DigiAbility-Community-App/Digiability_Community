@@ -10,6 +10,7 @@ import {
   listAllGroups,
   joinGroup,
   getConversation,
+  getConversationMemberHistory,
   addMember,
   removeMember,
   updateGroupInfo,
@@ -50,6 +51,10 @@ router.get("/:conversationId", getConversation);
 
 // GET /api/conversations/:conversationId/invites — Get group invites
 router.get("/:conversationId/invites", listGroupInvites);
+
+// GET /api/conversations/:conversationId/member-history — All members ever
+// (current + former), for resolving historical message senders' names
+router.get("/:conversationId/member-history", getConversationMemberHistory);
 
 // PATCH /api/conversations/:conversationId — Update group info (name, description)
 router.patch("/:conversationId", updateGroupInfo);

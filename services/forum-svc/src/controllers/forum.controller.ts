@@ -183,7 +183,9 @@ export const createQuestion = async (req: Request, res: Response): Promise<void>
               id: true,
               name: true,
               roles: true,
-              forumStats: true
+              forumStats: true,
+              isSuspended: true,
+              deletedAt: true
             }
           }
         }
@@ -229,7 +231,7 @@ export const checkDuplicates = async (req: Request, res: Response): Promise<void
       include: {
         tags: true,
         author: {
-          select: { id: true, name: true, roles: true }
+          select: { id: true, name: true, roles: true, isSuspended: true, deletedAt: true }
         }
       }
     });
@@ -303,7 +305,9 @@ export const listQuestions = async (req: Request, res: Response): Promise<void> 
             id: true,
             name: true,
             roles: true,
-            forumStats: true
+            forumStats: true,
+            isSuspended: true,
+            deletedAt: true
           }
         }
       }
@@ -350,7 +354,9 @@ export const getQuestionDetails = async (req: Request, res: Response): Promise<v
             id: true,
             name: true,
             roles: true,
-            forumStats: true
+            forumStats: true,
+            isSuspended: true,
+            deletedAt: true
           }
         },
         answers: {
@@ -366,7 +372,9 @@ export const getQuestionDetails = async (req: Request, res: Response): Promise<v
                 id: true,
                 name: true,
                 roles: true,
-                forumStats: true
+                forumStats: true,
+                isSuspended: true,
+                deletedAt: true
               }
             },
             votes: userId ? {
@@ -470,7 +478,9 @@ export const createAnswer = async (req: Request, res: Response): Promise<void> =
               id: true,
               name: true,
               roles: true,
-              forumStats: true
+              forumStats: true,
+              isSuspended: true,
+              deletedAt: true
             }
           }
         }
@@ -560,7 +570,9 @@ export const editAnswer = async (req: Request, res: Response): Promise<void> => 
             id: true,
             name: true,
             roles: true,
-            forumStats: true
+            forumStats: true,
+            isSuspended: true,
+            deletedAt: true
           }
         }
       }
@@ -689,7 +701,9 @@ export const voteAnswer = async (req: Request, res: Response): Promise<void> => 
               id: true,
               name: true,
               roles: true,
-              forumStats: true
+              forumStats: true,
+              isSuspended: true,
+              deletedAt: true
             }
           }
         }
@@ -996,7 +1010,9 @@ export const listBookmarks = async (req: Request, res: Response): Promise<void> 
                 id: true,
                 name: true,
                 roles: true,
-                forumStats: true
+                forumStats: true,
+                isSuspended: true,
+                deletedAt: true
               }
             }
           }

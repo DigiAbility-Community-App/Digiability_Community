@@ -45,6 +45,7 @@ import Markdown from "react-native-markdown-display";
 import { MediaViewer } from "../../components/chat/MediaViewer";
 import { useForumStore, ForumAnswer } from "../../store/forumStore";
 import { useAuthStore } from "../../store/authStore";
+import { formatUserDisplayName } from "../../utils/formatUserName";
 import CreateAnswerModal from "./CreateAnswerModal";
 import { useTheme } from "../../theme/ThemeContext";
 import { AccessibleText } from "../../components/shared/AccessibleText";
@@ -376,7 +377,7 @@ const QuestionDetailsScreen = () => {
             <View style={styles.authorInfo}>
               <View style={styles.authorNameContainer}>
                 <AccessibleText numberOfLines={1} style={[styles.authorName, { color: colors.text }, textStyle]}>
-                  {currentQuestion.author.name}
+                  {formatUserDisplayName(currentQuestion.author)}
                 </AccessibleText>
                 {currentQuestion.author.forumStats && currentQuestion.author.forumStats.reputation > 0 && (
                   <View
@@ -708,7 +709,7 @@ const QuestionDetailsScreen = () => {
               <View style={styles.answerAuthorInfo}>
                 <View style={styles.authorNameContainer}>
                   <AccessibleText numberOfLines={1} style={[styles.answerAuthorName, { color: colors.text }, textStyle]}>
-                    {item.author.name}
+                    {formatUserDisplayName(item.author)}
                   </AccessibleText>
                   {item.author.forumStats && item.author.forumStats.reputation > 0 && (
                     <View

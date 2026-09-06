@@ -10,6 +10,7 @@ import {
   ActivityIndicator,
   Platform,
   ActionSheetIOS,
+  KeyboardAvoidingView,
 } from "react-native";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { ChatsStackParamList } from "@navigation/ChatsStack";
@@ -497,6 +498,11 @@ const GroupInfoScreen = ({ navigation, route }: Props) => {
         <AccessibleText variant="title" style={[styles.headerTitle, { color: colors.white }]}>Group Info</AccessibleText>
       </View>
 
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        keyboardVerticalOffset={insets.top + 60}
+      >
       <ScrollView style={[styles.content, { backgroundColor: colors.background }]} contentContainerStyle={{ paddingBottom: 40 }} keyboardShouldPersistTaps="handled">
         {/* Profile Card */}
         <View style={[styles.profileCard, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
@@ -872,6 +878,7 @@ const GroupInfoScreen = ({ navigation, route }: Props) => {
           )}
         </View>
       </ScrollView>
+      </KeyboardAvoidingView>
     </ScreenWrapper>
   );
 };

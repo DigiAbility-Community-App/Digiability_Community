@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { AlertCircle, CheckCircle, Mail } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 import apiClient from '../../services/apiClient';
@@ -7,8 +7,14 @@ import './VerifyEmail.css';
 
 const VerifyEmail = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const user = useAuthStore(s => s.user);
   const setUser = useAuthStore(s => s.setUser);
+  const setAccessToken = useAuthStore(s => s.setAccessToken);
+
+  // Registration no longer creates a session, so there may be no user in the
+  // store yet — the email is passed through router state instead.
+  const email = user?.email ?? (location.state as { email?: string } | null)?.email;
   
   const [otp, setOtp] = useState(['', '', '', '', '', '']);
   const [error, setError] = useState<string | null>(null);
@@ -66,7 +72,7 @@ const VerifyEmail = () => {
       setError('Please enter a valid 6-digit OTP.');
       return;
     }
-    if (!user?.email) {
+    if (!email) {
       setError('Email not found. Please log in again.');
       return;
     }
@@ -75,15 +81,21 @@ const VerifyEmail = () => {
     setError(null);
 
     try {
-      await apiClient.post('/api/auth/verify-email', {
-        email: user.email,
+      // Verification is now where the session begins — the server returns the
+      // access token here rather than at registration.
+      const res = await apiClient.post('/api/auth/verify-email', {
+        email,
         otp: otpString,
       });
-      
-      // Update user in store
-      const updatedUser = { ...user, isEmailVerified: true };
-      setUser(updatedUser);
-      
+
+      const { accessToken, user: verifiedUser } = res.data.data ?? {};
+      if (accessToken) setAccessToken(accessToken);
+
+      const updatedUser = verifiedUser
+        ? { ...verifiedUser, isEmailVerified: true }
+        : { ...user, isEmailVerified: true };
+      setUser(updatedUser as never);
+
       if (!updatedUser.roles || updatedUser.roles.length === 0) {
         navigate('/onboarding/accessibility');
       } else if (!updatedUser.profileComplete) {
@@ -105,7 +117,7 @@ const VerifyEmail = () => {
     setSuccess(null);
 
     try {
-      const res = await apiClient.post('/api/auth/resend-otp', { email: user.email });
+      const res = await apiClient.post('/api/auth/resend-otp', { email });
       setSuccess(res.data.message || 'A new OTP has been sent to your email.');
     } catch (err: any) {
       setError(err.response?.data?.message || 'Failed to resend OTP.');

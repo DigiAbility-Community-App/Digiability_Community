@@ -70,6 +70,7 @@ export async function validateRefreshToken(rawToken: string) {
           id: true,
           email: true,
           deletedAt: true,
+          isEmailVerified: true,
           isSuspended: true,
           suspendedUntil: true,
           suspensionReason: true,
@@ -102,6 +103,13 @@ export async function validateRefreshToken(rawToken: string) {
   // A ban must survive an existing session: block token refresh too, so a
   // suspended user is fully logged out within one access-token lifetime.
   assertNotSuspended(stored.user);
+
+  // Defence in depth. Sessions are only issued after email verification now,
+  // but any token that predates that change (or escapes by some other route)
+  // dies here at its first rotation instead of refreshing indefinitely.
+  if (!stored.user.isEmailVerified) {
+    throw createError("Please verify your email address before continuing.", 403);
+  }
 
   return stored;
 }

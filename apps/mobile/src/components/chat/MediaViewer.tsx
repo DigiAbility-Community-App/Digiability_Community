@@ -22,6 +22,7 @@ import {
   Dimensions,
   ActivityIndicator,
   Alert,
+  Linking,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Video, ResizeMode } from "expo-av";
@@ -37,8 +38,27 @@ import {
   Check,
 } from "lucide-react-native";
 import { AccessibleText } from "../shared/AccessibleText";
+import { CHAT_BASE_URL } from "../../services/chatService";
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get("window");
+
+// Defense-in-depth: only ever download from this app's own chat-svc origin.
+// The server already rejects non-upload media content at send time
+// (messageSendSchema), but a modified/older client could still slip an
+// external URL through, and this is the last line of defense before
+// anything gets written to the user's device storage.
+function originOf(url: string): string {
+  const match = url.match(/^https?:\/\/[^/]+/i);
+  return match ? match[0].toLowerCase() : "";
+}
+function isAllowedMediaOrigin(url: string): boolean {
+  const urlOrigin = originOf(url);
+  return !!urlOrigin && urlOrigin === originOf(CHAT_BASE_URL);
+}
+
+// A generous cap so a malicious/misbehaving URL can't fill up device
+// storage or flood the photo library with an oversized file.
+const MAX_DOWNLOAD_BYTES = 50 * 1024 * 1024; // 50 MB
 
 interface MediaViewerProps {
   visible: boolean;
@@ -97,6 +117,9 @@ export function MediaViewer({
 
     // Remote HTTP/HTTPS URL — download to cache first
     if (src.startsWith("http://") || src.startsWith("https://")) {
+      if (!isAllowedMediaOrigin(src)) {
+        throw new Error("This media's source isn't recognized, so it can't be downloaded.");
+      }
       const ext = isVideo
         ? "mp4"
         : src.split(".").pop()?.split("?")[0]?.toLowerCase() || "jpg";
@@ -106,6 +129,12 @@ export function MediaViewer({
       const destFile = new File(Paths.cache, filename);
       const res = await downloadAsync(src, destFile.uri);
       fileUri = res.uri;
+
+      const savedFile = new File(fileUri);
+      if (savedFile.exists && (savedFile.size ?? 0) > MAX_DOWNLOAD_BYTES) {
+        savedFile.delete();
+        throw new Error("This file is too large to download.");
+      }
     }
     // Base64 / data URL
     else if (src.startsWith("data:")) {
@@ -130,14 +159,28 @@ export function MediaViewer({
       const localUri = await prepareLocalFile();
 
       // Request photo/video write permission only (not AUDIO to avoid AndroidManifest error)
-      const { status } = await MediaLibrary.requestPermissionsAsync(true, ["photo", "video"]);
+      const { status, canAskAgain } = await MediaLibrary.requestPermissionsAsync(true, ["photo", "video"]);
       if (status !== "granted") {
         setDownloadSuccess(false);
-        Alert.alert(
-          "Permission Required",
-          "Please allow photo/media access in Settings so Digiability can save images to your phone Gallery.",
-          [{ text: "OK" }]
-        );
+        if (canAskAgain === false) {
+          // Permanently denied ("don't ask again" on Android, or a
+          // previously-declined prompt on iOS) — the OS won't show the
+          // request dialog again, so the only way forward is Settings.
+          Alert.alert(
+            "Permission Required",
+            "Photo/media access is turned off for Digiability. Enable it in Settings to save images to your phone Gallery.",
+            [
+              { text: "Cancel", style: "cancel" },
+              { text: "Open Settings", onPress: () => Linking.openSettings() },
+            ]
+          );
+        } else {
+          Alert.alert(
+            "Permission Required",
+            "Please allow photo/media access so Digiability can save images to your phone Gallery.",
+            [{ text: "OK" }]
+          );
+        }
         return;
       }
 

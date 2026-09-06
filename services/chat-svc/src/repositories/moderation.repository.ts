@@ -61,6 +61,25 @@ class ModerationRepository {
     return prisma.report.create({ data });
   }
 
+  /** Whether this reporter has already filed a report against this exact message. */
+  async findExistingReport(reporterId: string, messageId: string) {
+    return prisma.report.findFirst({
+      where: { reporterId, messageId },
+      select: { id: true },
+    });
+  }
+
+  /** Message ids the given user has reported within a conversation — used to
+   * mark the "Reported" indicator on the reporter's own view after reopening
+   * the chat. */
+  async listReportedMessageIds(reporterId: string, conversationId: string): Promise<string[]> {
+    const rows = await prisma.report.findMany({
+      where: { reporterId, conversationId, messageId: { not: null } },
+      select: { messageId: true },
+    });
+    return rows.map((r) => r.messageId as string);
+  }
+
   /**
    * A small window of messages around a given sequence number, for admins
    * reviewing a specific report to see the surrounding conversation. Returns

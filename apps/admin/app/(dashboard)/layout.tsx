@@ -19,6 +19,7 @@ import {
   X,
   PanelLeftClose,
   PanelLeftOpen,
+  Briefcase,
 } from "lucide-react";
 import { SessionGuard } from "@/components/shared/SessionGuard";
 
@@ -52,6 +53,11 @@ const navItems = [
     label: "Events",
     href: "/events",
     icon: CalendarDays,
+  },
+  {
+    label: "Services",
+    href: "/services",
+    icon: Briefcase,
   },
   {
     label: "Analytics",

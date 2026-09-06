@@ -380,7 +380,7 @@ export default function DashboardPage() {
               </div>
             ) : (
               <div className="overflow-x-auto w-full">
-                <table className="w-full min-w-[620px] text-left">
+                <table className="w-full text-left">
                   <thead className="bg-[#F8F7FB]">
                     <tr>
                       {["USER / ACTOR", "ACTION", "MODULE", "TIMESTAMP", "STATUS"].map((h) => (

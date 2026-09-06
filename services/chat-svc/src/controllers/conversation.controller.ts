@@ -141,6 +141,31 @@ export const getConversation = asyncHandler(async (req: Request, res: Response) 
   });
 });
 
+// ─── GET /conversations/:conversationId/member-history ────
+// Returns { userId, leftAt } for every member the group has ever had,
+// including former members — used by the mobile client to resolve display
+// names for historical message senders who have since left/been removed
+// (the normal conversation payload only carries active members).
+export const getConversationMemberHistory = asyncHandler(async (req: Request, res: Response) => {
+  const user = (req as AuthenticatedRequest).user;
+  const { conversationId } = req.params;
+
+  const history = await conversationService.getMemberHistory(conversationId, user.sub);
+
+  if (history === null) {
+    res.status(404).json({
+      success: false,
+      message: "Conversation not found or you are not a member",
+    });
+    return;
+  }
+
+  res.status(200).json({
+    success: true,
+    data: history,
+  });
+});
+
 export const addMember = asyncHandler(async (req: Request, res: Response) => {
   const user = (req as AuthenticatedRequest).user;
   const { conversationId } = req.params;

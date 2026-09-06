@@ -17,7 +17,6 @@ import AppFooter from "../../components/layout/AppFooter";
 import { forumService } from "../../services/forumService";
 import { chatService } from "../../services/chatService";
 import { useChatStore } from "../../store/chatStore";
-import { NotificationDetailModal } from "../../components/shared/NotificationDetailModal";
 
 // ─────────────────────────────────────────────
 // Types
@@ -45,9 +44,17 @@ interface UnifiedNotification {
 // Helpers
 // ─────────────────────────────────────────────
 
+// "WARNING"/"BANNED" come from the account-level suspend/ban admin action
+// (apps/admin/app/api/moderation/review/route.ts), a separate code path from
+// the "MODERATION_*" family (apps/admin/app/api/moderation/route.ts) — both
+// are moderation alerts and should be classified/routed identically here.
+function isModerationType(type: string): boolean {
+    return type.startsWith("ADMIN_") || type.startsWith("MODERATION") || type === "WARNING" || type === "BANNED";
+}
+
 function mapNotifType(type: string): FilterCategory {
     if (type === "INVITE") return "invites";
-    if (type.startsWith("ADMIN_") || type.startsWith("MODERATION")) return "alerts";
+    if (isModerationType(type)) return "alerts";
     return "community";
 }
 
@@ -58,7 +65,9 @@ function iconForType(type: string): { icon: string; iconBg: string } {
         case "MENTION":       return { icon: "📣", iconBg: "#FFF3CD" };
         case "LIKE":          return { icon: "❤️", iconBg: "#FCE7F3" };
         case "INVITE":        return { icon: "✉️", iconBg: "#DBEAFE" };
-        case "MODERATION":    return { icon: "🚨", iconBg: "#FFDAD6" };
+        case "MODERATION":
+        case "WARNING":
+        case "BANNED":        return { icon: "🚨", iconBg: "#FFDAD6" };
         default:
             if (type.includes("ALERT"))        return { icon: "⚠️", iconBg: "#FFF3CD" };
             if (type.includes("ANNOUNCEMENT")) return { icon: "📢", iconBg: "#DBEAFE" };
@@ -100,7 +109,6 @@ const NotificationsScreen = () => {
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
     const [error, setError] = useState("");
-    const [detailNotif, setDetailNotif] = useState<UnifiedNotification | null>(null);
 
     // Always fetch fresh invites when this screen opens — the store may be
     // empty if the user navigated here without visiting the Chats screen first.
@@ -224,19 +232,20 @@ const NotificationsScreen = () => {
             return;
         }
 
-        if (item.type === "MODERATION" || item.type.startsWith("ADMIN_") || item.type.startsWith("MODERATION")) {
-            // Show the full notification (message may be several lines —
-            // group, reason, flagged content) in a proper in-app dialog
-            // instead of the OS's tiny, truncating native alert.
-            setDetailNotif(item);
+        if (isModerationType(item.type)) {
+            // Full screen (not just a popup) so a warning/ban/removal notice
+            // gets the same "opens somewhere real" treatment as every other
+            // notification type instead of being a dead end.
+            navigation.navigate("WarningDetails", {
+                title: item.title,
+                message: item.message,
+                type: item.type,
+                relatedId: item.relatedId,
+                time: item.time,
+            });
             return;
         }
     };
-
-    const detailSeverity: "info" | "warning" | "danger" =
-        detailNotif?.type === "MODERATION_BAN" ? "danger" :
-        detailNotif?.type === "MODERATION_WARNING" || detailNotif?.type === "MODERATION_CONTENT_REMOVED" ? "warning" :
-        "info";
 
     const cardBorderStyle = (item: UnifiedNotification) => {
         if (highContrast) return { borderWidth: 2, borderColor: "#000000" };
@@ -424,14 +433,6 @@ const NotificationsScreen = () => {
             )}
 
             <AppFooter activeTab="Home" />
-
-            <NotificationDetailModal
-                visible={!!detailNotif}
-                title={detailNotif ? `${detailNotif.icon} ${detailNotif.title}` : ""}
-                message={detailNotif?.message ?? ""}
-                severity={detailSeverity}
-                onClose={() => setDetailNotif(null)}
-            />
         </ScreenWrapper>
     );
 };

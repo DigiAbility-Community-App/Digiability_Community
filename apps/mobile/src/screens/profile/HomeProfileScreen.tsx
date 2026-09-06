@@ -4,7 +4,6 @@ import {
     StyleSheet,
     ScrollView,
     TouchableOpacity,
-    Alert,
     Linking,
     Platform,
 } from "react-native";
@@ -20,6 +19,7 @@ import { confirmDeleteAccount } from "../../utils/accountDeletion";
 import { logout } from "@services/authService";
 import { forumService } from "@services/forumService";
 import { getNotificationPermissionStatus } from "@services/notificationService";
+import { ConfirmDialog } from "../../components/chat/ConfirmDialog";
 
 // ─────────────────────────────────────────────
 // Helpers
@@ -45,14 +45,6 @@ function getInitials(name: string): string {
         .slice(0, 2)
         .map((w) => w[0]?.toUpperCase() ?? "")
         .join("");
-}
-
-function comingSoonAlert(feature: string) {
-    Alert.alert(
-        `${feature}`,
-        "This feature is coming soon. We're working hard to bring it to you.",
-        [{ text: "OK" }]
-    );
 }
 
 // ─────────────────────────────────────────────
@@ -87,23 +79,49 @@ const HomeProfileScreen = () => {
     const [deletingAccount, setDeletingAccount] = useState(false);
     const [loggingOut, setLoggingOut] = useState(false);
 
+    // ── General themed confirm/info dialog (replaces native Alert.alert) ──
+    const [confirmState, setConfirmState] = useState<{
+        title: string;
+        message?: string;
+        confirmLabel: string;
+        cancelLabel?: string;
+        destructive?: boolean;
+        hideCancel?: boolean;
+        onConfirm: () => void;
+    } | null>(null);
+
+    const showComingSoon = (feature: string) => {
+        setConfirmState({
+            title: feature,
+            message: "This feature is coming soon. We're working hard to bring it to you.",
+            confirmLabel: "OK",
+            hideCancel: true,
+            onConfirm: () => setConfirmState(null),
+        });
+    };
+
     const handleLogout = () => {
-        Alert.alert("Log Out", "Are you sure you want to log out?", [
-            { text: "Cancel", style: "cancel" },
-            {
-                text: "Log Out",
-                style: "destructive",
-                onPress: async () => {
-                    setLoggingOut(true);
-                    try {
-                        await logout();
-                    } catch {
-                        setLoggingOut(false);
-                        Alert.alert("Error", "Failed to log out. Please try again.");
-                    }
-                },
+        setConfirmState({
+            title: "Log Out",
+            message: "Are you sure you want to log out?",
+            confirmLabel: "Log Out",
+            destructive: true,
+            onConfirm: async () => {
+                setLoggingOut(true);
+                try {
+                    await logout();
+                } catch {
+                    setLoggingOut(false);
+                    setConfirmState({
+                        title: "Error",
+                        message: "Failed to log out. Please try again.",
+                        confirmLabel: "OK",
+                        hideCancel: true,
+                        onConfirm: () => setConfirmState(null),
+                    });
+                }
             },
-        ]);
+        });
     };
 
     const loadData = useCallback(async () => {
@@ -132,23 +150,21 @@ const HomeProfileScreen = () => {
 
     const handleNotificationsPress = async () => {
         if (notifStatus === "granted") {
-            Alert.alert(
-                "Push Notifications",
-                "Notifications are enabled. You can manage them in your device settings.",
-                [
-                    { text: "Open Settings", onPress: () => Linking.openSettings() },
-                    { text: "OK", style: "cancel" },
-                ]
-            );
+            setConfirmState({
+                title: "Push Notifications",
+                message: "Notifications are enabled. You can manage them in your device settings.",
+                confirmLabel: "Open Settings",
+                cancelLabel: "OK",
+                onConfirm: () => Linking.openSettings(),
+            });
         } else {
-            Alert.alert(
-                "Enable Notifications",
-                "Push notifications are currently disabled. Enable them to stay updated.",
-                [
-                    { text: "Open Settings", onPress: () => Linking.openSettings() },
-                    { text: "Not now", style: "cancel" },
-                ]
-            );
+            setConfirmState({
+                title: "Enable Notifications",
+                message: "Push notifications are currently disabled. Enable them to stay updated.",
+                confirmLabel: "Open Settings",
+                cancelLabel: "Not now",
+                onConfirm: () => Linking.openSettings(),
+            });
         }
     };
 
@@ -157,7 +173,13 @@ const HomeProfileScreen = () => {
             onStart: () => setDeletingAccount(true),
             onError: (message) => {
                 setDeletingAccount(false);
-                Alert.alert("Error", message);
+                setConfirmState({
+                    title: "Error",
+                    message,
+                    confirmLabel: "OK",
+                    hideCancel: true,
+                    onConfirm: () => setConfirmState(null),
+                });
             },
         });
     };
@@ -270,7 +292,7 @@ const HomeProfileScreen = () => {
                         iconBg="#FEE2E2"
                         title="Emergency SOS"
                         subtitle="Coming soon"
-                        onPress={() => comingSoonAlert("Emergency SOS")}
+                        onPress={() => showComingSoon("Emergency SOS")}
                         colors={colors}
                         highContrast={highContrast}
                         cardBorder={cardBorder}
@@ -281,7 +303,7 @@ const HomeProfileScreen = () => {
                         iconBg="#D1FAE5"
                         title="Medical Records"
                         subtitle="Coming soon"
-                        onPress={() => comingSoonAlert("Medical Records")}
+                        onPress={() => showComingSoon("Medical Records")}
                         colors={colors}
                         highContrast={highContrast}
                         cardBorder={cardBorder}
@@ -295,7 +317,7 @@ const HomeProfileScreen = () => {
                     <MenuItem
                         icon="♿"
                         title="Accessibility"
-                        onPress={() => navigation.navigate("Accessibility")}
+                        onPress={() => navigation.navigate("Accessibility", { fromProfile: true })}
                         colors={colors}
                         highContrast={highContrast}
                         cardBorder={cardBorder}
@@ -328,7 +350,7 @@ const HomeProfileScreen = () => {
                         icon="📜"
                         title="Privacy Policy"
                         subtitle="How we handle your data"
-                        onPress={() => comingSoonAlert("Privacy Policy")}
+                        onPress={() => showComingSoon("Privacy Policy")}
                         colors={colors}
                         highContrast={highContrast}
                         cardBorder={cardBorder}
@@ -338,7 +360,7 @@ const HomeProfileScreen = () => {
                         icon="📋"
                         title="Terms of Service"
                         subtitle="Community guidelines"
-                        onPress={() => comingSoonAlert("Terms of Service")}
+                        onPress={() => showComingSoon("Terms of Service")}
                         colors={colors}
                         highContrast={highContrast}
                         cardBorder={cardBorder}
@@ -352,7 +374,7 @@ const HomeProfileScreen = () => {
                     <MenuItem
                         icon="❓"
                         title="Help Center & FAQs"
-                        onPress={() => navigation.navigate("ContactSupport", { initialSection: "faq" } as any)}
+                        onPress={() => navigation.navigate("HelpCenter")}
                         colors={colors}
                         highContrast={highContrast}
                         cardBorder={cardBorder}
@@ -360,7 +382,7 @@ const HomeProfileScreen = () => {
                     <MenuItem
                         icon="📞"
                         title="Contact Support"
-                        onPress={() => navigation.navigate("ContactSupport", { initialSection: "contact" } as any)}
+                        onPress={() => navigation.navigate("ContactSupport")}
                         colors={colors}
                         highContrast={highContrast}
                         cardBorder={cardBorder}
@@ -401,6 +423,18 @@ const HomeProfileScreen = () => {
                     </AccessibleText>
                 </TouchableOpacity>
             </ScrollView>
+
+            <ConfirmDialog
+                visible={!!confirmState}
+                title={confirmState?.title || ""}
+                message={confirmState?.message}
+                confirmLabel={confirmState?.confirmLabel}
+                cancelLabel={confirmState?.cancelLabel}
+                destructive={confirmState?.destructive}
+                hideCancel={confirmState?.hideCancel}
+                onConfirm={() => confirmState?.onConfirm()}
+                onCancel={() => setConfirmState(null)}
+            />
         </ScreenWrapper>
     );
 };

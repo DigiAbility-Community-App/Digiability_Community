@@ -135,10 +135,11 @@ export async function register(
     mappedInput,
   );
 
-  const { accessToken, user, otpEmailSent } = response.data.data;
+  // Registration no longer returns a session — the server issues tokens only
+  // after the OTP is verified, so an unverified account can't reach the API.
+  // The caller sends the user to the Verify Email screen with this email.
+  const { user, otpEmailSent } = response.data.data;
   const mappedUser = mapUserToFrontend(user);
-  await persistRefreshToken(response.headers as Record<string, string | string[]>);
-  useAuthStore.getState().setAuth(accessToken, mappedUser);
 
   return { ...mappedUser, otpEmailSent };
 }
@@ -225,19 +226,17 @@ export async function resetPassword(input: ResetPasswordInput): Promise<string> 
 // ── Verify email OTP ───────────────────────────────────
 
 export async function verifyEmailOtp(email: string, otp: string): Promise<string> {
-  const response = await apiClient.post<ApiResponse>(
+  const response = await apiClient.post<ApiResponse<LoginResponseData>>(
     '/api/auth/verify-email',
     { email, otp },
   );
 
-  // Update auth store with verified status
-  const currentUser = useAuthStore.getState().user;
-  if (currentUser) {
-    useAuthStore.getState().setAuth(
-      useAuthStore.getState().accessToken!,
-      { ...currentUser, isEmailVerified: true }
-    );
-  }
+  // Verification is now the point where the session starts: the server
+  // returns the access token here (and the refresh token in the headers)
+  // rather than at registration.
+  const { accessToken, user } = response.data.data;
+  await persistRefreshToken(response.headers as Record<string, string | string[]>);
+  useAuthStore.getState().setAuth(accessToken, mapUserToFrontend(user));
 
   return response.data.message;
 }

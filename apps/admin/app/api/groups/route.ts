@@ -66,6 +66,28 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Reject unverified accounts up front — they can't sign in, so adding
+    // them just creates silent members. (This is how several unverified
+    // accounts ended up sitting in groups they never joined.) The owner is
+    // checked too, since an unverified owner would be worse.
+    const candidateIds = [ownerId, ...memberList.map((m) => m.userId)].filter(Boolean);
+    if (candidateIds.length > 0) {
+      const verifyCheck = await dbPool.query(
+        `SELECT id, name FROM users WHERE id = ANY($1::text[]) AND "isEmailVerified" = false`,
+        [candidateIds]
+      );
+      if (verifyCheck.rows.length > 0) {
+        const names = verifyCheck.rows.map((r) => r.name || r.id).join(", ");
+        return NextResponse.json(
+          {
+            success: false,
+            message: `These users haven't verified their email yet and can't be added to a group: ${names}.`,
+          },
+          { status: 400 }
+        );
+      }
+    }
+
     // Enforce the max-3-admin cap (owner + any admin-capable initial roles).
     const adminRoles = adminRolesFor(subType);
     const adminCount = 1 + memberList.filter((m) => m.userId !== ownerId && adminRoles.includes(m.role)).length;

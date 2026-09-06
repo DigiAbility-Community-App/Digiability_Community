@@ -16,8 +16,9 @@ import {
     ScrollView,
     TextInput,
     ActivityIndicator,
-    Alert,
 } from "react-native";
+
+import { ConfirmDialog } from "../../components/chat/ConfirmDialog";
 
 import ScreenWrapper from "../../components/layout/ScreenWrapper";
 import SafeScreen from "../../components/layout/SafeScreen";
@@ -42,6 +43,8 @@ import { useTheme, getFontScale } from "../../theme/ThemeContext";
 import { AccessibleText } from "../../components/shared/AccessibleText";
 import { AccessibleButton } from "../../components/shared/AccessibleButton";
 import { DisabilityDropdown } from "../../components/shared/DisabilityDropdown";
+import { Input } from "../../components/shared/Input";
+import DateTimePickerModal from "react-native-modal-datetime-picker";
 
 // ─────────────────────────────────────────────────────────────
 // CONSTANTS
@@ -61,6 +64,19 @@ const FALLBACK_DISABILITY_OPTIONS = [
     "Learning Disability",
     "Multiple Disabilities",
 ];
+
+// No existing canonical list for these two fields — reasonable defaults.
+const RELATION_OPTIONS = ["Parent", "Sibling", "Spouse", "Child", "Guardian", "Other"];
+
+// Mirrors the backend's USERNAME_REGEX / requiredBasicProfileSchema
+// (services/user-svc/src/routes/profile.routes.ts) so Save fails fast
+// client-side instead of round-tripping to the API first.
+const USERNAME_REGEX = /^[a-zA-Z0-9_.]{1,15}$/;
+const MOBILE_REGEX = /^[6-9]\d{9}$/; // same pattern used at signup in WelcomeScreen
+const PINCODE_REGEX = /^\d{6}$/;
+
+const CURRENT_YEAR = new Date().getFullYear();
+const MIN_YEAR = 1900;
 
 // ─────────────────────────────────────────────────────────────
 // SCREEN
@@ -105,6 +121,9 @@ const EditProfileScreen = () => {
 
     const [dob, setDob] =
         useState("");
+
+    const [showDatePicker, setShowDatePicker] =
+        useState(false);
 
     const [gender, setGender] =
         useState("");
@@ -156,6 +175,7 @@ const EditProfileScreen = () => {
         useState("");
 
     const [careDob, setCareDob] = useState("");
+    const [showCareDatePicker, setShowCareDatePicker] = useState(false);
 
     const [careDisabilities, setCareDisabilities] = useState<string[]>([]);
 
@@ -196,6 +216,18 @@ const EditProfileScreen = () => {
 
     const [saving, setSaving] =
         useState(false);
+
+    const [fieldErrors, setFieldErrors] =
+        useState<Record<string, string>>({});
+
+    // Themed replacement for native Alert.alert — same shape used by
+    // HomeProfileScreen/ChatScreen so dialogs look consistent app-wide.
+    const [confirmState, setConfirmState] = useState<{
+        title: string;
+        message?: string;
+        confirmLabel?: string;
+        onConfirm?: () => void;
+    } | null>(null);
 
     // ───────────────── FETCH PROFILE ─────────────────
 
@@ -355,10 +387,10 @@ const EditProfileScreen = () => {
             }
 
         } catch (error) {
-            Alert.alert(
-                "Error",
-                "Unable to load profile"
-            );
+            setConfirmState({
+                title: "Error",
+                message: "Unable to load profile",
+            });
         } finally {
             setLoading(false);
         }
@@ -401,6 +433,110 @@ const EditProfileScreen = () => {
             return payload;
         };
 
+    // ───────────────── VALIDATION ─────────────────
+
+    const fieldBorder = (hasError?: boolean) =>
+        hasError ? { borderWidth: 1, borderColor: colors.error } : cardBorder;
+
+    const clearError = (field: string) => {
+        if (fieldErrors[field]) {
+            setFieldErrors((e) => {
+                const next = { ...e };
+                delete next[field];
+                return next;
+            });
+        }
+    };
+
+    const validateYear = (value: string): string | undefined => {
+        if (!value.trim()) return undefined;
+        if (!/^\d{4}$/.test(value.trim())) return "Enter a valid 4-digit year";
+        const y = parseInt(value.trim(), 10);
+        if (y < MIN_YEAR || y > CURRENT_YEAR) return `Year must be between ${MIN_YEAR} and ${CURRENT_YEAR}`;
+        return undefined;
+    };
+
+    const validateFields = () => {
+        const newErrors: Record<string, string> = {};
+
+        if (!fullName.trim()) {
+            newErrors.fullName = "Full name is required";
+        } else if (!isValidNameFormat(fullName)) {
+            newErrors.fullName =
+                "Name may only contain letters, spaces, and single hyphens or apostrophes between name parts.";
+        }
+
+        if (!username.trim()) {
+            newErrors.username = "Username is required";
+        } else if (!USERNAME_REGEX.test(username.trim())) {
+            newErrors.username =
+                "Username may only contain letters, numbers, periods, and underscores (max 15 characters)";
+        }
+
+        if (!dob.trim()) {
+            newErrors.dob = "Date of birth is required";
+        } else {
+            const parsed = parseDateInput(dob.trim(), "DMY");
+            if (!parsed) {
+                newErrors.dob = "Enter a valid date (DD/MM/YYYY)";
+            } else if (new Date(parsed).getTime() > Date.now()) {
+                newErrors.dob = "Date of birth cannot be in the future";
+            }
+        }
+
+        if (!gender.trim()) newErrors.gender = "Gender is required";
+        if (!city.trim()) newErrors.city = "City is required";
+        if (!state.trim()) newErrors.state = "State is required";
+
+        if (!pincode.trim()) {
+            newErrors.pincode = "Pincode is required";
+        } else if (!PINCODE_REGEX.test(pincode.trim())) {
+            newErrors.pincode = "Enter a valid 6-digit pincode";
+        }
+
+        if (!phoneNo.trim()) {
+            newErrors.phoneNo = "Mobile number is required";
+        } else if (!MOBILE_REGEX.test(phoneNo.trim())) {
+            newErrors.phoneNo = "Enter a valid 10-digit mobile number";
+        }
+
+        if (roles.includes("pwd")) {
+            if (selectedDisabilities.length === 0) {
+                newErrors.disabilityType = "Please select at least one disability type";
+            }
+            const yearErr = validateYear(disabilitySince);
+            if (yearErr) newErrors.disabilitySince = yearErr;
+        }
+
+        if (roles.includes("caregiver")) {
+            if (!personName.trim()) {
+                newErrors.personName = "Person name is required";
+            } else if (!isValidNameFormat(personName)) {
+                newErrors.personName =
+                    "Name may only contain letters, spaces, and single hyphens or apostrophes between name parts";
+            }
+
+            if (!relation.trim()) {
+                newErrors.relation = "Relation is required";
+            }
+
+            if (careDob.trim() && !parseDateInput(careDob.trim(), "DMY")) {
+                newErrors.careDob = "Invalid date";
+            }
+        }
+
+        if (roles.includes("educator")) {
+            if (!speciality.trim()) newErrors.speciality = "Speciality is required";
+        }
+
+        if (roles.includes("ngo_worker")) {
+            if (!ngoName.trim()) newErrors.ngoName = "NGO name is required";
+        }
+
+        setFieldErrors(newErrors);
+        return Object.keys(newErrors).length === 0;
+    };
+
     // ───────────────── SAVE ─────────────────
 
     const handleSaveChanges =
@@ -408,21 +544,7 @@ const EditProfileScreen = () => {
             try {
                 if (!user?.id) return;
 
-                if (!isValidNameFormat(fullName)) {
-                    Alert.alert(
-                        "Invalid name",
-                        "Name may only contain letters, spaces, and single hyphens or apostrophes between name parts."
-                    );
-                    return;
-                }
-
-                if (roles.includes("caregiver") && personName.trim() && !isValidNameFormat(personName)) {
-                    Alert.alert(
-                        "Invalid name",
-                        "Care recipient's name may only contain letters, spaces, and single hyphens or apostrophes between name parts."
-                    );
-                    return;
-                }
+                if (!validateFields()) return;
 
                 setSaving(true);
 
@@ -457,18 +579,25 @@ const EditProfileScreen = () => {
                     });
                 }
 
-                Alert.alert(
-                    "Success",
-                    "Profile updated successfully"
-                );
-
-                navigation.goBack();
+                // Navigate back only once the user dismisses the dialog —
+                // going back immediately would unmount it before it's seen.
+                setConfirmState({
+                    title: "Success",
+                    message: "Profile updated successfully",
+                    confirmLabel: "Done",
+                    onConfirm: () => navigation.goBack(),
+                });
 
             } catch (error) {
-                Alert.alert(
-                    "Error",
-                    "Unable to update profile"
-                );
+                const err: any = error;
+                const message =
+                    err?.response?.data?.errors?.[0]?.message ||
+                    err?.response?.data?.message;
+
+                setConfirmState({
+                    title: "Error",
+                    message: message || "Unable to update profile",
+                });
             } finally {
                 setSaving(false);
             }
@@ -555,119 +684,163 @@ const EditProfileScreen = () => {
                         Basic Information
                     </AccessibleText>
 
-                    <TextInput
+                    <Input
+                        label="Full Name"
                         placeholder="Full Name"
-                        placeholderTextColor={placeholderColor}
-                        style={[styles.input, { backgroundColor: colors.surface, color: colors.text }, cardBorder]}
+                        containerStyle={styles.fieldSpacing}
                         value={fullName}
                         onChangeText={
-                            (v: string) => setFullName(sanitizeNameInput(v))
+                            (v: string) => { setFullName(sanitizeNameInput(v)); clearError("fullName"); }
                         }
+                        error={fieldErrors.fullName}
                         accessibilityLabel="Full Name"
                     />
 
-                    <TextInput
+                    <Input
+                        label="Username"
                         placeholder="Username"
-                        placeholderTextColor={placeholderColor}
-                        style={[styles.input, { backgroundColor: colors.surface, color: colors.text }, cardBorder]}
+                        containerStyle={styles.fieldSpacing}
                         value={username}
                         onChangeText={
-                            setUsername
+                            (v: string) => { setUsername(v); clearError("username"); }
                         }
+                        error={fieldErrors.username}
                         autoCapitalize="none"
                         accessibilityLabel="Username"
                     />
 
-                    <TextInput
-                        placeholder="DOB"
-                        placeholderTextColor={placeholderColor}
-                        style={[styles.input, { backgroundColor: colors.surface, color: colors.text }, cardBorder]}
-                        value={dob}
-                        onChangeText={
-                            setDob
-                        }
+                    {/* DOB */}
+                    <AccessibleText variant="label" style={styles.dateLabel}>
+                        Date of Birth
+                    </AccessibleText>
+                    <TouchableOpacity
+                        activeOpacity={0.9}
+                        onPress={() => setShowDatePicker(true)}
+                        accessibilityRole="button"
                         accessibilityLabel="Date of birth"
+                        accessibilityHint={dob ? `Selected: ${dob}. Double tap to change` : "Double tap to open date picker"}
+                    >
+                        <TextInput
+                            placeholder="DOB (DD/MM/YYYY)"
+                            placeholderTextColor={placeholderColor}
+                            style={[styles.input, { backgroundColor: colors.surface, color: colors.text }, fieldBorder(!!fieldErrors.dob)]}
+                            value={dob}
+                            editable={false}
+                            pointerEvents="none"
+                            accessibilityLabel="Date of birth"
+                        />
+                    </TouchableOpacity>
+                    {fieldErrors.dob && (
+                        <AccessibleText style={[styles.errorText, { color: colors.error }]} accessibilityRole="alert">
+                            {fieldErrors.dob}
+                        </AccessibleText>
+                    )}
+                    <DateTimePickerModal
+                        isVisible={showDatePicker}
+                        mode="date"
+                        maximumDate={new Date()}
+                        onConfirm={(date) => {
+                            setShowDatePicker(false);
+                            const formatted =
+                                `${date.getDate().toString().padStart(2, "0")}/${(date.getMonth() + 1).toString().padStart(2, "0")}/${date.getFullYear()}`;
+                            setDob(formatted);
+                            clearError("dob");
+                        }}
+                        onCancel={() => setShowDatePicker(false)}
                     />
 
-                    <TextInput
-                        placeholder="Gender"
-                        placeholderTextColor={placeholderColor}
-                        style={[styles.input, { backgroundColor: colors.surface, color: colors.text }, cardBorder]}
-                        value={gender}
-                        onChangeText={
-                            setGender
-                        }
-                        accessibilityLabel="Gender"
+                    {/* GENDER */}
+                    <AccessibleText
+                        variant="label"
+                        style={{ color: placeholderColor, marginBottom: 8, marginTop: 4 }}
+                    >
+                        Gender
+                    </AccessibleText>
+                    <DisabilityDropdown
+                        multi={false}
+                        options={["Male", "Female", "Non-binary", "Prefer not to say"]}
+                        selected={gender ? [gender] : []}
+                        onToggle={(item) => { setGender(item); clearError("gender"); }}
+                        label="Gender"
                     />
+                    {fieldErrors.gender && (
+                        <AccessibleText style={[styles.errorText, { color: colors.error }]} accessibilityRole="alert">
+                            {fieldErrors.gender}
+                        </AccessibleText>
+                    )}
 
-                    <TextInput
+                    <Input
+                        label="City"
                         placeholder="City"
-                        placeholderTextColor={placeholderColor}
-                        style={[styles.input, { backgroundColor: colors.surface, color: colors.text }, cardBorder]}
+                        containerStyle={styles.fieldSpacing}
                         value={city}
                         onChangeText={
-                            setCity
+                            (v: string) => { setCity(v); clearError("city"); }
                         }
+                        error={fieldErrors.city}
                         accessibilityLabel="City"
                     />
 
-                    <TextInput
+                    <Input
+                        label="State"
                         placeholder="State"
-                        placeholderTextColor={placeholderColor}
-                        style={[styles.input, { backgroundColor: colors.surface, color: colors.text }, cardBorder]}
+                        containerStyle={styles.fieldSpacing}
                         value={state}
                         onChangeText={
-                            setState
+                            (v: string) => { setState(v); clearError("state"); }
                         }
+                        error={fieldErrors.state}
                         accessibilityLabel="State"
                     />
 
-                    <TextInput
+                    <Input
+                        label="Address Line 1"
                         placeholder="Address Line 1"
-                        placeholderTextColor={placeholderColor}
-                        style={[styles.input, { backgroundColor: colors.surface, color: colors.text }, cardBorder]}
+                        containerStyle={styles.fieldSpacing}
                         value={addressLine1}
                         onChangeText={setAddressLine1}
                         accessibilityLabel="Address line 1"
                     />
 
-                    <TextInput
+                    <Input
+                        label="Street / Area"
                         placeholder="Street / Area"
-                        placeholderTextColor={placeholderColor}
-                        style={[styles.input, { backgroundColor: colors.surface, color: colors.text }, cardBorder]}
+                        containerStyle={styles.fieldSpacing}
                         value={streetArea}
                         onChangeText={setStreetArea}
                         accessibilityLabel="Street or area"
                     />
 
-                    <TextInput
+                    <Input
+                        label="District"
                         placeholder="District"
-                        placeholderTextColor={placeholderColor}
-                        style={[styles.input, { backgroundColor: colors.surface, color: colors.text }, cardBorder]}
+                        containerStyle={styles.fieldSpacing}
                         value={locationDistrict}
                         onChangeText={setLocationDistrict}
                         accessibilityLabel="District"
                     />
 
-                    <TextInput
+                    <Input
+                        label="Pincode"
                         placeholder="Pincode"
-                        placeholderTextColor={placeholderColor}
-                        style={[styles.input, { backgroundColor: colors.surface, color: colors.text }, cardBorder]}
+                        containerStyle={styles.fieldSpacing}
                         value={pincode}
-                        onChangeText={setPincode}
+                        onChangeText={(v: string) => { setPincode(v); clearError("pincode"); }}
+                        error={fieldErrors.pincode}
                         keyboardType="number-pad"
                         maxLength={6}
                         accessibilityLabel="Pincode"
                     />
 
-                    <TextInput
+                    <Input
+                        label="Phone Number"
                         placeholder="Phone Number"
-                        placeholderTextColor={placeholderColor}
-                        style={[styles.input, { backgroundColor: colors.surface, color: colors.text }, cardBorder]}
+                        containerStyle={styles.fieldSpacing}
                         value={phoneNo}
-                        onChangeText={setPhoneNo}
+                        onChangeText={(v: string) => { setPhoneNo(v); clearError("phoneNo"); }}
+                        error={fieldErrors.phoneNo}
                         keyboardType="phone-pad"
-                        maxLength={15}
+                        maxLength={10}
                         accessibilityLabel="Phone number"
                     />
                 </View>
@@ -686,20 +859,26 @@ const EditProfileScreen = () => {
                         <DisabilityDropdown
                             options={disabilityOptions}
                             selected={selectedDisabilities}
-                            onToggle={toggleDisability}
+                            onToggle={(item) => { toggleDisability(item); clearError("disabilityType"); }}
                             label="Disability types"
                         />
+                        {fieldErrors.disabilityType && (
+                            <AccessibleText style={[styles.errorText, { color: colors.error }]} accessibilityRole="alert">
+                                {fieldErrors.disabilityType}
+                            </AccessibleText>
+                        )}
 
-                        <TextInput
+                        <Input
+                            label="Disability Since"
                             placeholder="Disability Since"
-                            placeholderTextColor={placeholderColor}
-                            style={[styles.input, { backgroundColor: colors.surface, color: colors.text }, cardBorder]}
+                            containerStyle={styles.fieldSpacing}
                             value={
                                 disabilitySince
                             }
                             onChangeText={
-                                setDisabilitySince
+                                (v: string) => { setDisabilitySince(v); clearError("disabilitySince"); }
                             }
+                            error={fieldErrors.disabilitySince}
                             keyboardType="number-pad"
                             maxLength={4}
                             accessibilityLabel="Disability since year"
@@ -719,36 +898,76 @@ const EditProfileScreen = () => {
                                 Caregiver Details
                             </AccessibleText>
 
-                            <TextInput
+                            <Input
+                                label="Person Name"
                                 placeholder="Person Name"
-                                placeholderTextColor={placeholderColor}
-                                style={[styles.input, { backgroundColor: colors.surface, color: colors.text }, cardBorder]}
+                                containerStyle={styles.fieldSpacing}
                                 value={personName}
                                 onChangeText={
-                                    (v: string) => setPersonName(sanitizeNameInput(v))
+                                    (v: string) => { setPersonName(sanitizeNameInput(v)); clearError("personName"); }
                                 }
+                                error={fieldErrors.personName}
                                 accessibilityLabel="Person name"
                             />
 
-                            <TextInput
-                                placeholder="Relation"
-                                placeholderTextColor={placeholderColor}
-                                style={[styles.input, { backgroundColor: colors.surface, color: colors.text }, cardBorder]}
-                                value={relation}
-                                onChangeText={
-                                    setRelation
-                                }
-                                accessibilityLabel="Relation"
+                            {/* RELATION */}
+                            <AccessibleText
+                                variant="label"
+                                style={{ color: placeholderColor, marginBottom: 8, marginTop: 4 }}
+                            >
+                                Relation
+                            </AccessibleText>
+                            <DisabilityDropdown
+                                multi={false}
+                                options={RELATION_OPTIONS}
+                                selected={relation ? [relation] : []}
+                                onToggle={(item) => { setRelation(item); clearError("relation"); }}
+                                label="Relation"
                             />
+                            {fieldErrors.relation && (
+                                <AccessibleText style={[styles.errorText, { color: colors.error }]} accessibilityRole="alert">
+                                    {fieldErrors.relation}
+                                </AccessibleText>
+                            )}
 
-                            <TextInput
-                                placeholder="Date of Birth (DD/MM/YYYY)"
-                                placeholderTextColor={placeholderColor}
-                                style={[styles.input, { backgroundColor: colors.surface, color: colors.text }, cardBorder]}
-                                value={careDob}
-                                onChangeText={setCareDob}
+                            {/* CARE RECIPIENT DOB — optional */}
+                            <AccessibleText variant="label" style={styles.dateLabel}>
+                                Date of Birth
+                            </AccessibleText>
+                            <TouchableOpacity
+                                activeOpacity={0.9}
+                                onPress={() => setShowCareDatePicker(true)}
+                                accessibilityRole="button"
                                 accessibilityLabel="Care recipient date of birth"
-                                accessibilityHint="Format: day, month, year"
+                                accessibilityHint={careDob ? `Selected: ${careDob}. Double tap to change` : "Double tap to open date picker. Optional."}
+                            >
+                                <TextInput
+                                    placeholder="Date of Birth (DD/MM/YYYY)"
+                                    placeholderTextColor={placeholderColor}
+                                    style={[styles.input, { backgroundColor: colors.surface, color: colors.text }, fieldBorder(!!fieldErrors.careDob)]}
+                                    value={careDob}
+                                    editable={false}
+                                    pointerEvents="none"
+                                    accessibilityLabel="Care recipient date of birth"
+                                />
+                            </TouchableOpacity>
+                            {fieldErrors.careDob && (
+                                <AccessibleText style={[styles.errorText, { color: colors.error }]} accessibilityRole="alert">
+                                    {fieldErrors.careDob}
+                                </AccessibleText>
+                            )}
+                            <DateTimePickerModal
+                                isVisible={showCareDatePicker}
+                                mode="date"
+                                maximumDate={new Date()}
+                                onConfirm={(date) => {
+                                    setShowCareDatePicker(false);
+                                    const formatted =
+                                        `${date.getDate().toString().padStart(2, "0")}/${(date.getMonth() + 1).toString().padStart(2, "0")}/${date.getFullYear()}`;
+                                    setCareDob(formatted);
+                                    clearError("careDob");
+                                }}
+                                onCancel={() => setShowCareDatePicker(false)}
                             />
 
                             <AccessibleText
@@ -778,23 +997,24 @@ const EditProfileScreen = () => {
                                 Professional Info
                             </AccessibleText>
 
-                            <TextInput
+                            <Input
+                                label="Speciality"
                                 placeholder="Speciality"
-                                placeholderTextColor={placeholderColor}
-                                style={[styles.input, { backgroundColor: colors.surface, color: colors.text }, cardBorder]}
+                                containerStyle={styles.fieldSpacing}
                                 value={
                                     speciality
                                 }
                                 onChangeText={
-                                    setSpeciality
+                                    (v: string) => { setSpeciality(v); clearError("speciality"); }
                                 }
+                                error={fieldErrors.speciality}
                                 accessibilityLabel="Speciality"
                             />
 
-                            <TextInput
+                            <Input
+                                label="Organization"
                                 placeholder="Organization"
-                                placeholderTextColor={placeholderColor}
-                                style={[styles.input, { backgroundColor: colors.surface, color: colors.text }, cardBorder]}
+                                containerStyle={styles.fieldSpacing}
                                 value={
                                     organization
                                 }
@@ -804,10 +1024,10 @@ const EditProfileScreen = () => {
                                 accessibilityLabel="Organization"
                             />
 
-                            <TextInput
+                            <Input
+                                label="Experience"
                                 placeholder="Experience"
-                                placeholderTextColor={placeholderColor}
-                                style={[styles.input, { backgroundColor: colors.surface, color: colors.text }, cardBorder]}
+                                containerStyle={styles.fieldSpacing}
                                 value={
                                     experience
                                 }
@@ -831,32 +1051,31 @@ const EditProfileScreen = () => {
                                 NGO Details
                             </AccessibleText>
 
-                            <TextInput
+                            <Input
+                                label="NGO Name"
                                 placeholder="NGO Name"
-                                placeholderTextColor={placeholderColor}
-                                style={[styles.input, { backgroundColor: colors.surface, color: colors.text }, cardBorder]}
+                                containerStyle={styles.fieldSpacing}
                                 value={ngoName}
                                 onChangeText={
-                                    setNgoName
+                                    (v: string) => { setNgoName(v); clearError("ngoName"); }
                                 }
+                                error={fieldErrors.ngoName}
                                 accessibilityLabel="NGO name"
                             />
 
-                            <TextInput
+                            <Input
+                                label="Role"
                                 placeholder="Role"
-                                placeholderTextColor={placeholderColor}
-                                style={[styles.input, { backgroundColor: colors.surface, color: colors.text }, cardBorder]}
+                                containerStyle={styles.fieldSpacing}
                                 value={ngoRole}
-                                onChangeText={
-                                    setNgoRole
-                                }
+                                onChangeText={setNgoRole}
                                 accessibilityLabel="Your role at the NGO"
                             />
 
-                            <TextInput
+                            <Input
+                                label="District"
                                 placeholder="District"
-                                placeholderTextColor={placeholderColor}
-                                style={[styles.input, { backgroundColor: colors.surface, color: colors.text }, cardBorder]}
+                                containerStyle={{ marginBottom: 14, marginTop: 14 }}
                                 value={district}
                                 onChangeText={
                                     setDistrict
@@ -888,6 +1107,25 @@ const EditProfileScreen = () => {
                     )}
                 </AccessibleButton>
             </View>
+
+            {/* These are single-button info dialogs, so dismissing via the
+                backdrop means the same thing as tapping the button. The action
+                lives in onCancel because ConfirmDialog fires onCancel on both
+                paths (and calls it before onConfirm), which would otherwise
+                run the action twice on a button press. */}
+            <ConfirmDialog
+                visible={!!confirmState}
+                title={confirmState?.title ?? ""}
+                message={confirmState?.message}
+                confirmLabel={confirmState?.confirmLabel ?? "OK"}
+                hideCancel
+                onConfirm={() => { }}
+                onCancel={() => {
+                    const action = confirmState?.onConfirm;
+                    setConfirmState(null);
+                    action?.();
+                }}
+            />
         </ScreenWrapper>
     );
 };
@@ -975,6 +1213,24 @@ const styles =
             fontSize: 15,
 
             marginBottom: 14,
+        },
+
+        errorText: {
+            fontSize: 12,
+            marginTop: -8,
+            marginBottom: 8,
+            marginLeft: 4,
+        },
+
+        fieldSpacing: {
+            marginBottom: 14,
+        },
+
+        // Matches the Input component's own label styling so the date fields
+        // line up with the labelled text fields around them.
+        dateLabel: {
+            textTransform: "uppercase",
+            marginBottom: 6,
         },
 
         footer: {

@@ -24,7 +24,6 @@ import { ConfirmDialog } from "../../components/chat/ConfirmDialog";
 import {
   MapPin,
   Phone,
-  Star,
   ShieldCheck,
   Clock,
   Mail,
@@ -35,7 +34,14 @@ import {
   Filter,
   Check,
 } from "lucide-react-native";
-import { fetchPublishedServices, fetchServiceCategories, ServiceModel } from "../../services/serviceService";
+import {
+  fetchPublishedServices,
+  fetchServiceCategories,
+  ServiceModel,
+  ServiceCategory,
+  DAYS,
+  formatDaySchedule,
+} from "../../services/serviceService";
 
 const MOCK_SERVICES: ServiceModel[] = [
   {
@@ -49,8 +55,6 @@ const MOCK_SERVICES: ServiceModel[] = [
     contactPhone: "+1 (555) 234-5678",
     contactEmail: "sarah.jenkins@therapy.org",
     contactUrl: "https://services.digiability.org/sarah-jenkins",
-    rating: 4.9,
-    reviews: 124,
     verified: true,
     price: "₹500 - ₹1,500 / session",
     availability: "Next available: Tomorrow"
@@ -66,8 +70,6 @@ const MOCK_SERVICES: ServiceModel[] = [
     contactPhone: "+1 (555) 876-5432",
     contactEmail: "info@mobilitysolutions.com",
     contactUrl: "https://services.digiability.org/mobility-solutions",
-    rating: 4.7,
-    reviews: 89,
     verified: true,
     price: "Varies by equipment",
     availability: "Open 9AM - 6PM"
@@ -83,8 +85,6 @@ const MOCK_SERVICES: ServiceModel[] = [
     contactPhone: "+1 (555) 345-6789",
     contactEmail: "contact@carebridge.org",
     contactUrl: "https://services.digiability.org/carebridge",
-    rating: 4.8,
-    reviews: 210,
     verified: true,
     price: "₹200 - ₹350 / hour",
     availability: "24/7 Availability"
@@ -100,8 +100,6 @@ const MOCK_SERVICES: ServiceModel[] = [
     contactPhone: "+1 (555) 901-2345",
     contactEmail: "legal@disabilityadvocates.org",
     contactUrl: "https://services.digiability.org/legal-advocates",
-    rating: 4.6,
-    reviews: 45,
     verified: true,
     price: "Free consultation",
     availability: "By appointment"
@@ -117,21 +115,10 @@ const MOCK_SERVICES: ServiceModel[] = [
     contactPhone: "+1 (555) 456-7890",
     contactEmail: "dispatch@accessibletransit.com",
     contactUrl: "https://services.digiability.org/accessible-transit",
-    rating: 4.9,
-    reviews: 312,
     verified: true,
     price: "₹20 / km",
     availability: "Book 24h in advance"
   }
-];
-
-const BASE_CATEGORIES = [
-  { id: "all", label: "All Categories" },
-  { id: "therapists", label: "Therapists" },
-  { id: "equipment", label: "Equipment" },
-  { id: "care", label: "Respite Care" },
-  { id: "legal", label: "Legal" },
-  { id: "transport", label: "Transport" },
 ];
 
 export const ServicesScreen = () => {
@@ -160,7 +147,15 @@ export const ServicesScreen = () => {
     message: "",
   });
 
-  const [activeServiceCategories, setActiveServiceCategories] = useState<string[]>([]);
+  // Master data only — no invented fallback categories. `categoriesLoaded`
+  // distinguishes "still fetching" (don't show an empty-state yet) from
+  // "fetch finished and there's genuinely nothing" (show one).
+  const [activeServiceCategories, setActiveServiceCategories] = useState<ServiceCategory[]>([]);
+  const [categoriesLoaded, setCategoriesLoaded] = useState(false);
+
+  // Per-service expanded state for the weekly availability accordion, keyed
+  // by service id so expanding one card's hours doesn't expand every card.
+  const [expandedAvailability, setExpandedAvailability] = useState<Record<string, boolean>>({});
 
   const loadServices = async () => {
     const data = await fetchPublishedServices();
@@ -171,8 +166,9 @@ export const ServicesScreen = () => {
 
   useEffect(() => {
     loadServices();
-    fetchServiceCategories().then((names) => {
-      if (names.length > 0) setActiveServiceCategories(names);
+    fetchServiceCategories().then((cats) => {
+      setActiveServiceCategories(cats);
+      setCategoriesLoaded(true);
     });
   }, []);
 
@@ -223,61 +219,46 @@ export const ServicesScreen = () => {
     setContactSheet({ visible: true, title: `Contact ${service.name}`, options });
   };
 
-  // Build unique category pills dynamically including any custom categories.
-  // Base list comes from Master Data (Active only) when available, falling
-  // back to the hardcoded defaults if that fetch failed or returned nothing.
+  // Category chips are driven entirely by Master Data (Active only) — no
+  // hardcoded fallback list and no scraping extra chips off service rows.
+  // If the master fetch fails or returns empty, the only option is "All".
   const categories = useMemo(() => {
-    const base =
-      activeServiceCategories.length > 0
-        ? [
-            { id: "all", label: "All Categories" },
-            ...activeServiceCategories.map((name) => ({ id: name.toLowerCase(), label: name })),
-          ]
-        : BASE_CATEGORIES;
-    const list = [...base];
-    const knownIds = new Set(list.map((c) => c.id));
-    services.forEach((s) => {
-      if (s.category && !knownIds.has(s.category.toLowerCase())) {
-        const catKey = s.category.toLowerCase();
-        knownIds.add(catKey);
-        list.push({ id: catKey, label: s.category });
-      }
-    });
-    return list;
-  }, [services, activeServiceCategories]);
+    return [
+      { id: "all", label: "All Categories" },
+      ...activeServiceCategories.map((c) => ({ id: c.id, label: c.name })),
+    ];
+  }, [activeServiceCategories]);
 
   const activeCategoryObj = useMemo(() => {
     return categories.find((c) => c.id === activeCategory) || { id: "all", label: "All Categories" };
   }, [categories, activeCategory]);
 
-  const matchesCategory = (serviceCategory: string, catId: string) => {
-    if (catId === "all") return true;
-    const s = (serviceCategory || "").toLowerCase().trim();
-    const c = catId.toLowerCase().trim();
-    if (s === c) return true;
-    if (c === "therapists" && (s.includes("therap") || s.includes("doctor"))) return true;
-    if (c === "equipment" && (s.includes("equip") || s.includes("vendor") || s.includes("aid"))) return true;
-    if (c === "care" && (s.includes("care") || s.includes("respite"))) return true;
-    if (c === "legal" && (s.includes("legal") || s.includes("advoca") || s.includes("law"))) return true;
-    if (c === "transport" && (s.includes("transport") || s.includes("transit") || s.includes("cab"))) return true;
-    return s.includes(c) || c.includes(s);
-  };
+  // Resolves a service's category id to its master-data display name, so a
+  // raw id (e.g. "SV0012026") never surfaces in search matching or on a
+  // card. Falls back to the raw value only if master data hasn't loaded it
+  // (e.g. legacy free-text rows from before the id-linkage backfill).
+  const categoryNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    activeServiceCategories.forEach((c) => map.set(c.id, c.name));
+    return map;
+  }, [activeServiceCategories]);
 
   const filteredServices = useMemo(() => {
     return services.filter((s) => {
-      const matchCat = matchesCategory(s.category, activeCategory);
+      const matchCat = activeCategory === "all" || s.category === activeCategory;
       if (!matchCat) return false;
       if (!searchQuery.trim()) return true;
       const q = searchQuery.toLowerCase().trim();
+      const categoryLabel = categoryNameById.get(s.category) || s.category;
       return (
         s.name?.toLowerCase().includes(q) ||
         s.type?.toLowerCase().includes(q) ||
         s.description?.toLowerCase().includes(q) ||
         s.location?.toLowerCase().includes(q) ||
-        s.category?.toLowerCase().includes(q)
+        categoryLabel?.toLowerCase().includes(q)
       );
     });
-  }, [services, activeCategory, searchQuery]);
+  }, [services, activeCategory, searchQuery, categoryNameById]);
 
   return (
     <ScreenWrapper>
@@ -416,6 +397,13 @@ export const ServicesScreen = () => {
                       </TouchableOpacity>
                     );
                   })}
+                  {categoriesLoaded && activeServiceCategories.length === 0 && (
+                    <View style={styles.categoryEmptyState}>
+                      <AccessibleText variant="body" style={{ color: colors.subtext, textAlign: "center", fontSize: 13 }}>
+                        No service categories are configured yet. Check back later or browse all services.
+                      </AccessibleText>
+                    </View>
+                  )}
                 </ScrollView>
               </View>
             </TouchableWithoutFeedback>
@@ -448,7 +436,9 @@ export const ServicesScreen = () => {
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[colors.primary]} />}
           contentContainerStyle={[styles.scrollContent, { paddingBottom: Platform.OS === "ios" ? 150 : 120 }]}
         >
-          {filteredServices.map((service) => (
+          {filteredServices.map((service) => {
+          const isAvailabilityExpanded = !!expandedAvailability[service.id];
+          return (
             <View
               key={service.id}
               style={[
@@ -507,24 +497,58 @@ export const ServicesScreen = () => {
                     {service.location}
                   </AccessibleText>
                 </View>
-                <View style={styles.metaRow}>
-                  <Clock size={14} color={iconMuted} />
-                  <AccessibleText style={{ color: colors.subtext, fontSize: 13, marginLeft: 6 }}>
-                    {service.availability}
-                  </AccessibleText>
-                </View>
-                <View style={styles.metaRow}>
-                  <Star
-                    size={14}
-                    color={highContrast ? colors.text : "#F59E0B"}
-                    fill={highContrast ? colors.text : "#F59E0B"}
-                  />
-                  <AccessibleText style={{ color: colors.text, fontSize: 13, fontWeight: "600", marginLeft: 6 }}>
-                    {service.rating ?? 4.9}
-                  </AccessibleText>
-                  <AccessibleText style={{ color: colors.subtext, fontSize: 13, marginLeft: 4 }}>
-                    ({service.reviews ?? 10} reviews)
-                  </AccessibleText>
+                <View>
+                  <TouchableOpacity
+                    style={[styles.metaRow, styles.availabilityToggle]}
+                    activeOpacity={0.7}
+                    onPress={() =>
+                      setExpandedAvailability((prev) => ({ ...prev, [service.id]: !prev[service.id] }))
+                    }
+                    accessibilityRole="button"
+                    accessibilityLabel={`Weekly availability for ${service.name}: ${service.availability}`}
+                    accessibilityHint={
+                      isAvailabilityExpanded
+                        ? "Collapses the day-by-day hours list"
+                        : "Expands to show hours for each day of the week"
+                    }
+                    accessibilityState={{ expanded: isAvailabilityExpanded }}
+                  >
+                    <Clock size={14} color={iconMuted} />
+                    <View style={{ flex: 1, marginLeft: 6 }}>
+                      <AccessibleText style={{ color: colors.subtext, fontSize: 13 }} numberOfLines={1}>
+                        {service.availability}
+                      </AccessibleText>
+                    </View>
+                    <ChevronDown
+                      size={16}
+                      color={iconMuted}
+                      style={{ transform: [{ rotate: isAvailabilityExpanded ? "180deg" : "0deg" }] }}
+                    />
+                  </TouchableOpacity>
+
+                  {isAvailabilityExpanded && (
+                    <View style={[styles.availabilityDetail, { borderTopColor: colors.border }]}>
+                      {(() => {
+                        const schedule = service.availabilitySchedule;
+                        return schedule ? (
+                          DAYS.map(({ key, label }) => (
+                            <View key={key} style={styles.availabilityDayRow}>
+                              <AccessibleText style={[styles.availabilityDayLabel, { color: colors.text }]}>
+                                {label}
+                              </AccessibleText>
+                              <AccessibleText style={[styles.availabilityDayValue, { color: colors.subtext }]}>
+                                {formatDaySchedule(schedule[key])}
+                              </AccessibleText>
+                            </View>
+                          ))
+                        ) : (
+                          <AccessibleText style={{ color: colors.subtext, fontSize: 13 }}>
+                            {service.availability}
+                          </AccessibleText>
+                        );
+                      })()}
+                    </View>
+                  )}
                 </View>
               </View>
 
@@ -546,7 +570,8 @@ export const ServicesScreen = () => {
                 </TouchableOpacity>
               </View>
             </View>
-          ))}
+          );
+          })}
         </ScrollView>
       )}
 
@@ -723,6 +748,31 @@ const styles = StyleSheet.create({
   metaRow: {
     flexDirection: "row",
     alignItems: "center",
+  },
+  availabilityToggle: {
+    justifyContent: "space-between",
+  },
+  availabilityDetail: {
+    marginTop: 4,
+    paddingTop: 10,
+    paddingLeft: 20,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    gap: 6,
+  },
+  availabilityDayRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  availabilityDayLabel: {
+    fontSize: 12.5,
+    fontWeight: "600",
+  },
+  availabilityDayValue: {
+    fontSize: 12.5,
+  },
+  categoryEmptyState: {
+    paddingHorizontal: 18,
+    paddingVertical: 20,
   },
   cardFooter: {
     flexDirection: "row",

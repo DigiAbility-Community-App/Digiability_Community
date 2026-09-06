@@ -45,6 +45,21 @@ interface UserOption {
 const GENERAL_ROLES = ["MEMBER", "ADMIN"] as const;
 const CARE_CIRCLE_ROLES = ["MEMBER", "CAREGIVER", "MENTOR", "PROFESSIONAL"] as const;
 
+// Display-only labels — the underlying role values above are unchanged
+// (CAREGIVER really is the backend-verified admin-equivalent role for Care
+// Circles, see hasAdminAccess() in chat-svc/src/utils/roles.util.ts), but
+// showing the raw enum string read as "there's no Admin option" for admins
+// picking a Care Circle's required group admin. "Admin (Caregiver)" (not
+// bare "Group Admin") to avoid colliding with the Owner badge below, which
+// already reads "Group Admin" on this same screen.
+const ROLE_LABELS: Record<string, string> = {
+  MEMBER: "Member",
+  ADMIN: "Admin",
+  CAREGIVER: "Admin (Caregiver)",
+  MENTOR: "Mentor",
+  PROFESSIONAL: "Professional",
+};
+
 // ─────────────────────────────────────────────
 // REUSABLE GROUP SECTION TABLE (PAGINATED 10/PAGE)
 // ─────────────────────────────────────────────
@@ -1101,7 +1116,7 @@ function CreateGroupModal({ onClose, onCreated }: { onClose: () => void; onCreat
                                 className="h-8 pl-3 pr-7 rounded-lg bg-white border border-gray-200 text-xs font-bold outline-none focus:border-[#8A38F5] appearance-none disabled:opacity-50"
                               >
                                 {roles.map(r => (
-                                  <option key={r} value={r} disabled={r === adminRole && wouldExceedCap}>{r}</option>
+                                  <option key={r} value={r} disabled={r === adminRole && wouldExceedCap}>{ROLE_LABELS[r] ?? r}</option>
                                 ))}
                               </select>
                               <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-400 pointer-events-none" />

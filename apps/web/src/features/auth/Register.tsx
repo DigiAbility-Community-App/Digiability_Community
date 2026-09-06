@@ -29,8 +29,9 @@ const Register = () => {
 
     try {
       await authService.register(name, email, password);
-      // After registration, redirect to verify email
-      navigate('/verify-email');
+      // Registration doesn't create a session any more, so the email can't be
+      // read from the auth store on the next screen — pass it through.
+      navigate('/verify-email', { state: { email } });
     } catch (err: any) {
       const msg = err.response?.data?.message || err.message || 'Registration failed.';
       setError(msg);

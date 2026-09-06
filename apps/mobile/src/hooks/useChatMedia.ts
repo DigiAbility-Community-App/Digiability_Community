@@ -19,6 +19,37 @@ import { useChatStore, ChatMessage } from "@store/chatStore";
 import { useAuthStore } from "@store/authStore";
 import { generateUUID } from "../utils/uuid";
 
+// Resolve the file extension + MIME type to use for an upload.
+//
+// expo-image-picker assets can come back with a `content://` URI on
+// Android (Google Photos, cloud-synced albums, etc.) that has no
+// recognizable file extension in the path at all — parsing the URI alone
+// then yields a garbled `ext` and an invalid upload MIME type. Prefer the
+// asset's own reported `mimeType`/`fileName` fields, which are populated
+// regardless of URI scheme, and only fall back to URI-parsing when those
+// aren't available (e.g. for plain file:// URIs, which parse fine anyway).
+function resolveUploadFileInfo(
+  kind: "image" | "video",
+  uri: string,
+  assetMimeType?: string | null,
+  assetFileName?: string | null
+): { ext: string; mimeType: string } {
+  const fallbackExt = kind === "video" ? "mp4" : "jpg";
+
+  if (assetMimeType) {
+    const extFromMime = assetMimeType.split("/").pop()?.toLowerCase();
+    if (extFromMime) {
+      return { ext: extFromMime === "jpeg" ? "jpg" : extFromMime, mimeType: assetMimeType };
+    }
+  }
+  if (assetFileName && assetFileName.includes(".")) {
+    const ext = assetFileName.split(".").pop()!.toLowerCase();
+    return { ext, mimeType: `${kind}/${ext === "jpg" ? "jpeg" : ext}` };
+  }
+  const ext = uri.split(".").pop()?.toLowerCase() || fallbackExt;
+  return { ext, mimeType: `${kind}/${ext === "jpg" ? "jpeg" : ext}` };
+}
+
 export function useChatMedia(conversationId: string, senderId: string | undefined) {
   const addMessage = useChatStore((s) => s.addMessage);
   const removeMessage = useChatStore((s) => s.removeMessage);
@@ -27,6 +58,13 @@ export function useChatMedia(conversationId: string, senderId: string | undefine
   const [isRecording, setIsRecording] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [pendingImageUri, setPendingImageUri] = useState<string | null>(null);
+  // Sibling state to pendingImageUri: the picker's own reported mimeType/
+  // fileName for that same asset, kept separate so pendingImageUri can stay
+  // a plain string for existing consumers (AltTextModal's `imageUri` prop).
+  const [pendingImageMeta, setPendingImageMeta] = useState<{
+    mimeType?: string | null;
+    fileName?: string | null;
+  }>({});
 
   const recordingRef = useRef<Audio.Recording | null>(null);
   const recordStartRef = useRef<number>(0);
@@ -154,12 +192,17 @@ export function useChatMedia(conversationId: string, senderId: string | undefine
           // Immediately send video (no alt text needed)
           setIsUploading(true);
           try {
-            const ext = uri.split(".").pop()?.toLowerCase() || "mp4";
+            const { ext, mimeType } = resolveUploadFileInfo(
+              "video",
+              uri,
+              asset.mimeType,
+              asset.fileName
+            );
             const { url } = await chatService.uploadMedia(
-              { uri, name: `video-${Date.now()}.${ext}`, type: `video/${ext}` },
+              { uri, name: `video-${Date.now()}.${ext}`, type: mimeType },
               "video"
             );
-            sendMedia("VIDEO", url, { mimeType: `video/${ext}` });
+            sendMedia("VIDEO", url, { mimeType });
           } catch (err) {
             console.error("video upload failed", err);
             Alert.alert("Send failed", "Could not send your video.");
@@ -168,6 +211,7 @@ export function useChatMedia(conversationId: string, senderId: string | undefine
           }
         } else {
           setPendingImageUri(uri);
+          setPendingImageMeta({ mimeType: asset.mimeType, fileName: asset.fileName });
         }
       }
     } catch (err) {
@@ -175,19 +219,24 @@ export function useChatMedia(conversationId: string, senderId: string | undefine
     }
   }, [sendMedia]);
 
-  const cancelPendingImage = useCallback(() => setPendingImageUri(null), []);
+  const cancelPendingImage = useCallback(() => {
+    setPendingImageUri(null);
+    setPendingImageMeta({});
+  }, []);
 
   // Send the previously picked image with a screen-reader alt description.
   const sendPendingImage = useCallback(
     async (altText: string) => {
       const uri = pendingImageUri;
       if (!uri) return;
+      const { mimeType: assetMimeType, fileName: assetFileName } = pendingImageMeta;
       setPendingImageUri(null);
+      setPendingImageMeta({});
       setIsUploading(true);
       try {
-        const ext = uri.split(".").pop()?.toLowerCase() || "jpg";
+        const { ext, mimeType } = resolveUploadFileInfo("image", uri, assetMimeType, assetFileName);
         const { url } = await chatService.uploadMedia(
-          { uri, name: `image-${Date.now()}.${ext}`, type: `image/${ext === "jpg" ? "jpeg" : ext}` },
+          { uri, name: `image-${Date.now()}.${ext}`, type: mimeType },
           "image"
         );
         sendMedia("IMAGE", url, { altText: altText.trim() });
@@ -198,7 +247,7 @@ export function useChatMedia(conversationId: string, senderId: string | undefine
         setIsUploading(false);
       }
     },
-    [pendingImageUri, sendMedia]
+    [pendingImageUri, pendingImageMeta, sendMedia]
   );
 
   return {

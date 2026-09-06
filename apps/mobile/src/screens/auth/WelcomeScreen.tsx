@@ -162,9 +162,9 @@ const WelcomeScreen = ({ navigation }: Props) => {
         password: trimmedPassword,
         phoneNo: trimmedPhone,
       });
-      // register() calls setAuth() in the auth store → isAuthenticated flips
-      // to true → RootNavigator auto-switches to Main stack (Accessibility first).
-      // No manual navigation required.
+      // Registration no longer starts a session (the server issues tokens only
+      // after the OTP is verified), so navigate to Verify Email explicitly
+      // rather than relying on setAuth flipping RootNavigator to the Main stack.
       if (result.otpEmailSent === false) {
         // Account exists either way — this just tells the user not to sit
         // waiting for an email that never sent, and to use Resend instead.
@@ -173,6 +173,7 @@ const WelcomeScreen = ({ navigation }: Props) => {
           "We couldn't send the verification email right now. On the next screen, use Resend OTP to try again."
         );
       }
+      navigation.navigate("VerifyEmail", { email: trimmedEmail });
     } catch (err: unknown) {
       console.error("[SignUpError]", err);
       setError(getApiErrorMessage(err, "Registration failed."));

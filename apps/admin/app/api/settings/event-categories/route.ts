@@ -2,36 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAdminAuth } from "@/lib/auth";
 import { dbPool } from "@/lib/db";
 import { writeAudit } from "@/lib/audit";
-
-async function ensureTable() {
-  await dbPool.query(`
-    CREATE TABLE IF NOT EXISTS event_categories (
-      id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
-      name TEXT NOT NULL UNIQUE,
-      status TEXT NOT NULL DEFAULT 'Active',
-      created_at TIMESTAMPTZ DEFAULT NOW()
-    )
-  `);
-
-  // Seed default categories if empty
-  const countRes = await dbPool.query(`SELECT COUNT(*) as count FROM event_categories`);
-  if (parseInt(countRes.rows[0].count, 10) === 0) {
-    const defaults = [
-      "Medical Support",
-      "Legal Aid",
-      "Skill Training",
-      "Assistive Technology",
-      "General Support",
-      "Awareness",
-    ];
-    for (const name of defaults) {
-      await dbPool.query(
-        `INSERT INTO event_categories (id, name, status) VALUES (gen_random_uuid()::text, $1, 'Active') ON CONFLICT DO NOTHING`,
-        [name]
-      );
-    }
-  }
-}
+import { generateCategoryId } from "@/lib/categoryId";
+import { ensureEventCategoriesTable as ensureTable } from "@/lib/masterCategories";
 
 // ─────────────────────────────────────────────
 // GET — list all event categories
@@ -65,7 +37,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, message: "Category name is required" }, { status: 400 });
     }
 
-    const id = crypto.randomUUID();
+    const id = await generateCategoryId("event_categories", "EV");
     const result = await dbPool.query(
       `
       INSERT INTO event_categories (id, name, status, created_at)

@@ -8,10 +8,12 @@ import { useNavigation } from "@react-navigation/native";
 import { chatService, CommunityGroup } from "../../services/chatService";
 import { useTheme } from "../../theme/ThemeContext";
 import { ConfirmDialog } from "../chat/ConfirmDialog";
+import { useChatStore } from "@store/chatStore";
 
 const CareCirclesTab = () => {
   const navigation = useNavigation<any>();
   const { colors } = useTheme();
+  const conversations = useChatStore((s) => s.conversations);
 
   const [circles, setCircles] = useState<CommunityGroup[]>([]);
   const [loading, setLoading] = useState(true);
@@ -125,12 +127,22 @@ const CareCirclesTab = () => {
             )}
           </View>
           <Text style={[styles.desc, { color: colors.subtext }]} numberOfLines={1}>
-            {item.description || item.lastMessageText || "Support circle"}
+            {item.lastMessageText || item.description || "Support circle"}
           </Text>
           <Text style={[styles.memberCount, { color: colors.subtext }]}>
             {item.memberCount} {item.memberCount === 1 ? "member" : "members"}
           </Text>
         </View>
+
+        {(() => {
+          const unread = conversations[item.id]?.unreadCount || 0;
+          if (unread <= 0) return null;
+          return (
+            <View style={[styles.unreadBadge, { backgroundColor: colors.primary }]}>
+              <Text style={styles.unreadText}>{unread > 99 ? "99+" : unread}</Text>
+            </View>
+          );
+        })()}
 
         {isJoining
           ? <ActivityIndicator size="small" color="#500088" />
@@ -261,6 +273,20 @@ const styles = StyleSheet.create({
   joinBadgeText: { fontSize: 10, fontWeight: "700", color: "#500088" },
   desc: { fontSize: 13, marginBottom: 2 },
   memberCount: { fontSize: 11, fontWeight: "600" },
+  unreadBadge: {
+    minWidth: 22,
+    height: 22,
+    borderRadius: 11,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 6,
+    marginRight: 8,
+  },
+  unreadText: {
+    color: "#FFFFFF",
+    fontSize: 12,
+    fontWeight: "800",
+  },
   emptyCard: {
     backgroundColor: "#FFFFFF", borderRadius: 24, padding: 32,
     alignItems: "center", marginTop: 20, marginHorizontal: 8,

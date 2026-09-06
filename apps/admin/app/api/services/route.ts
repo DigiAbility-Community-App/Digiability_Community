@@ -8,6 +8,7 @@ import {
   isValidWeeklySchedule,
   formatAvailabilitySummary,
 } from "@/lib/availabilitySchedule";
+import { getOrCreateServiceCategoryId } from "@/lib/masterCategories";
 
 async function ensureServicesTable() {
   await dbPool.query(`
@@ -64,12 +65,24 @@ async function ensureServicesTable() {
       "srv-5": openDays([...WEEK_MINUS_SUNDAY], "07:00", "21:00"),
     } as const;
 
+    // Link each seed row to a real service_categories id (creating the
+    // category if it doesn't exist yet) instead of the legacy free-text
+    // slugs ("therapists", "equipment", ...) these used to hardcode — see
+    // CLAUDE.md/B3: category must be a master-data id, never invented text.
+    const [therapistsCatId, equipmentCatId, careCatId, legalCatId, transportCatId] = await Promise.all([
+      getOrCreateServiceCategoryId("Therapists"),
+      getOrCreateServiceCategoryId("Equipment Vendor"),
+      getOrCreateServiceCategoryId("Respite Care"),
+      getOrCreateServiceCategoryId("Legal Services"),
+      getOrCreateServiceCategoryId("Transportation"),
+    ]);
+
     const defaultServices = [
       {
         id: "srv-1",
         name: "Dr. Sarah Jenkins",
         type: "Occupational Therapist",
-        category: "therapists",
+        category: therapistsCatId,
         logo: "👩‍⚕️",
         image: "https://images.unsplash.com/photo-1559839734-2b71ea197ec2?w=400&q=80",
         description: "Specialized in pediatric occupational therapy and sensory integration for children with autism and developmental delays.",
@@ -79,8 +92,8 @@ async function ensureServicesTable() {
         contactUrl: "https://services.digiability.org/sarah-jenkins",
         price: "₹500 - ₹1,500 / session",
         availabilitySchedule: schedules["srv-1"],
-        rating: 4.9,
-        reviews: 124,
+        rating: 0,
+        reviews: 0,
         verified: true,
         status: "published",
       },
@@ -88,7 +101,7 @@ async function ensureServicesTable() {
         id: "srv-2",
         name: "Mobility Solutions Inc.",
         type: "Equipment Vendor",
-        category: "equipment",
+        category: equipmentCatId,
         logo: "🦽",
         image: "https://images.unsplash.com/photo-1584515979956-d9f6e5d09982?w=400&q=80",
         description: "Rental and purchase of wheelchairs, walkers, and custom-fitted seating systems. Same-day delivery available.",
@@ -98,8 +111,8 @@ async function ensureServicesTable() {
         contactUrl: "https://services.digiability.org/mobility-solutions",
         price: "Varies by equipment",
         availabilitySchedule: schedules["srv-2"],
-        rating: 4.7,
-        reviews: 89,
+        rating: 0,
+        reviews: 0,
         verified: true,
         status: "published",
       },
@@ -107,7 +120,7 @@ async function ensureServicesTable() {
         id: "srv-3",
         name: "CareBridge Support",
         type: "Respite Care",
-        category: "care",
+        category: careCatId,
         logo: "🤝",
         image: "https://images.unsplash.com/photo-1576765608535-5f04d1e3f289?w=400&q=80",
         description: "Professional respite care providers offering short-term relief for primary caregivers. Background-checked and certified.",
@@ -117,8 +130,8 @@ async function ensureServicesTable() {
         contactUrl: "https://services.digiability.org/carebridge",
         price: "₹200 - ₹350 / hour",
         availabilitySchedule: schedules["srv-3"],
-        rating: 4.8,
-        reviews: 210,
+        rating: 0,
+        reviews: 0,
         verified: true,
         status: "published",
       },
@@ -126,7 +139,7 @@ async function ensureServicesTable() {
         id: "srv-4",
         name: "Legal Advocates for Disability",
         type: "Legal Services",
-        category: "legal",
+        category: legalCatId,
         logo: "⚖️",
         image: "https://images.unsplash.com/photo-1589829545856-d10d557cf95f?w=400&q=80",
         description: "Assistance with disability claims, appeals, and educational advocacy (IEP meetings).",
@@ -136,8 +149,8 @@ async function ensureServicesTable() {
         contactUrl: "https://services.digiability.org/legal-advocates",
         price: "Free consultation",
         availabilitySchedule: schedules["srv-4"],
-        rating: 4.6,
-        reviews: 45,
+        rating: 0,
+        reviews: 0,
         verified: true,
         status: "published",
       },
@@ -145,7 +158,7 @@ async function ensureServicesTable() {
         id: "srv-5",
         name: "Accessible Transit Co.",
         type: "Transportation",
-        category: "transport",
+        category: transportCatId,
         logo: "🚐",
         image: "https://images.unsplash.com/photo-1544620347-c4fd4a3d5957?w=400&q=80",
         description: "Wheelchair-accessible vans and specialized transport services for medical appointments and daily commuting.",
@@ -155,8 +168,8 @@ async function ensureServicesTable() {
         contactUrl: "https://services.digiability.org/accessible-transit",
         price: "₹20 / km",
         availabilitySchedule: schedules["srv-5"],
-        rating: 4.9,
-        reviews: 312,
+        rating: 0,
+        reviews: 0,
         verified: true,
         status: "published",
       },
@@ -263,7 +276,7 @@ export async function POST(request: NextRequest) {
         price, availability, "availabilitySchedule", rating, reviews, verified, status,
         "createdAt", "updatedAt"
       )
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,5.0,0,$15,$16,NOW(),NOW())
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,0,0,$15,$16,NOW(),NOW())
       RETURNING *
     `, [
       id,

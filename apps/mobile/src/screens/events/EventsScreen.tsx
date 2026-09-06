@@ -27,34 +27,29 @@ import AppFooter from "../../components/layout/AppFooter";
 import { useTheme } from "../../theme/ThemeContext";
 import { AccessibleText } from "../../components/shared/AccessibleText";
 import { AccessibleButton } from "../../components/shared/AccessibleButton";
-import { fetchAllEvents, fetchEventCategories, EventModel, parseAccessibilityTags } from "../../services/eventService";
+import { fetchAllEvents, fetchEventCategories, EventModel, EventCategory, parseAccessibilityTags } from "../../services/eventService";
 import { formatEventDateDisplay } from "../../utils/dateHelpers";
-
-export const DEFAULT_EVENT_CATEGORIES = [
-  "All",
-  "Medical Support",
-  "Legal Aid",
-  "Skill Training",
-  "Assistive Technology",
-  "General Support",
-  "Awareness",
-];
 
 export default function EventsScreen() {
   const navigation = useNavigation<any>();
   const { colors, spacing, highContrast } = useTheme();
-  
+
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [events, setEvents] = useState<EventModel[]>([]);
-  const [selectedCategory, setSelectedCategory] = useState("All");
+  const [selectedCategory, setSelectedCategory] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
-  const [activeCategories, setActiveCategories] = useState<string[]>([]);
+  // Master data only — no invented fallback categories. `categoriesLoaded`
+  // distinguishes "still fetching" from "fetch finished and there's
+  // genuinely nothing", so the empty-state message doesn't flash on mount.
+  const [activeCategories, setActiveCategories] = useState<EventCategory[]>([]);
+  const [categoriesLoaded, setCategoriesLoaded] = useState(false);
 
   useEffect(() => {
-    fetchEventCategories().then((names) => {
-      if (names.length > 0) setActiveCategories(names);
+    fetchEventCategories().then((cats) => {
+      setActiveCategories(cats);
+      setCategoriesLoaded(true);
     });
   }, []);
 
@@ -83,29 +78,44 @@ export default function EventsScreen() {
     loadEvents(false);
   };
 
-  // Live categories from Master Data (Active only) — falls back to the
-  // hardcoded defaults if the fetch fails or returns nothing, so the
-  // picker is never left with just "All".
+  // Category chips are driven entirely by Master Data (Active only) — no
+  // hardcoded fallback list. If the master fetch fails or returns empty,
+  // the only option is "All".
   const categoryFilters = useMemo(() => {
-    if (activeCategories.length === 0) return DEFAULT_EVENT_CATEGORIES;
-    return ["All", ...activeCategories];
+    return [
+      { id: "all", label: "All Categories" },
+      ...activeCategories.map((c) => ({ id: c.id, label: c.name })),
+    ];
+  }, [activeCategories]);
+
+  const selectedCategoryObj = useMemo(() => {
+    return categoryFilters.find((c) => c.id === selectedCategory) || categoryFilters[0];
+  }, [categoryFilters, selectedCategory]);
+
+  // Resolves an event's category id to its master-data display name, so a
+  // raw id (e.g. "EV0012026") never surfaces in search matching or on a
+  // card. Falls back to the raw value only if master data hasn't loaded it
+  // (e.g. legacy free-text rows from before the id-linkage backfill).
+  const categoryNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    activeCategories.forEach((c) => map.set(c.id, c.name));
+    return map;
   }, [activeCategories]);
 
   const filteredEvents = useMemo(() => {
     return events.filter((event) => {
-      const matchesCategory =
-        selectedCategory === "All" ||
-        event.category?.trim().toLowerCase() === selectedCategory.trim().toLowerCase();
+      const matchesCategory = selectedCategory === "all" || event.category === selectedCategory;
       const q = searchQuery.toLowerCase().trim();
+      const categoryLabel = categoryNameById.get(event.category) || event.category;
       const matchesSearch =
         !q ||
         event.title.toLowerCase().includes(q) ||
         event.location.toLowerCase().includes(q) ||
         event.description.toLowerCase().includes(q) ||
-        (event.category && event.category.toLowerCase().includes(q));
+        (categoryLabel && categoryLabel.toLowerCase().includes(q));
       return matchesCategory && matchesSearch;
     });
-  }, [events, selectedCategory, searchQuery]);
+  }, [events, selectedCategory, searchQuery, categoryNameById]);
 
   const cardBorder = highContrast
     ? { borderWidth: 2, borderColor: "#000000" }
@@ -156,7 +166,7 @@ export default function EventsScreen() {
           activeOpacity={0.8}
           onPress={() => setIsCategoryModalOpen(true)}
           accessibilityRole="button"
-          accessibilityLabel={`Category filter: ${selectedCategory}`}
+          accessibilityLabel={`Category filter: ${selectedCategoryObj.label}`}
           accessibilityHint="Opens dropdown to filter events by category"
         >
           <View style={styles.dropdownLeft}>
@@ -173,7 +183,7 @@ export default function EventsScreen() {
                 CATEGORY
               </AccessibleText>
               <AccessibleText variant="body" style={[styles.dropdownValue, { color: colors.text }]}>
-                {selectedCategory}
+                {selectedCategoryObj.label}
               </AccessibleText>
             </View>
           </View>
@@ -217,17 +227,17 @@ export default function EventsScreen() {
 
                 <ScrollView style={styles.modalList} showsVerticalScrollIndicator={false}>
                   {categoryFilters.map((cat) => {
-                    const isSelected = selectedCategory.trim().toLowerCase() === cat.trim().toLowerCase();
+                    const isSelected = selectedCategory === cat.id;
                     return (
                       <TouchableOpacity
-                        key={cat}
+                        key={cat.id}
                         style={[
                           styles.categoryOption,
                           { borderBottomColor: colors.border },
                           isSelected && { backgroundColor: highContrast ? colors.surface : "#F5F3FF" },
                         ]}
                         onPress={() => {
-                          setSelectedCategory(cat);
+                          setSelectedCategory(cat.id);
                           setIsCategoryModalOpen(false);
                         }}
                         accessibilityRole="button"
@@ -241,12 +251,19 @@ export default function EventsScreen() {
                             isSelected && { fontWeight: "700" },
                           ]}
                         >
-                          {cat}
+                          {cat.label}
                         </AccessibleText>
                         {isSelected && <Check size={18} color={colors.primary} strokeWidth={2.5} />}
                       </TouchableOpacity>
                     );
                   })}
+                  {categoriesLoaded && activeCategories.length === 0 && (
+                    <View style={styles.categoryEmptyState}>
+                      <AccessibleText variant="body" style={{ color: colors.subtext, textAlign: "center", fontSize: 13 }}>
+                        No event categories are configured yet. Check back later or browse all events.
+                      </AccessibleText>
+                    </View>
+                  )}
                 </ScrollView>
               </View>
             </TouchableWithoutFeedback>
@@ -328,7 +345,7 @@ export default function EventsScreen() {
                     variant="overline"
                     style={[styles.categoryText, { color: highContrast ? "#000000" : colors.primary }]}
                   >
-                    {event.category.toUpperCase()}
+                    {(categoryNameById.get(event.category) || event.category).toUpperCase()}
                   </AccessibleText>
                 </View>
 
@@ -480,6 +497,10 @@ const styles = StyleSheet.create({
   },
   modalList: {
     paddingVertical: 6,
+  },
+  categoryEmptyState: {
+    paddingHorizontal: 18,
+    paddingVertical: 20,
   },
   categoryOption: {
     flexDirection: "row",

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import {
   ChevronRight,
   ChevronLeft,
@@ -32,6 +33,7 @@ import {
   Lock,
 } from "lucide-react";
 import { isValidIndianPhone, INVALID_PHONE_MESSAGE, isValidEmail, INVALID_EMAIL_MESSAGE } from "@/lib/validation";
+import { ConfirmModal } from "@/components/shared/ConfirmModal";
 
 // ─────────────────────────────────────
 // TYPES
@@ -353,18 +355,13 @@ function GeneralTab({ onSave }: { onSave: () => void }) {
       {/* ACCESSIBILITY STANDARD */}
       <div className="relative overflow-hidden bg-[#7004DC] rounded-2xl p-7 text-white">
         <div className="absolute -right-8 -top-8 w-32 h-32 rounded-full bg-white/10" />
-        <div className="relative z-10 flex items-center justify-between">
-          <div>
-            <p className="text-xs font-bold uppercase tracking-widest text-white/60 mb-2">Accessibility</p>
-            <h3 className="text-xl font-extrabold">Accessibility Standard</h3>
-            <p className="text-sm text-white/70 mt-2 max-w-md">
-              The platform is currently adhering to WCAG 2.1 AA standards.
-              Ensure all changes to the UI maintain this compliance score.
-            </p>
-          </div>
-          <button className="flex-shrink-0 h-10 px-6 rounded-xl bg-white/20 hover:bg-white/30 text-sm font-bold transition">
-            View Compliance Report
-          </button>
+        <div className="relative z-10">
+          <p className="text-xs font-bold uppercase tracking-widest text-white/60 mb-2">Accessibility</p>
+          <h3 className="text-xl font-extrabold">Accessibility Standard</h3>
+          <p className="text-sm text-white/70 mt-2 max-w-lg">
+            The platform is currently adhering to WCAG 2.1 AA standards.
+            Ensure all changes to the UI maintain this compliance score.
+          </p>
         </div>
       </div>
 
@@ -659,6 +656,29 @@ function MasterDataTab() {
     setServiceCats((prev) => prev.filter((c) => c.id !== id));
   };
 
+  // Delete confirmation — shared across all three Master Data delete flows
+  // instead of tripling near-identical state, since they all follow the
+  // same "confirm, then call the matching existing delete function" shape.
+  const [deleteTarget, setDeleteTarget] = useState<{
+    kind: "disabilityType" | "eventCategory" | "serviceCategory";
+    id: string;
+    name: string;
+  } | null>(null);
+  const [deletingTarget, setDeletingTarget] = useState(false);
+
+  const handleConfirmDelete = async () => {
+    if (!deleteTarget) return;
+    setDeletingTarget(true);
+    try {
+      if (deleteTarget.kind === "disabilityType") await deleteType(deleteTarget.id);
+      else if (deleteTarget.kind === "eventCategory") await deleteEventCategory(deleteTarget.id);
+      else await deleteServiceCategory(deleteTarget.id);
+      setDeleteTarget(null);
+    } finally {
+      setDeletingTarget(false);
+    }
+  };
+
   const MASTER_DOMAINS: {
     key: MasterCategoryKey;
     title: string;
@@ -839,7 +859,7 @@ function MasterDataTab() {
                     <Pencil className="w-3.5 h-3.5" />
                   </button>
                   <button
-                    onClick={() => deleteType(t.id)}
+                    onClick={() => setDeleteTarget({ kind: "disabilityType", id: t.id, name: t.name })}
                     className="w-8 h-8 rounded-lg hover:bg-red-50 flex items-center justify-center text-red-500 transition"
                     title="Delete option"
                   >
@@ -972,7 +992,7 @@ function MasterDataTab() {
                     <Pencil className="w-3.5 h-3.5" />
                   </button>
                   <button
-                    onClick={() => deleteEventCategory(cat.id)}
+                    onClick={() => setDeleteTarget({ kind: "eventCategory", id: cat.id, name: cat.name })}
                     className="w-8 h-8 rounded-lg hover:bg-red-50 flex items-center justify-center text-red-500 transition"
                     title="Delete option"
                   >
@@ -1105,7 +1125,7 @@ function MasterDataTab() {
                     <Pencil className="w-3.5 h-3.5" />
                   </button>
                   <button
-                    onClick={() => deleteServiceCategory(cat.id)}
+                    onClick={() => setDeleteTarget({ kind: "serviceCategory", id: cat.id, name: cat.name })}
                     className="w-8 h-8 rounded-lg hover:bg-red-50 flex items-center justify-center text-red-500 transition"
                     title="Delete option"
                   >
@@ -1144,6 +1164,18 @@ function MasterDataTab() {
           )}
         </div>
       )}
+
+      <ConfirmModal
+        open={!!deleteTarget}
+        title="Delete this option?"
+        message={deleteTarget ? `"${deleteTarget.name}" will be permanently removed. This cannot be undone.` : undefined}
+        confirmLabel="Delete"
+        destructive
+        busy={deletingTarget}
+        icon={Trash2}
+        onConfirm={handleConfirmDelete}
+        onCancel={() => setDeleteTarget(null)}
+      />
     </div>
   );
 }
@@ -1153,6 +1185,8 @@ function MasterDataTab() {
 // ─────────────────────────────────────
 
 function NotificationsTab({ onSave }: { onSave: () => void }) {
+  const router = useRouter();
+
   // Email
   const [email, setEmail] = useState({
     newUsers: true,
@@ -1471,7 +1505,10 @@ function NotificationsTab({ onSave }: { onSave: () => void }) {
             does come through, it truly matters.
           </p>
         </div>
-        <button className="relative z-10 flex-shrink-0 h-12 px-7 bg-white text-[#7004DC] font-extrabold rounded-xl text-sm hover:bg-[#F3EEFF] transition shadow-lg">
+        <button
+          onClick={() => router.push("/notifications")}
+          className="relative z-10 flex-shrink-0 h-12 px-7 bg-white text-[#7004DC] font-extrabold rounded-xl text-sm hover:bg-[#F3EEFF] transition shadow-lg"
+        >
           View Alert Logs
         </button>
       </div>
@@ -1947,19 +1984,19 @@ function SecurityTab({ onSave }: { onSave: () => void }) {
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="bg-[#F7F5FA] border-b border-[#ECE7F2]">
-                    <th className="px-6 py-4 text-[11px] font-extrabold uppercase tracking-wider text-[#7D7387] whitespace-nowrap min-w-[280px]">
+                    <th className="px-6 py-4 text-[11px] font-extrabold uppercase tracking-wider text-[#7D7387]">
                       Event & Description
                     </th>
-                    <th className="px-6 py-4 text-[11px] font-extrabold uppercase tracking-wider text-[#7D7387] whitespace-nowrap min-w-[170px]">
+                    <th className="px-6 py-4 text-[11px] font-extrabold uppercase tracking-wider text-[#7D7387] whitespace-nowrap">
                       Module
                     </th>
-                    <th className="px-6 py-4 text-[11px] font-extrabold uppercase tracking-wider text-[#7D7387] whitespace-nowrap min-w-[140px]">
+                    <th className="px-6 py-4 text-[11px] font-extrabold uppercase tracking-wider text-[#7D7387] whitespace-nowrap">
                       Actor
                     </th>
-                    <th className="px-6 py-4 text-[11px] font-extrabold uppercase tracking-wider text-[#7D7387] whitespace-nowrap min-w-[180px]">
+                    <th className="px-6 py-4 text-[11px] font-extrabold uppercase tracking-wider text-[#7D7387] whitespace-nowrap">
                       Timestamp
                     </th>
-                    <th className="px-6 py-4 text-[11px] font-extrabold uppercase tracking-wider text-[#7D7387] whitespace-nowrap text-right pr-8 min-w-[110px]">
+                    <th className="px-6 py-4 text-[11px] font-extrabold uppercase tracking-wider text-[#7D7387] whitespace-nowrap text-right pr-8">
                       Status
                     </th>
                   </tr>

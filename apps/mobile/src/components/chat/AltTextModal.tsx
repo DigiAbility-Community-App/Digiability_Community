@@ -45,20 +45,24 @@ export function AltTextModal({
         {/* Android needs an explicit behavior too — leaving it undefined
             meant no avoidance at all there, so the keyboard covered the
             description field. The preview/description also scroll now, so
-            the sheet can shrink instead of being pushed off-screen. */}
+            the sheet can shrink instead of being pushed off-screen.
+            keyboardVerticalOffset matches ReportModal — without it the
+            field is still hidden behind the keyboard on iOS. */}
         <KeyboardAvoidingView
           behavior={Platform.OS === "ios" ? "padding" : "height"}
+          keyboardVerticalOffset={Platform.OS === "ios" ? 40 : 0}
           style={{ width: "100%", justifyContent: "flex-end", flex: 1 }}
         >
           <TouchableOpacity activeOpacity={1} style={styles.card} onPress={() => {}}>
             <Text style={styles.title}>Share image</Text>
             <ScrollView
               style={styles.scrollArea}
+              contentContainerStyle={styles.scrollContent}
               keyboardShouldPersistTaps="handled"
               showsVerticalScrollIndicator={false}
             >
               {imageUri ? <Image source={{ uri: imageUri }} style={styles.preview} resizeMode="cover" /> : null}
-              <Text style={styles.label}>Describe this image (for screen readers)</Text>
+              <Text style={styles.label}>Add a caption (shown to recipients, also read aloud by screen readers)</Text>
               <TextInput
                 style={styles.input}
                 placeholder="e.g. My new wheelchair ramp at the entrance"
@@ -102,6 +106,9 @@ const styles = StyleSheet.create({
   },
   scrollArea: {
     flexGrow: 0,
+  },
+  scrollContent: {
+    paddingBottom: 12,
   },
   title: {
     fontSize: 18,
