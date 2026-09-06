@@ -37,23 +37,61 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, message: "Category name is required" }, { status: 400 });
     }
 
-    const id = await generateCategoryId("service_categories", "SV");
-    const result = await dbPool.query(
-      `
-      INSERT INTO service_categories (id, name, status, created_at)
-      VALUES ($1, $2, 'Active', NOW())
-      ON CONFLICT (name) DO UPDATE SET status = 'Active'
-      RETURNING *
-    `,
-      [id, name]
+    // Report a duplicate name as a conflict. The previous ON CONFLICT (name)
+    // DO UPDATE quietly turned a duplicate insert into an update, so the UI
+    // saw "success" while nothing was added — indistinguishable from a no-op.
+    const dupe = await dbPool.query(
+      `SELECT id FROM service_categories WHERE LOWER(name) = LOWER($1)`,
+      [name]
     );
+    if (dupe.rows.length > 0) {
+      return NextResponse.json(
+        { success: false, message: `A category named "${name}" already exists.` },
+        { status: 409 }
+      );
+    }
+
+    // generateCategoryId returns the next free id, but two concurrent creates
+    // can still pick the same one — retry rather than surfacing a raw 23505.
+    let created: any = null;
+    for (let attempt = 0; attempt < 3 && !created; attempt++) {
+      const id = await generateCategoryId("service_categories", "SV");
+      try {
+        const result = await dbPool.query(
+          `
+          INSERT INTO service_categories (id, name, status, created_at)
+          VALUES ($1, $2, 'Active', NOW())
+          RETURNING *
+        `,
+          [id, name]
+        );
+        created = result.rows[0];
+      } catch (err: any) {
+        if (err?.code !== "23505") throw err;
+        // Lost a race on the name; the category now exists either way.
+        if (String(err.constraint || err.detail || "").includes("name")) {
+          return NextResponse.json(
+            { success: false, message: `A category named "${name}" already exists.` },
+            { status: 409 }
+          );
+        }
+        // Otherwise the id was taken — loop and allocate the next one.
+      }
+    }
+
+    if (!created) {
+      return NextResponse.json(
+        { success: false, message: "Could not allocate a category id. Please try again." },
+        { status: 409 }
+      );
+    }
 
     await writeAudit({
       action: "create_service_category",
       reason: `Added service category "${name}"`,
     });
 
-    return NextResponse.json({ success: true, category: result.rows[0] });
+    return NextResponse.json({ success: true, category: created });
   } catch (error: any) {
     console.error("Service categories POST error:", error);
     return NextResponse.json(
@@ -127,7 +165,31 @@ export async function DELETE(request: NextRequest) {
     }
 
     const prev = await dbPool.query(`SELECT name FROM service_categories WHERE id = $1`, [id]);
-    const catName = prev.rows[0]?.name || id;
+    if (prev.rows.length === 0) {
+      return NextResponse.json({ success: false, message: "Category not found" }, { status: 404 });
+    }
+    const catName = prev.rows[0].name;
+
+    // Services reference categories by id, so deleting one that is still in use
+    // would leave those rows pointing at an id that no longer exists — they'd
+    // silently vanish from every category filter in the app.
+    const refTable = await dbPool.query(`SELECT to_regclass('services') AS oid`);
+    if (refTable.rows[0]?.oid !== null) {
+      const inUse = await dbPool.query(
+        `SELECT COUNT(*)::int AS count FROM services WHERE category = $1`,
+        [id]
+      );
+      const count = inUse.rows[0]?.count ?? 0;
+      if (count > 0) {
+        return NextResponse.json(
+          {
+            success: false,
+            message: `"${catName}" is still used by ${count} service${count === 1 ? "" : "s"}. Reassign ${count === 1 ? "it" : "them"} to another category first.`,
+          },
+          { status: 409 }
+        );
+      }
+    }
 
     await dbPool.query(`DELETE FROM service_categories WHERE id = $1`, [id]);
 
@@ -137,8 +199,11 @@ export async function DELETE(request: NextRequest) {
     });
 
     return NextResponse.json({ success: true, message: "Category deleted" });
-  } catch (error) {
+  } catch (error: any) {
     console.error("Service categories DELETE error:", error);
-    return NextResponse.json({ success: false, message: "Failed to delete category" }, { status: 500 });
+    return NextResponse.json(
+      { success: false, message: error.message || "Failed to delete category" },
+      { status: 500 }
+    );
   }
 }

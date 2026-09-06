@@ -425,6 +425,10 @@ function MasterDataTab() {
   const [eventCats, setEventCats] = useState<{ id: string; name: string; status: "Active" | "Inactive" }[]>([]);
   const [catsLoading, setCatsLoading] = useState(false);
   const [catError, setCatError] = useState("");
+  // Separate from catError: that one replaces the whole list with a retry
+  // prompt, which is right for a failed load but would wipe the table for a
+  // failed add/delete. This renders as a banner above the list instead.
+  const [catActionError, setCatActionError] = useState("");
   const [showAddCat, setShowAddCat] = useState(false);
   const [newCatName, setNewCatName] = useState("");
   const [editCatId, setEditCatId] = useState<string | null>(null);
@@ -455,6 +459,7 @@ function MasterDataTab() {
   const [serviceCats, setServiceCats] = useState<{ id: string; name: string; status: "Active" | "Inactive" }[]>([]);
   const [serviceCatsLoading, setServiceCatsLoading] = useState(false);
   const [serviceCatError, setServiceCatError] = useState("");
+  const [serviceCatActionError, setServiceCatActionError] = useState("");
   const [showAddServiceCat, setShowAddServiceCat] = useState(false);
   const [newServiceCatName, setNewServiceCatName] = useState("");
   const [editServiceCatId, setEditServiceCatId] = useState<string | null>(null);
@@ -535,15 +540,28 @@ function MasterDataTab() {
     if (data.success) setTypes((prev) => prev.map((x) => (x.id === t.id ? data.type : x)));
   };
 
+  const [typeActionError, setTypeActionError] = useState("");
+
   const deleteType = async (id: string) => {
-    await fetch(`/api/settings/disability-types?id=${id}`, { method: "DELETE" });
-    setTypes((prev) => prev.filter((t) => t.id !== id));
+    setTypeActionError("");
+    try {
+      const res = await fetch(`/api/settings/disability-types?id=${id}`, { method: "DELETE" });
+      const data = await res.json().catch(() => ({ success: res.ok }));
+      if (!data.success) {
+        setTypeActionError(data.message || "Failed to delete option");
+        return;
+      }
+      setTypes((prev) => prev.filter((t) => t.id !== id));
+    } catch {
+      setTypeActionError("Network error — could not delete option");
+    }
   };
 
   // Event category handlers
   const addEventCategory = async () => {
     if (!newCatName.trim() || catSaving) return;
     setCatSaving(true);
+    setCatActionError("");
     try {
       const res = await fetch("/api/settings/event-categories", {
         method: "POST",
@@ -555,7 +573,11 @@ function MasterDataTab() {
         setEventCats((prev) => [...prev, data.category]);
         setNewCatName("");
         setShowAddCat(false);
+      } else {
+        setCatActionError(data.message || "Failed to add category");
       }
+    } catch {
+      setCatActionError("Network error — could not add category");
     } finally {
       setCatSaving(false);
     }
@@ -564,6 +586,7 @@ function MasterDataTab() {
   const saveEditCategory = async (id: string) => {
     if (!editCatName.trim() || catSaving) return;
     setCatSaving(true);
+    setCatActionError("");
     try {
       const res = await fetch("/api/settings/event-categories", {
         method: "PATCH",
@@ -574,7 +597,11 @@ function MasterDataTab() {
       if (data.success) {
         setEventCats((prev) => prev.map((c) => (c.id === id ? data.category : c)));
         setEditCatId(null);
+      } else {
+        setCatActionError(data.message || "Failed to rename category");
       }
+    } catch {
+      setCatActionError("Network error — could not rename category");
     } finally {
       setCatSaving(false);
     }
@@ -590,18 +617,33 @@ function MasterDataTab() {
     const data = await res.json();
     if (data.success) {
       setEventCats((prev) => prev.map((c) => (c.id === cat.id ? data.category : c)));
+    } else {
+      setCatActionError(data.message || "Failed to update category status");
     }
   };
 
   const deleteEventCategory = async (id: string) => {
-    await fetch(`/api/settings/event-categories?id=${id}`, { method: "DELETE" });
-    setEventCats((prev) => prev.filter((c) => c.id !== id));
+    setCatActionError("");
+    try {
+      const res = await fetch(`/api/settings/event-categories?id=${id}`, { method: "DELETE" });
+      const data = await res.json().catch(() => ({ success: res.ok }));
+      if (!data.success) {
+        // Most often: the category is still referenced by events, which the
+        // API refuses so those rows aren't orphaned.
+        setCatActionError(data.message || "Failed to delete category");
+        return;
+      }
+      setEventCats((prev) => prev.filter((c) => c.id !== id));
+    } catch {
+      setCatActionError("Network error — could not delete category");
+    }
   };
 
   // Service category handlers
   const addServiceCategory = async () => {
     if (!newServiceCatName.trim() || serviceCatSaving) return;
     setServiceCatSaving(true);
+    setServiceCatActionError("");
     try {
       const res = await fetch("/api/settings/service-categories", {
         method: "POST",
@@ -613,7 +655,11 @@ function MasterDataTab() {
         setServiceCats((prev) => [...prev, data.category]);
         setNewServiceCatName("");
         setShowAddServiceCat(false);
+      } else {
+        setServiceCatActionError(data.message || "Failed to add category");
       }
+    } catch {
+      setServiceCatActionError("Network error — could not add category");
     } finally {
       setServiceCatSaving(false);
     }
@@ -622,6 +668,7 @@ function MasterDataTab() {
   const saveEditServiceCategory = async (id: string) => {
     if (!editServiceCatName.trim() || serviceCatSaving) return;
     setServiceCatSaving(true);
+    setServiceCatActionError("");
     try {
       const res = await fetch("/api/settings/service-categories", {
         method: "PATCH",
@@ -632,7 +679,11 @@ function MasterDataTab() {
       if (data.success) {
         setServiceCats((prev) => prev.map((c) => (c.id === id ? data.category : c)));
         setEditServiceCatId(null);
+      } else {
+        setServiceCatActionError(data.message || "Failed to rename category");
       }
+    } catch {
+      setServiceCatActionError("Network error — could not rename category");
     } finally {
       setServiceCatSaving(false);
     }
@@ -648,12 +699,26 @@ function MasterDataTab() {
     const data = await res.json();
     if (data.success) {
       setServiceCats((prev) => prev.map((c) => (c.id === cat.id ? data.category : c)));
+    } else {
+      setServiceCatActionError(data.message || "Failed to update category status");
     }
   };
 
   const deleteServiceCategory = async (id: string) => {
-    await fetch(`/api/settings/service-categories?id=${id}`, { method: "DELETE" });
-    setServiceCats((prev) => prev.filter((c) => c.id !== id));
+    setServiceCatActionError("");
+    try {
+      const res = await fetch(`/api/settings/service-categories?id=${id}`, { method: "DELETE" });
+      const data = await res.json().catch(() => ({ success: res.ok }));
+      if (!data.success) {
+        // Most often: the category is still referenced by services, which the
+        // API refuses so those rows aren't orphaned.
+        setServiceCatActionError(data.message || "Failed to delete category");
+        return;
+      }
+      setServiceCats((prev) => prev.filter((c) => c.id !== id));
+    } catch {
+      setServiceCatActionError("Network error — could not delete category");
+    }
   };
 
   // Delete confirmation — shared across all three Master Data delete flows
@@ -794,6 +859,13 @@ function MasterDataTab() {
             <Th>CODE / ID</Th><Th>Option Name</Th><Th>Status</Th><Th>Actions</Th>
           </div>
 
+          {typeActionError && (
+            <div className="px-8 py-3 bg-red-50 border-b border-red-100 flex items-center justify-between gap-3">
+              <span className="text-sm text-red-600 font-semibold">{typeActionError}</span>
+              <button onClick={() => setTypeActionError("")} className="text-sm text-red-500 font-bold hover:underline">Dismiss</button>
+            </div>
+          )}
+
           {loading ? (
             <div className="px-8 py-8 text-sm text-slate-400 flex items-center gap-2">
               <svg className="w-4 h-4 animate-spin text-[#7004DC]" fill="none" viewBox="0 0 24 24">
@@ -923,6 +995,13 @@ function MasterDataTab() {
           <div className="grid grid-cols-[140px_1fr_160px_140px] bg-[#F7F5FA]">
             <Th>CATEGORY ID</Th><Th>Category Name</Th><Th>Status</Th><Th>Actions</Th>
           </div>
+
+          {catActionError && (
+            <div className="px-8 py-3 bg-red-50 border-b border-red-100 flex items-center justify-between gap-3">
+              <span className="text-sm text-red-600 font-semibold">{catActionError}</span>
+              <button onClick={() => setCatActionError("")} className="text-sm text-red-500 font-bold hover:underline">Dismiss</button>
+            </div>
+          )}
 
           {catsLoading && eventCats.length === 0 ? (
             <div className="px-8 py-8 text-sm text-slate-400 flex items-center gap-2">
@@ -1056,6 +1135,13 @@ function MasterDataTab() {
           <div className="grid grid-cols-[140px_1fr_160px_140px] bg-[#F7F5FA]">
             <Th>CATEGORY ID</Th><Th>Category Name</Th><Th>Status</Th><Th>Actions</Th>
           </div>
+
+          {serviceCatActionError && (
+            <div className="px-8 py-3 bg-red-50 border-b border-red-100 flex items-center justify-between gap-3">
+              <span className="text-sm text-red-600 font-semibold">{serviceCatActionError}</span>
+              <button onClick={() => setServiceCatActionError("")} className="text-sm text-red-500 font-bold hover:underline">Dismiss</button>
+            </div>
+          )}
 
           {serviceCatsLoading && serviceCats.length === 0 ? (
             <div className="px-8 py-8 text-sm text-slate-400 flex items-center gap-2">

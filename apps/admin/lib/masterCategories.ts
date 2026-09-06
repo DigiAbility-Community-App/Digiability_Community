@@ -9,6 +9,15 @@ import { generateCategoryId } from "@/lib/categoryId";
 // storing free-text category values (see services/route.ts's defaultServices
 // seed).
 async function ensureCategoryTable(table: "service_categories" | "event_categories", defaults: string[]) {
+  // Whether the table already existed BEFORE this call decides if we seed.
+  // This must be checked first: seeding on "table is empty" instead means an
+  // admin who deletes every category gets them all recreated by the very next
+  // request (including the POST that adds their replacement, which runs this
+  // first and so resurrects the defaults alongside it). An empty category
+  // list is a legitimate state an admin chose, not a state to repair.
+  const existed = await dbPool.query(`SELECT to_regclass($1) AS oid`, [table]);
+  const isFirstCreation = existed.rows[0]?.oid === null;
+
   await dbPool.query(`
     CREATE TABLE IF NOT EXISTS ${table} (
       id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
@@ -18,14 +27,18 @@ async function ensureCategoryTable(table: "service_categories" | "event_categori
     )
   `);
 
-  const countRes = await dbPool.query(`SELECT COUNT(*) as count FROM ${table}`);
-  if (parseInt(countRes.rows[0].count, 10) === 0) {
-    for (const name of defaults) {
-      await dbPool.query(
-        `INSERT INTO ${table} (id, name, status) VALUES (gen_random_uuid()::text, $1, 'Active') ON CONFLICT DO NOTHING`,
-        [name]
-      );
-    }
+  if (!isFirstCreation) return;
+
+  // Seed through generateCategoryId so a fresh install gets the same
+  // SV…/EV… ids the admin UI produces, rather than the UUIDs the column
+  // default would hand out.
+  const prefix = table === "service_categories" ? "SV" : "EV";
+  for (const name of defaults) {
+    const id = await generateCategoryId(table, prefix);
+    await dbPool.query(
+      `INSERT INTO ${table} (id, name, status) VALUES ($1, $2, 'Active') ON CONFLICT DO NOTHING`,
+      [id, name]
+    );
   }
 }
 
