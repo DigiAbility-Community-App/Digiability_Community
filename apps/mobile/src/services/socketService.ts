@@ -13,6 +13,13 @@ let socket: WebSocket | null = null;
 let reconnectTimer: NodeJS.Timeout | null = null;
 let pingTimer: NodeJS.Timeout | null = null;
 
+// Set by closeSocket() right before it closes the socket intentionally (e.g.
+// the app was backgrounded, or the user logged out). Without this, the
+// onclose handler below would schedule an auto-reconnect a few seconds later
+// regardless of *why* the socket closed, undoing the intentional disconnect
+// while the access token is still valid.
+let manualClose = false;
+
 const RECONNECT_INTERVAL = 3000;
 const PING_INTERVAL = 15000;
 
@@ -25,6 +32,11 @@ export const initSocket = () => {
   if (socket?.readyState === WebSocket.OPEN || socket?.readyState === WebSocket.CONNECTING) {
     return;
   }
+
+  // A fresh connection attempt always wants normal auto-reconnect behavior
+  // for whatever socket it opens, even if a previous manual close is still
+  // in flight.
+  manualClose = false;
 
   // Send the JWT in the Authorization header rather than the URL so it doesn't
   // appear in proxy access logs or server request logs.
@@ -72,6 +84,11 @@ export const initSocket = () => {
     console.log('❌ WebSocket disconnected');
     useChatStore.getState().setConnectionState('disconnected');
     cleanup();
+    if (manualClose) {
+      // Intentional close (backgrounded / logged out) — don't auto-reconnect.
+      manualClose = false;
+      return;
+    }
     reconnectTimer = setTimeout(initSocket, RECONNECT_INTERVAL);
   };
 
@@ -81,6 +98,7 @@ export const initSocket = () => {
 };
 
 export const closeSocket = () => {
+  manualClose = true;
   if (reconnectTimer) clearTimeout(reconnectTimer);
   cleanup();
   if (socket) {
@@ -148,21 +166,28 @@ const handleSocketEvent = (message: any) => {
       };
       console.log('[WS-EVENT] message.new → addMessage', mapped.id, 'conv:', mapped.conversationId);
       // First-ever message of a brand-new conversation someone started with us:
-      // the conversation isn't in the store yet, so addMessage can't attach its
-      // lastMessage. Pull the fresh conversation list so it appears in the chat
-      // list. (addMessage still runs below so the message is ready if opened.)
-      if (!store.conversations[payload.conversationId]) {
-        chatService.getConversations()
-          .then((convos) => store.setConversations(convos))
-          .catch(() => {});
-      }
-      store.addMessage(mapped);
-      // Increment unread count
-      store.incrementUnreadCount(payload.conversationId);
-      // Send delivery receipt to server
-      sendSocketMessage('message.delivered', {
-        messageId: payload.messageId,
-      });
+      // the conversation isn't in the store yet, so addMessage's `if (conv)`
+      // guard silently skips setting lastMessageText. Fetch + await the fresh
+      // conversation list BEFORE addMessage runs (rather than firing both
+      // concurrently) so the conversation exists in the store by the time
+      // addMessage tries to attach its lastMessage.
+      (async () => {
+        if (!store.conversations[payload.conversationId]) {
+          try {
+            const convos = await chatService.getConversations();
+            store.setConversations(convos);
+          } catch {
+            // best-effort — addMessage below still runs even if this fails
+          }
+        }
+        store.addMessage(mapped);
+        // Increment unread count
+        store.incrementUnreadCount(payload.conversationId);
+        // Send delivery receipt to server
+        sendSocketMessage('message.delivered', {
+          messageId: payload.messageId,
+        });
+      })();
       break;
     }
 

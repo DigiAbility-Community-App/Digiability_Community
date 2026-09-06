@@ -91,6 +91,12 @@ const GroupChatScreen = ({ navigation, route }: Props) => {
   const [mediaViewer, setMediaViewer] = useState<{ src: string; alt: string; isVideo: boolean } | null>(null);
   const [replyingTo, setReplyingTo] = useState<ChatMessage | null>(null);
   const [speakingId, setSpeakingId] = useState<string | null>(null);
+  // Display names for members who have since left/been removed — the
+  // conversation's participant list only ever contains active members, so a
+  // historical message from someone no longer in the group would otherwise
+  // render as "Unknown". Resolved separately via member-history + batch
+  // user lookup; see the effect below.
+  const [formerMemberNames, setFormerMemberNames] = useState<Record<string, string>>({});
 
   // Stop any active speech when the screen unmounts or the user navigates away.
   // This prevents speech from looping or playing in the background.
@@ -265,8 +271,47 @@ const GroupChatScreen = ({ navigation, route }: Props) => {
     return map;
   }, [conversation, highContrast]);
 
-  const nameMap = memberNameMap();
+  const nameMap = { ...memberNameMap(), ...formerMemberNames };
   const colorMap = memberColorMap();
+
+  // Resolve display names for former members (left/removed) so their
+  // historical messages show "Name (Removed)" instead of "Unknown". Only
+  // needs to look at userIds that show up in member-history but are no
+  // longer in the active participant list.
+  useEffect(() => {
+    let active = true;
+    const resolveFormerMembers = async () => {
+      try {
+        const history = await chatService.getConversationMemberHistory(conversationId);
+        const currentIds = new Set((conversation?.participants || []).map((p) => p.userId));
+        const formerEntries = history.filter((h) => h.leftAt && !currentIds.has(h.userId));
+        if (formerEntries.length === 0) {
+          if (active) setFormerMemberNames({});
+          return;
+        }
+        const userMap = await chatService.batchLookupUsers(formerEntries.map((h) => h.userId));
+        const map: Record<string, string> = {};
+        formerEntries.forEach((h) => {
+          const looked = userMap.get(h.userId);
+          map[h.userId] = formatUserDisplayName({
+            name: looked?.name || "Unknown",
+            deletedAt: looked?.deletedAt ?? null,
+            isSuspended: looked?.isSuspended ?? null,
+            leftAt: h.leftAt,
+          });
+        });
+        if (active) setFormerMemberNames(map);
+      } catch (err) {
+        // Non-critical — worst case a former member's historical messages
+        // show "Unknown", same as before this feature existed.
+        console.warn("Failed to resolve former member names", err);
+      }
+    };
+    resolveFormerMembers();
+    return () => {
+      active = false;
+    };
+  }, [conversationId, conversation?.participants]);
 
   // Refresh conversation data every time this screen comes into focus so
   // member count and participant list always reflect the latest state.
@@ -304,6 +349,17 @@ const GroupChatScreen = ({ navigation, route }: Props) => {
         }
         merged.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
         setMessages(conversationId, merged);
+
+        // Restore the "Reported" marker for messages this user already
+        // reported in a previous session — the flag only lives client-side
+        // otherwise, so it would vanish on reopening the chat without this.
+        try {
+          const reportedIds = await chatService.getMyReportedMessageIds(conversationId);
+          reportedIds.forEach((id) => useChatStore.getState().markMessageReported(id));
+        } catch {
+          // Non-critical — worst case the marker is just missing until the
+          // next successful fetch.
+        }
       } catch (err: any) {
         // Don't fail silently — an error here used to render as an ordinary
         // empty conversation, which is indistinguishable from "no messages
@@ -524,7 +580,8 @@ const GroupChatScreen = ({ navigation, route }: Props) => {
         messageId: reportTarget.id,
         reason: finalReason,
       })
-      .then(() =>
+      .then(() => {
+        useChatStore.getState().markMessageReported(reportTarget.id);
         setConfirmState({
           title: "Report submitted",
           message: "Thank you. Our team will review this.",
@@ -532,8 +589,8 @@ const GroupChatScreen = ({ navigation, route }: Props) => {
           confirmLabel: "Done",
           hideCancel: true,
           onConfirm: () => {},
-        })
-      )
+        });
+      })
       .catch(() =>
         setConfirmState({
           title: "Couldn't submit",
@@ -601,7 +658,7 @@ const GroupChatScreen = ({ navigation, route }: Props) => {
     let meta: any = null;
     try { meta = item.metadata ? (typeof item.metadata === "string" ? JSON.parse(item.metadata) : item.metadata) : null; } catch {}
     const senderIsPlatformAdmin = senderIsAdmin || meta?.isAdmin === true || meta?.senderName === "DigiAbility Admin";
-    if (!isMine && !senderIsPlatformAdmin) {
+    if (!isMine && !senderIsPlatformAdmin && !item.reportedByMe) {
       opts.push({
         label: "Report message",
         icon: Flag,
@@ -785,6 +842,12 @@ const GroupChatScreen = ({ navigation, route }: Props) => {
                       >
                         {timeString}
                       </AccessibleText>
+                      {!isMine && item.reportedByMe && (
+                        <View style={styles.reportedBadge}>
+                          <Flag size={10} color="#D97706" />
+                          <AccessibleText style={styles.reportedBadgeText}>Reported</AccessibleText>
+                        </View>
+                      )}
                       {isMine && (
                         <View style={{ marginLeft: 2 }}>
                           {item.status === "sending" ? (
@@ -809,6 +872,12 @@ const GroupChatScreen = ({ navigation, route }: Props) => {
                       <AccessibleText variant="caption" style={[styles.messageTime, { color: isMine ? "rgba(255,255,255,0.6)" : colors.subtext }]}>
                         {timeString}
                       </AccessibleText>
+                      {!isMine && item.reportedByMe && (
+                        <View style={styles.reportedBadge}>
+                          <Flag size={10} color="#D97706" />
+                          <AccessibleText style={styles.reportedBadgeText}>Reported</AccessibleText>
+                        </View>
+                      )}
                       {isMine && (
                         <View style={{ marginLeft: 2 }}>
                           {item.status === "sending" ? (
@@ -848,6 +917,12 @@ const GroupChatScreen = ({ navigation, route }: Props) => {
                       >
                         {timeString}
                       </AccessibleText>
+                      {!isMine && item.reportedByMe && (
+                        <View style={styles.reportedBadge}>
+                          <Flag size={10} color="#D97706" />
+                          <AccessibleText style={styles.reportedBadgeText}>Reported</AccessibleText>
+                        </View>
+                      )}
                       {isMine && (
                         <View style={{ marginLeft: 2 }}>
                           {item.status === "sending" ? (
@@ -1526,6 +1601,16 @@ const styles = StyleSheet.create({
   messageTime: {
     fontSize: 11,
     fontVariant: ["tabular-nums"],
+  },
+  reportedBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 2,
+  },
+  reportedBadgeText: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: "#D97706",
   },
   statusIcon: {
     fontSize: 11,

@@ -68,9 +68,25 @@ export async function POST(
     }
 
     // Verify user exists
-    const userCheck = await dbPool.query(`SELECT id, name FROM users WHERE id = $1`, [userId]);
+    const userCheck = await dbPool.query(
+      `SELECT id, name, "isEmailVerified" FROM users WHERE id = $1`,
+      [userId]
+    );
     if (userCheck.rows.length === 0) {
       return NextResponse.json({ success: false, message: "User not found" }, { status: 404 });
+    }
+
+    // An account that never confirmed its email shouldn't be placed into a
+    // group — it can't sign in, so it would sit there as a silent member.
+    // searchUsers in user-svc already filters these out; this path didn't.
+    if (!userCheck.rows[0].isEmailVerified) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: `${userCheck.rows[0].name || "This user"} hasn't verified their email yet and can't be added to a group.`,
+        },
+        { status: 400 }
+      );
     }
 
     // Verify group exists

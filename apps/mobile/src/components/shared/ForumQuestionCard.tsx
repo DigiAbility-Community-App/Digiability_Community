@@ -2,6 +2,7 @@ import React from 'react';
 import { View, StyleSheet, TouchableOpacity, ViewStyle } from 'react-native';
 import { AccessibleText } from './AccessibleText';
 import { useTheme } from '../../theme/ThemeContext';
+import { formatUserDisplayName } from '../../utils/formatUserName';
 
 export interface ForumQuestion {
   id: string;
@@ -18,6 +19,8 @@ export interface ForumQuestion {
     name: string;
     role?: string | null;
     forumStats?: { reputation: number } | null;
+    isSuspended?: boolean | null;
+    deletedAt?: string | null;
   };
 }
 
@@ -84,7 +87,7 @@ export const ForumQuestionCard: React.FC<ForumQuestionCardProps> = ({
           <View style={styles.authorDetails}>
             <View style={styles.nameRow}>
               <AccessibleText style={[styles.authorName, textStyle]}>
-                {question.author?.name || 'Anonymous'}
+                {question.author ? formatUserDisplayName(question.author) : 'Anonymous'}
               </AccessibleText>
               {reputation > 0 && (
                 <View style={styles.repBadge}>

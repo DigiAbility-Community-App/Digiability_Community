@@ -56,7 +56,18 @@
       [
         "expo-notifications",
         {
-          "color": "#500088"
+          "icon": "./assets/logo.png",
+          "color": "#500088",
+          "sounds": [],
+          "mode": "production"
+        }
+      ],
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "Allow Digiability Community to access your photos so you can save images and videos shared in chats.",
+          "savePhotosPermission": "Allow Digiability Community to save photos and videos to your device.",
+          "isAccessMediaLocationEnabled": false
         }
       ],
       [

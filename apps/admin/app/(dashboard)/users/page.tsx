@@ -366,17 +366,22 @@ export default function UserManagementPage() {
       {/* TABLE */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden w-full">
         <div className="overflow-x-auto w-full">
-          <table className="w-full text-left border-collapse min-w-[740px] lg:min-w-full">
+          {/* table-fixed, not auto: under auto layout the width hints below
+              are only floors, so truncate cells kept their full intrinsic
+              width and the table's min-content (~1150px) exceeded the 1136px
+              available once the sidebar expanded — hence scroll only when
+              expanded. Fixed layout makes the truncation actually constrain. */}
+          <table className="w-full table-fixed text-left border-collapse">
             <thead>
               <tr className="bg-[#F7F5FA] border-b border-gray-100 text-[10px] font-bold uppercase tracking-[0.15em] text-[#7D7387]">
-                <th className="px-4 py-3.5 w-12 text-center">#</th>
-                <th className="px-4 py-3.5 min-w-[180px]">USER</th>
-                <th className="px-4 py-3.5 w-24">ROLE</th>
-                <th className="px-4 py-3.5 min-w-[130px]">DISABILITY TYPE</th>
-                <th className="px-4 py-3.5 min-w-[110px]">CITY</th>
-                <th className="px-4 py-3.5 min-w-[110px]">JOINED DATE</th>
-                <th className="px-4 py-3.5 w-28">STATUS</th>
-                <th className="px-4 py-3.5 w-20 text-center">ACTIONS</th>
+                <th className="px-4 py-3.5 w-[5%] text-center">#</th>
+                <th className="px-4 py-3.5 w-[28%]">USER</th>
+                <th className="px-4 py-3.5 w-[11%]">ROLE</th>
+                <th className="px-4 py-3.5 w-[14%] hidden xl:table-cell">DISABILITY TYPE</th>
+                <th className="px-4 py-3.5 w-[11%] hidden xl:table-cell">CITY</th>
+                <th className="px-4 py-3.5 w-[12%] hidden lg:table-cell">JOINED DATE</th>
+                <th className="px-4 py-3.5 w-[12%]">STATUS</th>
+                <th className="px-4 py-3.5 w-[7%] text-center">ACTIONS</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
@@ -407,7 +412,7 @@ export default function UserManagementPage() {
                           }`}>
                             {(user.name || "?").split(" ").filter(Boolean).map((n: string) => n[0]).join("").slice(0, 2).toUpperCase() || "?"}
                           </div>
-                          <div className="min-w-0 max-w-[220px]">
+                          <div className="min-w-0 flex-1">
                             <p className="font-bold text-sm text-[#1A1C1C] truncate">{user.name}</p>
                             <p className="text-xs text-[#7D7387] truncate">{user.username || user.email}</p>
                           </div>
@@ -417,7 +422,7 @@ export default function UserManagementPage() {
                       {/* ROLE */}
                       <td className="px-4 py-3.5">
                         {user.roles && user.roles.length > 0 ? (
-                          <span className={`inline-block px-2.5 py-0.5 rounded-md text-[10px] font-bold uppercase ${user.roles[0] === "NGO" ? "bg-gray-100 text-slate-600" : "bg-[#EDDCFF] text-[#7004DC]"}`}>
+                          <span className={`inline-block max-w-full truncate px-2.5 py-0.5 rounded-md text-[10px] font-bold uppercase ${user.roles[0] === "NGO" ? "bg-gray-100 text-slate-600" : "bg-[#EDDCFF] text-[#7004DC]"}`}>
                             {user.roles[0]}
                           </span>
                         ) : (
@@ -426,27 +431,27 @@ export default function UserManagementPage() {
                       </td>
 
                       {/* DISABILITY TYPE */}
-                      <td className="px-4 py-3.5 text-sm text-[#4B4355]">
+                      <td className="px-4 py-3.5 text-sm text-[#4B4355] hidden xl:table-cell">
                         {user.disabilityType && user.disabilityType !== "N/A" ? (
-                          <span className="truncate block max-w-[150px]">{user.disabilityType}</span>
+                          <span className="truncate block">{user.disabilityType}</span>
                         ) : (
                           <span className="text-slate-400">N/A</span>
                         )}
                       </td>
 
                       {/* CITY */}
-                      <td className="px-4 py-3.5 text-sm text-[#4B4355]">
-                        <span className="truncate block max-w-[120px]">{user.location}</span>
+                      <td className="px-4 py-3.5 text-sm text-[#4B4355] hidden xl:table-cell">
+                        <span className="truncate block">{user.location}</span>
                       </td>
 
                       {/* JOINED DATE */}
-                      <td className="px-4 py-3.5 text-sm text-[#4B4355] whitespace-nowrap">
+                      <td className="px-4 py-3.5 text-sm text-[#4B4355] whitespace-nowrap hidden lg:table-cell">
                         {user.joined}
                       </td>
 
                       {/* STATUS */}
                       <td className="px-4 py-3.5">
-                        <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold whitespace-nowrap ${
+                        <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold ${
                           user.status === "Active" ? "bg-green-100 text-green-700" :
                           user.status === "Suspended" ? "bg-red-100 text-red-700" :
                           user.status === "Pending Verification" ? "bg-amber-100 text-amber-700" :

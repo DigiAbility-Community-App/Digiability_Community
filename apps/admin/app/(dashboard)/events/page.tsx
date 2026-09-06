@@ -135,18 +135,24 @@ function parseEventDate(dateStr: string): { day: number; month: number; year: nu
   return null;
 }
 
-const DEFAULT_CATEGORIES = [
-  "Medical Support",
-  "Legal Aid",
-  "Skill Training",
-  "Assistive Technology",
-  "General Support",
-  "Awareness",
-];
+// Named colors for the Event Categories breakdown chart — matched by
+// category NAME (not id), so this works regardless of which real master
+// data id a category has. Falls back to the brand purple for anything else.
+const CATEGORY_CHART_COLORS: Record<string, string> = {
+  "Medical Support": "#7004DC",
+  "Legal Aid": "#DC2626",
+  "Skill Training": "#D2A500",
+  "Awareness": "#10b981",
+  "Assistive Technology": "#3b82f6",
+  "General Support": "#94a3b8",
+};
 
 export default function EventsPage() {
   const [events, setEvents] = useState<EventType[]>([]);
-  const [masterCategories, setMasterCategories] = useState<string[]>(DEFAULT_CATEGORIES);
+  // Master data only — no hardcoded fallback category list. An empty array
+  // means either "still loading" or "master fetch failed/returned nothing";
+  // the category select disables itself and shows a placeholder either way.
+  const [masterCategories, setMasterCategories] = useState<{ id: string; name: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
@@ -154,6 +160,12 @@ export default function EventsPage() {
   const [cityFilter, setCityFilter] = useState("");
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 10;
+
+  // Resolves a category id to its master-data name for display (table
+  // badge, filters, CSV export, chart) — falls back to the raw stored
+  // value for legacy rows whose category is still free text, pre-dating
+  // the id backfill.
+  const categoryNameById = (id: string) => masterCategories.find((c) => c.id === id)?.name || id;
 
   // Calendar state
   const now = new Date();
@@ -175,7 +187,7 @@ export default function EventsPage() {
 
   const [formData, setFormData] = useState({
     title: "",
-    category: "Medical Support",
+    category: "",
     location: "",
     date: "",
     timeFrom: "",
@@ -221,13 +233,11 @@ export default function EventsPage() {
     try {
       const res = await fetch("/api/settings/event-categories");
       const data = await res.json();
-      if (data.success && Array.isArray(data.categories) && data.categories.length > 0) {
-        const activeNames = data.categories
+      if (data.success && Array.isArray(data.categories)) {
+        const active = data.categories
           .filter((c: any) => c.status === "Active")
-          .map((c: any) => c.name);
-        if (activeNames.length > 0) {
-          setMasterCategories(activeNames);
-        }
+          .map((c: any) => ({ id: c.id, name: c.name }));
+        setMasterCategories(active);
       }
     } catch (e) {
       console.error("Failed to load master categories:", e);
@@ -278,7 +288,7 @@ export default function EventsPage() {
     setEditingEventId(null);
     setFormData({
       title: "",
-      category: masterCategories[0] || "Medical Support",
+      category: masterCategories[0]?.id || "",
       location: "",
       date: "",
       timeFrom: "",
@@ -329,7 +339,7 @@ export default function EventsPage() {
     const timeToHHMM = parseToHHMM(timeRangeParts[1] || "");
     setFormData({
       title: ev.title || "",
-      category: ev.category || masterCategories[0] || "Medical Support",
+      category: ev.category || masterCategories[0]?.id || "",
       location: ev.location || "",
       date: ev.date || "",
       timeFrom: timeFromHHMM,
@@ -373,6 +383,10 @@ export default function EventsPage() {
     e.preventDefault();
     if (!formData.image.trim()) {
       setErrorMsg("Please upload an event image from your device.");
+      return;
+    }
+    if (!formData.category) {
+      setErrorMsg("Please select an event category. Add one in Settings > Event Categories if the list is empty.");
       return;
     }
 
@@ -468,7 +482,7 @@ export default function EventsPage() {
     const headers = ["Title", "Category", "Organizer", "Date", "Time", "Location", "Spots", "External URL"];
     const rows = filtered.map(e => [
       `"${(e.title || "").replace(/"/g, '""')}"`,
-      `"${(e.category || "").replace(/"/g, '""')}"`,
+      `"${categoryNameById(e.category || "").replace(/"/g, '""')}"`,
       `"${(e.organizer || "").replace(/"/g, '""')}"`,
       `"${(e.date || "").replace(/"/g, '""')}"`,
       `"${(e.time || "").replace(/"/g, '""')}"`,
@@ -486,12 +500,15 @@ export default function EventsPage() {
     document.body.removeChild(link);
   };
 
-  // All combined available categories for filtering
-  const allFilterCategories = Array.from(new Set([...masterCategories, ...events.map(e => e.category)])).filter(Boolean);
+  // All combined available category ids for filtering — includes ids seen
+  // on existing event rows even if they've since gone inactive/deleted in
+  // master data, so those events remain filterable/visible in the table.
+  const allFilterCategoryIds = Array.from(new Set([...masterCategories.map(c => c.id), ...events.map(e => e.category)])).filter(Boolean);
 
   const filtered = events.filter(ev => {
     const s = search.toLowerCase();
-    const matchSearch = ev.title.toLowerCase().includes(s) || ev.location.toLowerCase().includes(s) || ev.category.toLowerCase().includes(s);
+    const categoryLabel = categoryNameById(ev.category || "");
+    const matchSearch = ev.title.toLowerCase().includes(s) || ev.location.toLowerCase().includes(s) || categoryLabel.toLowerCase().includes(s);
     const matchCat = categoryFilter === "All" || ev.category === categoryFilter;
     const matchCity = !cityFilter || ev.location.toLowerCase().includes(cityFilter.toLowerCase());
     return matchSearch && matchCat && matchCity;
@@ -500,12 +517,18 @@ export default function EventsPage() {
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
-  // Category breakdown
-  const catBreakdown = allFilterCategories.map(cat => ({
-    name: cat.toUpperCase(),
-    count: events.filter(e => e.category === cat).length,
-    color: { "Medical Support": "#7004DC", "Legal Aid": "#DC2626", "Skill Training": "#D2A500", "Awareness": "#10b981", "Assistive Technology": "#3b82f6", "General Support": "#94a3b8" }[cat] || "#7004DC",
-  })).filter(c => c.count > 0);
+  // Category breakdown — matched by resolved NAME (not id) against the
+  // fixed color map, so this doesn't depend on which real master-data id a
+  // given category happens to have.
+  const catBreakdown = allFilterCategoryIds.map(catId => {
+    const name = categoryNameById(catId);
+    return {
+      id: catId,
+      name: name.toUpperCase(),
+      count: events.filter(e => e.category === catId).length,
+      color: CATEGORY_CHART_COLORS[name] || "#7004DC",
+    };
+  }).filter(c => c.count > 0);
 
   const totalCatCount = events.length;
 
@@ -587,7 +610,7 @@ export default function EventsPage() {
             className="h-10 px-3 pr-8 rounded-xl border border-gray-200 bg-white text-sm font-medium outline-none appearance-none focus:border-[#8A38F5]"
           >
             <option value="All">All Categories</option>
-            {allFilterCategories.map(c => <option key={c} value={c}>{c}</option>)}
+            {allFilterCategoryIds.map(id => <option key={id} value={id}>{categoryNameById(id)}</option>)}
           </select>
           <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
         </div>
@@ -698,7 +721,7 @@ export default function EventsPage() {
             {catBreakdown.map(cat => {
               const pct = totalCatCount > 0 ? Math.round((cat.count / totalCatCount) * 100) : 0;
               return (
-                <div key={cat.name}>
+                <div key={cat.id}>
                   <div className="flex justify-between items-center mb-1">
                     <span className="text-[10px] font-bold uppercase tracking-wider text-[#7D7387]">{cat.name}</span>
                     <span className="text-xs font-bold text-[#1A1C1C]">{cat.count} ({pct}%)</span>
@@ -759,7 +782,7 @@ export default function EventsPage() {
                           </div>
                         </div>
                       </td>
-                      <td className="px-5 py-4 whitespace-nowrap"><span className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-bold bg-[#F3EEFF] text-[#7004DC] border border-[#E9D9FF]">{ev.category}</span></td>
+                      <td className="px-5 py-4 whitespace-nowrap"><span className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-bold bg-[#F3EEFF] text-[#7004DC] border border-[#E9D9FF]">{categoryNameById(ev.category)}</span></td>
                       <td className="px-5 py-4 text-sm text-[#4B4355] whitespace-nowrap">{ev.organizer || "—"}</td>
                       <td className="px-5 py-4 whitespace-nowrap">
                         <p className="text-xs font-bold text-[#1A1C1C]">{formatDateDisplay(ev.date)}</p>
@@ -937,11 +960,16 @@ export default function EventsPage() {
                     name="category"
                     value={formData.category}
                     onChange={handleInput}
-                    className="w-full h-11 rounded-xl border border-slate-200 px-4 text-sm outline-none focus:border-[#8A38F5] bg-white appearance-none"
+                    disabled={masterCategories.length === 0}
+                    className="w-full h-11 rounded-xl border border-slate-200 px-4 text-sm outline-none focus:border-[#8A38F5] bg-white appearance-none disabled:bg-slate-50 disabled:text-slate-400"
                   >
-                    {masterCategories.map(c => (
-                      <option key={c} value={c}>{c}</option>
-                    ))}
+                    {masterCategories.length > 0 ? (
+                      masterCategories.map(c => (
+                        <option key={c.id} value={c.id}>{c.name}</option>
+                      ))
+                    ) : (
+                      <option value="">No categories available — add one in Settings first</option>
+                    )}
                   </select>
                 </div>
 

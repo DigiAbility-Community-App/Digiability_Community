@@ -26,7 +26,13 @@ import AppFooter from "../../components/layout/AppFooter";
 import { useTheme } from "../../theme/ThemeContext";
 import { AccessibleText } from "../../components/shared/AccessibleText";
 import { AccessibleButton } from "../../components/shared/AccessibleButton";
-import { fetchEventById, EventModel, parseAccessibilityTags } from "../../services/eventService";
+import {
+  fetchEventById,
+  fetchEventCategories,
+  EventModel,
+  EventCategory,
+  parseAccessibilityTags,
+} from "../../services/eventService";
 import { MediaViewer } from "../../components/chat/MediaViewer";
 import { formatEventDateDisplay } from "../../utils/dateHelpers";
 
@@ -64,10 +70,20 @@ export default function EventDetailScreen() {
   const [bookmarked, setBookmarked] = useState(false);
   const [error, setError] = useState(false);
   const [mediaViewerOpen, setMediaViewerOpen] = useState(false);
+  // Events store their category as a master-data id (e.g. "EV0012026"), so the
+  // id has to be resolved back to a display name — otherwise the overlay shows
+  // the raw id. Falls back to the stored value for legacy rows not yet backfilled.
+  const [categories, setCategories] = useState<EventCategory[]>([]);
 
   useEffect(() => {
     if (eventId) loadEventDetails();
   }, [eventId]);
+
+  useEffect(() => {
+    fetchEventCategories()
+      .then(setCategories)
+      .catch(() => setCategories([]));
+  }, []);
 
   const loadEventDetails = async () => {
     try {
@@ -191,7 +207,9 @@ export default function EventDetailScreen() {
           <Image source={{ uri: event.image }} style={[styles.bannerImage, { backgroundColor: '#000' }]} resizeMode="contain" />
           {/* Category overlay bottom-left */}
           <View style={[styles.categoryOverlay, { backgroundColor: highContrast ? "#000" : colors.primary }]}>
-            <AccessibleText style={styles.categoryOverlayText}>{event.category.toUpperCase()}</AccessibleText>
+            <AccessibleText style={styles.categoryOverlayText}>
+              {(categories.find((c) => c.id === event.category)?.name ?? event.category).toUpperCase()}
+            </AccessibleText>
           </View>
           {/* Accessibility tag pills overlaid */}
           {accessibilityTags.length > 0 && (

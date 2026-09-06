@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, AppState, AppStateStatus, StyleSheet, View } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 import AuthNavigator from './AuthNavigator';
 import MainNavigator from './MainNavigator';
@@ -99,6 +99,35 @@ const RootNavigator = () => {
       closeSocket();
       forumSocketService.disconnect();
     }
+  }, [isAuthenticated, isRestoringSession, isMaintenanceMode]);
+
+  // Disconnect the chat WebSocket while the app is backgrounded so chat-svc's
+  // delivery worker sees zero live sessions for this user and routes new
+  // messages to a push notification instead of a frozen socket (see
+  // services/chat-svc/src/workers/delivery.worker.ts). Reconnect on return
+  // to the foreground, but only if still authenticated.
+  //
+  // Only 'background' triggers a disconnect — 'inactive' fires briefly during
+  // transient UI on iOS (app switcher, notification shade, native dialogs)
+  // and reacting to it would cause needless disconnect/reconnect churn.
+  const appStateRef = useRef<AppStateStatus>(AppState.currentState);
+
+  useEffect(() => {
+    const handleAppStateChange = (nextState: AppStateStatus) => {
+      const prevState = appStateRef.current;
+      appStateRef.current = nextState;
+
+      if (nextState === 'background') {
+        closeSocket();
+      } else if (nextState === 'active' && prevState === 'background') {
+        if (isAuthenticated && !isRestoringSession && !isMaintenanceMode) {
+          initSocket();
+        }
+      }
+    };
+
+    const subscription = AppState.addEventListener('change', handleAppStateChange);
+    return () => subscription.remove();
   }, [isAuthenticated, isRestoringSession, isMaintenanceMode]);
 
   // Register for push notifications once logged in

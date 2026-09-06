@@ -50,14 +50,11 @@ export const authService = {
     const response = await apiClient.post('/api/auth/register', { name, email, password });
 
     if (response.data.success) {
-      const { accessToken, user } = response.data.data;
-      const mappedUser = mapUserToFrontend(user);
-      const store = useAuthStore.getState();
-
-      store.setAccessToken(accessToken);
-      store.setUser(mappedUser);
-
-      return mappedUser as User;
+      // Registration no longer returns a session — the server issues tokens
+      // only once the OTP is verified, so an unverified account cannot reach
+      // the API. The caller routes to /verify-email with this email.
+      const { user } = response.data.data;
+      return mapUserToFrontend(user) as User;
     }
     throw new Error(response.data.message || 'Registration failed');
   },

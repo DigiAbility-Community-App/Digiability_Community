@@ -108,8 +108,7 @@ const ConversationListScreen = ({ navigation: propNavigation, isTab = false, dir
       if (c.type === "GROUP" && c.lastMessage?.senderId && c.lastMessage.senderId !== user?.id) {
         const sender = c.participants?.find((p: any) => p.userId === c.lastMessage!.senderId)?.user;
         if (sender) {
-          const senderLabel = sender.deletedAt ? "Deleted User" : sender.name;
-          lastMsgText = `${senderLabel}: ${lastMsgText}`;
+          lastMsgText = `${formatUserDisplayName(sender)}: ${lastMsgText}`;
         }
       }
 

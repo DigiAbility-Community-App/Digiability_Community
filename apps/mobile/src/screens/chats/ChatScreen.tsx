@@ -268,6 +268,17 @@ const ChatScreen = ({ navigation, route }: Props) => {
         // Sort by createdAt
         merged.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
         setMessages(conversationId, merged);
+
+        // Restore the "Reported" marker for messages this user already
+        // reported in a previous session — the flag only lives client-side
+        // otherwise, so it would vanish on reopening the chat without this.
+        try {
+          const reportedIds = await chatService.getMyReportedMessageIds(conversationId);
+          reportedIds.forEach((id) => useChatStore.getState().markMessageReported(id));
+        } catch {
+          // Non-critical — worst case the marker is just missing until the
+          // next successful fetch.
+        }
       } catch (err) {
         console.error("Failed to load messages", err);
       } finally {
@@ -390,7 +401,8 @@ const ChatScreen = ({ navigation, route }: Props) => {
       const finalReason = details ? `${reason} — ${details}` : reason;
       chatService
         .reportUser({ reportedUserId: peerId, conversationId, messageId, reason: finalReason })
-        .then(() =>
+        .then(() => {
+          if (messageId) useChatStore.getState().markMessageReported(messageId);
           setConfirmState({
             title: "Report submitted",
             message: "Thank you. Our team will review this.",
@@ -398,8 +410,8 @@ const ChatScreen = ({ navigation, route }: Props) => {
             confirmLabel: "Done",
             hideCancel: true,
             onConfirm: () => {},
-          })
-        )
+          });
+        })
         .catch(() =>
           setConfirmState({
             title: "Couldn't submit",
@@ -524,7 +536,7 @@ const ChatScreen = ({ navigation, route }: Props) => {
     let meta: any = null;
     try { meta = item.metadata ? (typeof item.metadata === "string" ? JSON.parse(item.metadata) : item.metadata) : null; } catch {}
     const senderIsPlatformAdmin = senderIsAdmin || meta?.isAdmin === true || meta?.senderName === "DigiAbility Admin";
-    if (!isMine && !senderIsPlatformAdmin) {
+    if (!isMine && !senderIsPlatformAdmin && !item.reportedByMe) {
       opts.push({
         label: "Report message",
         icon: Flag,
@@ -643,6 +655,12 @@ const ChatScreen = ({ navigation, route }: Props) => {
                   <AccessibleText variant="caption" style={[styles.messageTime, { color: isMine ? "rgba(255,255,255,0.7)" : colors.subtext }]}>
                     {timeString}
                   </AccessibleText>
+                  {!isMine && item.reportedByMe && (
+                    <View style={styles.reportedBadge}>
+                      <Flag size={10} color="#D97706" />
+                      <AccessibleText style={styles.reportedBadgeText}>Reported</AccessibleText>
+                    </View>
+                  )}
                   {isMine && renderStatusIcon(item.status)}
                 </View>
               ) : (
@@ -650,6 +668,12 @@ const ChatScreen = ({ navigation, route }: Props) => {
                   <AccessibleText style={[styles.mediaTimeText, { color: "#fff" }]}>
                     {timeString}
                   </AccessibleText>
+                  {!isMine && item.reportedByMe && (
+                    <View style={styles.reportedBadge}>
+                      <Flag size={10} color="#D97706" />
+                      <AccessibleText style={[styles.reportedBadgeText, { color: "#FBBF24" }]}>Reported</AccessibleText>
+                    </View>
+                  )}
                   {isMine && renderStatusIcon(item.status)}
                 </View>
               )}
@@ -661,6 +685,12 @@ const ChatScreen = ({ navigation, route }: Props) => {
                 <AccessibleText variant="caption" style={[styles.messageTime, { color: isMine ? "rgba(255,255,255,0.65)" : colors.subtext }]}>
                   {timeString}
                 </AccessibleText>
+                {!isMine && item.reportedByMe && (
+                  <View style={styles.reportedBadge}>
+                    <Flag size={10} color="#D97706" />
+                    <AccessibleText style={styles.reportedBadgeText}>Reported</AccessibleText>
+                  </View>
+                )}
                 {isMine && renderStatusIcon(item.status)}
               </View>
             </View>
@@ -686,6 +716,12 @@ const ChatScreen = ({ navigation, route }: Props) => {
                 >
                   {timeString}
                 </AccessibleText>
+                {!isMine && item.reportedByMe && (
+                  <View style={styles.reportedBadge}>
+                    <Flag size={10} color="#D97706" />
+                    <AccessibleText style={styles.reportedBadgeText}>Reported</AccessibleText>
+                  </View>
+                )}
                 {isMine && renderStatusIcon(item.status)}
               </View>
             </View>
@@ -1306,6 +1342,16 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontVariant: ["tabular-nums"],
     letterSpacing: 0.2,
+  },
+  reportedBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 2,
+  },
+  reportedBadgeText: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: "#D97706",
   },
   statusIcon: {
     fontSize: 12,

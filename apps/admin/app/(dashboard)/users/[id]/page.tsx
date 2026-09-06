@@ -262,7 +262,9 @@ export default function UserDetailPage() {
             ) : (
               <button
                 onClick={() => setShowSuspendModal(true)}
-                className="w-full h-11 rounded-xl border-2 border-red-200 text-red-600 font-semibold text-sm hover:bg-red-50 transition flex items-center justify-center gap-2"
+                disabled={user.status === "Pending Verification"}
+                title={user.status === "Pending Verification" ? "Cannot suspend a user pending email verification — delete instead" : undefined}
+                className="w-full h-11 rounded-xl border-2 border-red-200 text-red-600 font-semibold text-sm hover:bg-red-50 transition flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
               >
                 <UserX className="w-4 h-4" /> Suspend User
               </button>
@@ -440,9 +442,9 @@ function ProfileTab({ user }: { user: UserDetail }) {
       {(user.disabilityType || hasRole("PWD")) && (
         <section>
           <SectionHeader icon={<Shield className="w-3.5 h-3.5" />} title="Disability Details" />
-          <div className="grid grid-cols-2 gap-6 items-start">
+          <div className="grid grid-cols-2 gap-x-8 gap-y-5">
             <div>
-              <p className="text-[10px] font-extrabold uppercase tracking-[0.15em] text-slate-400 mb-2">PRIMARY DISABILITY TYPE(S)</p>
+              <p className="text-[10px] font-extrabold uppercase tracking-[0.15em] text-slate-400 mb-1">PRIMARY DISABILITY TYPE(S)</p>
               {user.disabilityType ? (
                 <div className="flex flex-wrap gap-2">
                   {user.disabilityType.split(",").map(d => d.trim()).filter(Boolean).map(d => (
@@ -454,7 +456,7 @@ function ProfileTab({ user }: { user: UserDetail }) {
               ) : <p className="text-sm text-slate-400">—</p>}
             </div>
             <div>
-              <p className="text-[10px] font-extrabold uppercase tracking-[0.15em] text-slate-400 mb-2">LIVING WITH DISABILITY SINCE</p>
+              <p className="text-[10px] font-extrabold uppercase tracking-[0.15em] text-slate-400 mb-1">LIVING WITH DISABILITY SINCE</p>
               <p className="text-sm font-semibold text-[#1A1C1C]">
                 {user.disabilitySince ? `${user.disabilitySince}` : "—"}
               </p>
@@ -522,11 +524,11 @@ function ProfileTab({ user }: { user: UserDetail }) {
           <div>
             <p className="text-[10px] font-extrabold uppercase tracking-[0.15em] text-slate-400 mb-1">STATUS</p>
             <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold uppercase ${
-              (user.isEmailVerified || user.verificationStatus === "verified") ? "bg-green-100 text-green-700" :
+              user.isEmailVerified ? "bg-green-100 text-green-700" :
               user.verificationStatus === "rejected" ? "bg-red-100 text-red-700" :
               "bg-yellow-100 text-yellow-700"
             }`}>
-              {(user.isEmailVerified || user.verificationStatus === "verified") ? "Verified" : (user.verificationStatus || "Pending")}
+              {user.isEmailVerified ? "Verified" : (user.verificationStatus === "rejected" ? "Rejected" : "Pending")}
             </span>
           </div>
           {user.verificationDoc && (
@@ -1199,10 +1201,16 @@ function EditUserModal({
               <div className="grid grid-cols-2 gap-4">
                 <FormField label="Email Address">
                   <div className="relative">
-                    <input defaultValue={user.email} readOnly className="w-full h-12 rounded-xl border border-gray-200 px-4 text-sm outline-none pr-24 bg-gray-50 text-slate-600" />
-                    <span className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1 text-xs font-bold text-green-600 bg-green-50 px-2.5 py-1 rounded-lg">
-                      <CheckCircle2 className="w-3 h-3" /> Verified
-                    </span>
+                    <input defaultValue={user.email} readOnly className="w-full h-12 rounded-xl border border-gray-200 px-4 text-sm outline-none pr-28 bg-gray-50 text-slate-600" />
+                    {user.isEmailVerified ? (
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1 text-xs font-bold text-green-600 bg-green-50 px-2.5 py-1 rounded-lg">
+                        <CheckCircle2 className="w-3 h-3" /> Verified
+                      </span>
+                    ) : (
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1 text-xs font-bold text-yellow-700 bg-yellow-100 px-2.5 py-1 rounded-lg">
+                        <Clock className="w-3 h-3" /> Pending
+                      </span>
+                    )}
                   </div>
                 </FormField>
                 <FormField label="Phone Number">

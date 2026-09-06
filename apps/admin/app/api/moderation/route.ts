@@ -444,16 +444,12 @@ export async function GET(request: NextRequest) {
       reportsToday: String(Number(baseStats.reportsToday) + chatReportsToday),
     };
 
-    const history = historyResult.rows.map((h: any) => ({
-      ...h,
-      resolvedAtDisplay: new Date(h.resolvedAt).toLocaleDateString("en-GB", {
-        day: "2-digit",
-        month: "short",
-        year: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-      }),
-    }));
+    // resolvedAt is left as a raw timestamp (serializes to ISO/UTC) rather
+    // than pre-formatted here — formatting it on the server rendered it in
+    // the server process's timezone instead of the viewer's, which is what
+    // made "Resolved At" look wrong. The client formats it instead (see
+    // formatResolvedAt in moderation/page.tsx).
+    const history = historyResult.rows;
 
     return NextResponse.json({
       success: true,

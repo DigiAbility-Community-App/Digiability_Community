@@ -52,6 +52,33 @@ const basicProfileSchema = z.object({
   phoneNo: z.string().max(20, 'Phone number is too long').optional(),
 });
 
+// Pincode/mobile format + "nothing left blank" checks — only enforced once a
+// profile is already complete (see the isProfileComplete gate on PUT '/'),
+// so onboarding's looser basicProfileSchema above keeps working unchanged.
+const PINCODE_REGEX = /^\d{6}$/;
+const MOBILE_REGEX = /^[6-9]\d{9}$/; // same pattern as mobile WelcomeScreen signup
+
+const requiredBasicProfileSchema = basicProfileSchema.extend({
+  username: z
+    .string()
+    .min(1, 'Username is required')
+    .max(15, 'Username must be between 1 and 15 characters')
+    .regex(USERNAME_REGEX, 'Username may only contain letters, numbers, periods, and underscores'),
+  fullName: z.string().min(2, 'Full name is required'),
+  dob: z
+    .string()
+    .min(1, 'Date of birth is required')
+    .refine((v) => {
+      const d = new Date(v);
+      return !isNaN(d.getTime()) && d.getTime() <= Date.now();
+    }, 'Enter a valid date of birth'),
+  gender: z.string().min(1, 'Gender is required'),
+  city: z.string().min(1, 'City is required'),
+  state: z.string().min(1, 'State is required'),
+  pincode: z.string().regex(PINCODE_REGEX, 'Enter a valid 6-digit pincode'),
+  phoneNo: z.string().regex(MOBILE_REGEX, 'Enter a valid 10-digit mobile number'),
+});
+
 const profileDetailsSchema = z.object({
   // PwD Fields
   disabilityType: z.string().optional(),
@@ -195,6 +222,22 @@ router.put('/', validate(basicProfileSchema), async (req: Request, res: Response
   try {
     const userId = getUserIdFromAuthToken(req);
 
+    // Once onboarding is done, Edit Profile can no longer save with required
+    // fields blank — but onboarding itself (POST '/', or this same PUT via
+    // submitUserProfile's 409-retry fallback) still only needs what
+    // ProfileScreen.tsx already requires (Name + Username), so this check
+    // only kicks in for profiles that are already complete.
+    if (await profileService.isProfileComplete(userId)) {
+      const strict = requiredBasicProfileSchema.safeParse(req.body);
+      if (!strict.success) {
+        return res.status(422).json({
+          success: false,
+          message: 'Validation failed',
+          errors: strict.error.issues.map((i) => ({ field: i.path.join('.'), message: i.message })),
+        });
+      }
+    }
+
     // Check username uniqueness if provided
     if (req.body.username) {
       const existingUsername = await profileService.findByUsername(req.body.username);
@@ -226,7 +269,11 @@ router.put('/', validate(basicProfileSchema), async (req: Request, res: Response
   }
 });
 
-// Helper — check whether role-specific required fields are provided for markAsComplete
+// Helper — check whether role-specific required fields are provided, used to
+// gate markAsComplete during onboarding (both web's ProfileCompletion.tsx and
+// mobile's ProfileDetailsScreen.tsx call this same endpoint pre-completion).
+// Deliberately unchanged/non-blocking: onboarding must keep working exactly
+// as before regardless of the stricter Edit Profile rules below.
 function hasRequiredRoleFields(roles: string[] | string | undefined | null, body: Record<string, any>): boolean {
   if (!roles) return false;
   const rolesArr = Array.isArray(roles) ? roles : [roles];
@@ -245,6 +292,42 @@ function hasRequiredRoleFields(roles: string[] | string | undefined | null, body
   });
 }
 
+// Helper — report which role-specific required fields are missing. Stricter
+// than hasRequiredRoleFields above (e.g. Caregiver also requires Relation) —
+// only applied once a profile is already complete (see the /details handlers
+// below), so it never blocks onboarding, only "edit an existing profile".
+// Field names use the backend's role dialect ('therapist'/'ngo'), not the
+// frontend's ('educator'/'ngo_worker') — callers must pass roles read from
+// the DB (see the comment on the /details handlers below).
+function getMissingRoleFieldMessages(
+  roles: string[] | string | undefined | null,
+  body: Record<string, any>
+): { field: string; message: string }[] {
+  const rolesArr = Array.isArray(roles) ? roles : roles ? [roles] : [];
+  const missing: { field: string; message: string }[] = [];
+  for (const role of rolesArr) {
+    switch (role) {
+      case 'pwd':
+        if (!body.disabilityType) missing.push({ field: 'disabilityType', message: 'Disability type is required' });
+        break;
+      case 'caregiver':
+        if (!body.carePersonName) missing.push({ field: 'carePersonName', message: "Care recipient's name is required" });
+        if (!body.careRelation) missing.push({ field: 'careRelation', message: 'Relation is required' });
+        break;
+      case 'therapist':
+        if (!body.speciality) missing.push({ field: 'speciality', message: 'Speciality is required' });
+        break;
+      case 'ngo':
+        if (!body.ngoName) missing.push({ field: 'ngoName', message: 'NGO name is required' });
+        break;
+      // volunteer and student have no required role-specific fields
+      default:
+        break;
+    }
+  }
+  return missing;
+}
+
 // POST /api/users/profile/details - Create/update role-specific profile details
 router.post('/details', validate(profileDetailsSchema), async (req: Request, res: Response) => {
   try {
@@ -256,10 +339,25 @@ router.post('/details', validate(profileDetailsSchema), async (req: Request, res
     // caused profileComplete to silently never get set for any role beyond
     // pwd/caregiver (the two labels that happen to match both dialects).
     const { roles: _bodyRoles, ...detailsData } = req.body;
+
+    const [userRecord, alreadyComplete] = await Promise.all([
+      profileService.getUserWithProfile(userId),
+      profileService.isProfileComplete(userId),
+    ]);
+
+    // Once a profile is already complete, treat this as an edit and enforce
+    // the stricter rules (e.g. Caregiver Relation); onboarding (not yet
+    // complete) keeps working exactly as before — see hasRequiredRoleFields.
+    if (alreadyComplete) {
+      const missing = getMissingRoleFieldMessages(userRecord?.roles, detailsData);
+      if (missing.length > 0) {
+        return res.status(422).json({ success: false, message: 'Validation failed', errors: missing });
+      }
+    }
+
     const profile = await profileService.upsertProfileDetails(userId, detailsData);
 
-    const userRecord = await profileService.getUserWithProfile(userId);
-    if (hasRequiredRoleFields(userRecord?.roles, req.body)) {
+    if (alreadyComplete || hasRequiredRoleFields(userRecord?.roles, detailsData)) {
       await profileService.markAsComplete(userId);
     }
 
@@ -282,10 +380,22 @@ router.put('/details', validate(profileDetailsSchema), async (req: Request, res:
     const userId = getUserIdFromAuthToken(req);
     // See the POST handler above for why bodyRoles is intentionally ignored.
     const { roles: _bodyRoles, ...detailsData } = req.body;
+
+    const [userRecord, alreadyComplete] = await Promise.all([
+      profileService.getUserWithProfile(userId),
+      profileService.isProfileComplete(userId),
+    ]);
+
+    if (alreadyComplete) {
+      const missing = getMissingRoleFieldMessages(userRecord?.roles, detailsData);
+      if (missing.length > 0) {
+        return res.status(422).json({ success: false, message: 'Validation failed', errors: missing });
+      }
+    }
+
     const profile = await profileService.upsertProfileDetails(userId, detailsData);
 
-    const userRecord = await profileService.getUserWithProfile(userId);
-    if (hasRequiredRoleFields(userRecord?.roles, req.body)) {
+    if (alreadyComplete || hasRequiredRoleFields(userRecord?.roles, detailsData)) {
       await profileService.markAsComplete(userId);
     }
 

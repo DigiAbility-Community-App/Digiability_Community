@@ -27,7 +27,20 @@ export const messageSendSchema = z.object({
   // should ever reject an otherwise-valid message send. An empty string
   // is normalized to undefined downstream (msg-svc.worker's `|| undefined`).
   senderName: z.string().trim().max(200).optional(),
-});
+}).refine(
+  (data) => {
+    if (data.type === "TEXT") return true;
+    // Media content must be a host-relative path to this service's own
+    // upload endpoint (see media.controller.ts's `/uploads/${filename}`),
+    // never an attacker-controlled absolute URL or data: URI. Without this,
+    // any group member could send an IMAGE/VIDEO/AUDIO/FILE message whose
+    // content is an arbitrary external URL, which every recipient's client
+    // would then fetch/download (including into their photo library via
+    // the "save to gallery" flow) with no further validation.
+    return data.content.startsWith("/uploads/");
+  },
+  { message: "Media content must reference an uploaded file", path: ["content"] }
+);
 
 export const messageDeliveredSchema = z.object({
   messageId: z.string().min(1),

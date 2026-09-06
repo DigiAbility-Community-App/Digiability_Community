@@ -32,7 +32,6 @@ const VerifyEmailScreen = () => {
   const route = useRoute<any>();
   const insets = useSafeAreaInsets();
   const user = useAuthStore((s) => s.user);
-  const setUser = useAuthStore((s) => s.setUser);
   const { colors, highContrast } = useTheme();
 
   // Session user's email when signed in, else the email passed in from the
@@ -84,22 +83,26 @@ const VerifyEmailScreen = () => {
     setSuccessMsg(null);
 
     try {
+      // verifyEmailOtp now signs the user in: the server issues the session
+      // here rather than at registration, and the service layer has already
+      // stored the tokens by the time this resolves.
       await verifyEmailOtp(email, otp);
 
-      if (user) {
-        // Signed-in session (Main stack): update the user and continue
-        // onboarding wherever they left off.
-        setUser({ ...user, isEmailVerified: true });
-        if (!user.roles || user.roles.length === 0) {
+      const verifiedUser = useAuthStore.getState().user;
+
+      if (verifiedUser) {
+        // RootNavigator switches to the Main stack off the back of the new
+        // session; continue onboarding wherever this account left off.
+        if (!verifiedUser.roles || verifiedUser.roles.length === 0) {
           navigation.replace("Accessibility");
-        } else if (!user.profileComplete) {
+        } else if (!verifiedUser.profileComplete) {
           navigation.replace("Profile");
         } else {
           navigation.replace("MainTabs");
         }
       } else {
-        // No session (Auth stack): email is now verified but they still need
-        // to log in — send them back to Welcome to sign in.
+        // Defensive: verification succeeded but no session came back (e.g. an
+        // older server). Fall back to signing in manually.
         Alert.alert(
           "Email Verified",
           "Your email has been verified. Please log in to continue.",

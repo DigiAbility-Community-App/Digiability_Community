@@ -10,6 +10,7 @@ import ProfileDetailsScreen from '@screens/profile/ProfileDetailsScreen';
 import CareCircleScreen from '@screens/profile/CareCircleScreen';
 import CreateCareCircleScreen from '@screens/profile/CreateCareCircleScreen';
 import NotificationsScreen from '@screens/home/NotificationScreen';
+import WarningDetailsScreen from '@screens/home/WarningDetailsScreen';
 import EditProfileScreen from '@screens/profile/EditProfileScreen';
 import PrivacyDataScreen from '@screens/profile/PrivacyDataScreen';
 import ChatsStack from './ChatsStack';
@@ -21,13 +22,14 @@ import EventsScreen from '@screens/events/EventsScreen';
 import EventDetailsScreen from '@screens/events/EventDetailScreen';
 import LeavePortalScreen from '@screens/events/LeavePortalScreen';
 import ContactSupportScreen from '@screens/profile/ContactSupportScreen';
+import HelpCenterScreen from '@screens/profile/HelpCenterScreen';
 import { useAuthStore } from '@store/authStore';
 import { hasCompletedAccessibility } from '@services/storageService';
 
 export type MainStackParamList = {
   MainTabs: undefined;
   VerifyEmail: undefined;
-  Accessibility: undefined;
+  Accessibility: { fromProfile?: boolean } | undefined;
   RoleSelection: undefined;
   Profile: undefined;
   ProfileDetails: undefined;
@@ -35,6 +37,7 @@ export type MainStackParamList = {
   CreateCareCircle: undefined;
   Chats: undefined;
   Notifications: undefined;
+  WarningDetails: { title: string; message: string; type: string; relatedId?: string | null; time?: string };
   EditProfile: undefined;
   PrivacyData: undefined;
   AskQuestion: undefined;
@@ -45,6 +48,7 @@ export type MainStackParamList = {
   EventDetails: { eventId: string };
   LeavePortal: { eventId: string; externalUrl: string; eventTitle: string; eventDate?: string; eventLocation?: string; organizer?: string };
   ContactSupport: undefined;
+  HelpCenter: undefined;
 };
 
 const Stack = createNativeStackNavigator<MainStackParamList>();
@@ -175,6 +179,7 @@ const MainNavigator = () => {
       <Stack.Screen name="MainTabs" component={MainTabNavigator} />
       <Stack.Screen name="Chats" component={ChatsStack} />
       <Stack.Screen name="Notifications" component={NotificationsScreen} />
+      <Stack.Screen name="WarningDetails" component={WarningDetailsScreen} />
       <Stack.Screen name="EditProfile" component={EditProfileScreen} />
       <Stack.Screen name="PrivacyData" component={PrivacyDataScreen} />
       <Stack.Screen name="AskQuestion" component={AskQuestionScreen} />
@@ -185,6 +190,7 @@ const MainNavigator = () => {
       <Stack.Screen name="EventDetails" component={EventDetailsScreen} />
       <Stack.Screen name="LeavePortal" component={LeavePortalScreen} />
       <Stack.Screen name="ContactSupport" component={ContactSupportScreen} />
+      <Stack.Screen name="HelpCenter" component={HelpCenterScreen} />
     </Stack.Navigator>
   );
 };

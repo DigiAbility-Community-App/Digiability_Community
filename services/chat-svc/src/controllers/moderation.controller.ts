@@ -62,6 +62,17 @@ export const reportUser = asyncHandler(async (req: Request, res: Response) => {
     return;
   }
 
+  // Idempotent re-submission — a user reporting the same message twice (e.g.
+  // a double-tap, or the "Report" option briefly still visible before the
+  // client re-renders) shouldn't create a second report row.
+  if (messageId) {
+    const existing = await moderationRepository.findExistingReport(me, messageId);
+    if (existing) {
+      res.status(200).json({ success: true, data: { reportId: existing.id } });
+      return;
+    }
+  }
+
   // Snapshot the message content at report time so the evidence an admin
   // reviews survives even if the message is later edited or deleted.
   let messageContent: string | undefined;
@@ -84,4 +95,15 @@ export const reportUser = asyncHandler(async (req: Request, res: Response) => {
     reason: reason.trim(),
   });
   res.status(201).json({ success: true, data: { reportId: report.id } });
+});
+
+export const listMyReportedMessages = asyncHandler(async (req: Request, res: Response) => {
+  const me = (req as AuthenticatedRequest).user.sub;
+  const { conversationId } = req.query as { conversationId?: string };
+  if (!conversationId) {
+    res.status(400).json({ success: false, message: "conversationId is required" });
+    return;
+  }
+  const messageIds = await moderationRepository.listReportedMessageIds(me, conversationId);
+  res.status(200).json({ success: true, data: { messageIds } });
 });

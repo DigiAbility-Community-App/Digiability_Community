@@ -22,6 +22,9 @@ export interface ChatMessage {
    *  blanked server-side when this is set, so render a placeholder instead
    *  of the (empty) content. */
   deletedAt?: string | null;
+  /** True once the current user has reported this message. Only ever
+   *  populated for the reporter's own view — never shown to other members. */
+  reportedByMe?: boolean;
 }
 
 export interface ConversationParticipant {
@@ -29,7 +32,7 @@ export interface ConversationParticipant {
   role: 'OWNER' | 'ADMIN' | 'MEMBER' | 'CAREGIVER' | 'MENTOR' | 'PROFESSIONAL';
   lastReadSequenceNo?: number;
   isMuted?: boolean;
-  user?: { id: string; name: string; avatarUrl?: string; deletedAt?: string | null };
+  user?: { id: string; name: string; avatarUrl?: string; deletedAt?: string | null; isSuspended?: boolean | null };
 }
 
 export interface Conversation {
@@ -100,6 +103,10 @@ interface ChatState {
   /** Mark a failed message's rejection dialog as already shown to the user. */
   acknowledgeMessageFailure: (clientMessageId: string) => void;
   updateMessageStatus: (messageIds: string[], status: 'delivered' | 'read') => void;
+  /** Mark a message as reported by the current user (optimistic, right after
+   *  a successful report submission, or bulk-applied on conversation load
+   *  from the server's list of previously-reported message ids). */
+  markMessageReported: (messageId: string) => void;
 
   updatePresence: (userId: string, status: string, lastSeen: string) => void;
   updateTyping: (conversationId: string, userId: string, isTyping: boolean) => void;
@@ -303,6 +310,23 @@ export const useChatStore = create<ChatState>((set) => ({
           messageIds.includes(m.id) ? { ...m, status } : m
         );
       });
+      return { messages: newMessages };
+    }),
+
+  markMessageReported: (messageId) =>
+    set((state) => {
+      const newMessages = { ...state.messages };
+      for (const convId of Object.keys(newMessages)) {
+        const idx = newMessages[convId].findIndex((m) => m.id === messageId);
+        if (idx >= 0) {
+          newMessages[convId] = [...newMessages[convId]];
+          newMessages[convId][idx] = {
+            ...newMessages[convId][idx],
+            reportedByMe: true,
+          };
+          break;
+        }
+      }
       return { messages: newMessages };
     }),
 

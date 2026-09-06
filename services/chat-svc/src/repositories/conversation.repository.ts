@@ -569,6 +569,26 @@ class ConversationRepository {
   }
 
   /**
+   * Returns { userId, leftAt } for EVERY member a conversation has ever
+   * had — current members (leftAt: null) AND former members who left or
+   * were removed. Deliberately separate from every other member query in
+   * this repository, which all filter to leftAt: null for membership
+   * gating, permission checks, member counts, and the Group Info member
+   * list. Do NOT use this for any of those — it exists solely so a
+   * historical message sender who has since left the group can still have
+   * their name resolved (and labeled "(Removed)") on the client, instead
+   * of falling back to a bare "Unknown".
+   */
+  async getMembersForNameResolution(
+    conversationId: string
+  ): Promise<Array<{ userId: string; leftAt: Date | null }>> {
+    return prisma.conversationMember.findMany({
+      where: { conversationId },
+      select: { userId: true, leftAt: true },
+    });
+  }
+
+  /**
    * Conversation IDs where this user currently holds an active admin-capable
    * role for that conversation's own subType — used to know which groups
    * need a succession check when the user becomes ineligible (suspended) or

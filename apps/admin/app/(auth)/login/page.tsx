@@ -86,7 +86,7 @@ const AdminLoginPage = () => {
     // ----------------------
 
     return (
-        <div className="min-h-screen bg-[#F6F6F6] flex flex-col">
+        <div className="h-screen overflow-y-auto bg-[#F6F6F6] flex flex-col">
             {/* MAIN LAYOUT */}
             <div className="flex flex-1 flex-col lg:flex-row">
 
@@ -96,12 +96,12 @@ const AdminLoginPage = () => {
                     {/* GRADIENT */}
                     <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_30%,rgba(138,56,245,0.35),transparent_45%)]" />
 
-                    <div className="relative z-10 flex flex-col justify-between h-full w-full px-16 py-14">
+                    <div className="relative z-10 flex flex-col justify-between h-full w-full px-16 py-8">
 
                         {/* TOP */}
                         <div>
                             {/* LOGO */}
-                            <div className="flex items-center gap-3 mb-16">
+                            <div className="flex items-center gap-3 mb-8">
                                 <Image
                                     src="/logo.png"
                                     alt="DigiAbility Logo"
@@ -117,11 +117,11 @@ const AdminLoginPage = () => {
 
                             {/* HERO */}
                             <div className="max-w-md">
-                                <h2 className="text-white text-5xl font-bold leading-tight mb-6">
+                                <h2 className="text-white text-4xl font-bold leading-tight mb-4">
                                     Empowering Communities Through Smart Administration
                                 </h2>
 
-                                <p className="text-[#E2E0FC]/80 text-lg leading-8">
+                                <p className="text-[#E2E0FC]/80 text-base leading-6">
                                     The ultimate administrative engine designed for scale,
                                     transparency, accessibility, and seamless community
                                     management.
@@ -129,7 +129,7 @@ const AdminLoginPage = () => {
                             </div>
 
                             {/* FEATURES */}
-                            <div className="mt-16 space-y-8">
+                            <div className="mt-8 space-y-5">
 
                                 <FeatureItem
                                     icon={
@@ -165,12 +165,12 @@ const AdminLoginPage = () => {
                 </div>
 
                 {/* RIGHT PANEL */}
-                <div className="flex flex-1 items-center justify-center px-6 py-12 lg:px-16">
+                <div className="flex flex-1 items-center justify-center px-6 py-6 lg:px-16">
 
                     <div className="w-full max-w-md">
 
                         {/* HEADER */}
-                        <div className="mb-8">
+                        <div className="mb-5">
                             <h2 className="text-[32px] font-bold text-[#232222]">
                                 Admin Login
                             </h2>
@@ -181,11 +181,11 @@ const AdminLoginPage = () => {
                         </div>
 
                         {/* LOGIN CARD */}
-                        <div className="bg-white rounded-[28px] shadow-[0px_12px_32px_rgba(26,26,46,0.06)] p-8">
+                        <div className="bg-white rounded-[28px] shadow-[0px_12px_32px_rgba(26,26,46,0.06)] p-6">
 
                             <form
                                 onSubmit={handleLogin}
-                                className="space-y-6"
+                                className="space-y-4"
                             >
                                 {error && (
                                     <div className="bg-red-50 border border-red-200 text-red-600 rounded-xl p-4 text-sm font-medium">
@@ -207,7 +207,7 @@ const AdminLoginPage = () => {
                                             name="email"
                                             placeholder="admin@digiability.com"
                                             required
-                                            className="w-full h-14 rounded-xl bg-[#FCF8FF] border border-transparent focus:border-[#8A38F5] focus:ring-4 focus:ring-violet-200 outline-none pl-12 pr-4 text-sm transition-all"
+                                            className="w-full h-12 rounded-xl bg-[#FCF8FF] border border-transparent focus:border-[#8A38F5] focus:ring-4 focus:ring-violet-200 outline-none pl-12 pr-4 text-sm transition-all"
                                         />
                                     </div>
                                 </div>
@@ -230,7 +230,7 @@ const AdminLoginPage = () => {
                                             name="password"
                                             placeholder="••••••••"
                                             required
-                                            className="w-full h-14 rounded-xl bg-[#FCF8FF] border border-transparent focus:border-[#8A38F5] focus:ring-4 focus:ring-violet-200 outline-none pl-12 pr-12 text-sm transition-all"
+                                            className="w-full h-12 rounded-xl bg-[#FCF8FF] border border-transparent focus:border-[#8A38F5] focus:ring-4 focus:ring-violet-200 outline-none pl-12 pr-12 text-sm transition-all"
                                         />
 
                                         <button
@@ -271,7 +271,7 @@ const AdminLoginPage = () => {
                                 <button
                                     type="submit"
                                     disabled={loading}
-                                    className="w-full h-14 rounded-xl bg-[#8A38F5] hover:bg-[#7B2EF0] transition-all text-white font-bold flex items-center justify-center gap-2 shadow-lg shadow-violet-500/20 disabled:opacity-70"
+                                    className="w-full h-12 rounded-xl bg-[#8A38F5] hover:bg-[#7B2EF0] transition-all text-white font-bold flex items-center justify-center gap-2 shadow-lg shadow-violet-500/20 disabled:opacity-70"
                                 >
                                     {loading ? (
                                         <>
@@ -322,7 +322,7 @@ const AdminLoginPage = () => {
             </div>
 
             {/* FOOTER */}
-            <footer className="border-t border-gray-200 bg-[#F6F6F6] px-6 py-5">
+            <footer className="border-t border-gray-200 bg-[#F6F6F6] px-6 py-3">
 
                 <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
 
@@ -332,19 +332,23 @@ const AdminLoginPage = () => {
 
                     <div className="flex items-center gap-6 text-[11px] uppercase tracking-[0.15em] text-slate-500 font-semibold">
 
-                        <Link href="#">
+                        {/* No deployed web app URL exists yet, and the legal
+                            copy itself is still draft/pending review — shown
+                            as inactive rather than linking to nothing/unreviewed
+                            content. */}
+                        <span aria-disabled="true" title="Coming soon" className="cursor-not-allowed opacity-50">
                             Privacy Policy
-                        </Link>
+                        </span>
 
-                        <Link href="#">
+                        <span aria-disabled="true" title="Coming soon" className="cursor-not-allowed opacity-50">
                             Terms & Conditions
-                        </Link>
+                        </span>
 
-                        <Link href="#">
+                        <a href="mailto:support@digiability.org" className="hover:text-[#7004DC] transition">
                             Support
-                        </Link>
+                        </a>
 
-                        <Link href="#">
+                        <Link href="/security" className="hover:text-[#7004DC] transition">
                             Security
                         </Link>
                     </div>

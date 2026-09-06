@@ -17,7 +17,7 @@ import { AccessibleText } from "../../components/shared/AccessibleText";
 const initialLayout = { width: Dimensions.get("window").width };
 
 // Tab order: Chats (DMs only) | Groups | Care Circles | Forums | Mentors
-const ROUTES = [
+const ALL_ROUTES = [
   { key: "chats",        title: "Chats"        },
   { key: "groups",       title: "Groups"       },
   { key: "careCircles",  title: "Care Circles" },
@@ -25,18 +25,20 @@ const ROUTES = [
   { key: "mentors",      title: "Mentors"      },
 ] as const;
 
-type RouteKey = typeof ROUTES[number]["key"];
+// Hide Mentors from the UI without removing the feature — flip this back
+// to true (and nothing else) to re-enable it.
+const MENTORS_ENABLED = false;
+const ROUTES = ALL_ROUTES.filter((r) => MENTORS_ENABLED || r.key !== "mentors");
+
+type RouteKey = typeof ALL_ROUTES[number]["key"];
 
 const CommunityDetailScreen = ({ navigation, route }: any) => {
   const { colors } = useTheme();
 
   const [index, setIndex] = useState(() => {
     const initial: string | undefined = route?.params?.initialTab;
-    if (initial === "groups")      return 1;
-    if (initial === "careCircles") return 2;
-    if (initial === "forums")      return 3;
-    if (initial === "mentors")     return 4;
-    return 0; // default: Chats
+    const found = ROUTES.findIndex((r) => r.key === initial);
+    return found >= 0 ? found : 0; // default: Chats
   });
 
   // Per-section badge = number of conversations with UNREAD messages, bucketed

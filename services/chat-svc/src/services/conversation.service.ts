@@ -147,6 +147,23 @@ class ConversationService {
   }
 
   /**
+   * Returns { userId, leftAt } for every member the conversation has ever
+   * had (current + former), gated on the requester currently being an
+   * active member — same access rule as getConversation(). Lets the client
+   * resolve display names for historical message senders who have since
+   * left/been removed, which the normal (active-only) member list omits.
+   */
+  async getMemberHistory(
+    conversationId: string,
+    requesterId: string
+  ): Promise<Array<{ userId: string; leftAt: Date | null }> | null> {
+    const isMember = await conversationRepository.isMember(conversationId, requesterId);
+    if (!isMember) return null;
+
+    return conversationRepository.getMembersForNameResolution(conversationId);
+  }
+
+  /**
    * Add a member to a group conversation.
    * Permission check based on group type and settings.
    */

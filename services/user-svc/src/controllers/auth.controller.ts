@@ -40,16 +40,18 @@ export const register = asyncHandler(async (req: Request, res: Response) => {
   const ip =
     req.headers["x-forwarded-for"]?.toString().split(",")[0] ||
     req.socket.remoteAddress;
-  const { accessToken, refreshToken, user, otpEmailSent } = await registerUser(req.body, ip);
+  const { user, otpEmailSent } = await registerUser(req.body, ip);
 
-  attachRefreshToken(res, refreshToken);
-
+  // No tokens and no refresh cookie here — the session is issued by
+  // /auth/verify-email once the OTP is confirmed. Handing out a session at
+  // registration meant an unverified account could reach the API directly,
+  // since nothing downstream re-checked isEmailVerified.
   res.status(201).json({
     success: true,
     message: otpEmailSent
       ? "Account created successfully. Please verify your email with the OTP sent."
       : "Account created successfully, but we couldn't send the verification email right now. Please use Resend OTP to try again.",
-    data: { accessToken, user, otpEmailSent },
+    data: { user, otpEmailSent, requiresVerification: true },
   });
 });
 
@@ -57,8 +59,17 @@ export const register = asyncHandler(async (req: Request, res: Response) => {
 export const verifyEmailHandler = asyncHandler(
   async (req: Request, res: Response) => {
     const { email, otp } = req.body;
-    const result = await verifyEmailOtp(email, otp);
-    res.status(200).json({ success: true, message: result.message, data: {} });
+    const { accessToken, refreshToken, user, message } = await verifyEmailOtp(email, otp);
+
+    // Same cookie/header handling as the login path — this is now the point
+    // where a session actually begins.
+    attachRefreshToken(res, refreshToken);
+
+    res.status(200).json({
+      success: true,
+      message,
+      data: { accessToken, user },
+    });
   }
 );
 

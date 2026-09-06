@@ -11,6 +11,8 @@ export interface ForumUserRef {
   name: string;
   role?: string | null;
   forumStats?: { reputation: number } | null;
+  isSuspended?: boolean | null;
+  deletedAt?: string | null;
 }
 
 export interface ForumAnswer {

@@ -10,7 +10,7 @@ import {
     BackHandler,
 } from "react-native";
 
-import { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useFocusEffect } from "@react-navigation/native";
 import { logout } from "@services/authService";
 import { removeDeviceToken } from "@services/notificationService";
@@ -30,14 +30,10 @@ import {
     TextSize,
 } from "@services/storageService";
 
-type Props = {
-    navigation: NativeStackNavigationProp<
-        MainStackParamList,
-        "Accessibility"
-    >;
-};
+type Props = NativeStackScreenProps<MainStackParamList, "Accessibility">;
 
-const AccessibilityScreen = ({ navigation }: Props) => {
+const AccessibilityScreen = ({ navigation, route }: Props) => {
+    const fromProfile = route.params?.fromProfile === true;
     const user = useAuthStore((state) => state.user);
     const updatePreferences = useAccessibilityStore((state) => state.updatePreferences);
     const insets = useSafeAreaInsets();
@@ -144,6 +140,10 @@ const AccessibilityScreen = ({ navigation }: Props) => {
     );
 
     const continueToNext = () => {
+        if (fromProfile) {
+            navigation.goBack();
+            return;
+        }
         if (!user?.roles || user.roles.length === 0) {
             navigation.navigate("RoleSelection");
         } else if (!user?.profileComplete) {
@@ -218,17 +218,19 @@ const AccessibilityScreen = ({ navigation }: Props) => {
                     </TouchableOpacity>
 
                     <AccessibleText variant="title" style={{ color: highContrast ? "#FFFFFF" : "#581C87" }}>
-                        Preferences
+                        {fromProfile ? "Accessibility" : "Preferences"}
                     </AccessibleText>
                 </View>
 
                 {/* Progress */}
-                <View style={styles.progressWrapper}>
-                    <View style={[styles.activeProgress, { backgroundColor: screenColors.primary }]} />
-                    <View style={styles.progressDot} />
-                    <View style={styles.progressDot} />
-                    <View style={styles.progressDot} />
-                </View>
+                {!fromProfile && (
+                    <View style={styles.progressWrapper}>
+                        <View style={[styles.activeProgress, { backgroundColor: screenColors.primary }]} />
+                        <View style={styles.progressDot} />
+                        <View style={styles.progressDot} />
+                        <View style={styles.progressDot} />
+                    </View>
+                )}
             </View>
 
             <ScrollView

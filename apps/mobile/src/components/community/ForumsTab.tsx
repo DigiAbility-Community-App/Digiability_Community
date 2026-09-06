@@ -224,7 +224,12 @@ const ForumsTab = () => {
         </TouchableOpacity>
 
         {/* SORT ROW & ASC/DESC TOGGLE */}
-        <View style={styles.sortRow}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.sortRow}
+          contentContainerStyle={styles.sortRowContent}
+        >
           <View style={styles.sortTypeContainer}>
             <Text style={styles.sortLabel}>SORT BY</Text>
             <View style={styles.sortButtons}>
@@ -319,7 +324,7 @@ const ForumsTab = () => {
               {sortOrder === "desc" ? "Desc (High→Low)" : "Asc (Low→High)"}
             </Text>
           </TouchableOpacity>
-        </View>
+        </ScrollView>
       </View>
 
       {/* QUESTIONS LIST */}
@@ -518,18 +523,23 @@ const styles = StyleSheet.create({
     color: "#1A1B20",
     marginTop: 1,
   },
-  // The label, the sort pills and the order toggle now wrap in ONE flex
-  // context. Previously the pills lived in a nested wrapping container while
-  // the toggle was a sibling of it, so when the pills wrapped to a second
-  // line the toggle stayed centered on the first — the reported misalignment.
+  // Relying on flexWrap to keep the label/pills/toggle together didn't work:
+  // flexShrink: 1 on sortTypeContainer/sortButtons is a no-op since none of
+  // their children (the pill Text, the label) can actually shrink, so the
+  // row would wrap at the sortTypeContainer/orderToggleBtn boundary and
+  // strand the toggle on its own line. A horizontal ScrollView keeps every
+  // control on one row always — it just scrolls instead of wrapping when
+  // they don't all fit.
   sortRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    flexWrap: "wrap",
-    rowGap: 6,
     paddingTop: 8,
     borderTopWidth: 1,
     borderTopColor: "#F4F3FA",
+  },
+  sortRowContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexGrow: 1,
+    gap: 8,
   },
   sortTypeContainer: {
     flexDirection: "row",

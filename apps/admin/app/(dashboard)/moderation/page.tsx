@@ -47,7 +47,6 @@ interface ModerationHistoryEntry {
   actionTaken: string;
   adminNotes: string | null;
   resolvedAt: string;
-  resolvedAtDisplay: string;
 }
 
 interface ContextMessage {
@@ -102,6 +101,21 @@ const ACTION_BADGE: Record<string, { label: string; cls: string }> = {
   UNSUSPENDED:        { label: "✔ Unsuspended",       cls: "bg-emerald-100 text-emerald-700" },
   DISMISSED:          { label: "× Dismissed",         cls: "bg-gray-100 text-gray-600" },
 };
+
+// Formatted client-side (in the viewer's own browser timezone) with
+// hour12 explicit — formatting this server-side previously rendered the
+// wrong-looking hour (server timezone, not the viewer's) and never showed
+// AM/PM (en-GB defaults to 24-hour without an explicit hour12).
+function formatResolvedAt(iso: string): string {
+  return new Date(iso).toLocaleString("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
+}
 
 function actionBadge(action: string) {
   const match = ACTION_BADGE[action];
@@ -701,7 +715,7 @@ export default function ModerationPage() {
                 type="button"
                 onClick={handleWarn}
                 disabled={!workflowReport.authorId || actionLoading === "warn"}
-                className="flex-1 h-11 rounded-xl bg-[#D2A500] hover:bg-[#b89300] disabled:bg-[#e6d488] disabled:cursor-not-allowed text-[#4F3D00] font-bold text-sm transition shadow-sm"
+                className="flex-1 h-11 rounded-xl bg-amber-600 hover:bg-amber-700 disabled:bg-[#e6d488] disabled:cursor-not-allowed text-white font-bold text-sm transition shadow-sm"
               >
                 {actionLoading === "warn" ? "Sending…" : "Send Warning"}
               </button>
@@ -923,7 +937,7 @@ export default function ModerationPage() {
                         <td className="px-4 py-3 text-xs text-[#7D7387] max-w-[160px]">
                           <p className="truncate">{entry.adminNotes || "—"}</p>
                         </td>
-                        <td className="px-4 py-3 text-xs text-[#9A93A8] whitespace-nowrap">{entry.resolvedAtDisplay}</td>
+                        <td className="px-4 py-3 text-xs text-[#9A93A8] whitespace-nowrap">{formatResolvedAt(entry.resolvedAt)}</td>
                       </tr>
                     );
                   })}
@@ -1199,7 +1213,7 @@ export default function ModerationPage() {
               <DetailField label="Admin Notes" value={selectedHistoryEntry.adminNotes} />
 
               <div className="grid grid-cols-2 gap-4">
-                <DetailField label="Resolved At" value={selectedHistoryEntry.resolvedAtDisplay} />
+                <DetailField label="Resolved At" value={formatResolvedAt(selectedHistoryEntry.resolvedAt)} />
                 <DetailField label="Report ID" value={selectedHistoryEntry.reportId} />
               </div>
             </div>

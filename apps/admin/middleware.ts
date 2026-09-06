@@ -13,6 +13,9 @@ export async function middleware(request: NextRequest) {
     if (pathname === "/login") {
       return NextResponse.next();
     }
+    if (pathname === "/security") {
+      return NextResponse.next();
+    }
     const loginUrl = new URL("/login", request.url);
     return NextResponse.redirect(loginUrl);
   }
@@ -28,7 +31,9 @@ export async function middleware(request: NextRequest) {
   // Deny by default: every route requires a valid session except this
   // explicit public allowlist, so a newly added dashboard route can't
   // silently bypass auth again the way /groups and /messages did.
-  const isPublic = pathname === "/login";
+  // /security is the public security-practices page linked from the
+  // pre-login footer — it must stay reachable without a session.
+  const isPublic = pathname === "/login" || pathname === "/security";
 
   if (!isPublic && !isValid) {
     const loginUrl = new URL("/login", request.url);
@@ -50,9 +55,13 @@ export async function middleware(request: NextRequest) {
   return NextResponse.next();
 }
 
-// Matching all routes except static files, api routes, etc.
+// Matching all routes except static files, api routes, etc. The file
+// extension exclusion covers every public asset (logo.png, icon.png, etc.)
+// — without it, a request for e.g. /logo.png fell through to the
+// deny-by-default gate below and got redirected to an HTML /login page,
+// which the <Image> tag then failed to decode as a PNG.
 export const config = {
   matcher: [
-    "/((?!api|_next/static|_next/image|favicon.ico).*)",
+    "/((?!api|_next/static|_next/image|.*\\.(?:ico|png|jpg|jpeg|gif|svg|webp)$).*)",
   ],
 };

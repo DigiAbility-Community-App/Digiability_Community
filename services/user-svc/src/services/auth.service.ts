@@ -37,7 +37,7 @@ import { Role } from "../generated/client";
 export async function verifyEmailOtp(
   email: string,
   otp: string
-): Promise<{ message: string }> {
+): Promise<LoginResult & { message: string }> {
   // 1. Find user by email
   const user = await prisma.user.findUnique({ where: { email } });
   if (!user) throw createError("Invalid email or OTP", 400);
@@ -46,9 +46,9 @@ export async function verifyEmailOtp(
   await validateEmailVerificationOtp(user.id, otp);
 
   // 3. Mark user as verified
-  await prisma.user.update({
+  const verifiedUser = await prisma.user.update({
     where: { id: user.id },
-    data: { isEmailVerified: true },
+    data: { isEmailVerified: true, lastSeen: new Date() },
   });
 
   // 4. Delete used OTP
@@ -56,7 +56,22 @@ export async function verifyEmailOtp(
 
   auditLog("auth.email_verified", { userId: user.id, email });
 
-  return { message: "Email verified successfully. You can now log in." };
+  // 5. Issue the session here rather than at registration. Registration used
+  // to hand out an access token and a 30-day refresh token before the email
+  // was ever confirmed, and nothing downstream re-checked isEmailVerified —
+  // not the authenticate middleware, not refresh rotation, and not chat-svc
+  // or forum-svc, which only verify the JWT signature. Minting only after
+  // verification means no valid token can exist for an unverified account,
+  // so every downstream service is protected without changing any of them.
+  const accessToken = signAccessToken({ sub: verifiedUser.id, email: verifiedUser.email });
+  const refreshToken = await createRefreshToken(verifiedUser.id);
+
+  return {
+    accessToken,
+    refreshToken,
+    user: toAuthUser(verifiedUser),
+    message: "Email verified successfully.",
+  };
 }
 
 // ─── Resend Verification OTP ───────────────────────────
@@ -130,6 +145,16 @@ export interface LoginResult {
   otpEmailSent?: boolean;
 }
 
+/**
+ * Registration deliberately carries NO tokens — an unverified account gets no
+ * session. The client sends the user to the OTP screen; verifyEmailOtp is what
+ * returns a LoginResult.
+ */
+export interface RegisterResult {
+  user: LoginResult["user"];
+  otpEmailSent: boolean;
+}
+
 function toAuthUser(user: {
   id: string;
   name: string;
@@ -154,7 +179,7 @@ function toAuthUser(user: {
 export async function registerUser(
   input: RegisterInput,
   ip?: string
-): Promise<LoginResult> {
+): Promise<RegisterResult> {
   const { name, email, password, role, roles, phoneNo } = input as any;
 
   const existing = await prisma.user.findUnique({ where: { email } });
@@ -199,17 +224,9 @@ export async function registerUser(
     otpEmailSent = false;
   }
 
-  const accessToken = signAccessToken({ sub: user.id, email: user.email });
-  const refreshToken = await createRefreshToken(user.id);
-
-  await prisma.user.update({
-    where: { id: user.id },
-    data: { lastSeen: new Date() },
-  });
-
+  // Deliberately NO tokens here — see verifyEmailOtp. An account that hasn't
+  // confirmed its email gets no session at all, so it cannot reach the API.
   return {
-    accessToken,
-    refreshToken,
     user: toAuthUser(user),
     otpEmailSent,
   };
@@ -554,11 +571,12 @@ export async function updateUserRole(userId: string, input: UpdateRoleInput) {
 }
 
 // ─── Batch User Lookup ─────────────────────────────────
-// Returns minimal user info (id, name, deletedAt) for a list of IDs.
-// Used by the mobile app to resolve participant names in
+// Returns minimal user info (id, name, deletedAt, isSuspended) for a list of
+// IDs. Used by the mobile app to resolve participant names in
 // conversation lists without making N+1 requests. deletedAt lets
 // clients distinguish a soft-deleted account from a real user who
-// happens to be named "Deleted User".
+// happens to be named "Deleted User". isSuspended lets clients render
+// "Name (Inactive)" for suspended-but-not-deleted accounts.
 
 export async function getUsersByIds(ids: string[]) {
   const uniqueIds = [...new Set(ids)];
@@ -573,6 +591,7 @@ export async function getUsersByIds(ids: string[]) {
       id: true,
       name: true,
       deletedAt: true,
+      isSuspended: true,
     },
   });
 

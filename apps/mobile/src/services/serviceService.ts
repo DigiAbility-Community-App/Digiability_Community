@@ -10,10 +10,42 @@ export type DaySchedule = { open: boolean; from: string; to: string };
 
 /** Structured weekly hours set by the admin — `availability` below is the
  *  server-derived display string computed from this, e.g. "Mon–Fri:
- *  9:00 AM–6:00 PM · Sat–Sun: Closed". Not currently rendered directly here;
- *  kept on the type so it round-trips and is available if a screen wants
- *  the structured form later. */
+ *  9:00 AM–6:00 PM · Sat–Sun: Closed". Rendered directly in the expandable
+ *  per-day breakdown on ServicesScreen (see DAYS/formatDaySchedule below). */
 export type WeeklySchedule = Record<DayKey, DaySchedule>;
+
+/** Monday→Sunday display ordering — mirrors apps/admin/lib/availabilitySchedule.ts's
+ *  DAYS constant. Duplicated here (rather than imported) because mobile and
+ *  admin are separate apps/bundles. */
+export const DAYS: { key: DayKey; label: string }[] = [
+  { key: "monday", label: "Monday" },
+  { key: "tuesday", label: "Tuesday" },
+  { key: "wednesday", label: "Wednesday" },
+  { key: "thursday", label: "Thursday" },
+  { key: "friday", label: "Friday" },
+  { key: "saturday", label: "Saturday" },
+  { key: "sunday", label: "Sunday" },
+];
+
+/** "14:00" (24h) -> "2:00 PM". Falls back to the raw string if unparseable. */
+function formatDayTime(hhmm: string): string {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(hhmm || "");
+  if (!m) return hhmm;
+  const h = parseInt(m[1], 10);
+  const min = m[2];
+  return `${h % 12 || 12}:${min} ${h >= 12 ? "PM" : "AM"}`;
+}
+
+/** Renders a single day's schedule as "9:00 AM – 6:00 PM" or "Closed". */
+export function formatDaySchedule(day: DaySchedule | null | undefined): string {
+  if (!day || !day.open || !day.from || !day.to) return "Closed";
+  return `${formatDayTime(day.from)} – ${formatDayTime(day.to)}`;
+}
+
+export interface ServiceCategory {
+  id: string;
+  name: string;
+}
 
 export interface ServiceModel {
   id: string;
@@ -83,16 +115,17 @@ export async function fetchPublishedServices(): Promise<ServiceModel[]> {
 }
 
 /**
- * Fetch active service category names from Master Data (admin-managed).
- * Returns an empty array on failure — callers should fall back to a
- * hardcoded default list rather than leaving the category picker empty.
+ * Fetch active service categories (id + name) from Master Data (admin-managed).
+ * Returns an empty array on failure or when master data has no active rows —
+ * callers must never invent categories to fill the gap; show an empty/error
+ * state instead (see ServicesScreen.tsx).
  */
-export async function fetchServiceCategories(): Promise<string[]> {
+export async function fetchServiceCategories(): Promise<ServiceCategory[]> {
   try {
-    const response = await apiClient.get<{ success: boolean; data: { id: string; name: string }[] }>(
+    const response = await apiClient.get<{ success: boolean; data: ServiceCategory[] }>(
       '/api/master/service-categories'
     );
-    return (response.data.data || []).map((c) => c.name);
+    return response.data.data || [];
   } catch {
     return [];
   }
