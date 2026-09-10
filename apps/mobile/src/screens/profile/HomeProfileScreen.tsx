@@ -8,6 +8,7 @@ import {
     Platform,
 } from "react-native";
 import { useNavigation, useFocusEffect } from "@react-navigation/native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuthStore } from "../../store/authStore";
 import { useChatStore } from "../../store/chatStore";
 import { useTheme } from "../../theme/ThemeContext";
@@ -16,6 +17,7 @@ import { AccessibleButton } from "../../components/shared/AccessibleButton";
 import ScreenWrapper from "../../components/layout/ScreenWrapper";
 import AppHeader from "../../components/layout/AppHeader";
 import { confirmDeleteAccount } from "../../utils/accountDeletion";
+import { DeleteAccountModal } from "../../components/account/DeleteAccountModal";
 import { logout } from "@services/authService";
 import { forumService } from "@services/forumService";
 import { getNotificationPermissionStatus } from "@services/notificationService";
@@ -31,10 +33,12 @@ const ROLE_LABELS: Record<string, string> = {
     educator: "Educator",
     ngo_worker: "NGO Worker",
     skill_trainer: "Skill Trainer",
-    community_member: "Community Member",
-    therapist: "Therapist",
+    therapist: "Educator",
+    ngo: "NGO Worker",
+    // DB-value fallbacks: `student` is Skill Trainer and `volunteer` is
+    // Volunteer (see ROLE_MAP_TO_FRONTEND in services/authService.ts).
+    student: "Skill Trainer",
     volunteer: "Volunteer",
-    student: "Student",
     mentor: "Mentor",
 };
 
@@ -55,6 +59,7 @@ const HomeProfileScreen = () => {
     const navigation = useNavigation<any>();
     const user = useAuthStore((state) => state.user);
     const { colors, highContrast } = useTheme();
+    const insets = useSafeAreaInsets();
 
     // ── Chat store — derive group + care circle counts ──
     const conversations = useChatStore((s) => Object.values(s.conversations));
@@ -76,7 +81,7 @@ const HomeProfileScreen = () => {
     const [notifStatus, setNotifStatus] = useState<"granted" | "denied" | "undetermined">("undetermined");
 
     // ── Delete ──
-    const [deletingAccount, setDeletingAccount] = useState(false);
+    const [showDeleteModal, setShowDeleteModal] = useState(false);
     const [loggingOut, setLoggingOut] = useState(false);
 
     // ── General themed confirm/info dialog (replaces native Alert.alert) ──
@@ -169,25 +174,15 @@ const HomeProfileScreen = () => {
     };
 
     const handleDeleteAccount = () => {
-        confirmDeleteAccount({
-            onStart: () => setDeletingAccount(true),
-            onError: (message) => {
-                setDeletingAccount(false);
-                setConfirmState({
-                    title: "Error",
-                    message,
-                    confirmLabel: "OK",
-                    hideCancel: true,
-                    onConfirm: () => setConfirmState(null),
-                });
-            },
-        });
+        // Two warnings first, then the password modal — the server requires
+        // re-authentication for this irreversible action.
+        confirmDeleteAccount({ onConfirmed: () => setShowDeleteModal(true) });
     };
 
     // ── Derived display values ──
     const displayName = user?.name || user?.fullName || "User";
     const roleKey = user?.roles?.[0] ?? user?.role ?? "";
-    const roleLabel = ROLE_LABELS[roleKey] ?? (roleKey ? roleKey : "Community Member");
+    const roleLabel = ROLE_LABELS[roleKey] ?? (roleKey ? roleKey : "Volunteer");
     const initials = getInitials(displayName);
     const notifSubtitle = notifStatus === "granted" ? "Enabled" : notifStatus === "denied" ? "Disabled" : "Not set";
 
@@ -201,7 +196,7 @@ const HomeProfileScreen = () => {
 
             <ScrollView
                 showsVerticalScrollIndicator={false}
-                contentContainerStyle={styles.scrollContent}
+                contentContainerStyle={[styles.scrollContent, { paddingBottom: Math.max(insets.bottom + 120, 140) }]}
             >
                 {/* ── PROFILE CARD ── */}
                 <View style={[styles.profileCard, { backgroundColor: colors.card, borderTopColor: colors.primary }, cardBorder]}>
@@ -341,30 +336,58 @@ const HomeProfileScreen = () => {
                         highContrast={highContrast}
                         cardBorder={cardBorder}
                     />
+                    <MenuItem
+                        icon="🚫"
+                        title="Blocked Users"
+                        subtitle="See and undo anyone you've blocked"
+                        onPress={() => navigation.navigate("BlockedUsers")}
+                        colors={colors}
+                        highContrast={highContrast}
+                        cardBorder={cardBorder}
+                    />
                 </View>
 
                 {/* ── LEGAL ── */}
                 <SectionHeader label="LEGAL" />
+                {/* These were dead "Coming Soon" toasts, which meant a signed-in
+                    user could not reach the policies from anywhere in the app —
+                    the documents existed but only pre-login. */}
                 <View style={[styles.sectionCard, { backgroundColor: colors.surface }, cardBorder]}>
                     <MenuItem
                         icon="📜"
                         title="Privacy Policy"
                         subtitle="How we handle your data"
-                        onPress={() => showComingSoon("Privacy Policy")}
+                        onPress={() => navigation.navigate("Legal", { doc: "privacy-policy" })}
                         colors={colors}
                         highContrast={highContrast}
                         cardBorder={cardBorder}
-                        comingSoon
                     />
                     <MenuItem
                         icon="📋"
-                        title="Terms of Service"
-                        subtitle="Community guidelines"
-                        onPress={() => showComingSoon("Terms of Service")}
+                        title="Terms of Use"
+                        subtitle="The agreement you accepted"
+                        onPress={() => navigation.navigate("Legal", { doc: "terms" })}
                         colors={colors}
                         highContrast={highContrast}
                         cardBorder={cardBorder}
-                        comingSoon
+                    />
+                    <MenuItem
+                        icon="🤝"
+                        title="Community Guidelines"
+                        subtitle="What's expected here, and what isn't"
+                        onPress={() => navigation.navigate("Legal", { doc: "community-guidelines" })}
+                        colors={colors}
+                        highContrast={highContrast}
+                        cardBorder={cardBorder}
+                    />
+                    <MenuItem
+                        icon="🛡️"
+                        title="Child Safety Standards"
+                        subtitle="How we handle child safety reports"
+                        onPress={() => navigation.navigate("Legal", { doc: "child-safety" })}
+                        colors={colors}
+                        highContrast={highContrast}
+                        cardBorder={cardBorder}
                     />
                 </View>
 
@@ -383,6 +406,16 @@ const HomeProfileScreen = () => {
                         icon="📞"
                         title="Contact Support"
                         onPress={() => navigation.navigate("ContactSupport")}
+                        colors={colors}
+                        highContrast={highContrast}
+                        cardBorder={cardBorder}
+                    />
+                    {/* The Community Guidelines direct people in crisis to
+                        "Settings → Safety resources", so it has to be here. */}
+                    <MenuItem
+                        icon="🛟"
+                        title="Safety Resources"
+                        onPress={() => navigation.navigate("SafetyResources")}
                         colors={colors}
                         highContrast={highContrast}
                         cardBorder={cardBorder}
@@ -413,13 +446,13 @@ const HomeProfileScreen = () => {
                 <TouchableOpacity
                     style={styles.deleteAccountBtn}
                     onPress={handleDeleteAccount}
-                    disabled={deletingAccount}
+
                     accessibilityRole="button"
                     accessibilityLabel="Delete account"
                     accessibilityHint="Deactivates and anonymises your account and personal data"
                 >
                     <AccessibleText style={styles.deleteAccountText}>
-                        {deletingAccount ? "Deleting account…" : "Delete account"}
+                        Delete account
                     </AccessibleText>
                 </TouchableOpacity>
             </ScrollView>
@@ -434,6 +467,11 @@ const HomeProfileScreen = () => {
                 hideCancel={confirmState?.hideCancel}
                 onConfirm={() => confirmState?.onConfirm()}
                 onCancel={() => setConfirmState(null)}
+            />
+
+            <DeleteAccountModal
+                visible={showDeleteModal}
+                onClose={() => setShowDeleteModal(false)}
             />
         </ScreenWrapper>
     );

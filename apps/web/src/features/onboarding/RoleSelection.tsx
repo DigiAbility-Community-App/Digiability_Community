@@ -9,7 +9,7 @@ const roles = [
   { id: 'educator', title: 'Educator', subtitle: 'I teach or do therapy', icon: '📖' },
   { id: 'ngo_worker', title: 'NGO Worker', subtitle: 'I work with an NGO', icon: '🏢' },
   { id: 'skill_trainer', title: 'Skill Trainer', subtitle: 'I train or hire PwDs', icon: '💼' },
-  { id: 'community_member', title: 'Community Member', subtitle: 'I want to support', icon: '👥' },
+  { id: 'volunteer', title: 'Volunteer', subtitle: 'I want to support', icon: '👥' },
 ];
 
 const RoleSelection = () => {

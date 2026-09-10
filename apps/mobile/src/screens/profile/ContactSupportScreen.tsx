@@ -19,15 +19,22 @@ import ScreenWrapper from "../../components/layout/ScreenWrapper";
 import AppHeader from "../../components/layout/AppHeader";
 import { useAuthStore } from "../../store/authStore";
 import { useSystemStore } from "../../store/systemStore";
+import { submitGrievance } from "@services/grievanceService";
+import { PRIMARY_CRISIS_LINE, EMERGENCY_NUMBER } from "../../constants/safetyResources";
 
-const CRISIS_HELPLINE = "988";
+// The US crisis line (988) used to be hardcoded here and presented as the
+// "24/7 Crisis & Mental Health Lifeline" in an India-only app — dialling it
+// from India reaches nothing. Numbers now come from one verified list.
 
+// Mirrors GRIEVANCE_CATEGORIES in services/user-svc/src/services/grievance.service.ts.
 const CATEGORIES = [
   "Account & Login",
   "Accessibility Needs",
   "Report a Bug",
   "Safety & Harassment",
   "Care Circle Support",
+  "Content Removal Appeal",
+  "Data & Privacy",
   "General Inquiry",
 ];
 
@@ -105,15 +112,25 @@ export default function ContactSupportScreen() {
   };
 
   const handleCrisisPress = async () => {
-    const telUrl = `tel:${CRISIS_HELPLINE}`;
     Alert.alert(
-      "Crisis Support (988)",
-      "You are about to call the 24/7 Suicide & Crisis Lifeline for free, confidential mental health and crisis support.",
+      `Crisis support (${PRIMARY_CRISIS_LINE.display})`,
+      `${PRIMARY_CRISIS_LINE.name} is the Government of India's free, confidential mental health helpline, available ${PRIMARY_CRISIS_LINE.availability}. ${PRIMARY_CRISIS_LINE.languages ?? ""}\n\nIf someone is in immediate danger, call ${EMERGENCY_NUMBER} instead.`,
       [
         { text: "Cancel", style: "cancel" },
-        { text: "Call 988", onPress: () => Linking.openURL(telUrl) },
+        {
+          text: `Call ${EMERGENCY_NUMBER}`,
+          onPress: () => Linking.openURL(`tel:${EMERGENCY_NUMBER}`),
+        },
+        {
+          text: `Call ${PRIMARY_CRISIS_LINE.display}`,
+          onPress: () => Linking.openURL(`tel:${PRIMARY_CRISIS_LINE.phone}`),
+        },
       ]
     );
+  };
+
+  const handleViewAllResources = () => {
+    (navigation as any).navigate("SafetyResources");
   };
 
   const handleCopyEmail = () => {
@@ -126,25 +143,40 @@ export default function ContactSupportScreen() {
     Alert.alert("Copied", `${supportPhone} copied to clipboard.`);
   };
 
-  const handleSubmitTicket = () => {
+  const handleSubmitTicket = async () => {
     if (!message.trim()) {
       Alert.alert("Message Required", "Please enter a message explaining what you need help with.");
       return;
     }
 
     setSubmitting(true);
-    // Simulate sending ticket
-    setTimeout(() => {
-      setSubmitting(false);
+    try {
+      // A real grievance record with a tracked 24h/15-day SLA. This used to be
+      // a setTimeout that called no API at all, while promising a 24-hour
+      // response that nothing anywhere tracked.
+      const result = await submitGrievance({
+        category: selectedCategory,
+        subject: subject.trim() || `${selectedCategory} request`,
+        body: message.trim(),
+      });
+
       setSubmitted(true);
       setSubject("");
       setMessage("");
       Alert.alert(
-        "Support Request Received",
-        "Thank you! Your message has been sent to the DigiAbility Support Team. We will respond to your email within 24 hours.",
+        "Complaint received",
+        `${result.message}\n\nYour reference: ${result.referenceCode}`,
         [{ text: "OK" }]
       );
-    }, 900);
+    } catch (err: any) {
+      Alert.alert(
+        "Couldn't send",
+        err?.response?.data?.message ||
+          "We couldn't submit your request. Please check your connection and try again."
+      );
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -308,6 +340,7 @@ export default function ContactSupportScreen() {
                 </AccessibleText>
                 <AccessibleText variant="caption" style={{ color: "#742A2A", marginTop: 2 }}>
                   Immediate, free & confidential support for anyone in distress or crisis.
+                  In an emergency, call {EMERGENCY_NUMBER}.
                 </AccessibleText>
               </View>
             </View>
@@ -315,10 +348,20 @@ export default function ContactSupportScreen() {
               onPress={handleCrisisPress}
               style={[styles.fullWidthBtn, { backgroundColor: "#E53E3E" }]}
               accessibilityRole="button"
-              accessibilityLabel="Call 24/7 Crisis Lifeline 988"
+              accessibilityLabel={`Call ${PRIMARY_CRISIS_LINE.name} on ${PRIMARY_CRISIS_LINE.display}`}
             >
               <AccessibleText variant="caption" style={styles.actionBtnText}>
-                Call 988 Crisis Lifeline
+                Call {PRIMARY_CRISIS_LINE.name} — {PRIMARY_CRISIS_LINE.display}
+              </AccessibleText>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={handleViewAllResources}
+              style={[styles.fullWidthBtn, { backgroundColor: "transparent", borderWidth: 1, borderColor: "#E53E3E", marginTop: 8 }]}
+              accessibilityRole="button"
+              accessibilityLabel="View all safety resources"
+            >
+              <AccessibleText variant="caption" style={[styles.actionBtnText, { color: "#C53030" }]}>
+                All safety resources
               </AccessibleText>
             </TouchableOpacity>
           </View>

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdminAuth } from "@/lib/auth";
 import { dbPool } from "@/lib/db";
+import { formatDate } from "@/lib/date";
 
 export async function GET(
   request: NextRequest,
@@ -47,7 +48,7 @@ export async function GET(
         content: row.content || "",
         category: row.category || "",
         createdAt: row.createdAt,
-        time: new Date(row.createdAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }),
+        time: formatDate(row.createdAt),
         isDeleted: row.deletedAt !== null,
         views: Number(row.views) || 0,
         answerCount: Number(row.answerCount) || 0,
@@ -85,7 +86,7 @@ export async function GET(
         content: `Member since — role: ${r.userRole || "Member"}`,
         category: r.subType === "CARE_CIRCLE" ? "Care Circle" : "Group",
         createdAt: r.joinedAt,
-        time: new Date(r.joinedAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }),
+        time: formatDate(r.joinedAt),
         groupId: r.id,
       }));
     } catch {
@@ -111,7 +112,7 @@ export async function GET(
           content: `Member since — role: ${r.userRole || "Member"}`,
           category: r.subType === "CARE_CIRCLE" ? "Care Circle" : "Group",
           createdAt: r.joinedAt,
-          time: new Date(r.joinedAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }),
+          time: formatDate(r.joinedAt),
           groupId: r.id,
         }));
       } catch {}
@@ -133,7 +134,7 @@ export async function GET(
           content: `${u.name} registered on the DigiAbility platform`,
           category: "Security",
           createdAt: u.createdAt,
-          time: new Date(u.createdAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }),
+          time: formatDate(u.createdAt),
         });
         if (u.isEmailVerified) {
           accountActivities.push({
@@ -143,7 +144,7 @@ export async function GET(
             content: "Email address successfully verified",
             category: "Security",
             createdAt: u.createdAt,
-            time: new Date(u.createdAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }),
+            time: formatDate(u.createdAt),
           });
         }
       }

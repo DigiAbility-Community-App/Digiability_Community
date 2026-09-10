@@ -22,6 +22,7 @@ import {
   Briefcase,
 } from "lucide-react";
 import { SessionGuard } from "@/components/shared/SessionGuard";
+import { ConfirmModal } from "@/components/shared/ConfirmModal";
 
 const navItems = [
   {
@@ -102,13 +103,18 @@ export default function DashboardLayout({
     });
   };
 
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
+
   const handleLogout = async () => {
+    setLoggingOut(true);
     try {
       await fetch("/api/auth/logout", { method: "POST" });
       router.push("/login");
       router.refresh();
     } catch (error) {
       console.error("Logout failed:", error);
+      setLoggingOut(false);
     }
   };
 
@@ -273,7 +279,7 @@ export default function DashboardLayout({
 
           {/* Logout Button */}
           <button
-            onClick={handleLogout}
+            onClick={() => setShowLogoutConfirm(true)}
             className={`group relative w-full h-11 rounded-xl bg-white/5 hover:bg-red-500/20 text-[#E2E0FC]/70 hover:text-red-400 transition-all flex items-center font-medium text-sm ${
               isCollapsed ? "justify-center px-0" : "gap-3 px-3.5"
             }`}
@@ -296,6 +302,18 @@ export default function DashboardLayout({
       <main className="flex-1 h-full min-w-0 w-full overflow-y-auto overflow-x-hidden bg-[#F6F6F6] transition-all duration-300">
         {children}
       </main>
+
+      <ConfirmModal
+        open={showLogoutConfirm}
+        title="Log out?"
+        message="You'll need to sign in again to access the admin panel."
+        confirmLabel="Log Out"
+        destructive
+        icon={LogOut}
+        busy={loggingOut}
+        onConfirm={handleLogout}
+        onCancel={() => setShowLogoutConfirm(false)}
+      />
     </div>
   );
 }

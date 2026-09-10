@@ -21,6 +21,13 @@ out/
 .env.development
 .env.production
 
+# ── Secrets that must never be committed ──────────────────────
+# The admin panel's credential store. It holds bcrypt hashes for the admin
+# accounts and was previously tracked — offline-crackable, then directly
+# usable against a login that had no rate limiting. The app recreates this
+# file on first run, so it does not need to be in the repo.
+apps/admin/data/credentials.json
+
 # ── Prisma ────────────────────────────────────────────────────
 # Keep migrations in git, but not the generated client
 **/generated/

@@ -10,6 +10,7 @@ import {
 
 import { LinearGradient } from "expo-linear-gradient";
 import { useNavigation, useFocusEffect } from "@react-navigation/native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuthStore } from "@store/authStore";
 import { useForumStore } from "@store/forumStore";
 import { useChatStore } from "@store/chatStore";
@@ -46,6 +47,7 @@ const HomeScreen = () => {
   const navigation = useNavigation<any>();
   const user = useAuthStore((state) => state.user);
   const { colors, spacing, highContrast } = useTheme();
+  const insets = useSafeAreaInsets();
 
   // ── Notification bell indicator ──
   // Mirrors NotificationScreen: unread = any unread forum notification OR any
@@ -181,7 +183,7 @@ const HomeScreen = () => {
       {/* BODY */}
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: Math.max(insets.bottom + 120, 140) }]}
       >
         {/* GREETING */}
         <View style={[styles.greetingCard, { backgroundColor: colors.card }, cardBorder]}>
@@ -505,8 +507,6 @@ const HomeScreen = () => {
             ))
           )}
         </View>
-
-        <View style={{ height: 120 }} />
       </ScrollView>
 
     </ScreenWrapper>

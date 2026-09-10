@@ -5,6 +5,8 @@
   "description": "Digiability Community — Mobile App (Expo)",
   "main": "App.tsx",
   "scripts": {
+    "sync:legal": "node ../../scripts/sync-legal-docs.js",
+    "prestart": "node ../../scripts/sync-legal-docs.js",
     "start": "expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",

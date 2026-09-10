@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAdminAuth } from "@/lib/auth";
+import { requireAdminAuth, getAdminSession, getRequestIp } from "@/lib/auth";
+import { writeAudit } from "@/lib/audit";
 import { dbPool } from "@/lib/db";
 
 // A group can have at most this many admin-capable members (OWNER counts
@@ -17,6 +18,8 @@ export async function GET(
 ) {
   const authError = await requireAdminAuth(req);
   if (authError) return authError;
+  const actor = await getAdminSession(req);
+  const ip = getRequestIp(req);
 
   try {
     const { id } = await params;
@@ -51,6 +54,8 @@ export async function POST(
 ) {
   const authError = await requireAdminAuth(request);
   if (authError) return authError;
+  const actor = await getAdminSession(request);
+  const ip = getRequestIp(request);
 
   try {
     const { id } = await params;
@@ -160,6 +165,11 @@ export async function POST(
         DO UPDATE SET "leftAt" = NULL, role = $3::"MemberRole", "updatedAt" = NOW()
     `, [id, userId, safeRole]);
 
+      await writeAudit({
+        adminEmail: actor?.email, ipAddress: ip,
+        action: "group_member_add", targetType: "group", targetId: id,
+        reason: `added ${userId}`,
+      });
     return NextResponse.json({ success: true, userName: userCheck.rows[0].name });
   } catch (error) {
     console.error("Member POST error:", error);
@@ -177,6 +187,8 @@ export async function DELETE(
 ) {
   const authError = await requireAdminAuth(request);
   if (authError) return authError;
+  const actor = await getAdminSession(request);
+  const ip = getRequestIp(request);
 
   try {
     const { id } = await params;

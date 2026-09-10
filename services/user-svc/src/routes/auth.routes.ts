@@ -16,14 +16,20 @@ import {
   registerDeviceTokenHandler,
   removeDeviceTokenHandler,
   checkMaintenanceHandler,
+  submitDateOfBirthHandler,
+  checkEmailHandler,
 } from "../controllers/auth.controller";
 import { authenticate } from "../middleware/auth.middleware";
 import { validate } from "../middleware/validate.middleware";
+import { enforcePasswordPolicy } from "../middleware/passwordPolicy.middleware";
 import {
   loginLimiter,
   registerLimiter,
   passwordResetLimiter,
-  otpLimiter,
+  verifyOtpLimiter,
+  resendOtpLimiter,
+  resendOtpIpLimiter,
+  checkEmailLimiter,
 } from "../middleware/rateLimit.middleware";
 import {
   RegisterSchema,
@@ -44,17 +50,24 @@ const router = Router();
 
 // ── Public Routes ─────────────────────────────────────
 router.get("/maintenance",                                                             checkMaintenanceHandler);
-router.post("/register",       registerLimiter,      validate(RegisterSchema),       register);
+// Live availability check for the signup form — see checkEmailHandler.
+router.get("/check-email",     checkEmailLimiter,                                      checkEmailHandler);
+router.post("/register",       registerLimiter,      validate(RegisterSchema),       enforcePasswordPolicy(), register);
 router.post("/login",          loginLimiter,          validate(LoginSchema),          login);
 router.post("/refresh",                                                                refresh);
 router.post("/logout",                                                                 logout);
-router.post("/verify-email",   otpLimiter,            validate(VerifyOtpSchema),      verifyEmailHandler);
-router.post("/resend-otp",     otpLimiter,            validate(ResendOtpSchema),      resendOtpHandler);
+router.post("/verify-email",   verifyOtpLimiter,      validate(VerifyOtpSchema),      verifyEmailHandler);
+// Two limiters: per-email (the budget that protects the inbox) and a looser
+// per-IP one (anti-abuse). Previously shared a single IP-keyed limiter with
+// /verify-email, so mistyped codes consumed the resend budget.
+router.post("/resend-otp",     resendOtpLimiter, resendOtpIpLimiter, validate(ResendOtpSchema), resendOtpHandler);
 router.post("/forgot-password", passwordResetLimiter, validate(ForgotPasswordSchema), forgotPasswordHandler);
-router.post("/reset-password",  passwordResetLimiter, validate(ResetPasswordSchema),  resetPasswordHandler);
+router.post("/reset-password",  passwordResetLimiter, validate(ResetPasswordSchema),  enforcePasswordPolicy(), resetPasswordHandler);
 
 // ── Protected Routes (require valid access token) ─────
 router.get("/me",               authenticate,                                          me);
+// Backfill for accounts created before the age gate existed.
+router.post("/date-of-birth",   authenticate,                                          submitDateOfBirthHandler);
 router.patch("/role",           authenticate, validate(UpdateRoleSchema),             updateRoleHandler);
 router.post("/users/batch",     authenticate,                                          batchLookupUsers);
 router.get("/users/search",     authenticate,                                          searchUsersHandler);

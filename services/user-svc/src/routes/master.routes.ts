@@ -1,5 +1,9 @@
 import { Router } from "express";
 import prisma from "../models/prisma.client";
+import {
+  getPasswordPolicy,
+  describePasswordPolicy,
+} from "../services/passwordPolicy.service";
 
 const router = Router();
 
@@ -46,6 +50,20 @@ router.get("/service-categories", async (_req, res, next) => {
   } catch {
     // Table may not exist yet if admin panel has never been opened; return empty list
     res.json({ success: true, data: [] });
+  }
+});
+
+// Public — the signup and reset-password forms fetch this before rendering so
+// they can show the same rules the API enforces (see passwordPolicy.service).
+router.get("/password-policy", async (_req, res, next) => {
+  try {
+    const policy = await getPasswordPolicy();
+    res.json({
+      success: true,
+      data: { ...policy, requirements: describePasswordPolicy(policy) },
+    });
+  } catch (err) {
+    next(err);
   }
 });
 

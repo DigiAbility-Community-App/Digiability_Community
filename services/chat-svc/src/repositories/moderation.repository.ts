@@ -7,6 +7,23 @@
 import prisma from "../models/prisma.client";
 
 class ModerationRepository {
+  /**
+   * Scrub message-content snapshots this user authored, for account deletion.
+   *
+   * chat.reports keeps an immutable copy of the reported message so evidence
+   * survives an edit or delete. That copy would otherwise outlive the account
+   * deletion that was supposed to erase it, so it is blanked here — while the
+   * report row itself is kept for moderation audit integrity, the same
+   * trade-off user-svc already makes for ModerationFlag.
+   */
+  async scrubReportSnapshotsBySender(userId: string): Promise<number> {
+    const result = await prisma.report.updateMany({
+      where: { reportedUserId: userId },
+      data: { messageContent: null },
+    });
+    return result.count;
+  }
+
   async block(blockerId: string, blockedId: string): Promise<void> {
     await prisma.blockedUser.upsert({
       where: { blockerId_blockedId: { blockerId, blockedId } },
@@ -25,6 +42,26 @@ class ModerationRepository {
       select: { blockedId: true },
     });
     return rows.map((r) => r.blockedId);
+  }
+
+  /**
+   * Blocked users with display names, for the Blocked Users management screen.
+   *
+   * Cross-schema read of user-svc's `public.users`, following the same pattern
+   * as suspension.util's checkSuspended: same physical database, so this is one
+   * cheap join rather than an HTTP call to user-svc (which the architecture
+   * intentionally avoids at runtime). A list of bare UUIDs would be unusable.
+   */
+  async listBlockedUsers(
+    blockerId: string
+  ): Promise<Array<{ id: string; name: string; blockedAt: Date }>> {
+    return prisma.$queryRaw<Array<{ id: string; name: string; blockedAt: Date }>>`
+      SELECT u.id, u.name, b."createdAt" AS "blockedAt"
+      FROM chat.blocked_users b
+      JOIN public.users u ON u.id = b."blockedId"
+      WHERE b."blockerId" = ${blockerId}
+      ORDER BY b."createdAt" DESC
+    `;
   }
 
   // True if either user has blocked the other.

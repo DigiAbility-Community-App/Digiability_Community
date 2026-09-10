@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAdminAuth } from "@/lib/auth";
+import { requireAdminAuth, getAdminSession, getRequestIp } from "@/lib/auth";
+import { writeAudit } from "@/lib/audit";
 
 // ─────────────────────────────────────────────────────
 // Admin keyword API — proxies to user-svc
@@ -48,9 +49,12 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json() as Record<string, unknown>;
-    // Attach admin identity for audit trail
-    const session = request.cookies.get("admin-session");
-    const createdBy = session ? "admin" : undefined;
+    // Attach admin identity for the audit trail. This used to check only that a
+    // session cookie was present and then store the literal string "admin",
+    // which recorded that *someone* added a keyword but never who.
+    const actor = await getAdminSession(request);
+    const ip = getRequestIp(request);
+    const createdBy = actor?.email;
 
     const res = await fetch(`${USER_SVC}/api/moderation/keywords`, {
       method: "POST",
@@ -58,6 +62,18 @@ export async function POST(request: NextRequest) {
       body: JSON.stringify({ ...body, createdBy }),
     });
     const data = await res.json() as unknown;
+
+    if (res.ok) {
+      await writeAudit({
+        adminEmail: actor?.email,
+        ipAddress: ip,
+        action: "keyword_add",
+        targetType: "keyword",
+        targetId: String(body.phrase ?? body.keyword ?? "-"),
+        reason: typeof body.category === "string" ? body.category : null,
+      });
+    }
+
     return NextResponse.json(data, { status: res.status });
   } catch {
     return NextResponse.json({ success: false, message: "Failed to create keyword" }, { status: 500 });

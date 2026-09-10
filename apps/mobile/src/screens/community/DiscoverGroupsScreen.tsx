@@ -11,6 +11,7 @@ import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ChatsStackParamList } from "@navigation/ChatsStack";
 import { chatService, CommunityGroup } from "@services/chatService";
+import { useChatStore } from "@store/chatStore";
 import ScreenWrapper from "../../components/layout/ScreenWrapper";
 import { ConfirmDialog } from "../../components/chat/ConfirmDialog";
 import { ArrowLeft, Search, SearchX, LogIn, Clock, AlertCircle } from "lucide-react-native";
@@ -23,6 +24,10 @@ const DiscoverGroupsScreen = ({ navigation, route }: Props) => {
   const subType = route.params?.subType || "GENERAL";
   const insets = useSafeAreaInsets();
   const { colors, highContrast } = useTheme();
+  // Nudge the Groups / Care Circles tabs directly rather than waiting for the
+  // member.joined round-trip — the socket reconnects on a timer, so a join
+  // made while it's down would otherwise not show until a manual refresh.
+  const refreshCommunityGroups = useChatStore((s) => s.refreshCommunityGroups);
 
   const [groups, setGroups] = useState<CommunityGroup[]>([]);
   const [loading, setLoading] = useState(true);
@@ -30,7 +35,15 @@ const DiscoverGroupsScreen = ({ navigation, route }: Props) => {
   const [joiningId, setJoiningId] = useState<string | null>(null);
   const [pendingIds, setPendingIds] = useState<Set<string>>(new Set());
   const [joinedIds, setJoinedIds] = useState<Set<string>>(new Set());
-  const [joinError, setJoinError] = useState<{ visible: boolean; message: string }>({ visible: false, message: "" });
+  // Covers both the failure case and the "request sent for approval" case —
+  // joining a group that needs admin approval used to succeed silently, with
+  // nothing but a small clock icon to show anything had happened.
+  const [notice, setNotice] = useState<{
+    visible: boolean;
+    title: string;
+    message: string;
+    tone: "info" | "error";
+  }>({ visible: false, title: "", message: "", tone: "info" });
 
   useEffect(() => {
     let active = true;
@@ -64,9 +77,18 @@ const DiscoverGroupsScreen = ({ navigation, route }: Props) => {
       const result = await chatService.joinGroup(group.id);
       if (result.status === "pending_approval") {
         setPendingIds((prev) => new Set(prev).add(group.id));
+        setNotice({
+          visible: true,
+          title: "Request sent",
+          message: `An admin needs to approve your request before you can open ${
+            subType === "CARE_CIRCLE" ? "this Care Circle" : "this group"
+          }.`,
+          tone: "info",
+        });
         return;
       }
       setJoinedIds((prev) => new Set(prev).add(group.id));
+      refreshCommunityGroups();
       navigation.replace("GroupChat", {
         conversationId: group.id,
         groupName: group.name,
@@ -75,7 +97,7 @@ const DiscoverGroupsScreen = ({ navigation, route }: Props) => {
     } catch (e: any) {
       const message = e?.response?.data?.message ||
         `Could not join ${subType === "CARE_CIRCLE" ? "the Care Circle" : "the group"}. Please try again.`;
-      setJoinError({ visible: true, message });
+      setNotice({ visible: true, title: "Unable to Join", message, tone: "error" });
     } finally {
       setJoiningId(null);
     }
@@ -87,8 +109,19 @@ const DiscoverGroupsScreen = ({ navigation, route }: Props) => {
     return (
       <TouchableOpacity
         style={[styles.card, { backgroundColor: colors.card }]}
-        onPress={() => !isPending && handleJoin(item)}
-        disabled={isJoining || isPending}
+        onPress={() =>
+          isPending
+            ? setNotice({
+                visible: true,
+                title: "Request pending",
+                message: "Your request is waiting for an admin to approve it.",
+                tone: "info",
+              })
+            : handleJoin(item)
+        }
+        // Only disabled mid-request — a pending card stays tappable so the
+        // reminder above can explain why nothing happens when it's tapped.
+        disabled={isJoining}
         activeOpacity={0.7}
         accessibilityRole="button"
         accessibilityLabel={`Group: ${item.name}, ${item.memberCount} members${isPending ? ", join request pending approval" : ", tap to join"}`}
@@ -183,14 +216,14 @@ const DiscoverGroupsScreen = ({ navigation, route }: Props) => {
       </View>
 
       <ConfirmDialog
-        visible={joinError.visible}
-        title="Unable to Join"
-        message={joinError.message}
-        icon={AlertCircle}
+        visible={notice.visible}
+        title={notice.title}
+        message={notice.message}
+        icon={notice.tone === "error" ? AlertCircle : Clock}
         hideCancel
         confirmLabel="OK"
-        onConfirm={() => setJoinError({ visible: false, message: "" })}
-        onCancel={() => setJoinError({ visible: false, message: "" })}
+        onConfirm={() => setNotice((n) => ({ ...n, visible: false }))}
+        onCancel={() => setNotice((n) => ({ ...n, visible: false }))}
       />
     </ScreenWrapper>
   );

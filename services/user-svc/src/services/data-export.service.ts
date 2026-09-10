@@ -11,6 +11,7 @@
 // ─────────────────────────────────────────────────────
 
 import prisma from "../models/prisma.client";
+import { createError } from "../middleware/error.middleware";
 
 export interface DataExportBundle {
   exportedAt: string;
@@ -32,6 +33,7 @@ export interface DataExportBundle {
   mentorReviewsGiven: Array<Record<string, unknown>>;
   deviceTokens: Array<{ platform: string; registeredAt: string }>;
   consents: Array<Record<string, unknown>>;
+  guardianAttestations: Array<Record<string, unknown>>;
   reportsFiled: Array<Record<string, unknown>>;
   crossServiceData: {
     chatService: string;
@@ -121,6 +123,20 @@ export async function exportUserData(userId: string): Promise<DataExportBundle> 
         },
         orderBy: { consentType: "asc" },
       },
+      // Confirmations this person made about someone in their care (DPDP §9).
+      // Part of the data held about them, so it belongs in a right-of-access export.
+      guardianAttestations: {
+        select: {
+          subjectName: true,
+          subjectIsMinor: true,
+          relationship: true,
+          conversationId: true,
+          policyVersion: true,
+          attestedAt: true,
+          revokedAt: true,
+        },
+        orderBy: { attestedAt: "desc" },
+      },
       filedReports: {
         select: {
           targetType: true,
@@ -135,10 +151,10 @@ export async function exportUserData(userId: string): Promise<DataExportBundle> 
   });
 
   if (!user) {
-    throw new Error("User not found");
+    throw createError("User not found", 404);
   }
 
-  const { userProfile, mentorProfile, givenReviews, deviceTokens, consents, filedReports, ...account } = user;
+  const { userProfile, mentorProfile, givenReviews, deviceTokens, consents, guardianAttestations, filedReports, ...account } = user;
 
   return {
     exportedAt: new Date().toISOString(),
@@ -199,6 +215,15 @@ export async function exportUserData(userId: string): Promise<DataExportBundle> 
       acceptedAt: c.acceptedAt?.toISOString() ?? null,
       withdrawnAt: c.withdrawnAt?.toISOString() ?? null,
       lastUpdated: c.updatedAt.toISOString(),
+    })),
+    guardianAttestations: guardianAttestations.map((g) => ({
+      personYouCareFor: g.subjectName,
+      recordedAsMinor: g.subjectIsMinor,
+      yourRelationship: g.relationship,
+      careCircleId: g.conversationId,
+      policyVersion: g.policyVersion,
+      confirmedAt: g.attestedAt.toISOString(),
+      withdrawnAt: g.revokedAt?.toISOString() ?? null,
     })),
     reportsFiled: filedReports.map((r) => ({
       targetType: r.targetType,

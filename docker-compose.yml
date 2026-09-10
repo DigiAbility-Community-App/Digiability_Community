@@ -153,6 +153,11 @@ services:
       dockerfile: Dockerfile
     container_name: digiability_notif_svc
     restart: unless-stopped
+    # notif-svc was the only service without an env_file, so anything added to
+    # services/notif-svc/.env was silently ignored — including
+    # INTERNAL_API_SECRET, which /internal/notify now requires.
+    env_file:
+      - ./services/notif-svc/.env
     environment:
       PORT: "4004"
       NODE_ENV: production

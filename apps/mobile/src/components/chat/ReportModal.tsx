@@ -5,21 +5,23 @@ import {
   TextInput,
   TouchableOpacity,
   StyleSheet,
-  KeyboardAvoidingView,
   Platform,
-  ScrollView,
 } from "react-native";
+import { KeyboardAwareScrollView } from "react-native-keyboard-aware-scroll-view";
 import { useTheme } from "../../theme/ThemeContext";
 import { AccessibleText } from "../shared/AccessibleText";
+import { SheetKeyboardAvoidingView } from "../shared/SheetKeyboardAvoidingView";
 import { AlertTriangle, X, Check } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { REPORT_REASONS } from "../../constants/reportReasons";
 
-const REPORT_CATEGORIES = [
-  "Spam",
-  "Harassment",
-  "Inappropriate content",
-  "Other",
-] as const;
+// chat-svc stores `reason` as free text, so the human-readable label is what
+// gets sent. The vocabulary itself comes from the shared list so every report
+// surface offers the same categories.
+const REPORT_CATEGORIES = REPORT_REASONS.map((r) => r.label);
+const DEFAULT_CATEGORY = "Harassment";
+const OTHER_LABEL = "Something else";
+
 
 export interface ReportModalProps {
   visible: boolean;
@@ -39,14 +41,14 @@ export function ReportModal({
   const { colors, highContrast } = useTheme();
   const insets = useSafeAreaInsets();
 
-  const [selectedCategory, setSelectedCategory] = useState<string>("Spam");
+  const [selectedCategory, setSelectedCategory] = useState<string>(DEFAULT_CATEGORY);
   const [customCategory, setCustomCategory] = useState<string>("");
   const [description, setDescription] = useState<string>("");
   const [errorMsg, setErrorMsg] = useState<string>("");
 
   useEffect(() => {
     if (visible) {
-      setSelectedCategory("Spam");
+      setSelectedCategory(DEFAULT_CATEGORY);
       setCustomCategory("");
       setDescription("");
       setErrorMsg("");
@@ -54,27 +56,28 @@ export function ReportModal({
   }, [visible]);
 
   const handleSubmit = () => {
-    if (!description.trim()) {
-      setErrorMsg("Please describe the issue with this content.");
-      return;
-    }
-
-    if (selectedCategory === "Other" && !customCategory.trim()) {
+    // No guard on `description`: it is optional, matching user-svc's
+    // ReportSchema where `details` is .optional(). Requiring it here blocked
+    // people from reporting content at all when the category said everything.
+    if (selectedCategory === OTHER_LABEL && !customCategory.trim()) {
       setErrorMsg("Please enter a category name for 'Other'.");
       return;
     }
 
     const finalReason =
-      selectedCategory === "Other"
+      selectedCategory === OTHER_LABEL
         ? `Other: ${customCategory.trim()}`
         : selectedCategory;
 
-    onSubmit(finalReason, description.trim());
+    // Send undefined rather than "" so an untouched box omits the field
+    // entirely instead of persisting an empty string.
+    onSubmit(finalReason, description.trim() || undefined);
   };
 
-  const isOther = selectedCategory === "Other";
-  const canSubmit =
-    description.trim().length > 0 && (!isOther || customCategory.trim().length > 0);
+  const isOther = selectedCategory === OTHER_LABEL;
+  // "Other" still needs its free-text category — that IS the reason, not an
+  // optional elaboration on it.
+  const canSubmit = !isOther || customCategory.trim().length > 0;
 
   return (
     <Modal
@@ -84,8 +87,7 @@ export function ReportModal({
       onRequestClose={onClose}
     >
       <View style={styles.backdrop}>
-        <KeyboardAvoidingView
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
+        <SheetKeyboardAvoidingView
           style={styles.keyboardAvoid}
           keyboardVerticalOffset={Platform.OS === "ios" ? 40 : 0}
         >
@@ -126,11 +128,13 @@ export function ReportModal({
               </TouchableOpacity>
             </View>
 
-            <ScrollView
+            <KeyboardAwareScrollView
               style={styles.scrollArea}
               contentContainerStyle={styles.scrollContent}
               keyboardShouldPersistTaps="handled"
               showsVerticalScrollIndicator={false}
+              enableOnAndroid={true}
+              extraScrollHeight={60}
             >
               {/* Category Options */}
               <View style={styles.categoryContainer}>
@@ -227,13 +231,13 @@ export function ReportModal({
                 </View>
               )}
 
-              {/* Required Description Input */}
+              {/* Optional Description Input */}
               <View style={styles.inputGroup}>
                 <AccessibleText
                   variant="caption"
                   style={[styles.inputLabel, { color: colors.text }]}
                 >
-                  Describe the issue (compulsory) *
+                  Describe the issue (optional)
                 </AccessibleText>
                 <TextInput
                   style={[
@@ -241,10 +245,7 @@ export function ReportModal({
                     {
                       backgroundColor: colors.surface,
                       color: colors.text,
-                      borderColor:
-                        errorMsg && !description.trim()
-                          ? colors.error
-                          : colors.border,
+                      borderColor: colors.border,
                     },
                   ]}
                   placeholder="Please describe why this content violates community guidelines..."
@@ -322,9 +323,9 @@ export function ReportModal({
                   </AccessibleText>
                 </TouchableOpacity>
               </View>
-            </ScrollView>
+            </KeyboardAwareScrollView>
           </View>
-        </KeyboardAvoidingView>
+        </SheetKeyboardAvoidingView>
       </View>
     </Modal>
   );

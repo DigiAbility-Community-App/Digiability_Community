@@ -6,6 +6,7 @@ import ForgotPasswordScreen from '@screens/auth/ForgotPasswordScreen';
 import AccountSuspendedScreen from '@screens/auth/AccountSuspendedScreen';
 import VerifyEmailScreen from '@screens/auth/VerifyEmailScreen';
 import LegalScreen from '@screens/legal/LegalScreen';
+import type { LegalDocSlug } from '../legal/legal-docs.generated';
 
 // ─────────────────────────────────────────────────────────
 // Auth Navigator
@@ -29,7 +30,7 @@ export type AuthStackParamList = {
     reason: string | null;
   };
   // Terms / Privacy shown in-app rather than opening an external URL.
-  Legal: { doc: 'terms' | 'privacy' };
+  Legal: { doc: LegalDocSlug };
 };
 
 const Stack = createNativeStackNavigator<AuthStackParamList>();

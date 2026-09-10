@@ -13,14 +13,15 @@ export const RegisterSchema = z.object({
     .string({ required_error: "Email is required" })
     .email("Invalid email address")
     .toLowerCase(),
+  // Structural check only. The real rules (length, character classes) come
+  // from the admin-configured policy and are applied by enforcePasswordPolicy
+  // after this schema runs — hardcoding them here too would silently override
+  // an admin who relaxes a rule. The 200-char ceiling is just a bcrypt/DoS
+  // guard, not a policy value.
   password: z
     .string({ required_error: "Password is required" })
-    .min(8, "Password must be at least 8 characters")
-    .max(16, "Password must be at most 16 characters")
-    .regex(
-      /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/,
-      "Password must include uppercase, lowercase, and a number"
-    ),
+    .min(1, "Password is required")
+    .max(200, "Password is too long"),
   // Optional server-side: the mobile app requires it, but web register
   // sends no phone. Without this key the validate middleware strips phoneNo
   // from req.body before registerUser can persist it.
@@ -30,6 +31,23 @@ export const RegisterSchema = z.object({
     .optional(),
   role: z.enum(["pwd", "caregiver", "therapist", "ngo", "volunteer", "student", "other"]).optional(),
   roles: z.array(z.enum(["pwd", "caregiver", "therapist", "ngo", "volunteer", "student", "other"])).optional(),
+  // z.literal(true) rather than z.boolean(): a request that omits this field,
+  // or sends false, fails validation outright. The gate is structurally
+  // unskippable rather than a runtime check a caller could bypass.
+  acceptedTerms: z.literal(true, {
+    errorMap: () => ({ message: "You must accept the Terms of Use and Community Guidelines to continue." }),
+  }),
+  // The version of docs/legal the client actually showed the user. Compared
+  // server-side against the current version so an old app build can't record
+  // acceptance of text nobody displayed.
+  policyVersion: z.string({ required_error: "policyVersion is required" }),
+  // Required: Digiability is an 18+ platform (DPDP §9). The eligibility rule
+  // itself lives in age.util and is applied in registerUser — this only
+  // guarantees a parseable date arrives, so the schema and the gate can't
+  // drift apart. Accepts YYYY-MM-DD.
+  dateOfBirth: z
+    .string({ required_error: "Date of birth is required" })
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "Date of birth must be in YYYY-MM-DD format"),
 });
 
 export const LoginSchema = z.object({
@@ -56,14 +74,11 @@ export const ResetPasswordSchema = z.object({
     .string({ required_error: "Reset code is required" })
     .length(6, "Reset code must be exactly 6 digits")
     .regex(/^\d{6}$/, "Reset code must be 6 digits"),
+  // See RegisterSchema above — rules live in the admin password policy.
   password: z
     .string({ required_error: "New password is required" })
-    .min(8, "Password must be at least 8 characters")
-    .max(16, "Password must be at most 16 characters")
-    .regex(
-      /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/,
-      "Password must include uppercase, lowercase, and a number"
-    ),
+    .min(1, "New password is required")
+    .max(200, "Password is too long"),
 });
 
 export const UpdateRoleSchema = z.object({

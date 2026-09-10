@@ -11,11 +11,11 @@ import {
   StyleSheet,
   TouchableOpacity,
   TextInput,
-  ScrollView,
   ActivityIndicator,
   Alert,
   BackHandler,
 } from "react-native";
+import { KeyboardAwareScrollView } from "react-native-keyboard-aware-scroll-view";
 import SafeScreen from "../../components/layout/SafeScreen";
 
 import {
@@ -24,6 +24,7 @@ import {
 } from "@react-navigation/native";
 
 import { useAuthStore } from "@store/authStore";
+import { toDisplayDate } from "../../utils/ageValidation";
 import { logout } from "@services/authService";
 
 import {
@@ -36,6 +37,9 @@ import DateTimePickerModal from "react-native-modal-datetime-picker";
 import * as Location from "expo-location";
 import { reverseGeocodeEnglish } from "../../utils/reverseGeocode";
 import { sanitizeNameInput, isValidNameFormat } from "../../utils/nameValidation";
+import { sanitizeMobileInput, isValidMobileFormat } from "../../utils/mobileValidation";
+import { isValidPlaceText, isValidPincodeFormat } from "../../utils/locationValidation";
+import { isValidUsernameFormat } from "../../utils/usernameValidation";
 import { useTheme } from "../../theme/ThemeContext";
 import { AccessibleText } from "../../components/shared/AccessibleText";
 import { AccessibleButton } from "../../components/shared/AccessibleButton";
@@ -60,12 +64,8 @@ const ROLE_LABELS: Record<
   educator: "Educator",
   ngo_worker: "NGO Worker",
   skill_trainer: "Skill Trainer",
-  community_member:
-    "Community Member",
+  volunteer: "Volunteer",
 };
-
-const USERNAME_REGEX =
-  /^[a-zA-Z0-9_.]{1,15}$/;
 
 // --------------------------------------------------
 // TYPES
@@ -76,6 +76,12 @@ type FieldErrors = {
   username?: string;
   dob?: string;
   phoneNo?: string;
+  houseNo?: string;
+  streetArea?: string;
+  city?: string;
+  district?: string;
+  state?: string;
+  pincode?: string;
 };
 
 type UsernameStatus =
@@ -120,8 +126,18 @@ const ProfileScreen = () => {
   const [username, setUsername] =
     useState("");
 
+  // Date of birth is already collected at signup (it's the 18+ eligibility
+  // gate), so it is prefilled here rather than asked for a second time.
+  // Parsed as local midnight — `new Date("YYYY-MM-DD")` would be treated as
+  // UTC and could render as the previous day east of Greenwich.
+  const dobFromSignup = (iso?: string | null): string => {
+    if (!iso) return "";
+    const parsed = new Date(`${iso}T00:00:00`);
+    return isNaN(parsed.getTime()) ? "" : toDisplayDate(parsed);
+  };
+
   const [dob, setDob] =
-    useState("");
+    useState(() => dobFromSignup(user?.dateOfBirth));
 
   const [showDatePicker, setShowDatePicker] =
     useState(false);
@@ -185,6 +201,15 @@ const ProfileScreen = () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
   }, []);
+
+  // The lazy initialiser above covers the normal signup flow, where the user
+  // is already in the store. On a session restore the screen can mount before
+  // getMe() resolves, so backfill once the date of birth arrives — guarded on
+  // the field still being empty so it never overwrites a manual edit.
+  useEffect(() => {
+    if (!user?.dateOfBirth) return;
+    setDob((current) => (current ? current : dobFromSignup(user.dateOfBirth)));
+  }, [user?.dateOfBirth]);
 
   // --------------------------------------------------
   // ROLE BADGE
@@ -263,22 +288,31 @@ const ProfileScreen = () => {
       ) ?? "";
 
     if (!normalized) {
+      // Cancel any in-flight debounced check from a previous, valid
+      // keystroke — otherwise it can resolve after the field is already
+      // blank and overwrite this "idle" state with a stale "available".
+      if (debounceRef.current) clearTimeout(debounceRef.current);
       setUsernameStatus("idle");
       setUsernameMessage("");
       return;
     }
 
     if (
-      !USERNAME_REGEX.test(
+      !isValidUsernameFormat(
         normalized
       )
     ) {
+      // Same stale-debounce risk as above — a previously-scheduled check
+      // for an earlier valid value must not be allowed to land later and
+      // overwrite this "invalid" state with "available"/"taken".
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+
       setUsernameStatus(
         "invalid"
       );
 
       setUsernameMessage(
-        "1–15 characters (letters, numbers, _ or .)"
+        "1–15 characters (letters, numbers, _ or .), with at least 3 letters or numbers"
       );
 
       return;
@@ -353,6 +387,10 @@ const ProfileScreen = () => {
         "Username already taken.";
     }
 
+    if (usernameStatus === "invalid") {
+      newErrors.username = usernameMessage || "Enter a valid username.";
+    }
+
     if (dob.trim()) {
       const parsed =
         parseDateInput(
@@ -367,13 +405,32 @@ const ProfileScreen = () => {
     }
 
     const rawPhone = phoneNo.trim();
-    if (rawPhone) {
-      const digitsOnly = rawPhone.replace(/\D/g, "");
-      if (digitsOnly.length < 10 || digitsOnly.length > 15) {
-        newErrors.phoneNo = "Phone number must be 10–15 digits.";
-      } else if (!/^[+]?[0-9\s\-()]{10,18}$/.test(rawPhone)) {
-        newErrors.phoneNo = "Enter a valid phone number.";
-      }
+    if (rawPhone && !isValidMobileFormat(rawPhone)) {
+      newErrors.phoneNo = "Enter a valid 10-digit mobile number starting with 6-9.";
+    }
+
+    if (houseNo.trim() && !isValidPlaceText(houseNo)) {
+      newErrors.houseNo = "Address may not be only numbers or symbols.";
+    }
+
+    if (streetArea.trim() && !isValidPlaceText(streetArea)) {
+      newErrors.streetArea = "Street/Area may not be only numbers or symbols.";
+    }
+
+    if (city.trim() && !isValidPlaceText(city)) {
+      newErrors.city = "City may not be only numbers or symbols.";
+    }
+
+    if (district.trim() && !isValidPlaceText(district)) {
+      newErrors.district = "District may not be only numbers or symbols.";
+    }
+
+    if (state.trim() && !isValidPlaceText(state)) {
+      newErrors.state = "State may not be only numbers or symbols.";
+    }
+
+    if (pincode.trim() && !isValidPincodeFormat(pincode.trim())) {
+      newErrors.pincode = "Enter a valid 6-digit pincode.";
     }
 
     setErrors(newErrors);
@@ -503,25 +560,36 @@ const ProfileScreen = () => {
   // --------------------------------------------------
 
   const usernameSuggestions = useMemo(() => {
-    // fullName can carry characters USERNAME_REGEX doesn't allow (e.g. a
+    // fullName can carry characters isValidUsernameFormat doesn't allow (e.g. a
     // hyphenated name like "Anna-Marie") — it's seeded straight from
     // user?.name with no sanitization, unlike the field's own onChangeText.
     // Strip down to the allowed set before building suggestions from it.
-    const name = fullName
+    // A name that's entirely non-Latin script (e.g. Devanagari, Tamil)
+    // sanitizes to "" here — fall back to a generic base rather than
+    // showing no suggestions at all.
+    const sanitized = fullName
       .trim()
       .toLowerCase()
       .replace(/\s+/g, "")
       .replace(/[^a-z0-9_.]/g, "");
-    if (!name) return [];
-    const candidates = [
-      `${name}${Math.floor(Math.random() * 100)}`,
-      `${name}_${Math.floor(Math.random() * 999)}`,
-      `${name}.${Math.floor(Math.random() * 9999)}`,
+    const name = sanitized || "user";
+
+    // isValidUsernameFormat caps the total length at 15. Truncate the base name
+    // to leave room for each suffix BEFORE appending it, rather than
+    // building full-length candidates and filtering afterwards — filtering
+    // after the fact was silently dropping every candidate (and returning
+    // an empty suggestion list) for any name of ~14+ characters.
+    const suffixes = [
+      `${Math.floor(Math.random() * 100)}`,
+      `_${Math.floor(Math.random() * 999)}`,
+      `.${Math.floor(Math.random() * 9999)}`,
     ];
+    const candidates = suffixes.map(
+      (suffix) => `${name.slice(0, Math.max(1, 15 - suffix.length))}${suffix}`
+    );
     // Safety net: only ever show a suggestion that already passes the same
-    // validator shown to the user (also guards the length cap — a long
-    // name plus suffix could otherwise exceed it).
-    return candidates.filter((c) => USERNAME_REGEX.test(c));
+    // validator shown to the user.
+    return candidates.filter((c) => isValidUsernameFormat(c));
   }, [fullName]);
 
   // --------------------------------------------------
@@ -695,13 +763,16 @@ const ProfileScreen = () => {
       </View>
 
       {/* CONTENT */}
-      <ScrollView
+      <KeyboardAwareScrollView
         showsVerticalScrollIndicator={
           false
         }
         contentContainerStyle={
           styles.scrollContent
         }
+        keyboardShouldPersistTaps="handled"
+        enableOnAndroid={true}
+        extraScrollHeight={100}
       >
         {/* HERO */}
         <View
@@ -898,11 +969,11 @@ const ProfileScreen = () => {
               placeholderTextColor={placeholderColor}
               style={[styles.input, { color: colors.text }]}
               value={phoneNo}
-              onChangeText={setPhoneNo}
+              onChangeText={(v) => setPhoneNo(sanitizeMobileInput(v))}
               keyboardType="phone-pad"
               maxLength={18}
               accessibilityLabel="Phone number"
-              accessibilityHint="Enter your mobile number with country code, for example +91 98765 43210. This field is optional."
+              accessibilityHint="Enter your 10-digit mobile number, with or without the +91 country code. This field is optional."
               textContentType="telephoneNumber"
             />
           </View>
@@ -1051,7 +1122,7 @@ const ProfileScreen = () => {
           </TouchableOpacity>
 
           {/* ADDRESS LINE 1 */}
-          <View style={[styles.fullWidthInput, { backgroundColor: colors.surface }, cardBorder]}>
+          <View style={[styles.fullWidthInput, { backgroundColor: colors.surface }, cardBorder, fieldBorder(!!errors.houseNo)]}>
             <TextInput
               placeholder="Address Line 1"
               placeholderTextColor={placeholderColor}
@@ -1060,9 +1131,14 @@ const ProfileScreen = () => {
               onChangeText={setHouseNo}
             />
           </View>
+          {errors.houseNo && (
+            <AccessibleText variant="caption" style={[styles.errorText, { color: colors.error }]} accessibilityRole="alert">
+              {errors.houseNo}
+            </AccessibleText>
+          )}
 
           {/* STREET */}
-          <View style={[styles.fullWidthInput, { backgroundColor: colors.surface }, cardBorder]}>
+          <View style={[styles.fullWidthInput, { backgroundColor: colors.surface }, cardBorder, fieldBorder(!!errors.streetArea)]}>
             <TextInput
               placeholder="Street / Area"
               placeholderTextColor={placeholderColor}
@@ -1071,51 +1147,85 @@ const ProfileScreen = () => {
               onChangeText={setStreetArea}
             />
           </View>
+          {errors.streetArea && (
+            <AccessibleText variant="caption" style={[styles.errorText, { color: colors.error }]} accessibilityRole="alert">
+              {errors.streetArea}
+            </AccessibleText>
+          )}
 
           {/* CITY + DISTRICT */}
           <View style={styles.doubleRow}>
-            <View style={[styles.doubleInput, { backgroundColor: colors.surface }, cardBorder]}>
-              <TextInput
-                placeholder="City"
-                placeholderTextColor={placeholderColor}
-                style={[styles.input, { color: colors.text }]}
-                value={city}
-                onChangeText={setCity}
-              />
+            <View style={{ width: "48%" }}>
+              <View style={[styles.doubleInput, { width: "100%", backgroundColor: colors.surface }, cardBorder, fieldBorder(!!errors.city)]}>
+                <TextInput
+                  placeholder="City"
+                  placeholderTextColor={placeholderColor}
+                  style={[styles.input, { color: colors.text }]}
+                  value={city}
+                  onChangeText={setCity}
+                />
+              </View>
+              {errors.city && (
+                <AccessibleText variant="caption" style={[styles.errorText, { color: colors.error }]} accessibilityRole="alert">
+                  {errors.city}
+                </AccessibleText>
+              )}
             </View>
 
-            <View style={[styles.doubleInput, { backgroundColor: colors.surface }, cardBorder]}>
-              <TextInput
-                placeholder="District"
-                placeholderTextColor={placeholderColor}
-                style={[styles.input, { color: colors.text }]}
-                value={district}
-                onChangeText={setDistrict}
-              />
+            <View style={{ width: "48%" }}>
+              <View style={[styles.doubleInput, { width: "100%", backgroundColor: colors.surface }, cardBorder, fieldBorder(!!errors.district)]}>
+                <TextInput
+                  placeholder="District"
+                  placeholderTextColor={placeholderColor}
+                  style={[styles.input, { color: colors.text }]}
+                  value={district}
+                  onChangeText={setDistrict}
+                />
+              </View>
+              {errors.district && (
+                <AccessibleText variant="caption" style={[styles.errorText, { color: colors.error }]} accessibilityRole="alert">
+                  {errors.district}
+                </AccessibleText>
+              )}
             </View>
           </View>
 
           {/* STATE + PINCODE */}
           <View style={styles.doubleRow}>
-            <View style={[styles.doubleInput, { backgroundColor: colors.surface }, cardBorder]}>
-              <TextInput
-                placeholder="State"
-                placeholderTextColor={placeholderColor}
-                style={[styles.input, { color: colors.text }]}
-                value={state}
-                onChangeText={setState}
-              />
+            <View style={{ width: "48%" }}>
+              <View style={[styles.doubleInput, { width: "100%", backgroundColor: colors.surface }, cardBorder, fieldBorder(!!errors.state)]}>
+                <TextInput
+                  placeholder="State"
+                  placeholderTextColor={placeholderColor}
+                  style={[styles.input, { color: colors.text }]}
+                  value={state}
+                  onChangeText={setState}
+                />
+              </View>
+              {errors.state && (
+                <AccessibleText variant="caption" style={[styles.errorText, { color: colors.error }]} accessibilityRole="alert">
+                  {errors.state}
+                </AccessibleText>
+              )}
             </View>
 
-            <View style={[styles.doubleInput, { backgroundColor: colors.surface }, cardBorder]}>
-              <TextInput
-                placeholder="Pincode"
-                placeholderTextColor={placeholderColor}
-                style={[styles.input, { color: colors.text }]}
-                value={pincode}
-                onChangeText={setPincode}
-                keyboardType="number-pad"
-              />
+            <View style={{ width: "48%" }}>
+              <View style={[styles.doubleInput, { width: "100%", backgroundColor: colors.surface }, cardBorder, fieldBorder(!!errors.pincode)]}>
+                <TextInput
+                  placeholder="Pincode"
+                  placeholderTextColor={placeholderColor}
+                  style={[styles.input, { color: colors.text }]}
+                  value={pincode}
+                  onChangeText={(v) => setPincode(v.replace(/\D/g, "").slice(0, 6))}
+                  keyboardType="number-pad"
+                  maxLength={6}
+                />
+              </View>
+              {errors.pincode && (
+                <AccessibleText variant="caption" style={[styles.errorText, { color: colors.error }]} accessibilityRole="alert">
+                  {errors.pincode}
+                </AccessibleText>
+              )}
             </View>
           </View>
 
@@ -1143,7 +1253,7 @@ const ProfileScreen = () => {
             "Continue"
           )}
         </AccessibleButton>
-      </ScrollView>
+      </KeyboardAwareScrollView>
     </SafeScreen >
   );
 };
@@ -1210,7 +1320,11 @@ const styles =
 
     scrollContent: {
       paddingHorizontal: 24,
-      paddingBottom: 120,
+      // Continue is an inline scroll item, not a floating/absolute footer —
+      // it doesn't need clearance for anything below it. SafeScreen already
+      // adds the bottom safe-area inset around the whole screen, so this is
+      // just a comfortable trailing margin, not compensation for an overlay.
+      paddingBottom: 32,
     },
 
     heroSection: {

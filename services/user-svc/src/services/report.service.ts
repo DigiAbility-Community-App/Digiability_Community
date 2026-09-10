@@ -1,6 +1,8 @@
 import prisma from "../models/prisma.client";
 import { createError } from "../middleware/error.middleware";
 import type { ReportInput } from "../utils/validation.util";
+import { withReferenceCode } from "../utils/reference-code.util";
+import { severityForReason } from "../utils/report-severity.util";
 
 // ─────────────────────────────────────────────────────
 // Report Service
@@ -39,7 +41,7 @@ function enforceRateLimit(userId: string): void {
 export async function submitReport(
   reporterId: string,
   input: ReportInput
-): Promise<{ id: string; alreadyReported: boolean }> {
+): Promise<{ id: string; referenceCode: string | null; alreadyReported: boolean }> {
   const { targetType, targetId, reason, details } = input;
 
   // Prevent self-reporting
@@ -55,17 +57,30 @@ export async function submitReport(
     where: {
       reporterId_targetType_targetId: { reporterId, targetType, targetId },
     },
-    select: { id: true },
+    select: { id: true, referenceCode: true },
   });
 
   if (existing) {
-    return { id: existing.id, alreadyReported: true };
+    return { id: existing.id, referenceCode: existing.referenceCode, alreadyReported: true };
   }
 
-  const report = await prisma.userReport.create({
-    data: { reporterId, targetType, targetId, reason, details },
-    select: { id: true },
-  });
+  // Severity drives the acknowledgement/action deadlines published in the
+  // Community Guidelines, so it is derived from the reason rather than trusted
+  // from the client.
+  const report = await withReferenceCode("RPT", (referenceCode) =>
+    prisma.userReport.create({
+      data: {
+        reporterId,
+        targetType,
+        targetId,
+        reason,
+        details,
+        referenceCode,
+        severity: severityForReason(reason),
+      },
+      select: { id: true, referenceCode: true },
+    })
+  );
 
-  return { id: report.id, alreadyReported: false };
+  return { id: report.id, referenceCode: report.referenceCode, alreadyReported: false };
 }

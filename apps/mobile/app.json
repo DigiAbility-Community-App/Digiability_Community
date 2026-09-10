@@ -19,10 +19,7 @@
       "bundleIdentifier": "com.digiability.community",
       "buildNumber": "1",
       "infoPlist": {
-        "NSLocationWhenInUseUsageDescription": "Allow Digiability Community to access your location to automatically fetch your city, state, and district during profile setup.",
-        "NSAppTransportSecurity": {
-          "NSAllowsArbitraryLoads": true
-        }
+        "NSLocationWhenInUseUsageDescription": "Allow Digiability Community to access your location to automatically fetch your city, state, and district during profile setup."
       }
     },
     "android": {
@@ -73,9 +70,7 @@
       [
         "expo-build-properties",
         {
-          "android": {
-            "usesCleartextTraffic": true
-          }
+          "android": {}
         }
       ]
     ],

@@ -4,10 +4,11 @@ import { useState, useEffect } from "react";
 import {
   Search, X, Trash2,
   RefreshCw, MessageSquare, CheckCircle2,
-  User, Send, ChevronLeft, ChevronRight,
+  User, Send, ChevronLeft, ChevronRight, Heart,
 } from "lucide-react";
 import { DateRangePicker, isWithinDateRange } from "@/components/shared/DateRangePicker";
 import { ConfirmModal } from "@/components/shared/ConfirmModal";
+import { ADMIN_REPLY_EMAIL } from "@/lib/adminIdentity";
 
 // ─────────────────────────────────────────────
 // FORUM QUESTION TYPES
@@ -99,6 +100,32 @@ export default function CommunityPage() {
     } catch (e) { console.error(e); }
     finally { setQuestionDetailLoading(false); }
   };
+
+  // Keep the open drawer's like counts current. Previously the detail was
+  // fetched once on open and never again, so an admin watching a question saw
+  // a frozen count. forum-svc does broadcast answer_voted over its websocket,
+  // but the admin panel has no socket client — polling only while a drawer is
+  // actually open is a far smaller change for the same visible result.
+  const openQuestionId = selectedQuestion?.question.id;
+  useEffect(() => {
+    if (!openQuestionId) return;
+
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/forums/${openQuestionId}`);
+        const data = await res.json();
+        // Ignore a response that arrived after the admin moved to another
+        // question, so a late reply can't overwrite the newer selection.
+        if (data.success && data.question?.id === openQuestionId) {
+          setSelectedQuestion(data);
+        }
+      } catch {
+        // Transient — the next tick will retry.
+      }
+    }, 15000);
+
+    return () => clearInterval(interval);
+  }, [openQuestionId]);
 
   const postReply = async () => {
     if (!selectedQuestion || !replyText.trim()) return;
@@ -412,7 +439,7 @@ export default function CommunityPage() {
                     <p className="text-sm text-slate-400 text-center py-6">No answers yet. Be the first to reply.</p>
                   )}
                   {selectedQuestion.answers.map((answer) => (
-                    <div key={answer.id} className={`rounded-xl p-4 border ${answer.authorEmail === "admin@digiability.com" ? "border-[#7004DC]/20 bg-violet-50" : "border-gray-100 bg-[#F7F5FA]"}`}>
+                    <div key={answer.id} className={`rounded-xl p-4 border ${answer.authorEmail === ADMIN_REPLY_EMAIL ? "border-[#7004DC]/20 bg-violet-50" : "border-gray-100 bg-[#F7F5FA]"}`}>
                       <div className="flex items-center gap-2 mb-2">
                         <div className="w-7 h-7 rounded-full bg-[#EDDCFF] text-[#7004DC] flex items-center justify-center text-xs font-bold shrink-0">
                           {answer.authorName[0]}
@@ -421,7 +448,7 @@ export default function CommunityPage() {
                           <p className="text-xs font-bold text-[#1A1C1C] truncate">{answer.authorName}</p>
                           <p className="text-[10px] text-[#7D7387]">{answer.createdAt}</p>
                         </div>
-                        {answer.authorEmail === "admin@digiability.com" && (
+                        {answer.authorEmail === ADMIN_REPLY_EMAIL && (
                           <span className="px-2 py-0.5 rounded-full bg-[#7004DC] text-white text-[9px] font-bold uppercase shrink-0">Admin</span>
                         )}
                         {answer.isAccepted && (
@@ -429,9 +456,14 @@ export default function CommunityPage() {
                         )}
                       </div>
                       <p className="text-sm text-[#1A1C1C] leading-5">{answer.content}</p>
+                      {/* The app presents this as a "like" (a heart with the
+                          upvote count) and offers no downvote, so showing
+                          👍/👎 here described a feature users don't have. */}
                       <div className="flex items-center gap-3 mt-2 text-xs text-[#7D7387]">
-                        <span>👍 {answer.upvotes}</span>
-                        <span>👎 {answer.downvotes}</span>
+                        <span className="inline-flex items-center gap-1">
+                          <Heart className="w-3.5 h-3.5 text-rose-500" />
+                          {answer.upvotes} {answer.upvotes === 1 ? "like" : "likes"}
+                        </span>
                       </div>
                     </div>
                   ))}

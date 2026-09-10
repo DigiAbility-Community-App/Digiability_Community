@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAdminAuth } from "@/lib/auth";
+import { requireAdminAuth, getAdminSession, getRequestIp } from "@/lib/auth";
+import { writeAudit } from "@/lib/audit";
 import { dbPool } from "@/lib/db";
 import { sendBroadcastPush } from "@/lib/push";
 
@@ -23,6 +24,8 @@ async function ensureTables() {
 export async function GET(request: NextRequest) {
   const authError = await requireAdminAuth(request);
   if (authError) return authError;
+  const actor = await getAdminSession(request);
+  const ip = getRequestIp(request);
 
   try {
     await ensureTables();
@@ -61,6 +64,8 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const authError = await requireAdminAuth(request);
   if (authError) return authError;
+  const actor = await getAdminSession(request);
+  const ip = getRequestIp(request);
 
   try {
     await ensureTables();
@@ -124,6 +129,12 @@ export async function POST(request: NextRequest) {
       VALUES ($1, $2, $3, $4, $5)
     `, [title, message, type, audience, sentCount]);
 
+    await writeAudit({
+      adminEmail: actor?.email, ipAddress: ip,
+      action: "notification_broadcast", targetType: "notification", targetId: "broadcast",
+      message: `sent to ${sentCount}, pushed to ${pushedCount}`,
+    });
+
     return NextResponse.json({ success: true, sentTo: sentCount, pushedTo: pushedCount });
   } catch (error) {
     console.error("Notification POST error:", error);
@@ -140,6 +151,8 @@ export async function POST(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
   const authError = await requireAdminAuth(request);
   if (authError) return authError;
+  const actor = await getAdminSession(request);
+  const ip = getRequestIp(request);
 
   try {
     const { searchParams } = new URL(request.url);
@@ -169,6 +182,11 @@ export async function DELETE(request: NextRequest) {
 
     // Delete log
     await dbPool.query(`DELETE FROM admin_notification_logs WHERE id = $1`, [id]);
+
+    await writeAudit({
+      adminEmail: actor?.email, ipAddress: ip,
+      action: "notification_delete", targetType: "notification", targetId: String(id ?? "-"),
+    });
 
     return NextResponse.json({ success: true, message: "Notification deleted successfully" });
   } catch (error) {

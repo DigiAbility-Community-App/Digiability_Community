@@ -30,6 +30,7 @@ const PrivacyDataPage = () => {
   const [consentBusy, setConsentBusy] = useState<Partial<Record<ConsentType, boolean>>>({});
   const [exporting, setExporting] = useState(false);
   const [confirmStage, setConfirmStage] = useState<0 | 1>(0);
+  const [deletePassword, setDeletePassword] = useState('');
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -78,14 +79,22 @@ const PrivacyDataPage = () => {
   };
 
   const handleDeleteAccount = async () => {
+    if (!deletePassword.trim()) {
+      setError('Please enter your password to confirm.');
+      return;
+    }
     setDeleting(true);
     setError(null);
     try {
-      await authService.deleteAccount();
+      await authService.deleteAccount(deletePassword);
       navigate('/login');
-    } catch {
+    } catch (err: any) {
       setDeleting(false);
-      setError('Could not delete your account. Please try again.');
+      setError(
+        err?.response?.status === 401
+          ? 'That password is incorrect.'
+          : 'Could not delete your account. Please try again.'
+      );
     }
   };
 
@@ -153,9 +162,10 @@ const PrivacyDataPage = () => {
         <h2 className="privacy-section-title privacy-danger-title">Danger Zone</h2>
         <div className="privacy-card privacy-danger-card">
           <p className="privacy-card-body">
-            Deleting your account deactivates it immediately and anonymises your profile,
-            preferences, messages, and forum posts. Some records are retained, marked as deleted,
-            as required by law.
+            Deleting your account erases your profile, preferences, personal details and message
+            content immediately. Your forum posts remain but are shown as written by
+            "Deleted User". A minimal registration record is kept for 180 days because Indian law
+            requires it, and is then destroyed.
           </p>
 
           {confirmStage === 0 ? (
@@ -165,8 +175,19 @@ const PrivacyDataPage = () => {
           ) : (
             <div className="privacy-confirm-panel">
               <p className="privacy-confirm-text">
-                This cannot be undone from within the app. Are you absolutely sure?
+                This cannot be undone. Enter your password to confirm.
               </p>
+              <input
+                type="password"
+                className="form-input"
+                placeholder="Your password"
+                value={deletePassword}
+                onChange={(e) => setDeletePassword(e.target.value)}
+                disabled={deleting}
+                autoComplete="current-password"
+                aria-label="Password"
+                style={{ marginBottom: '0.75rem' }}
+              />
               <div className="privacy-confirm-actions">
                 <button className="privacy-btn privacy-btn-outline" onClick={() => setConfirmStage(0)} disabled={deleting}>
                   No, keep my account

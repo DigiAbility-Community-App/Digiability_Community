@@ -324,6 +324,44 @@ class ConversationRepository {
    * Get all active member IDs for a conversation.
    * Used for fan-out and typing indicators.
    */
+  /**
+   * Of `candidateIds`, which users share at least one active conversation with
+   * `userId`?
+   *
+   * Used to gate presence lookups. Presence used to be readable for ANY user by
+   * any authenticated caller, which let anyone build an activity-pattern
+   * picture of a stranger — including people in Care Circles, where that is
+   * information about a vulnerable person's daily routine.
+   *
+   * Two queries rather than one per candidate: the bulk presence endpoint
+   * accepts up to 100 ids, and a per-id membership check would be 100 round
+   * trips on a hot path.
+   */
+  async filterToSharedConversationUsers(
+    userId: string,
+    candidateIds: string[]
+  ): Promise<Set<string>> {
+    if (candidateIds.length === 0) return new Set();
+
+    const myConversations = await prisma.conversationMember.findMany({
+      where: { userId, leftAt: null },
+      select: { conversationId: true },
+    });
+    if (myConversations.length === 0) return new Set();
+
+    const shared = await prisma.conversationMember.findMany({
+      where: {
+        conversationId: { in: myConversations.map((c) => c.conversationId) },
+        userId: { in: candidateIds },
+        leftAt: null,
+      },
+      select: { userId: true },
+      distinct: ["userId"],
+    });
+
+    return new Set(shared.map((m) => m.userId));
+  }
+
   async getMemberIds(conversationId: string): Promise<string[]> {
     const members = await prisma.conversationMember.findMany({
       where: { conversationId, leftAt: null },
@@ -409,12 +447,18 @@ class ConversationRepository {
   /**
    * Remove a member from a conversation (soft leave).
    */
-  async removeMember(conversationId: string, userId: string): Promise<void> {
+  async removeMember(
+    conversationId: string,
+    userId: string,
+    // Defaults to REMOVED so any existing caller that doesn't pass a reason
+    // keeps the pre-existing (admin-removal) meaning.
+    leftReason: "LEFT" | "REMOVED" = "REMOVED"
+  ): Promise<void> {
     await prisma.conversationMember.update({
       where: {
         conversationId_userId: { conversationId, userId },
       },
-      data: { leftAt: new Date() },
+      data: { leftAt: new Date(), leftReason },
     });
   }
 
@@ -581,10 +625,10 @@ class ConversationRepository {
    */
   async getMembersForNameResolution(
     conversationId: string
-  ): Promise<Array<{ userId: string; leftAt: Date | null }>> {
+  ): Promise<Array<{ userId: string; leftAt: Date | null; leftReason: string | null }>> {
     return prisma.conversationMember.findMany({
       where: { conversationId },
-      select: { userId: true, leftAt: true },
+      select: { userId: true, leftAt: true, leftReason: true },
     });
   }
 

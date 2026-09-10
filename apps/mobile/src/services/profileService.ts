@@ -280,6 +280,10 @@ export async function getMyProfile() {
       ngoName: profile.ngoName,
       ngoRole: profile.ngoRole,
       district: profile.district,
+      skillsTaught: profile.skillsTaught,
+      teachingMode: profile.teachingMode,
+      trainingLocation: profile.trainingLocation,
+      trainingAddress: profile.trainingAddress,
     };
   }
   return profile;

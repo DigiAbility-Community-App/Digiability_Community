@@ -10,9 +10,16 @@
     "services/*"
   ],
   "scripts": {
+    "postinstall": "patch-package",
     "dev": "turbo run dev",
     "build": "turbo run build",
     "lint": "turbo run lint",
+    "lint:legal": "node scripts/lint-legal.js",
+    "sync:legal": "node scripts/sync-legal-docs.js",
+    "check:schema-mirrors": "node scripts/check-schema-mirrors.js",
+    "check:safety": "node scripts/check-safety-resources.js",
+    "check:transport": "node scripts/check-transport.js",
+    "breach:scope": "node scripts/breach-scope.js",
     "test": "turbo run test",
     "user-svc:dev": "npm run dev --workspace=@digiability/user-svc",
     "web:dev": "npm run dev --workspace=@digiability/web",
@@ -33,6 +40,7 @@
   },
   "devDependencies": {
     "@types/react": "~19.1.0",
+    "patch-package": "^8.0.1",
     "prisma": "^5.10.0",
     "turbo": "^2.0.0"
   },

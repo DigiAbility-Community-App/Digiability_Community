@@ -8,6 +8,8 @@ import { QuestionStatus, VoteType } from '../generated/client';
 import { enqueueForClassification } from '../moderation/classify-queue';
 import { calculateCosineSimilarity, generateThreadSummary } from '../services/ai.service';
 import { broadcastForumEvent, sendNotificationToUser } from '../websocket/socket';
+import { generateReferenceCode } from '../utils/reference-code.util';
+import { severityForReason } from '../utils/report-severity.util';
 
 const NOTIF_SVC_URL = process.env.NOTIF_SVC_URL ?? 'http://localhost:4004';
 
@@ -23,7 +25,15 @@ function sendPushNotification(
   const req = lib.request(
     { hostname: url.hostname, port: url.port || (url.protocol === 'https:' ? 443 : 80),
       path: url.pathname, method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) } },
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(payload),
+        // notif-svc's /internal/notify now requires the same shared-secret +
+        // timestamp check every other internal endpoint uses. Without these
+        // headers the call is rejected and the push is silently dropped.
+        'x-internal-secret': process.env.INTERNAL_API_SECRET ?? '',
+        'x-internal-ts': String(Date.now()),
+      } },
     () => {}
   );
   req.on('error', (err) => console.warn('[forum-svc] Push notify error:', err.message));
@@ -878,7 +888,11 @@ export const reportContent = async (req: Request, res: Response): Promise<void> 
           reporterId,
           questionId: questionId || undefined,
           answerId: answerId || undefined,
-          reason
+          reason,
+          referenceCode: generateReferenceCode('RPT'),
+          // Derived server-side: a reporter choosing their own priority would
+          // make the published response-time SLA meaningless.
+          severity: severityForReason(reason)
         }
       });
 
@@ -887,7 +901,7 @@ export const reportContent = async (req: Request, res: Response): Promise<void> 
         reporterId,
         'MODERATION',
         'Report Received',
-        'Thank you. We have received your report and our moderators are reviewing the content.',
+        `Thank you. We have received your report (${rep.referenceCode}) and our moderators are reviewing the content.`,
         questionId || null,
         tx
       );

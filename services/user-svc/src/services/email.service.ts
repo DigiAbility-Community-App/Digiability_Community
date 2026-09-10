@@ -6,7 +6,9 @@ import nodemailer, { Transporter } from "nodemailer";
 
 let transporter: Transporter;
 
-function getTransporter(): Transporter {
+// Exported so alert.service can reuse the same configured SMTP transport
+// rather than standing up a second one.
+export function getTransporter(): Transporter {
   if (transporter) return transporter;
 
   transporter = nodemailer.createTransport({

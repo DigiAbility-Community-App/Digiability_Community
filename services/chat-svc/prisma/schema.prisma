@@ -155,6 +155,11 @@ model ConversationMember {
 
   joinedAt       DateTime @default(now())
   leftAt         DateTime?  // null = active member
+  // Why the membership ended: "LEFT" (the member chose to) or "REMOVED" (an
+  // admin removed them). Only leftAt was stored before, so the UI had no way
+  // to tell the two apart and labelled everyone who left as "(Removed)".
+  // Null for rows written before this column existed.
+  leftReason     String?
   updatedAt      DateTime @updatedAt
 
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
@@ -343,6 +348,14 @@ model Report {
   messageSequence BigInt?
   reason         String
   status         String   @default("OPEN") // OPEN | REVIEWED | ACTIONED | DISMISSED
+  // Aligned with user-svc's UserReport and forum-svc's ForumReport so the admin
+  // queue can sort and SLA-track across all three report tables as one list.
+  // Plain strings rather than enums to match this model's existing convention.
+  referenceCode  String?  @unique
+  severity       String   @default("MEDIUM") // CRITICAL | HIGH | ELEVATED | MEDIUM | LOW
+  // SLA timestamps for the Community Guidelines "How we respond" table.
+  acknowledgedAt DateTime?
+  actionedAt     DateTime?
   createdAt      DateTime @default(now())
 
   @@index([status, createdAt])

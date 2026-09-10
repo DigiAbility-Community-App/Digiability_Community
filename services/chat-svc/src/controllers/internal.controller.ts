@@ -3,6 +3,8 @@ import { asyncHandler } from "../middleware/error.middleware";
 import { conversationRepository } from "../repositories/conversation.repository";
 import { conversationService } from "../services/conversation.service";
 import { messageService } from "../services/message.service";
+import { messageRepository } from "../repositories/message.repository";
+import { moderationRepository } from "../repositories/moderation.repository";
 import { logger } from "../config/logger";
 
 // ─────────────────────────────────────────────────────────────
@@ -42,6 +44,41 @@ export const removeUserMemberships = asyncHandler(async (req: Request, res: Resp
   }
 
   res.status(200).json({ success: true, data: { removedCount: count, successions: promotions } });
+});
+
+/**
+ * DELETE /api/internal/users/:userId/content
+ * Called by user-svc on account deletion, after memberships are removed.
+ *
+ * Erases the content the user authored inside chat-svc's schema. Removing
+ * memberships alone left every message they had ever sent fully intact and
+ * still attributed to them, which meant "delete my account" did not erase
+ * their chat history at all.
+ *
+ * Rows are kept and blanked rather than deleted — sequenceNo ordering and
+ * other members' read cursors depend on them existing.
+ */
+export const removeUserContent = asyncHandler(async (req: Request, res: Response) => {
+  const { userId } = req.params;
+
+  if (!userId) {
+    res.status(400).json({ success: false, message: "userId is required." });
+    return;
+  }
+
+  const messagesScrubbed = await messageRepository.scrubMessagesBySender(userId);
+  const reportSnapshotsScrubbed = await moderationRepository.scrubReportSnapshotsBySender(userId);
+
+  logger.info("Scrubbed user content on account deletion", {
+    userId,
+    messagesScrubbed,
+    reportSnapshotsScrubbed,
+  });
+
+  res.status(200).json({
+    success: true,
+    data: { messagesScrubbed, reportSnapshotsScrubbed },
+  });
 });
 
 /**

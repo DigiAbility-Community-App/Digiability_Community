@@ -97,7 +97,7 @@ interface ForumState {
     questionId?: string;
     answerId?: string;
     reason: string;
-  }) => Promise<void>;
+  }) => Promise<{ referenceCode?: string } | undefined>;
   fetchQuestionSummary: (id: string) => Promise<void>;
   toggleBookmark: (questionId: string) => Promise<void>;
   fetchBookmarks: () => Promise<void>;
@@ -178,7 +178,12 @@ export const useForumStore = create<ForumState>((set, get) => ({
   },
 
   fetchQuestionDetails: async (id) => {
-    set({ loading: true, error: null, currentQuestionSummary: null });
+    // currentQuestion must be cleared alongside the summary: leaving the
+    // previous question in the store made the details screen render the last
+    // question's title, body and answers until this request resolved — and
+    // worse, actions like posting an answer read currentQuestion.id, so they
+    // could target the question the user had just navigated away from.
+    set({ loading: true, error: null, currentQuestion: null, currentQuestionSummary: null });
     try {
       const question = await forumService.getQuestionDetails(id);
       set({ currentQuestion: question, loading: false });
@@ -387,8 +392,11 @@ export const useForumStore = create<ForumState>((set, get) => ({
   reportContent: async (payload) => {
     set({ actionLoading: true, error: null });
     try {
-      await forumService.reportContent(payload);
+      // Return the created report so the caller can show the reference number
+      // the Community Guidelines promise. This used to discard the response.
+      const res = await forumService.reportContent(payload);
       set({ actionLoading: false });
+      return res?.data;
     } catch (err: any) {
       set({
         error: err.response?.data?.message || "Failed to send report",

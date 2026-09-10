@@ -29,6 +29,18 @@ export const RETENTION_DAYS = {
 
   // User report records — keep as long as audit log so admin actions can be cross-referenced
   userReports: 730,
+
+  // Registration records after account cancellation. Required by the Information
+  // Technology (Intermediary Guidelines) Rules 2021, which oblige an intermediary
+  // to retain user registration information for 180 days after cancellation.
+  // This is NOT a general retention period for user data — everything else is
+  // erased immediately on deletion; only the sealed registration record survives.
+  registrationRecords: 180,
+
+  // Snapshots of content removed for violating the Guidelines or the law. Same
+  // 180-day basis: the rules require removed information and associated records
+  // be preserved for investigation.
+  removedContent: 180,
 } as const;
 
 export type RetentionDaysKey = keyof typeof RETENTION_DAYS;

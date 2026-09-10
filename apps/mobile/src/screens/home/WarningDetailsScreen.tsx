@@ -5,9 +5,9 @@
 // somewhere real, the same as every other notification type.
 // ─────────────────────────────────────────────────────────────
 
-import React from "react";
-import { View, StyleSheet, ScrollView } from "react-native";
-import { AlertTriangle, Ban, ShieldAlert } from "lucide-react-native";
+import React, { useEffect, useState } from "react";
+import { View, StyleSheet, ScrollView, TextInput, ActivityIndicator, Alert } from "react-native";
+import { AlertTriangle, Ban, ShieldAlert, Scale } from "lucide-react-native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { RouteProp, useNavigation, useRoute } from "@react-navigation/native";
 import { MainStackParamList } from "../../navigation/MainNavigator";
@@ -16,6 +16,11 @@ import AppHeader from "../../components/layout/AppHeader";
 import { AccessibleText } from "../../components/shared/AccessibleText";
 import { AccessibleButton } from "../../components/shared/AccessibleButton";
 import { useTheme } from "../../theme/ThemeContext";
+import {
+  checkAppealability,
+  submitAppeal,
+  type Appealability,
+} from "@services/appealService";
 
 type Props = {
   navigation: NativeStackNavigationProp<MainStackParamList, "WarningDetails">;
@@ -37,8 +42,67 @@ const WarningDetailsScreen = () => {
   const route = useRoute<Props["route"]>();
   const { colors, highContrast } = useTheme();
 
-  const { title, message, type, relatedId, time } = route.params;
+  const { title, message, type, relatedId, time, auditLogId } = route.params;
   const severity = severityFor(type);
+
+  // ── Appeals (Community Guidelines) ──────────────────────────
+  // The Guidelines promise "the Appeal button on the notice we sent you",
+  // within 30 days. The notice carries the admin_audit_log id of the decision,
+  // so the appeal is tied to a specific dated action by a named admin.
+  const [eligibility, setEligibility] = useState<Appealability | null>(null);
+  const [showForm, setShowForm] = useState(false);
+  const [grounds, setGrounds] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (!auditLogId) return;
+    let cancelled = false;
+    checkAppealability(auditLogId)
+      .then((result) => {
+        if (!cancelled) setEligibility(result);
+      })
+      .catch(() => {
+        // Non-fatal: the notice still reads fine without the Appeal button.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [auditLogId]);
+
+  const handleSubmitAppeal = async () => {
+    if (!auditLogId) return;
+    if (!grounds.trim()) {
+      Alert.alert("Tell us why", "Please explain why you think this decision was wrong.");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const result = await submitAppeal({ auditLogId, grounds: grounds.trim() });
+      const due = new Date(result.dueBy).toLocaleDateString("en-IN", {
+        day: "numeric",
+        month: "long",
+        year: "numeric",
+      });
+      setShowForm(false);
+      setGrounds("");
+      setEligibility({
+        appealable: false,
+        reason: "already_appealed",
+        existing: { referenceCode: result.referenceCode, status: "SUBMITTED" },
+      });
+      Alert.alert(
+        "Appeal submitted",
+        `${result.message}\n\nReference: ${result.referenceCode}\nWe'll respond by ${due}.`
+      );
+    } catch (err: any) {
+      Alert.alert(
+        "Couldn't submit",
+        err?.response?.data?.message || "Please check your connection and try again."
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   const accentColor = severity === "danger" ? "#DC2626" : severity === "warning" ? "#D97706" : "#7C3AED";
   const iconBg = severity === "danger" ? "#FDECEC" : severity === "warning" ? "#FEF3C7" : "#F0EAF9";
@@ -70,6 +134,98 @@ const WarningDetailsScreen = () => {
               (reason, group, flagged-content preview). */}
           <AccessibleText style={[styles.message, { color: colors.text }]}>{message}</AccessibleText>
         </View>
+
+        {/* APPEAL — only for enforcement notices that carry a decision id. */}
+        {!!auditLogId && eligibility && (
+          <View style={[styles.card, { backgroundColor: colors.card }, cardBorder]}>
+            <View style={[styles.iconCircle, { backgroundColor: "#F0EAF9" }]}>
+              <Scale size={26} strokeWidth={2} color="#7C3AED" />
+            </View>
+
+            {eligibility.appealable ? (
+              <>
+                <AccessibleText style={[styles.title, { color: colors.text }]}>
+                  Think we got this wrong?
+                </AccessibleText>
+                <AccessibleText style={[styles.message, { color: colors.subtext }]}>
+                  You can appeal this decision until{" "}
+                  {new Date(eligibility.deadline).toLocaleDateString("en-IN", {
+                    day: "numeric",
+                    month: "long",
+                    year: "numeric",
+                  })}
+                  . Someone who wasn't involved in the original decision will review it.
+                </AccessibleText>
+
+                {showForm ? (
+                  <View style={{ alignSelf: "stretch", marginTop: 14, gap: 10 }}>
+                    <TextInput
+                      style={[
+                        styles.input,
+                        {
+                          backgroundColor: colors.surface,
+                          color: colors.text,
+                          borderColor: colors.border,
+                        },
+                      ]}
+                      placeholder="Why do you think this decision was wrong?"
+                      placeholderTextColor={colors.subtext}
+                      value={grounds}
+                      onChangeText={setGrounds}
+                      multiline
+                      numberOfLines={5}
+                      maxLength={5000}
+                      textAlignVertical="top"
+                      editable={!submitting}
+                      accessibilityLabel="Grounds for your appeal"
+                    />
+                    <AccessibleButton
+                      accessibilityLabel="Submit appeal"
+                      onPress={handleSubmitAppeal}
+                      disabled={submitting}
+                    >
+                      {submitting ? <ActivityIndicator color="#fff" /> : "Submit appeal"}
+                    </AccessibleButton>
+                    <AccessibleButton
+                      variant="secondary"
+                      accessibilityLabel="Cancel appeal"
+                      onPress={() => setShowForm(false)}
+                      disabled={submitting}
+                    >
+                      Cancel
+                    </AccessibleButton>
+                  </View>
+                ) : (
+                  <AccessibleButton
+                    style={[styles.button, { alignSelf: "stretch", marginTop: 14 }]}
+                    accessibilityLabel="Appeal this decision"
+                    accessibilityHint="Opens a form to explain why you think this decision was wrong"
+                    onPress={() => setShowForm(true)}
+                  >
+                    Appeal this decision
+                  </AccessibleButton>
+                )}
+              </>
+            ) : (
+              <>
+                <AccessibleText style={[styles.title, { color: colors.text }]}>
+                  {eligibility.reason === "already_appealed"
+                    ? "Appeal submitted"
+                    : eligibility.reason === "window_closed"
+                      ? "The appeal window has closed"
+                      : "Appeals"}
+                </AccessibleText>
+                <AccessibleText style={[styles.message, { color: colors.subtext }]}>
+                  {eligibility.reason === "already_appealed"
+                    ? `We've received your appeal (${eligibility.existing?.referenceCode}) and will respond. You'll see the outcome here.`
+                    : eligibility.reason === "window_closed"
+                      ? "Appeals must be made within 30 days of the decision. You can still contact our Grievance Officer from Profile → Contact Support."
+                      : "This decision can't be appealed from here. Contact support if you need help."}
+                </AccessibleText>
+              </>
+            )}
+          </View>
+        )}
 
         {!!relatedId && (
           <AccessibleButton
@@ -132,6 +288,13 @@ const styles = StyleSheet.create({
     lineHeight: 21,
     textAlign: "left",
     alignSelf: "stretch",
+  },
+  input: {
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 14,
+    fontSize: 14,
+    minHeight: 110,
   },
   button: {
     minHeight: 54,

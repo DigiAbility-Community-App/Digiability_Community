@@ -32,8 +32,19 @@ export const unblockUser = asyncHandler(async (req: Request, res: Response) => {
 
 export const listBlocked = asyncHandler(async (req: Request, res: Response) => {
   const me = (req as AuthenticatedRequest).user.sub;
+
+  // `blockedIds` is kept for existing callers; `blocked` carries the display
+  // names the Blocked Users screen needs. If the cross-schema join fails for
+  // any reason, still return the ids rather than failing the whole request.
   const blockedIds = await moderationRepository.listBlockedIds(me);
-  res.status(200).json({ success: true, data: { blockedIds } });
+  let blocked: Array<{ id: string; name: string; blockedAt: Date }> = [];
+  try {
+    blocked = await moderationRepository.listBlockedUsers(me);
+  } catch {
+    blocked = blockedIds.map((id) => ({ id, name: "Unknown user", blockedAt: new Date() }));
+  }
+
+  res.status(200).json({ success: true, data: { blockedIds, blocked } });
 });
 
 export const reportUser = asyncHandler(async (req: Request, res: Response) => {

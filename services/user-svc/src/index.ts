@@ -10,6 +10,8 @@ import profileRoutes from "./routes/profile.routes";
 import eventRoutes from "./routes/event.routes";
 import mentorRoutes from "./routes/mentor.routes";
 import reportRoutes from "./routes/report.routes";
+import grievanceRoutes from "./routes/grievance.routes";
+import appealRoutes from "./routes/appeal.routes";
 import masterRoutes from "./routes/master.routes";
 import moderationRoutes from "./routes/moderation.routes";
 import privacyRoutes from "./routes/privacy.routes";
@@ -136,6 +138,10 @@ app.use("/api/users/profile", profileRoutes);
 app.use("/api/users/mentors", mentorRoutes);
 app.use("/api/events", eventRoutes);
 app.use("/api/reports", reportRoutes);
+// Formal grievance redressal (IT Rules Rule 3(2)) — distinct from content reports.
+app.use("/api/grievances", grievanceRoutes);
+// Appeals against enforcement decisions (Community Guidelines).
+app.use("/api/appeals", appealRoutes);
 app.use("/api/master", masterRoutes);
 app.use("/api/moderation", moderationRoutes);
 

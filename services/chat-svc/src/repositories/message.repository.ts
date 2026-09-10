@@ -410,6 +410,29 @@ class MessageRepository {
 
   // ─── Message Deletion ─────────────────────────────────────
 
+  /**
+   * Scrub the content of every message a user ever sent, for account deletion.
+   *
+   * Deletion previously only stripped the user's conversation memberships, so
+   * every message they had written kept its original text forever — the single
+   * biggest gap in what "delete my account" actually did.
+   *
+   * Rows are kept rather than deleted: sequenceNo ordering and the read cursors
+   * of everyone else in the conversation depend on them existing. The body is
+   * blanked and the row marked deleted, so it renders as a removed message.
+   */
+  async scrubMessagesBySender(senderId: string): Promise<number> {
+    const result = await prisma.message.updateMany({
+      where: { senderId },
+      data: { content: "", metadata: null, deletedAt: new Date(), status: "DELETED" as any },
+    });
+    logger.info("Scrubbed message content on account deletion", {
+      senderId,
+      count: result.count,
+    });
+    return result.count;
+  }
+
   async softDeleteMessage(messageId: string, conversationId: string): Promise<void> {
     await prisma.message.update({
       where: { id: messageId },

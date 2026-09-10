@@ -7,13 +7,16 @@ import {
   Shield, CheckCircle2, Clock, Eye,
 } from "lucide-react";
 
-export type ItemKind = "user_report" | "chat_report" | "ai_flag";
+// NOTE: "user_report" maps FORUM reports — a long-standing misnomer. Profile
+// reports (the user_reports table) are "profile_report".
+export type ItemKind = "user_report" | "chat_report" | "profile_report" | "ai_flag";
+export type ItemSeverity = "CRITICAL" | "HIGH" | "ELEVATED" | "MEDIUM" | "LOW";
 export type ActionType = "dismiss" | "remove_content" | "warn_user" | "ban_user";
 
 export interface QueueItem {
   id: string;
   kind: ItemKind;
-  source: "chat" | "forum" | "ai";
+  source: "chat" | "forum" | "profile" | "ai";
   contentType: string;
   contentId: string;
   messageId?: string;
@@ -31,8 +34,52 @@ export interface QueueItem {
   contentPreview: string;
   imageUrl?: string | null;
   score: number | null;
+  severity?: ItemSeverity;
+  referenceCode?: string | null;
+  acknowledgedAt?: string | null;
   status: string;
   createdAt: string;
+}
+
+// Severity ordering for the priority queue. The Community Guidelines commit to
+// acting on child-safety and credible-threat reports immediately, so they must
+// surface above everything else regardless of age.
+const SEVERITY_RANK: Record<string, number> = {
+  CRITICAL: 0,
+  HIGH: 1,
+  ELEVATED: 2,
+  MEDIUM: 3,
+  LOW: 4,
+};
+
+const SEVERITY_STYLE: Record<string, { label: string; className: string }> = {
+  CRITICAL: { label: "Critical", className: "bg-red-600 text-white border-red-700" },
+  HIGH: { label: "High", className: "bg-orange-100 text-orange-800 border-orange-300" },
+  ELEVATED: { label: "Elevated", className: "bg-amber-100 text-amber-800 border-amber-300" },
+  MEDIUM: { label: "Medium", className: "bg-slate-100 text-slate-700 border-slate-300" },
+  LOW: { label: "Low", className: "bg-slate-50 text-slate-500 border-slate-200" },
+};
+
+function SeverityBadge({ severity }: { severity?: ItemSeverity }) {
+  // Only call out the tiers that carry a tighter deadline than the default —
+  // badging every row would make none of them stand out.
+  if (!severity || severity === "MEDIUM" || severity === "LOW") return null;
+  const style = SEVERITY_STYLE[severity];
+  return (
+    <span
+      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-extrabold uppercase tracking-wide border ${style.className}`}
+    >
+      {severity === "CRITICAL" && <AlertTriangle className="w-3 h-3" />}
+      {style.label}
+    </span>
+  );
+}
+
+function bySeverityThenAge(a: QueueItem, b: QueueItem): number {
+  const rank =
+    (SEVERITY_RANK[a.severity ?? "MEDIUM"] ?? 3) - (SEVERITY_RANK[b.severity ?? "MEDIUM"] ?? 3);
+  if (rank !== 0) return rank;
+  return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
 }
 
 export function ReviewQueue({
@@ -59,7 +106,9 @@ export function ReviewQueue({
       const res = await fetch(`/api/moderation/review?status=${statusFilter}&type=${typeFilter}`);
       const data = (await res.json()) as { success: boolean; data?: { items: QueueItem[] }; message?: string };
       if (data.success) {
-        setItems(data.data?.items ?? []);
+        // The API already orders by severity then age; re-sorting here keeps
+        // the priority guarantee if a caller ever supplies items another way.
+        setItems([...(data.data?.items ?? [])].sort(bySeverityThenAge));
         setPage(1);
       } else {
         setError(data.message ?? "Failed to load queue");
@@ -102,6 +151,7 @@ export function ReviewQueue({
             <option value="all">All Channels (Chat, Forum, AI)</option>
             <option value="chat">Chat & DM Messages Only</option>
             <option value="forum">Forum Questions & Answers Only</option>
+            <option value="profile">User Profile Reports Only</option>
             <option value="flag">AI Moderation Flags Only</option>
           </select>
 
@@ -183,6 +233,11 @@ export function ReviewQueue({
                           <Bot className="w-3.5 h-3.5 text-purple-600" />
                           AI Flag
                         </span>
+                      ) : item.source === "profile" ? (
+                        <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-extrabold bg-rose-50 text-rose-700 border border-rose-200">
+                          <UserX className="w-3.5 h-3.5 text-rose-600" />
+                          User Profile
+                        </span>
                       ) : item.contentType === "question" ? (
                         <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-extrabold bg-amber-50 text-amber-800 border border-amber-200">
                           <HelpCircle className="w-3.5 h-3.5 text-amber-600" />
@@ -218,6 +273,7 @@ export function ReviewQueue({
                         <div className="mt-1.5 flex items-center gap-2">
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-red-50 text-red-700 text-[10px] font-extrabold border border-red-100">
                             <AlertTriangle className="w-3 h-3" />
+                            <SeverityBadge severity={item.severity} />
                             {item.summary}
                           </span>
                           {item.score !== null && (

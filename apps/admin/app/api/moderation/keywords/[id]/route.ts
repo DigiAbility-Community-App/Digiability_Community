@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAdminAuth } from "@/lib/auth";
+import { requireAdminAuth, getAdminSession, getRequestIp } from "@/lib/auth";
+import { writeAudit } from "@/lib/audit";
 
 const USER_SVC = process.env.USER_SVC_URL ?? "http://localhost:4001";
 const INTERNAL_SECRET = process.env.INTERNAL_API_SECRET ?? "";
@@ -18,6 +19,8 @@ export async function PATCH(
 ) {
   const authError = await requireAdminAuth(request);
   if (authError) return authError;
+  const actor = await getAdminSession(request);
+  const ip = getRequestIp(request);
 
   try {
     const { id } = await params;
@@ -29,6 +32,14 @@ export async function PATCH(
       body: JSON.stringify(body),
     });
     const data = await res.json() as unknown;
+
+    if (res.ok) {
+      await writeAudit({
+        adminEmail: actor?.email, ipAddress: ip,
+        action: "keyword_update", targetType: "keyword", targetId: id,
+      });
+    }
+
     return NextResponse.json(data, { status: res.status });
   } catch {
     return NextResponse.json({ success: false, message: "Failed to update keyword" }, { status: 500 });
@@ -41,6 +52,8 @@ export async function DELETE(
 ) {
   const authError = await requireAdminAuth(request);
   if (authError) return authError;
+  const actor = await getAdminSession(request);
+  const ip = getRequestIp(request);
 
   try {
     const { id } = await params;
@@ -50,6 +63,14 @@ export async function DELETE(
       headers: internalHeaders(),
     });
     const data = await res.json() as unknown;
+
+    if (res.ok) {
+      await writeAudit({
+        adminEmail: actor?.email, ipAddress: ip,
+        action: "keyword_delete", targetType: "keyword", targetId: id,
+      });
+    }
+
     return NextResponse.json(data, { status: res.status });
   } catch {
     return NextResponse.json({ success: false, message: "Failed to delete keyword" }, { status: 500 });

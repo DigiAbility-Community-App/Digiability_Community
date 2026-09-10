@@ -1,18 +1,24 @@
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useMemo } from "react";
 import {
-  View, Text, StyleSheet, TouchableOpacity,
+  View,  StyleSheet, TouchableOpacity,
   FlatList, ActivityIndicator, RefreshControl, Alert, Platform,
 } from "react-native";
 import { HeartHandshake, Plus, ChevronRight, LogIn, Accessibility, TriangleAlert, Clock, AlertCircle } from "lucide-react-native";
 import { useNavigation } from "@react-navigation/native";
 import { chatService, CommunityGroup } from "../../services/chatService";
-import { useTheme } from "../../theme/ThemeContext";
+import { useTheme, getFontScale } from "../../theme/ThemeContext";
+import { AccessibleText } from "../shared/AccessibleText";
 import { ConfirmDialog } from "../chat/ConfirmDialog";
 import { useChatStore } from "@store/chatStore";
 
 const CareCirclesTab = () => {
   const navigation = useNavigation<any>();
-  const { colors } = useTheme();
+  const { colors, textSize } = useTheme();
+  // These tabs hardcoded every font size, so they ignored the app's
+  // text-size preference entirely. fs() scales them the same way the
+  // typography variants do (see EditProfileScreen for the precedent).
+  const fs = getFontScale(textSize);
+  const styles = useMemo(() => makeStyles(fs), [fs]);
   const conversations = useChatStore((s) => s.conversations);
 
   const [circles, setCircles] = useState<CommunityGroup[]>([]);
@@ -40,7 +46,12 @@ const CareCirclesTab = () => {
     }
   }, []);
 
-  useEffect(() => { loadCircles(); }, [loadCircles]);
+  // See GroupsTab: refreshToken changes on any membership change, so a circle
+  // joined or approved elsewhere shows up without a manual pull-to-refresh.
+  const refreshToken = useChatStore((s) => s.communityGroupsRefreshToken);
+  const refreshCommunityGroups = useChatStore((s) => s.refreshCommunityGroups);
+
+  useEffect(() => { loadCircles(refreshToken > 0); }, [loadCircles, refreshToken]);
 
   const handleCirclePress = (circle: CommunityGroup) => {
     if (pendingIds.has(circle.id)) {
@@ -82,6 +93,9 @@ const CareCirclesTab = () => {
       setCircles((prev) =>
         prev.map((c) => c.id === circle.id ? { ...c, isMember: true, memberCount: c.memberCount + 1 } : c)
       );
+      // Also tell the Groups tab (and this one, on next mount) so the new
+      // membership isn't dependent on the member.joined socket round-trip.
+      refreshCommunityGroups();
       navigation.navigate("Chats", {
         screen: "GroupChat",
         params: { conversationId: circle.id, groupName: circle.name, subType: "CARE_CIRCLE" },
@@ -119,19 +133,19 @@ const CareCirclesTab = () => {
 
         <View style={styles.info}>
           <View style={styles.nameRow}>
-            <Text style={[styles.name, { color: colors.text }]} numberOfLines={1}>{item.name}</Text>
+            <AccessibleText style={[styles.name, { color: colors.text }]} numberOfLines={1}>{item.name}</AccessibleText>
             {!item.isMember && (
               <View style={styles.joinBadge}>
-                <Text style={styles.joinBadgeText}>{isPending ? "Requested" : "Join"}</Text>
+                <AccessibleText style={styles.joinBadgeText}>{isPending ? "Requested" : "Join"}</AccessibleText>
               </View>
             )}
           </View>
-          <Text style={[styles.desc, { color: colors.subtext }]} numberOfLines={1}>
+          <AccessibleText style={[styles.desc, { color: colors.subtext }]} numberOfLines={1}>
             {item.lastMessageText || item.description || "Support circle"}
-          </Text>
-          <Text style={[styles.memberCount, { color: colors.subtext }]}>
+          </AccessibleText>
+          <AccessibleText style={[styles.memberCount, { color: colors.subtext }]}>
             {item.memberCount} {item.memberCount === 1 ? "member" : "members"}
-          </Text>
+          </AccessibleText>
         </View>
 
         {(() => {
@@ -139,7 +153,7 @@ const CareCirclesTab = () => {
           if (unread <= 0) return null;
           return (
             <View style={[styles.unreadBadge, { backgroundColor: colors.primary }]}>
-              <Text style={styles.unreadText}>{unread > 99 ? "99+" : unread}</Text>
+              <AccessibleText style={styles.unreadText}>{unread > 99 ? "99+" : unread}</AccessibleText>
             </View>
           );
         })()}
@@ -174,8 +188,8 @@ const CareCirclesTab = () => {
         ListEmptyComponent={
           <View style={styles.emptyCard}>
             <View style={styles.iconBox}><TriangleAlert size={40} color="#E0A800" strokeWidth={1.9} /></View>
-            <Text style={[styles.emptyTitle, { color: colors.text }]}>Couldn't Load Care Circles</Text>
-            <Text style={[styles.emptySubtitle, { color: colors.subtext }]}>{error}</Text>
+            <AccessibleText style={[styles.emptyTitle, { color: colors.text }]}>Couldn't Load Care Circles</AccessibleText>
+            <AccessibleText style={[styles.emptySubtitle, { color: colors.subtext }]}>{error}</AccessibleText>
           </View>
         }
       />
@@ -208,13 +222,13 @@ const CareCirclesTab = () => {
               <View style={styles.iconBox}>
                 <HeartHandshake size={44} color="#500088" />
               </View>
-              <Text style={[styles.emptyTitle, { color: colors.text }]}>No Care Circles Yet</Text>
-              <Text style={[styles.emptySubtitle, { color: colors.subtext }]}>
+              <AccessibleText style={[styles.emptyTitle, { color: colors.text }]}>No Care Circles Yet</AccessibleText>
+              <AccessibleText style={[styles.emptySubtitle, { color: colors.subtext }]}>
                 Create a Care Circle to connect with your support network.
-              </Text>
+              </AccessibleText>
               <TouchableOpacity style={styles.createBtn} onPress={handleCreate}>
                 <Plus size={18} color="#FFFFFF" />
-                <Text style={styles.createBtnText}>Create Care Circle</Text>
+                <AccessibleText style={styles.createBtnText}>Create Care Circle</AccessibleText>
               </TouchableOpacity>
             </View>
           }
@@ -250,7 +264,7 @@ const CareCirclesTab = () => {
 
 export default CareCirclesTab;
 
-const styles = StyleSheet.create({
+const makeStyles = (fs: (n: number) => number) => StyleSheet.create({
   container: { flex: 1, backgroundColor: "#FAF8FF" },
   centered: { flex: 1, justifyContent: "center", alignItems: "center", padding: 24, paddingTop: 60 },
   listContent: { padding: 16, paddingBottom: Platform.OS === "ios" ? 190 : 170 },
@@ -265,14 +279,14 @@ const styles = StyleSheet.create({
     backgroundColor: "#F3EAFF",
     justifyContent: "center", alignItems: "center", marginRight: 16,
   },
-  avatarEmoji: { fontSize: 24 },
+  avatarEmoji: { fontSize: fs(24) },
   info: { flex: 1, marginRight: 12 },
   nameRow: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 2 },
-  name: { fontSize: 16, fontWeight: "700", flexShrink: 1 },
+  name: { fontSize: fs(16), fontWeight: "700", flexShrink: 1 },
   joinBadge: { backgroundColor: "#F3E8FF", borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 },
-  joinBadgeText: { fontSize: 10, fontWeight: "700", color: "#500088" },
-  desc: { fontSize: 13, marginBottom: 2 },
-  memberCount: { fontSize: 11, fontWeight: "600" },
+  joinBadgeText: { fontSize: fs(10), fontWeight: "700", color: "#500088" },
+  desc: { fontSize: fs(13), marginBottom: 2 },
+  memberCount: { fontSize: fs(11), fontWeight: "600" },
   unreadBadge: {
     minWidth: 22,
     height: 22,
@@ -284,7 +298,7 @@ const styles = StyleSheet.create({
   },
   unreadText: {
     color: "#FFFFFF",
-    fontSize: 12,
+    fontSize: fs(12),
     fontWeight: "800",
   },
   emptyCard: {
@@ -296,14 +310,14 @@ const styles = StyleSheet.create({
     width: 92, height: 92, borderRadius: 24, backgroundColor: "#F3E8FF",
     justifyContent: "center", alignItems: "center", marginBottom: 24,
   },
-  emptyTitle: { fontSize: 22, fontWeight: "700", marginBottom: 12 },
-  emptySubtitle: { fontSize: 15, textAlign: "center", lineHeight: 24, marginBottom: 6 },
+  emptyTitle: { fontSize: fs(22), fontWeight: "700", marginBottom: 12 },
+  emptySubtitle: { fontSize: fs(15), textAlign: "center", lineHeight: fs(24), marginBottom: 6 },
   createBtn: {
     marginTop: 28, backgroundColor: "#500088",
     paddingHorizontal: 24, paddingVertical: 14,
     borderRadius: 16, flexDirection: "row", alignItems: "center",
   },
-  createBtnText: { color: "#FFFFFF", fontSize: 15, fontWeight: "700", marginLeft: 10 },
+  createBtnText: { color: "#FFFFFF", fontSize: fs(15), fontWeight: "700", marginLeft: 10 },
   fab: {
     position: "absolute", bottom: Platform.OS === "ios" ? 120 : 100, right: 24,
     width: 56, height: 56, borderRadius: 28,

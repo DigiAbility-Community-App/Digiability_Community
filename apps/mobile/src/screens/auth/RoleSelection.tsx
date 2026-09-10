@@ -31,7 +31,7 @@ type RoleType =
   | "educator"
   | "ngo_worker"
   | "skill_trainer"
-  | "community_member";
+  | "volunteer";
 
 // -------------------------
 // ROLE DATA
@@ -74,8 +74,8 @@ const roles = [
   },
 
   {
-    id: "community_member",
-    title: "Community Member",
+    id: "volunteer",
+    title: "Volunteer",
     subtitle: "I want to support",
     icon: "👥",
   },

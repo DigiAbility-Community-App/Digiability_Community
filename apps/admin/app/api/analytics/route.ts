@@ -1,18 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdminAuth } from "@/lib/auth";
 import { dbPool } from "@/lib/db";
+import { formatDateTime } from "@/lib/date";
 
 // Helper to format timestamps to DD/MM/YYYY, HH:mm
+// getDate()/getHours() read in the server's timezone, which is UTC in
+// production — so activity rows rendered 5h30m early for an IST admin.
+// formatDateTime pins the zone explicitly; see lib/date.ts.
 function formatActivityDate(dateVal: Date | string | null): string {
-  if (!dateVal) return "—";
-  const d = new Date(dateVal);
-  if (isNaN(d.getTime())) return "—";
-  const day = String(d.getDate()).padStart(2, "0");
-  const month = String(d.getMonth() + 1).padStart(2, "0");
-  const year = d.getFullYear();
-  const hours = String(d.getHours()).padStart(2, "0");
-  const mins = String(d.getMinutes()).padStart(2, "0");
-  return `${day}/${month}/${year}, ${hours}:${mins}`;
+  return formatDateTime(dateVal);
 }
 
 export async function GET(request: NextRequest) {

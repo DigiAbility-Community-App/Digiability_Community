@@ -1,17 +1,23 @@
 import React, { useEffect, useState, useCallback, useMemo } from "react";
 import {
-  View, Text, StyleSheet, TouchableOpacity,
+  View,  StyleSheet, TouchableOpacity,
   FlatList, ActivityIndicator, RefreshControl, Platform,
 } from "react-native";
 import { Users, Plus, ChevronRight, UserPlus, TriangleAlert } from "lucide-react-native";
 import { useNavigation } from "@react-navigation/native";
 import { chatService, CommunityGroup } from "../../services/chatService";
-import { useTheme } from "../../theme/ThemeContext";
+import { useTheme, getFontScale } from "../../theme/ThemeContext";
+import { AccessibleText } from "../shared/AccessibleText";
 import { useChatStore } from "@store/chatStore";
 
 const GroupsTab = () => {
   const navigation = useNavigation<any>();
-  const { colors } = useTheme();
+  const { colors, textSize } = useTheme();
+  // These tabs hardcoded every font size, so they ignored the app's
+  // text-size preference entirely. fs() scales them the same way the
+  // typography variants do (see EditProfileScreen for the precedent).
+  const fs = getFontScale(textSize);
+  const styles = useMemo(() => makeStyles(fs), [fs]);
   const conversations = useChatStore((s) => s.conversations);
 
   const [groups, setGroups] = useState<CommunityGroup[]>([]);
@@ -33,7 +39,14 @@ const GroupsTab = () => {
     }
   }, []);
 
-  useEffect(() => { loadGroups(); }, [loadGroups]);
+  // refreshToken changes whenever membership changes anywhere (see
+  // chatStore.refreshCommunityGroups). Without it this list loaded once on
+  // mount and never again — the parent TabView is lazy, so a tab that stays
+  // mounted never re-ran this, and a group joined elsewhere only appeared
+  // after a manual pull-to-refresh.
+  const refreshToken = useChatStore((s) => s.communityGroupsRefreshToken);
+
+  useEffect(() => { loadGroups(refreshToken > 0); }, [loadGroups, refreshToken]);
 
   // This tab only shows groups the user has already joined — browsing and
   // joining new ones happens on the separate "Join Community" screen.
@@ -70,19 +83,19 @@ const GroupsTab = () => {
         accessibilityLabel={`Group: ${item.name}, ${item.memberCount} members`}
       >
         <View style={styles.groupAvatar}>
-          <Text style={styles.groupAvatarText}>
+          <AccessibleText style={styles.groupAvatarText}>
             {item.name ? item.name.substring(0, 2).toUpperCase() : "GR"}
-          </Text>
+          </AccessibleText>
         </View>
 
         <View style={styles.groupInfo}>
-          <Text style={[styles.groupName, { color: colors.text }]}>{item.name}</Text>
-          <Text style={[styles.groupDesc, { color: colors.subtext }]} numberOfLines={1}>
+          <AccessibleText style={[styles.groupName, { color: colors.text }]}>{item.name}</AccessibleText>
+          <AccessibleText style={[styles.groupDesc, { color: colors.subtext }]} numberOfLines={1}>
             {item.lastMessageText || item.description || "No messages yet"}
-          </Text>
-          <Text style={[styles.memberCount, { color: colors.subtext }]}>
+          </AccessibleText>
+          <AccessibleText style={[styles.memberCount, { color: colors.subtext }]}>
             {item.memberCount} {item.memberCount === 1 ? "member" : "members"}
-          </Text>
+          </AccessibleText>
         </View>
 
         {(() => {
@@ -90,7 +103,7 @@ const GroupsTab = () => {
           if (unread <= 0) return null;
           return (
             <View style={[styles.unreadBadge, { backgroundColor: colors.primary }]}>
-              <Text style={styles.unreadText}>{unread > 99 ? "99+" : unread}</Text>
+              <AccessibleText style={styles.unreadText}>{unread > 99 ? "99+" : unread}</AccessibleText>
             </View>
           );
         })()}
@@ -120,8 +133,8 @@ const GroupsTab = () => {
         ListEmptyComponent={
           <View style={styles.emptyCard}>
             <View style={styles.iconBox}><TriangleAlert size={40} color="#E0A800" strokeWidth={1.9} /></View>
-            <Text style={[styles.emptyTitle, { color: colors.text }]}>Couldn't Load Groups</Text>
-            <Text style={[styles.emptySubtitle, { color: colors.subtext }]}>{error}</Text>
+            <AccessibleText style={[styles.emptyTitle, { color: colors.text }]}>Couldn't Load Groups</AccessibleText>
+            <AccessibleText style={[styles.emptySubtitle, { color: colors.subtext }]}>{error}</AccessibleText>
           </View>
         }
       />
@@ -131,7 +144,7 @@ const GroupsTab = () => {
   const joinCommunityBtn = (
     <TouchableOpacity style={styles.joinCommunityBtn} onPress={handleJoinCommunity} accessibilityRole="button" accessibilityLabel="Join Community — browse groups you haven't joined yet">
       <UserPlus size={18} color="#500088" />
-      <Text style={styles.joinCommunityBtnText}>Join Community</Text>
+      <AccessibleText style={styles.joinCommunityBtnText}>Join Community</AccessibleText>
     </TouchableOpacity>
   );
 
@@ -149,13 +162,13 @@ const GroupsTab = () => {
             <View style={styles.iconBox}>
               <Users size={44} color="#500088" />
             </View>
-            <Text style={[styles.emptyTitle, { color: colors.text }]}>No Groups Yet</Text>
-            <Text style={[styles.emptySubtitle, { color: colors.subtext }]}>
+            <AccessibleText style={[styles.emptyTitle, { color: colors.text }]}>No Groups Yet</AccessibleText>
+            <AccessibleText style={[styles.emptySubtitle, { color: colors.subtext }]}>
               Create a group, or join one that already exists.
-            </Text>
+            </AccessibleText>
             <TouchableOpacity style={styles.createBtn} onPress={handleCreateGroup}>
               <Plus size={18} color="#FFFFFF" />
-              <Text style={styles.createBtnText}>Create Group</Text>
+              <AccessibleText style={styles.createBtnText}>Create Group</AccessibleText>
             </TouchableOpacity>
             {joinCommunityBtn}
           </View>
@@ -190,7 +203,7 @@ const GroupsTab = () => {
 
 export default GroupsTab;
 
-const styles = StyleSheet.create({
+const makeStyles = (fs: (n: number) => number) => StyleSheet.create({
   container: { flex: 1, backgroundColor: "#FAF8FF" },
   centered: { flex: 1, justifyContent: "center", alignItems: "center", padding: 24, paddingTop: 60 },
   listContent: { padding: 16, paddingBottom: Platform.OS === "ios" ? 190 : 170 },
@@ -200,7 +213,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#F3E8FF", borderRadius: 14,
     paddingVertical: 12, gap: 8, marginTop: 14,
   },
-  joinCommunityBtnText: { color: "#500088", fontSize: 14, fontWeight: "700" },
+  joinCommunityBtnText: { color: "#500088", fontSize: fs(14), fontWeight: "700" },
   groupCard: {
     flexDirection: "row",
     alignItems: "center",
@@ -220,11 +233,11 @@ const styles = StyleSheet.create({
     justifyContent: "center", alignItems: "center",
     marginRight: 16,
   },
-  groupAvatarText: { fontSize: 16, fontWeight: "700", color: "#6B21A8" },
+  groupAvatarText: { fontSize: fs(16), fontWeight: "700", color: "#6B21A8" },
   groupInfo: { flex: 1, marginRight: 12 },
-  groupName: { fontSize: 16, fontWeight: "700", marginBottom: 2 },
-  groupDesc: { fontSize: 13, marginBottom: 2 },
-  memberCount: { fontSize: 11, fontWeight: "600" },
+  groupName: { fontSize: fs(16), fontWeight: "700", marginBottom: 2 },
+  groupDesc: { fontSize: fs(13), marginBottom: 2 },
+  memberCount: { fontSize: fs(11), fontWeight: "600" },
   unreadBadge: {
     minWidth: 22,
     height: 22,
@@ -236,7 +249,7 @@ const styles = StyleSheet.create({
   },
   unreadText: {
     color: "#FFFFFF",
-    fontSize: 12,
+    fontSize: fs(12),
     fontWeight: "800",
   },
   emptyCard: {
@@ -249,14 +262,14 @@ const styles = StyleSheet.create({
     backgroundColor: "#F3E8FF",
     justifyContent: "center", alignItems: "center", marginBottom: 24,
   },
-  emptyTitle: { fontSize: 22, fontWeight: "700", marginBottom: 12 },
-  emptySubtitle: { fontSize: 15, textAlign: "center", lineHeight: 24, marginBottom: 6 },
+  emptyTitle: { fontSize: fs(22), fontWeight: "700", marginBottom: 12 },
+  emptySubtitle: { fontSize: fs(15), textAlign: "center", lineHeight: fs(24), marginBottom: 6 },
   createBtn: {
     marginTop: 28, backgroundColor: "#500088",
     paddingHorizontal: 24, paddingVertical: 14,
     borderRadius: 16, flexDirection: "row", alignItems: "center",
   },
-  createBtnText: { color: "#FFFFFF", fontSize: 15, fontWeight: "700", marginLeft: 10 },
+  createBtnText: { color: "#FFFFFF", fontSize: fs(15), fontWeight: "700", marginLeft: 10 },
   fab: {
     position: "absolute", bottom: Platform.OS === "ios" ? 120 : 100, right: 24,
     width: 56, height: 56, borderRadius: 28,

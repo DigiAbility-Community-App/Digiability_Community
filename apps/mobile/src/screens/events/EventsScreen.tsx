@@ -21,6 +21,7 @@ import {
   Check,
 } from "lucide-react-native";
 import { useNavigation, useFocusEffect } from "@react-navigation/native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import ScreenWrapper from "../../components/layout/ScreenWrapper";
 import AppHeader from "../../components/layout/AppHeader";
 import AppFooter from "../../components/layout/AppFooter";
@@ -33,6 +34,7 @@ import { formatEventDateDisplay } from "../../utils/dateHelpers";
 export default function EventsScreen() {
   const navigation = useNavigation<any>();
   const { colors, spacing, highContrast } = useTheme();
+  const insets = useSafeAreaInsets();
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -299,7 +301,7 @@ export default function EventsScreen() {
       ) : (
         <ScrollView
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[styles.scrollContent, { paddingBottom: Math.max(insets.bottom + 120, 140) }]}
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[colors.primary]} />
           }

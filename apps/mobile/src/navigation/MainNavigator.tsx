@@ -13,6 +13,7 @@ import NotificationsScreen from '@screens/home/NotificationScreen';
 import WarningDetailsScreen from '@screens/home/WarningDetailsScreen';
 import EditProfileScreen from '@screens/profile/EditProfileScreen';
 import PrivacyDataScreen from '@screens/profile/PrivacyDataScreen';
+import BlockedUsersScreen from '@screens/profile/BlockedUsersScreen';
 import ChatsStack from './ChatsStack';
 import AskQuestionScreen from '@screens/community/AskQuestionScreen';
 import QuestionDetailsScreen from '@screens/community/QuestionDetailsScreen';
@@ -22,7 +23,12 @@ import EventsScreen from '@screens/events/EventsScreen';
 import EventDetailsScreen from '@screens/events/EventDetailScreen';
 import LeavePortalScreen from '@screens/events/LeavePortalScreen';
 import ContactSupportScreen from '@screens/profile/ContactSupportScreen';
+import SafetyResourcesScreen from '@screens/profile/SafetyResourcesScreen';
 import HelpCenterScreen from '@screens/profile/HelpCenterScreen';
+import LegalScreen from '@screens/legal/LegalScreen';
+import { PolicyReacceptanceGate } from '../components/legal/PolicyReacceptanceGate';
+import { DateOfBirthGate } from '../components/legal/DateOfBirthGate';
+import type { LegalDocSlug } from '../legal/legal-docs.generated';
 import { useAuthStore } from '@store/authStore';
 import { hasCompletedAccessibility } from '@services/storageService';
 
@@ -37,9 +43,19 @@ export type MainStackParamList = {
   CreateCareCircle: undefined;
   Chats: undefined;
   Notifications: undefined;
-  WarningDetails: { title: string; message: string; type: string; relatedId?: string | null; time?: string };
+  WarningDetails: {
+    title: string;
+    message: string;
+    type: string;
+    relatedId?: string | null;
+    time?: string;
+    // The admin_audit_log entry behind this notice. Present on enforcement
+    // notices; drives the Appeal button (Community Guidelines).
+    auditLogId?: string | null;
+  };
   EditProfile: undefined;
   PrivacyData: undefined;
+  BlockedUsers: undefined;
   AskQuestion: undefined;
   QuestionDetails: { questionId: string };
   SolvedQuestions: undefined;
@@ -48,7 +64,9 @@ export type MainStackParamList = {
   EventDetails: { eventId: string };
   LeavePortal: { eventId: string; externalUrl: string; eventTitle: string; eventDate?: string; eventLocation?: string; organizer?: string };
   ContactSupport: undefined;
+  SafetyResources: undefined;
   HelpCenter: undefined;
+  Legal: { doc: LegalDocSlug };
 };
 
 const Stack = createNativeStackNavigator<MainStackParamList>();
@@ -164,6 +182,12 @@ const MainNavigator = () => {
   }
 
   return (
+    <>
+    {/* Blocks interaction until the current policy version is accepted, and
+        until an account predating the age gate has declared a date of birth.
+        DateOfBirthGate defers to the policy gate so the two never stack. */}
+    <PolicyReacceptanceGate />
+    <DateOfBirthGate />
     <Stack.Navigator
       key={user?.id ?? 'guest'}
       initialRouteName={initialRoute}
@@ -182,6 +206,7 @@ const MainNavigator = () => {
       <Stack.Screen name="WarningDetails" component={WarningDetailsScreen} />
       <Stack.Screen name="EditProfile" component={EditProfileScreen} />
       <Stack.Screen name="PrivacyData" component={PrivacyDataScreen} />
+      <Stack.Screen name="BlockedUsers" component={BlockedUsersScreen} />
       <Stack.Screen name="AskQuestion" component={AskQuestionScreen} />
       <Stack.Screen name="QuestionDetails" component={QuestionDetailsScreen} />
       <Stack.Screen name="SolvedQuestions" component={SolvedQuestionsScreen} />
@@ -190,8 +215,13 @@ const MainNavigator = () => {
       <Stack.Screen name="EventDetails" component={EventDetailsScreen} />
       <Stack.Screen name="LeavePortal" component={LeavePortalScreen} />
       <Stack.Screen name="ContactSupport" component={ContactSupportScreen} />
+      <Stack.Screen name="SafetyResources" component={SafetyResourcesScreen} />
       <Stack.Screen name="HelpCenter" component={HelpCenterScreen} />
+      {/* Registered here as well as in AuthNavigator: signed-in users must be
+          able to reach the policies, and the re-acceptance gate links to them. */}
+      <Stack.Screen name="Legal" component={LegalScreen} />
     </Stack.Navigator>
+    </>
   );
 };
 

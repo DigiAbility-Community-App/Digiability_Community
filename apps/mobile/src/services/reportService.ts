@@ -7,24 +7,12 @@ import apiClient from './apiClient';
 
 export type ReportTargetType = 'USER' | 'MESSAGE' | 'GROUP';
 
-export type ReportReason =
-  | 'SPAM'
-  | 'HARASSMENT'
-  | 'HATE_SPEECH'
-  | 'INAPPROPRIATE_CONTENT'
-  | 'MISINFORMATION'
-  | 'IMPERSONATION'
-  | 'OTHER';
+// Reason vocabulary lives in one place now — see constants/reportReasons.
+// Re-exported here so existing imports from this module keep working.
+export type { ReportReason } from '../constants/reportReasons';
+export { REPORT_REASON_LABELS, REPORT_REASONS } from '../constants/reportReasons';
 
-export const REPORT_REASON_LABELS: Record<ReportReason, string> = {
-  SPAM: 'Spam',
-  HARASSMENT: 'Harassment',
-  HATE_SPEECH: 'Hate speech',
-  INAPPROPRIATE_CONTENT: 'Inappropriate content',
-  MISINFORMATION: 'Misinformation',
-  IMPERSONATION: 'Impersonation',
-  OTHER: 'Other',
-};
+import type { ReportReason } from '../constants/reportReasons';
 
 export interface SubmitReportInput {
   targetType: ReportTargetType;
@@ -33,10 +21,12 @@ export interface SubmitReportInput {
   details?: string;
 }
 
-export async function submitReport(input: SubmitReportInput): Promise<{ id: string }> {
-  const response = await apiClient.post<{ success: boolean; data: { id: string } }>(
-    '/api/reports',
-    input,
-  );
+export async function submitReport(
+  input: SubmitReportInput,
+): Promise<{ id: string; referenceCode: string }> {
+  const response = await apiClient.post<{
+    success: boolean;
+    data: { id: string; referenceCode: string };
+  }>('/api/reports', input);
   return response.data.data;
 }
