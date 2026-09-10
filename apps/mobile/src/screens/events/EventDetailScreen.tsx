@@ -35,6 +35,8 @@ import {
   parseAccessibilityTags,
 } from "../../services/eventService";
 import { MediaViewer } from "../../components/chat/MediaViewer";
+import * as Sharing from "expo-sharing";
+import { prepareLocalMediaFile, mimeTypeForUri } from "../../utils/mediaFile";
 import { formatEventDateDisplay } from "../../utils/dateHelpers";
 
 function isEventCompleted(dateStr: string): boolean {
@@ -102,11 +104,34 @@ export default function EventDetailScreen() {
 
   const handleShare = async () => {
     if (!event) return;
+    const message = `Check out this event: ${event.title}\nDate: ${formatEventDateDisplay(event.date)}${event.time ? ` • ${event.time}` : ""}\nLocation: ${event.location}\nShared via DigiAbility Community.`;
+
+    // Attach the poster when there is one. This used to be text-only, so
+    // "share" never sent an image. Event images are usually base64 data URLs
+    // written by the admin panel, which is why this goes through the same
+    // helper the media viewer uses rather than passing the raw src along.
+    if (event.image) {
+      try {
+        const localUri = await prepareLocalMediaFile(event.image);
+        if (await Sharing.isAvailableAsync()) {
+          await Sharing.shareAsync(localUri, {
+            mimeType: mimeTypeForUri(localUri),
+            dialogTitle: event.title,
+          });
+          return;
+        }
+      } catch (err) {
+        // Fall through to the text-only share below rather than failing the
+        // whole action — previously a bare `catch {}` hid every error here.
+        console.warn("[EventDetail] Could not attach event image to share:", err);
+      }
+    }
+
     try {
-      await Share.share({
-        message: `Check out this event: ${event.title}\nDate: ${formatEventDateDisplay(event.date)}${event.time ? ` • ${event.time}` : ""}\nLocation: ${event.location}\nShared via DigiAbility Community.`,
-      });
-    } catch { }
+      await Share.share({ message });
+    } catch (err) {
+      console.warn("[EventDetail] Share failed:", err);
+    }
   };
 
   const handleRegisterPress = () => {

@@ -22,12 +22,23 @@ export interface DisplayableUser {
   /** Set when this reflects a group membership the user has left or been
    *  removed from (account still exists, just no longer a member). */
   leftAt?: string | null;
+  /** Why that membership ended: "LEFT" (their own choice) or "REMOVED" (an
+   *  admin removed them). Null on memberships that ended before chat-svc
+   *  started recording the reason — those stay deliberately neutral rather
+   *  than guessing and accusing someone of having been removed. */
+  leftReason?: string | null;
 }
 
 export function formatUserDisplayName(user?: DisplayableUser | null): string {
   if (!user) return "Unknown";
   if (user.deletedAt) return "This user no longer exists";
   if (user.isSuspended) return `${user.name} (Inactive)`;
-  if (user.leftAt) return `${user.name} (Removed)`;
+  if (user.leftAt) {
+    // Everyone with a leftAt used to be labelled "(Removed)", so a member who
+    // simply left a group was shown as though an admin had kicked them.
+    if (user.leftReason === "LEFT") return `${user.name} (Left)`;
+    if (user.leftReason === "REMOVED") return `${user.name} (Removed)`;
+    return `${user.name} (Past member)`;
+  }
   return user.name;
 }

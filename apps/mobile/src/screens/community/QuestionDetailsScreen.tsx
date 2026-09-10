@@ -967,21 +967,28 @@ const QuestionDetailsScreen = () => {
       </Modal>
 
       {/* REPORT REASON MODAL */}
+      {/* No statusBarTranslucent: on Android it puts the modal window in a
+          no-limits layout where adjustResize insets never reach it, so the
+          keyboard avoidance below silently stops working and the details
+          field ends up under the keyboard. The chat ReportModal — which is
+          not reported as broken — also omits it. */}
       <Modal
         visible={reportModalVisible}
         transparent
         animationType="slide"
         onRequestClose={() => setReportModalVisible(false)}
-        statusBarTranslucent
       >
         <View style={styles.reportBackdrop}>
           <TouchableWithoutFeedback onPress={() => setReportModalVisible(false)}>
             <View style={StyleSheet.absoluteFillObject} />
           </TouchableWithoutFeedback>
 
+          {/* flex: 1 matters — KeyboardAvoidingView measures its own frame to
+              compute the offset, and without it the frame is content-sized
+              inside a flex-end parent, making the avoidance a no-op. */}
           <KeyboardAvoidingView
             behavior={Platform.OS === "ios" ? "padding" : "height"}
-            style={{ width: "100%", justifyContent: "flex-end" }}
+            style={{ width: "100%", justifyContent: "flex-end", flex: 1 }}
             keyboardVerticalOffset={Platform.OS === "ios" ? 20 : 0}
           >
             <View style={[styles.reportContent, { backgroundColor: colors.card }]}>

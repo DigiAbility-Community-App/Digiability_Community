@@ -22,6 +22,7 @@ import {
   Briefcase,
 } from "lucide-react";
 import { SessionGuard } from "@/components/shared/SessionGuard";
+import { ConfirmModal } from "@/components/shared/ConfirmModal";
 
 const navItems = [
   {
@@ -102,13 +103,21 @@ export default function DashboardLayout({
     });
   };
 
+  // Logging out used to happen on a single click with no confirmation, so a
+  // mis-click in the sidebar ended the session outright.
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
+
   const handleLogout = async () => {
+    setLoggingOut(true);
     try {
       await fetch("/api/auth/logout", { method: "POST" });
       router.push("/login");
       router.refresh();
     } catch (error) {
       console.error("Logout failed:", error);
+      setLoggingOut(false);
+      setShowLogoutConfirm(false);
     }
   };
 
@@ -117,6 +126,18 @@ export default function DashboardLayout({
       {/* Idle-timeout enforcement for every dashboard page. Middleware only
           gates navigation, so without this an open tab never expires. */}
       <SessionGuard />
+
+      <ConfirmModal
+        open={showLogoutConfirm}
+        title="Log out?"
+        message="You'll need to sign in again to get back into the admin panel."
+        confirmLabel="Log Out"
+        destructive
+        busy={loggingOut}
+        icon={LogOut}
+        onConfirm={handleLogout}
+        onCancel={() => setShowLogoutConfirm(false)}
+      />
 
       {/* MOBILE TOP BAR (Fixed on Mobile/Tablet) */}
       <header className="lg:hidden h-16 bg-[#1A1A2E] text-white flex items-center justify-between px-4 shrink-0 z-40 shadow-md">
@@ -273,7 +294,7 @@ export default function DashboardLayout({
 
           {/* Logout Button */}
           <button
-            onClick={handleLogout}
+            onClick={() => setShowLogoutConfirm(true)}
             className={`group relative w-full h-11 rounded-xl bg-white/5 hover:bg-red-500/20 text-[#E2E0FC]/70 hover:text-red-400 transition-all flex items-center font-medium text-sm ${
               isCollapsed ? "justify-center px-0" : "gap-3 px-3.5"
             }`}

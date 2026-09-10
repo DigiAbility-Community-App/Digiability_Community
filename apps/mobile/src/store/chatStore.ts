@@ -255,12 +255,37 @@ export const useChatStore = create<ChatState>((set) => ({
     }),
 
   removeMessage: (conversationId, messageId) =>
-    set((state) => ({
-      messages: {
-        ...state.messages,
-        [conversationId]: (state.messages[conversationId] || []).filter(m => m.id !== messageId && m.clientMessageId !== messageId),
-      },
-    })),
+    set((state) => {
+      const remaining = (state.messages[conversationId] || []).filter(
+        m => m.id !== messageId && m.clientMessageId !== messageId
+      );
+
+      // Roll the conversation-list preview back to whatever is now newest.
+      // Without this the list kept showing the deleted message ("📷 Photo")
+      // until another message arrived. The server does the same on
+      // delete-for-everyone; this also covers delete-for-me, which the server
+      // cannot express in a single shared lastMessageText column.
+      const conversation = state.conversations[conversationId];
+      const conversations = conversation
+        ? {
+            ...state.conversations,
+            [conversationId]: {
+              ...conversation,
+              lastMessageText: remaining.length
+                ? formatMessagePreview(
+                    remaining[remaining.length - 1].type,
+                    remaining[remaining.length - 1].content
+                  )
+                : undefined,
+            },
+          }
+        : state.conversations;
+
+      return {
+        messages: { ...state.messages, [conversationId]: remaining },
+        conversations,
+      };
+    }),
 
   confirmMessage: (clientMessageId, serverMessageId, status) =>
     set((state) => {

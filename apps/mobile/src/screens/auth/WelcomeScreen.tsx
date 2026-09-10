@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import {
   View,
   Text,
@@ -16,8 +16,16 @@ import { LinearGradient } from "expo-linear-gradient";
 
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { AuthStackParamList } from "@navigation/AuthNavigator";
-import { login, register } from "@services/authService";
+import { login, register, checkEmailAvailability } from "@services/authService";
 import { sanitizeNameInput, isValidNameFormat } from "../../utils/nameValidation";
+import { Check } from "lucide-react-native";
+import apiClient from "@services/apiClient";
+import {
+  evaluatePassword,
+  firstPasswordError,
+  FALLBACK_PASSWORD_POLICY,
+  type PasswordPolicy,
+} from "../../utils/passwordValidation";
 import { useTheme } from "../../theme/ThemeContext";
 import { AccessibleText } from "../../components/shared/AccessibleText";
 import { AccessibleButton } from "../../components/shared/AccessibleButton";
@@ -25,7 +33,11 @@ import { Input } from "../../components/shared/Input";
 import ScreenWrapper from "../../components/layout/ScreenWrapper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as WebBrowser from "expo-web-browser";
-import { useEffect } from "react";
+
+// Green used for a satisfied password rule / an available email. The theme
+// has no success colour, and the brand purple reads as "selected" rather
+// than "done".
+const RULE_MET_COLOR = "#1B873F";
 
 type Props = {
   navigation: NativeStackNavigationProp<AuthStackParamList, "Welcome">;
@@ -86,6 +98,73 @@ const WelcomeScreen = ({ navigation }: Props) => {
   const [name, setName] = useState("");
   const [signUpEmail, setSignUpEmail] = useState("");
   const [signUpPassword, setSignUpPassword] = useState("");
+
+  // ── Live "already registered?" check (item 7) ──
+  // Mirrors the username check in ProfileScreen: debounced, and every early
+  // return cancels the pending timer so a stale resolve can't overwrite a
+  // newer state.
+  const [emailStatus, setEmailStatus] = useState<
+    "idle" | "invalid" | "checking" | "available" | "taken"
+  >("idle");
+  const [emailMessage, setEmailMessage] = useState("");
+  const emailDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (emailDebounceRef.current) clearTimeout(emailDebounceRef.current);
+    };
+  }, []);
+
+  const handleSignUpEmailChange = (value: string) => {
+    setSignUpEmail(value);
+    const trimmed = value.trim().toLowerCase();
+
+    if (!trimmed) {
+      if (emailDebounceRef.current) clearTimeout(emailDebounceRef.current);
+      setEmailStatus("idle");
+      setEmailMessage("");
+      return;
+    }
+
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
+      if (emailDebounceRef.current) clearTimeout(emailDebounceRef.current);
+      setEmailStatus("invalid");
+      setEmailMessage("Enter a valid email address");
+      return;
+    }
+
+    setEmailStatus("checking");
+    setEmailMessage("Checking...");
+
+    if (emailDebounceRef.current) clearTimeout(emailDebounceRef.current);
+    emailDebounceRef.current = setTimeout(async () => {
+      const result = await checkEmailAvailability(trimmed);
+      setEmailStatus(result.available ? "available" : "taken");
+      setEmailMessage(result.message);
+    }, 500);
+  };
+
+  // ── Password rules (item 8) ──
+  // The rules are admin-configured and served by user-svc, so the checklist
+  // shows exactly what the API enforces. The list is revealed only while the
+  // password field is focused, per QA.
+  const [passwordPolicy, setPasswordPolicy] = useState<PasswordPolicy>(FALLBACK_PASSWORD_POLICY);
+  const [passwordFocused, setPasswordFocused] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    apiClient
+      .get<{ success: boolean; data: PasswordPolicy }>("/api/master/password-policy")
+      .then(({ data }) => {
+        if (!cancelled && data.success && data.data) setPasswordPolicy(data.data);
+      })
+      .catch(() => {
+        // keep FALLBACK_PASSWORD_POLICY
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  const passwordRules = evaluatePassword(signUpPassword, passwordPolicy);
   const [signUpPhone, setSignUpPhone] = useState("");
 
   // Login
@@ -138,18 +217,22 @@ const WelcomeScreen = ({ navigation }: Props) => {
       return;
     }
 
-    if (trimmedPassword.length < 8) {
-      setError("Password must be at least 8 characters.");
+    // Don't submit an address the live check already flagged. "checking" is
+    // blocked too, so an in-flight result can't land after the request.
+    if (emailStatus === "taken") {
+      setError(emailMessage || "An account with this email already exists.");
+      return;
+    }
+    if (emailStatus === "checking") {
+      setError("Checking that email address, please wait…");
       return;
     }
 
-    if (trimmedPassword.length > 16) {
-      setError("Password must be at most 16 characters.");
-      return;
-    }
-
-    if (!/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/.test(trimmedPassword)) {
-      setError("Password must include uppercase, lowercase, and a number.");
+    // Rules come from the admin-configured policy, so this can't drift from
+    // what the API enforces.
+    const passwordError = firstPasswordError(trimmedPassword, passwordPolicy);
+    if (passwordError) {
+      setError(passwordError);
       return;
     }
 
@@ -336,20 +419,85 @@ const WelcomeScreen = ({ navigation }: Props) => {
               label="Email"
               placeholder="you@example.com"
               value={signUpEmail}
-              onChangeText={setSignUpEmail}
+              onChangeText={handleSignUpEmailChange}
               keyboardType="email-address"
               autoCapitalize="none"
               accessibilityHint="Enter your email address"
+              error={emailStatus === "taken" || emailStatus === "invalid" ? emailMessage : undefined}
             />
+
+            {/* Availability feedback while typing — "already registered" used
+                to surface only after submitting the whole form. */}
+            {(emailStatus === "checking" || emailStatus === "available") && (
+              <AccessibleText
+                variant="caption"
+                accessibilityLiveRegion="polite"
+                style={{
+                  marginTop: 0,
+                  marginBottom: 4,
+                  color: emailStatus === "available" ? RULE_MET_COLOR : colors.subtext,
+                }}
+              >
+                {emailStatus === "available" ? `\u2713 ${emailMessage}` : emailMessage}
+              </AccessibleText>
+            )}
 
             <Input
               label="Password"
-              placeholder="Min. 8 characters"
+              placeholder={`${passwordPolicy.minLength}\u2013${passwordPolicy.maxLength} characters`}
               value={signUpPassword}
               onChangeText={setSignUpPassword}
+              onFocus={() => setPasswordFocused(true)}
+              onBlur={() => setPasswordFocused(false)}
               secureTextEntry={true}
-              accessibilityHint="Enter a password containing uppercase, lowercase, and a number"
+              accessibilityHint={`Password must meet these rules: ${passwordRules
+                .map((r) => r.label)
+                .join(", ")}`}
             />
+
+            {/* Requirements are revealed only while the password field is
+                focused (per QA) and tick off live as each rule is met. The
+                list itself is the admin-configured policy. */}
+            {passwordFocused && (
+              <View
+                style={styles.passwordRules}
+                accessible={true}
+                accessibilityLabel={`Password requirements. ${passwordRules
+                  .map((r) => `${r.label}: ${r.met ? "met" : "not met"}`)
+                  .join(". ")}`}
+              >
+                <AccessibleText style={[styles.passwordRulesTitle, { color: colors.subtext }]}>
+                  Your password must have:
+                </AccessibleText>
+                {passwordRules.map((rule) => (
+                  <View key={rule.key} style={styles.passwordRuleRow}>
+                    <View
+                      style={[
+                        styles.passwordRuleIcon,
+                        {
+                          backgroundColor: rule.met
+                            ? highContrast ? "#000000" : RULE_MET_COLOR
+                            : "transparent",
+                          borderColor: rule.met
+                            ? highContrast ? "#000000" : RULE_MET_COLOR
+                            : colors.border,
+                        },
+                      ]}
+                    >
+                      {rule.met && <Check size={11} color="#FFFFFF" strokeWidth={3.5} />}
+                    </View>
+                    <AccessibleText
+                      style={[
+                        styles.passwordRuleText,
+                        { color: rule.met ? colors.text : colors.subtext },
+                      ]}
+                    >
+                      {rule.label}
+                    </AccessibleText>
+                  </View>
+                ))}
+              </View>
+            )}
 
             {/* Phone Number — split: fixed +91 | digit input */}
             <View style={styles.phoneContainer}>
@@ -469,6 +617,38 @@ const WelcomeScreen = ({ navigation }: Props) => {
 export default WelcomeScreen;
 
 const styles = StyleSheet.create({
+  passwordRules: {
+    marginTop: 0,
+    marginBottom: 4,
+    gap: 6,
+  },
+
+  passwordRulesTitle: {
+    fontSize: 12,
+    fontWeight: "700",
+    marginBottom: 2,
+  },
+
+  passwordRuleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+
+  passwordRuleIcon: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    borderWidth: 1.5,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  passwordRuleText: {
+    fontSize: 12.5,
+    flexShrink: 1,
+  },
+
   // PHONE INPUT
   phoneContainer: {
     width: '100%',

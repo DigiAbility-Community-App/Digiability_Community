@@ -13,14 +13,15 @@ export const RegisterSchema = z.object({
     .string({ required_error: "Email is required" })
     .email("Invalid email address")
     .toLowerCase(),
+  // Structural check only. The real rules (length, character classes) come
+  // from the admin-configured policy and are applied by enforcePasswordPolicy
+  // after this schema runs — hardcoding them here too would silently override
+  // an admin who relaxes a rule. The 200-char ceiling is just a bcrypt/DoS
+  // guard, not a policy value.
   password: z
     .string({ required_error: "Password is required" })
-    .min(8, "Password must be at least 8 characters")
-    .max(16, "Password must be at most 16 characters")
-    .regex(
-      /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/,
-      "Password must include uppercase, lowercase, and a number"
-    ),
+    .min(1, "Password is required")
+    .max(200, "Password is too long"),
   // Optional server-side: the mobile app requires it, but web register
   // sends no phone. Without this key the validate middleware strips phoneNo
   // from req.body before registerUser can persist it.
@@ -56,14 +57,11 @@ export const ResetPasswordSchema = z.object({
     .string({ required_error: "Reset code is required" })
     .length(6, "Reset code must be exactly 6 digits")
     .regex(/^\d{6}$/, "Reset code must be 6 digits"),
+  // See RegisterSchema above — rules live in the admin password policy.
   password: z
     .string({ required_error: "New password is required" })
-    .min(8, "Password must be at least 8 characters")
-    .max(16, "Password must be at most 16 characters")
-    .regex(
-      /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/,
-      "Password must include uppercase, lowercase, and a number"
-    ),
+    .min(1, "New password is required")
+    .max(200, "Password is too long"),
 });
 
 export const UpdateRoleSchema = z.object({

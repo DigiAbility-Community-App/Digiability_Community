@@ -156,7 +156,7 @@ class ConversationService {
   async getMemberHistory(
     conversationId: string,
     requesterId: string
-  ): Promise<Array<{ userId: string; leftAt: Date | null }> | null> {
+  ): Promise<Array<{ userId: string; leftAt: Date | null; leftReason: string | null }> | null> {
     const isMember = await conversationRepository.isMember(conversationId, requesterId);
     if (!isMember) return null;
 
@@ -221,7 +221,9 @@ class ConversationService {
       if (requesterRole === "OWNER") {
         throw new Error("Group owner cannot leave. Transfer ownership first or delete the group.");
       }
-      await conversationRepository.removeMember(conversationId, targetMemberId);
+      // isSelf — the member chose to leave, which is what distinguishes this
+      // from the admin-removal path below.
+      await conversationRepository.removeMember(conversationId, targetMemberId, "LEFT");
       broadcastToConversation(conversationId, WS_EVENTS.MEMBER_LEFT, { conversationId, userId: targetMemberId });
       // ADMIN/CAREGIVER just left — make sure the group still has an admin.
       if (requesterRole === "ADMIN" || requesterRole === "CAREGIVER") {
@@ -253,7 +255,7 @@ class ConversationService {
       throw new Error("Admins cannot remove other admins");
     }
 
-    await conversationRepository.removeMember(conversationId, targetMemberId);
+    await conversationRepository.removeMember(conversationId, targetMemberId, "REMOVED");
 
     logger.info("Member removed from conversation", {
       conversationId,

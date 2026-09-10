@@ -298,6 +298,7 @@ const GroupChatScreen = ({ navigation, route }: Props) => {
             deletedAt: looked?.deletedAt ?? null,
             isSuspended: looked?.isSuspended ?? null,
             leftAt: h.leftAt,
+            leftReason: h.leftReason,
           });
         });
         if (active) setFormerMemberNames(map);

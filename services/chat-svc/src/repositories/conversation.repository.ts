@@ -409,12 +409,18 @@ class ConversationRepository {
   /**
    * Remove a member from a conversation (soft leave).
    */
-  async removeMember(conversationId: string, userId: string): Promise<void> {
+  async removeMember(
+    conversationId: string,
+    userId: string,
+    // Defaults to REMOVED so any existing caller that doesn't pass a reason
+    // keeps the pre-existing (admin-removal) meaning.
+    leftReason: "LEFT" | "REMOVED" = "REMOVED"
+  ): Promise<void> {
     await prisma.conversationMember.update({
       where: {
         conversationId_userId: { conversationId, userId },
       },
-      data: { leftAt: new Date() },
+      data: { leftAt: new Date(), leftReason },
     });
   }
 
@@ -581,10 +587,10 @@ class ConversationRepository {
    */
   async getMembersForNameResolution(
     conversationId: string
-  ): Promise<Array<{ userId: string; leftAt: Date | null }>> {
+  ): Promise<Array<{ userId: string; leftAt: Date | null; leftReason: string | null }>> {
     return prisma.conversationMember.findMany({
       where: { conversationId },
-      select: { userId: true, leftAt: true },
+      select: { userId: true, leftAt: true, leftReason: true },
     });
   }
 
