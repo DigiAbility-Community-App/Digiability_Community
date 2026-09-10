@@ -59,6 +59,20 @@ export const registerLimiter = rateLimit({
   message: { success: false, message: "Too many registrations from this IP. Please try again later." },
 });
 
+// The signup form calls this on a debounce as the user types, so the ceiling
+// is well above the other auth limiters — but it is still capped, because the
+// endpoint confirms whether an email is registered and would otherwise be a
+// cheap way to enumerate accounts.
+export const checkEmailLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 60,
+  keyGenerator: makeIpKey,
+  store: makeStore("check-email"),
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  message: { success: false, message: "Too many requests. Please try again shortly." },
+});
+
 export const passwordResetLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
   max: 5,

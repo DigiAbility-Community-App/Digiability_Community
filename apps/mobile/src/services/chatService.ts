@@ -155,11 +155,12 @@ export const chatService = {
    * been removed. The normal conversation/participant list only ever
    * contains active members, so a message from someone who later left would
    * otherwise have no name to resolve against. Used by GroupChatScreen to
-   * label a former member's historical messages as "Name (Removed)".
+   * label a former member's historical messages — "(Left)" or "(Removed)"
+   * depending on leftReason.
    */
   getConversationMemberHistory: async (
     conversationId: string
-  ): Promise<Array<{ userId: string; leftAt: string | null }>> => {
+  ): Promise<Array<{ userId: string; leftAt: string | null; leftReason: string | null }>> => {
     const res = await apiClient.get(`${CHAT_BASE_URL}/api/conversations/${conversationId}/member-history`);
     return res.data.data || [];
   },
@@ -167,8 +168,14 @@ export const chatService = {
   getMessages: async (conversationId: string) => {
     const res = await apiClient.get(`${CHAT_BASE_URL}/api/messages/${conversationId}/history`);
     const rawMessages = res.data.data || [];
+    // Drop soft-deleted messages so a refetch matches what happens live.
+    // The server keeps the row (blanking content but leaving type as IMAGE /
+    // VIDEO) and this mapper used to discard deletedAt entirely — so a
+    // deleted image came back looking like a live image with an empty URI and
+    // rendered as MessageMedia's grey placeholder box.
+    const visibleMessages = rawMessages.filter((m: any) => !m.deletedAt);
     // Map REST response to ChatMessage shape
-    return rawMessages.map((m: any) => {
+    return visibleMessages.map((m: any) => {
       let computedStatus = m.status === 'PERSISTED' ? 'sent' : (m.status || 'sent');
       if (m.recipients && Array.isArray(m.recipients) && m.recipients.length > 0) {
         if (m.recipients.some((r: any) => r.status === 'DELIVERED' || r.status === 'READ')) {

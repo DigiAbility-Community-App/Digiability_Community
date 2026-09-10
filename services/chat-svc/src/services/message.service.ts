@@ -46,10 +46,13 @@ class MessageService {
     // boundary so pagination isn't skewed by the hidden ones being removed.
     const visible = await this.stripHidden(userId, result);
 
-    // Sanitize deleted messages — clear content but preserve metadata
+    // Sanitize deleted messages. metadata is cleared too, not just content:
+    // an image's caption lives in metadata.altText, so preserving it left the
+    // caption rendered under a deleted image.
     const sanitized = visible.map((msg) => ({
       ...msg,
       content: msg.deletedAt ? "" : msg.content,
+      metadata: msg.deletedAt ? null : msg.metadata,
       sequenceNo: Number(msg.sequenceNo),
     }));
 
@@ -107,6 +110,8 @@ class MessageService {
     const sanitized = visible.map((msg) => ({
       ...msg,
       content: msg.deletedAt ? "" : msg.content,
+      // See getHistory — the caption lives in metadata.altText.
+      metadata: msg.deletedAt ? null : msg.metadata,
       sequenceNo: Number(msg.sequenceNo),
     }));
 

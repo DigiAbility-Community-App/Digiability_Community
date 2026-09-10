@@ -13,13 +13,13 @@ import {
     View,
     StyleSheet,
     TouchableOpacity,
-    ScrollView,
     TextInput,
     ActivityIndicator,
 } from "react-native";
 
 import { ConfirmDialog } from "../../components/chat/ConfirmDialog";
 
+import { KeyboardAwareScrollView } from "react-native-keyboard-aware-scroll-view";
 import ScreenWrapper from "../../components/layout/ScreenWrapper";
 import SafeScreen from "../../components/layout/SafeScreen";
 import AppHeader from "../../components/layout/AppHeader";
@@ -633,13 +633,19 @@ const EditProfileScreen = () => {
             />
 
             {/* BODY */}
-            <ScrollView
-                showsVerticalScrollIndicator={
-                    false
-                }
-                contentContainerStyle={
-                    styles.scrollContent
-                }
+            {/* KeyboardAwareScrollView, not a plain ScrollView: this screen had
+                no keyboard handling at all, and the oversized bottom padding
+                below was standing in for it. contentContainerStyle must stay a
+                single flat object — with enableOnAndroid this library reads
+                (contentContainerStyle || {}).paddingBottom to add its own
+                keyboard padding, which is undefined on an array, and its
+                replacement then becomes the only paddingBottom RN keeps. */}
+            <KeyboardAwareScrollView
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={styles.scrollContent}
+                keyboardShouldPersistTaps="handled"
+                enableOnAndroid={true}
+                extraScrollHeight={100}
             >
                 {/* PROFILE BANNER */}
                 <View
@@ -1085,10 +1091,7 @@ const EditProfileScreen = () => {
                         </View>
                     )}
 
-                <View
-                    style={{ height: 120 }}
-                />
-            </ScrollView>
+            </KeyboardAwareScrollView>
 
             {/* FOOTER */}
             <View style={[styles.footer, { bottom: Math.max(insets.bottom, 24) }]}>
@@ -1147,7 +1150,11 @@ const styles =
 
         scrollContent: {
             paddingHorizontal: 20,
-            paddingBottom: 140,
+            // The footer is absolutely positioned, so it consumes no layout
+            // height — this only has to clear the button (minHeight 58) plus
+            // its bottom offset. It was 140 here PLUS a 120px spacer view,
+            // which left ~150-180px of dead scrollable space.
+            paddingBottom: 96,
         },
 
         profileBanner: {

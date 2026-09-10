@@ -237,6 +237,12 @@ class MessageRepository {
       where: {
         conversationId,
         sequenceNo: { gt: afterSequenceNo },
+        // Deleted messages must not come back through sync. REST history
+        // already filters them, but this path did not — and since the client
+        // syncs from sequence 0, every reconnect replayed deleted messages
+        // back into the store, which is why a deleted image reappeared as an
+        // empty box after a refresh.
+        deletedAt: null,
       },
       orderBy: { sequenceNo: "asc" },
       take: limit,
@@ -415,7 +421,53 @@ class MessageRepository {
       where: { id: messageId },
       data: { deletedAt: new Date(), status: "DELETED" as any },
     });
+
+    // Roll the conversation's last-message preview back to the newest
+    // surviving message. lastMessageText is written only when a message is
+    // persisted, so deleting the most recent one previously left "📷 Photo"
+    // (or the message text) sitting in the conversation list indefinitely.
+    await this.refreshLastMessagePreview(conversationId);
+
     logger.info("Message soft-deleted", { messageId, conversationId });
+  }
+
+  /**
+   * Recompute a conversation's last-message preview from its newest
+   * non-deleted message. Mirrors the preview format used when persisting.
+   *
+   * Note this is inherently conversation-wide: lastMessageText is a single
+   * column, so it cannot reflect a per-user "delete for me".
+   */
+  async refreshLastMessagePreview(conversationId: string): Promise<void> {
+    const latest = await prisma.message.findFirst({
+      where: { conversationId, deletedAt: null },
+      orderBy: { sequenceNo: "desc" },
+      select: { id: true, type: true, content: true, createdAt: true },
+    });
+
+    if (!latest) {
+      await prisma.conversation.update({
+        where: { id: conversationId },
+        data: { lastMessageId: null, lastMessageText: null, lastMessageAt: null },
+      });
+      return;
+    }
+
+    const previewText =
+      latest.type === "IMAGE" ? "📷 Photo" :
+      latest.type === "VIDEO" ? "🎥 Video" :
+      latest.type === "AUDIO" ? "🎤 Voice message" :
+      latest.type === "FILE" ? "📎 File" :
+      (latest.content ?? "").substring(0, 200);
+
+    await prisma.conversation.update({
+      where: { id: conversationId },
+      data: {
+        lastMessageId: latest.id,
+        lastMessageText: previewText,
+        lastMessageAt: latest.createdAt,
+      },
+    });
   }
 
   async getMessageById(

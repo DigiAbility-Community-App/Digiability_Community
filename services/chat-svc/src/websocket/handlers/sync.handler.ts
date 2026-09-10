@@ -76,8 +76,10 @@ export async function handleSyncRequest(
         conversationId: msg.conversationId,
         senderId: msg.senderId,
         content: msg.deletedAt ? "" : msg.content,
+        // Caption lives in metadata.altText — clear it alongside content so a
+        // deleted image can't leave its caption behind.
+        metadata: msg.deletedAt ? undefined : (msg.metadata ?? undefined),
         type: msg.type,
-        metadata: msg.metadata ?? undefined,
         sequenceNo: Number(msg.sequenceNo),
         createdAt: msg.createdAt.toISOString(),
       }));

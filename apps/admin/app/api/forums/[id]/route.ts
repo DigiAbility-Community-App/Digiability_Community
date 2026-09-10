@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdminAuth } from "@/lib/auth";
 import { dbPool } from "@/lib/db";
-
-// DigiBot / system user used as the author for admin replies
-const ADMIN_REPLY_USER_ID = "00000000-0000-0000-0000-000000000001";
+import { ADMIN_REPLY_USER_ID, ADMIN_REPLY_EMAIL } from "@/lib/adminIdentity";
 
 // GET — question detail with all answers
 export async function GET(
@@ -122,13 +120,23 @@ export async function POST(
     );
 
     const answer = answerResult.rows[0];
+    // Read the author back rather than asserting it: this response used to
+    // hardcode a name/email that did not match the row it had just inserted,
+    // so the reply displayed correctly until the first reload and then
+    // reverted to the bot's name.
+    const authorResult = await dbPool.query(
+      `SELECT name, email FROM users WHERE id = $1`,
+      [ADMIN_REPLY_USER_ID]
+    );
+    const author = authorResult.rows[0];
+
     return NextResponse.json({
       success: true,
       answer: {
         id: answer.id,
         content: answer.content,
-        authorName: "DigiAbility Admin",
-        authorEmail: "admin@digiability.com",
+        authorName: author?.name ?? "DigiAbility Admin",
+        authorEmail: author?.email ?? ADMIN_REPLY_EMAIL,
         isAccepted: false,
         upvotes: 0,
         downvotes: 0,

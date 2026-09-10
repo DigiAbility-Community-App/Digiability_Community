@@ -155,6 +155,11 @@ model ConversationMember {
 
   joinedAt       DateTime @default(now())
   leftAt         DateTime?  // null = active member
+  // Why the membership ended: "LEFT" (the member chose to) or "REMOVED" (an
+  // admin removed them). Only leftAt was stored before, so the UI had no way
+  // to tell the two apart and labelled everyone who left as "(Removed)".
+  // Null for rows written before this column existed.
+  leftReason     String?
   updatedAt      DateTime @updatedAt
 
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)

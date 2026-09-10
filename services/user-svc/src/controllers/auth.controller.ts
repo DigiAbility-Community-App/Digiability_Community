@@ -36,6 +36,40 @@ function attachRefreshToken(res: Response, refreshToken: string) {
 }
 
 // ─── POST /auth/register ───────────────────────────────
+// ─── GET /auth/check-email ─────────────────────────────
+// Public: lets the signup form tell the user an address is already
+// registered while they type, instead of only after they submit the whole
+// form. This does confirm whether an email has an account — but registration
+// already reports exactly that ("An account with this email already exists"),
+// so it discloses nothing new; it is rate-limited to keep enumeration
+// expensive. Deliberately NOT used by forgot-password, which stays
+// non-committal on purpose.
+export const checkEmailHandler = asyncHandler(async (req: Request, res: Response) => {
+  const email = String(req.query.email ?? "").trim().toLowerCase();
+
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    res.status(400).json({
+      success: false,
+      available: false,
+      message: "Enter a valid email address",
+    });
+    return;
+  }
+
+  const existing = await prisma.user.findUnique({
+    where: { email },
+    select: { id: true },
+  });
+
+  res.json({
+    success: true,
+    available: !existing,
+    message: existing
+      ? "An account with this email already exists"
+      : "Email is available",
+  });
+});
+
 export const register = asyncHandler(async (req: Request, res: Response) => {
   const ip =
     req.headers["x-forwarded-for"]?.toString().split(",")[0] ||

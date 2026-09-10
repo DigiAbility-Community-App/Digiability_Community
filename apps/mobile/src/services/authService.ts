@@ -119,6 +119,35 @@ function mapUserToFrontend(user: any): any {
   };
 }
 
+// ── Email availability (signup) ────────────────────────────
+
+export interface EmailCheckResult {
+  available: boolean;
+  message: string;
+}
+
+/**
+ * Live "is this email already registered?" check for the signup form, so the
+ * user finds out while typing rather than after submitting. Mirrors
+ * checkUsernameAvailability in profileService.
+ */
+export async function checkEmailAvailability(email: string): Promise<EmailCheckResult> {
+  try {
+    const response = await apiClient.get<{ success: boolean; available: boolean; message: string }>(
+      '/api/auth/check-email',
+      { params: { email: email.trim().toLowerCase() } },
+    );
+    return { available: response.data.available, message: response.data.message };
+  } catch (error: any) {
+    if (error?.response?.status === 400) {
+      return { available: false, message: error.response.data?.message ?? 'Enter a valid email address' };
+    }
+    // Network/server error (or the rate limit) — don't block the user on a
+    // check that couldn't run; registration still validates server-side.
+    return { available: true, message: '' };
+  }
+}
+
 // ── Register ───────────────────────────────────────────────
 
 export async function register(

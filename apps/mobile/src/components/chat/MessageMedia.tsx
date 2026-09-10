@@ -76,6 +76,14 @@ export function MessageMedia({ message, isMine, onOpenViewer, onLongPress }: Mes
   const meta = parseMeta(message.metadata);
   const mediaSrc = resolveMediaUrl(message.content);
 
+  // A media message with no source can't render anything useful. The fixed
+  // MEDIA_WIDTH x MEDIA_HEIGHT styles below have hardcoded #111/#DDD
+  // backgrounds, so an empty URI painted a grey rectangle instead — which is
+  // exactly what a deleted image looked like once its content was blanked.
+  // Deleted messages are filtered out upstream now; this is the backstop so a
+  // blank source can never render as a phantom image again.
+  if (!mediaSrc) return null;
+
   // ── IMAGE or VIDEO ──
   if (message.type === "IMAGE" || message.type === "VIDEO") {
     const video = message.type === "VIDEO" || isVideoContent(message);

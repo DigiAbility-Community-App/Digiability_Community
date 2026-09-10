@@ -27,7 +27,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Video, ResizeMode } from "expo-av";
-import { File, Paths } from "expo-file-system";
+import { prepareLocalMediaFile, mimeTypeForUri } from "../../utils/mediaFile";
 import * as MediaLibrary from "expo-media-library";
 import * as Sharing from "expo-sharing";
 import ImageViewing from "react-native-image-viewing";
@@ -59,8 +59,6 @@ function isAllowedMediaOrigin(url: string): boolean {
 
 // A generous cap so a malicious/misbehaving URL can't fill up device
 // storage or flood the photo library with an oversized file.
-const MAX_DOWNLOAD_BYTES = 50 * 1024 * 1024; // 50 MB
-
 interface MediaViewerProps {
   visible: boolean;
   src: string;
@@ -112,45 +110,10 @@ export function MediaViewer({
     onClose();
   }, [onClose]);
 
-  // ── Helper to save media to local cache file ──
-  const prepareLocalFile = async (): Promise<string> => {
-    let fileUri = src;
-
-    // Remote HTTP/HTTPS URL — download to cache first
-    if (src.startsWith("http://") || src.startsWith("https://")) {
-      if (!isAllowedMediaOrigin(src)) {
-        throw new Error("This media's source isn't recognized, so it can't be downloaded.");
-      }
-      const ext = isVideo
-        ? "mp4"
-        : src.split(".").pop()?.split("?")[0]?.toLowerCase() || "jpg";
-      const validExts = ["jpg", "jpeg", "png", "gif", "webp", "mp4", "mov", "webm"];
-      const safeExt = validExts.includes(ext) ? ext : (isVideo ? "mp4" : "jpg");
-      const filename = `digiability-${Date.now()}.${safeExt}`;
-      const destFile = new File(Paths.cache, filename);
-      // downloadAsync was removed from the main expo-file-system export in
-      // SDK 54 (throws at runtime) — File.downloadFileAsync is its replacement.
-      const downloadedFile = await File.downloadFileAsync(src, destFile, { idempotent: true });
-      fileUri = downloadedFile.uri;
-
-      const savedFile = new File(fileUri);
-      if (savedFile.exists && (savedFile.size ?? 0) > MAX_DOWNLOAD_BYTES) {
-        savedFile.delete();
-        throw new Error("This file is too large to download.");
-      }
-    }
-    // Base64 / data URL
-    else if (src.startsWith("data:")) {
-      const extMatch = src.match(/^data:image\/(\w+);base64,/);
-      const ext = extMatch?.[1] ?? "jpg";
-      const filename = `digiability-${Date.now()}.${ext}`;
-      const destFile = new File(Paths.cache, filename);
-      destFile.write(src.replace(/^data:image\/\w+;base64,/, ""));
-      fileUri = destFile.uri;
-    }
-
-    return fileUri;
-  };
+  // Chat media stays restricted to the chat-svc origin; the shared helper
+  // handles download/decode and verifies something was actually written.
+  const prepareLocalFile = (): Promise<string> =>
+    prepareLocalMediaFile(src, { isVideo, isAllowedOrigin: isAllowedMediaOrigin });
 
   // ── Download & Save Directly to Phone Gallery / Photos ──
   const handleDownload = async () => {
@@ -215,7 +178,9 @@ export function MediaViewer({
       const localUri = await prepareLocalFile();
       if (await Sharing.isAvailableAsync()) {
         await Sharing.shareAsync(localUri, {
-          mimeType: isVideo ? "video/mp4" : "image/jpeg",
+          // Derive from the actual file rather than always claiming JPEG —
+          // a PNG announced as image/jpeg confuses some receiving apps.
+          mimeType: mimeTypeForUri(localUri, isVideo),
           dialogTitle: isVideo ? "Share Video" : "Share Image",
         });
       } else {

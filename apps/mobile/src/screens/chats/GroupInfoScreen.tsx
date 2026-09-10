@@ -8,6 +8,7 @@ import {
   Alert,
   TextInput,
   ActivityIndicator,
+  Platform,
 } from "react-native";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { ChatsStackParamList } from "@navigation/ChatsStack";
@@ -491,9 +492,15 @@ const GroupInfoScreen = ({ navigation, route }: Props) => {
         <AccessibleText variant="title" style={[styles.headerTitle, { color: colors.white }]}>Group Info</AccessibleText>
       </View>
 
+      {/* Android offset must be 0: app.json sets softwareKeyboardLayoutMode
+          "resize" (adjustResize), so the window already shrinks by the
+          keyboard height. SheetKeyboardAvoidingView uses behavior="height" on
+          Android, which subtracts again — with a non-zero offset the keyboard
+          terms cancel and ~offset px of blank background is left above the
+          keyboard (the reported white box). AltTextModal already uses 0 here. */}
       <SheetKeyboardAvoidingView
         style={{ flex: 1 }}
-        keyboardVerticalOffset={insets.top + 60}
+        keyboardVerticalOffset={Platform.OS === "ios" ? insets.top + 60 : 0}
       >
       <ScrollView style={[styles.content, { backgroundColor: colors.background }]} contentContainerStyle={{ paddingBottom: 40 }} keyboardShouldPersistTaps="handled">
         {/* Profile Card */}

@@ -11,7 +11,8 @@
     "db:migrate": "prisma migrate dev --schema=./prisma/schema.prisma",
     "db:push": "prisma db push --schema=./prisma/schema.prisma",
     "db:studio": "bash scripts/studio.sh",
-    "db:seed-bot": "ts-node prisma/seed-bot.ts"
+    "db:seed-bot": "ts-node prisma/seed-bot.ts",
+    "db:seed-admin": "ts-node prisma/seed-admin-user.ts"
   },
   "dependencies": {
     "@prisma/client": "^5.14.0",

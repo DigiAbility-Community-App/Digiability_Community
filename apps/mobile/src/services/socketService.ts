@@ -244,6 +244,11 @@ const handleSocketEvent = (message: any) => {
       if (payload.messages?.length > 0) {
         console.log('[WS-EVENT] sync: received', payload.messages.length, 'missed messages');
         payload.messages.forEach((msg: any) => {
+          // Belt-and-braces: the server now filters deleted rows out of sync,
+          // but an older chat-svc would still replay them, and re-adding one
+          // here is what resurrected deleted images as empty boxes.
+          if (msg.deletedAt) return;
+
           const mapped = {
             id: msg.messageId || msg.id,
             clientMessageId: msg.clientMessageId || msg.messageId || msg.id,
