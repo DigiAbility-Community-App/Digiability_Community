@@ -15,7 +15,7 @@
     "db:seed-admin": "ts-node prisma/seed-admin-user.ts"
   },
   "dependencies": {
-    "@prisma/client": "^5.14.0",
+    "@prisma/client": "^7.8.0",
     "bcryptjs": "^2.4.3",
     "bullmq": "^5.79.1",
     "cookie-parser": "^1.4.6",
