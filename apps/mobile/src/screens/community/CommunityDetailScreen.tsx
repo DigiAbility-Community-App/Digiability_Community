@@ -176,13 +176,14 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  // No fontSize on either of these: AccessibleText composes the caller's
+  // style last, so a hardcoded size here silently overrode the scaled
+  // typography variant and the tab strip ignored the text-size setting.
   tabBadgeText: {
     color: "#FFFFFF",
-    fontSize: 10,
     fontWeight: "700",
   },
   tabText: {
-    fontSize: 14,
     fontWeight: "500",
   },
   activeTabText: {

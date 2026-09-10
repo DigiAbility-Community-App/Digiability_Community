@@ -14,9 +14,9 @@ import {
   TouchableOpacity,
   ScrollView,
   StyleSheet,
-  KeyboardAvoidingView,
   Platform,
 } from "react-native";
+import { SheetKeyboardAvoidingView } from "../shared/SheetKeyboardAvoidingView";
 
 export function AltTextModal({
   visible,
@@ -42,14 +42,7 @@ export function AltTextModal({
         activeOpacity={1}
         onPress={onCancel}
       >
-        {/* Android needs an explicit behavior too — leaving it undefined
-            meant no avoidance at all there, so the keyboard covered the
-            description field. The preview/description also scroll now, so
-            the sheet can shrink instead of being pushed off-screen.
-            keyboardVerticalOffset matches ReportModal — without it the
-            field is still hidden behind the keyboard on iOS. */}
-        <KeyboardAvoidingView
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
+        <SheetKeyboardAvoidingView
           keyboardVerticalOffset={Platform.OS === "ios" ? 40 : 0}
           style={{ width: "100%", justifyContent: "flex-end", flex: 1 }}
         >
@@ -84,7 +77,7 @@ export function AltTextModal({
               </TouchableOpacity>
             </View>
           </TouchableOpacity>
-        </KeyboardAvoidingView>
+        </SheetKeyboardAvoidingView>
       </TouchableOpacity>
     </Modal>
   );

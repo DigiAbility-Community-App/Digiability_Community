@@ -10,6 +10,7 @@ import {
   ActivityIndicator,
   Modal,
 } from "react-native";
+import { KeyboardAwareScrollView } from "react-native-keyboard-aware-scroll-view";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
 import { ArrowLeft, Camera, HelpCircle, X, Check } from "lucide-react-native";
@@ -159,7 +160,19 @@ const AskQuestionScreen = () => {
         <View style={{ width: 40 }} />
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+      {/* The keyboard used to cover Tags, Alt Text and the Post button, which
+          all sit below the multiline Description. contentContainerStyle must
+          stay a single flat object, never an array — with enableOnAndroid this
+          library reads (contentContainerStyle || {}).paddingBottom to add its
+          own keyboard padding, which is undefined on an array, and its
+          replacement then becomes the only paddingBottom RN keeps. */}
+      <KeyboardAwareScrollView
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+        enableOnAndroid={true}
+        extraScrollHeight={100}
+      >
         {/* HELP TEXT */}
         <View
           style={[
@@ -324,7 +337,7 @@ const AskQuestionScreen = () => {
             "Post Question"
           )}
         </AccessibleButton>
-      </ScrollView>
+      </KeyboardAwareScrollView>
 
       {/* DUPLICATE WARNING MODAL */}
       <Modal
@@ -438,7 +451,10 @@ const styles = StyleSheet.create({
     fontWeight: "800"
   },
   scrollContent: {
-    padding: 20
+    padding: 20,
+    // Clearance below the Post button so the last field isn't flush against
+    // the keyboard when it opens.
+    paddingBottom: 48
   },
   helpCard: {
     flexDirection: "row",

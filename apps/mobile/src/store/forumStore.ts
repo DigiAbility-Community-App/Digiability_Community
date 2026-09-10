@@ -178,7 +178,12 @@ export const useForumStore = create<ForumState>((set, get) => ({
   },
 
   fetchQuestionDetails: async (id) => {
-    set({ loading: true, error: null, currentQuestionSummary: null });
+    // currentQuestion must be cleared alongside the summary: leaving the
+    // previous question in the store made the details screen render the last
+    // question's title, body and answers until this request resolved — and
+    // worse, actions like posting an answer read currentQuestion.id, so they
+    // could target the question the user had just navigated away from.
+    set({ loading: true, error: null, currentQuestion: null, currentQuestionSummary: null });
     try {
       const question = await forumService.getQuestionDetails(id);
       set({ currentQuestion: question, loading: false });

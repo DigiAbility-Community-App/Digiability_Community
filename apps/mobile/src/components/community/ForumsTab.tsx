@@ -10,7 +10,7 @@
 //   • Floating Action Button to ask a question
 // ─────────────────────────────────────────────────────────────
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -24,6 +24,7 @@ import {
   Platform,
   Modal,
   TouchableWithoutFeedback,
+  Animated,
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import {
@@ -84,6 +85,26 @@ const ForumsTab = () => {
   const [selectedCategory, setSelectedCategory] = useState("all");
   const [sortOrder, setSortOrder] = useState<"desc" | "asc">("desc");
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
+
+  // Collapsible search/filter header — measured (not hardcoded) since its
+  // height varies with text-size accessibility settings. diffClamp tracks
+  // net scroll distance within [0, headerHeight] regardless of direction
+  // reversals, so the header smoothly hides on scroll-down and reveals on
+  // scroll-up in lockstep with the finger, entirely on the native thread.
+  const [headerHeight, setHeaderHeight] = useState(170);
+  const scrollY = useRef(new Animated.Value(0)).current;
+  const headerTranslateY = useMemo(() => {
+    const clamped = Animated.diffClamp(scrollY, 0, headerHeight);
+    return clamped.interpolate({
+      inputRange: [0, headerHeight],
+      outputRange: [0, -headerHeight],
+      extrapolate: "clamp",
+    });
+  }, [scrollY, headerHeight]);
+  const handleListScroll = Animated.event(
+    [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+    { useNativeDriver: true }
+  );
 
   useEffect(() => {
     resetFilters();
@@ -174,8 +195,20 @@ const ForumsTab = () => {
 
   return (
     <View style={styles.container}>
-      {/* SEARCH AND FILTERS CONTAINER */}
-      <View style={styles.searchSection}>
+      {/* SEARCH AND FILTERS CONTAINER — absolutely positioned so it overlays
+          the list rather than pushing it down; the list reserves the same
+          amount of top padding, and the two animate in lockstep on scroll. */}
+      <Animated.View
+        style={[
+          styles.searchSection,
+          styles.searchSectionFloating,
+          { transform: [{ translateY: headerTranslateY }] },
+        ]}
+        onLayout={(e) => {
+          const measured = Math.round(e.nativeEvent.layout.height);
+          if (measured > 0 && measured !== headerHeight) setHeaderHeight(measured);
+        }}
+      >
         {/* Search bar */}
         <View style={styles.searchBar}>
           <Search size={18} color="#6B7280" style={{ marginRight: 8 }} />
@@ -325,19 +358,25 @@ const ForumsTab = () => {
             </Text>
           </TouchableOpacity>
         </ScrollView>
-      </View>
+      </Animated.View>
 
       {/* QUESTIONS LIST */}
-      <FlatList
+      <Animated.FlatList
+        style={styles.list}
         data={sortedQuestions}
         keyExtractor={(item) => item.id}
         renderItem={renderPostCard}
-        contentContainerStyle={styles.listContent}
+        contentContainerStyle={[styles.listContent, { paddingTop: headerHeight + 16 }]}
+        onScroll={handleListScroll}
+        scrollEventThrottle={16}
         refreshControl={
           <RefreshControl
             refreshing={loading && questions.length === 0}
             onRefresh={handleRefresh}
             colors={["#500088"]}
+            // The RefreshControl's own spinner needs to sit below the
+            // floating header, not underneath it.
+            progressViewOffset={headerHeight}
           />
         }
         onEndReached={handleLoadMore}
@@ -470,6 +509,16 @@ const styles = StyleSheet.create({
     backgroundColor: "#FFFFFF",
     borderBottomWidth: 1,
     borderBottomColor: "#EEEDF4",
+  },
+  searchSectionFloating: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 10,
+  },
+  list: {
+    flex: 1,
   },
   searchBar: {
     flexDirection: "row",

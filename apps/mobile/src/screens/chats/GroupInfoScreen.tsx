@@ -8,9 +8,6 @@ import {
   Alert,
   TextInput,
   ActivityIndicator,
-  Platform,
-  ActionSheetIOS,
-  KeyboardAvoidingView,
 } from "react-native";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { ChatsStackParamList } from "@navigation/ChatsStack";
@@ -18,6 +15,8 @@ import { useAuthStore } from "@store/authStore";
 import { useChatStore } from "@store/chatStore";
 import { chatService } from "@services/chatService";
 import ScreenWrapper from "../../components/layout/ScreenWrapper";
+import { SheetKeyboardAvoidingView } from "../../components/shared/SheetKeyboardAvoidingView";
+import { ActionSheet, ActionSheetOption } from "../../components/chat/ActionSheet";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ArrowLeft, Users, Accessibility, SquarePen, Bell, BellOff, ChevronRight, X, Plus } from "lucide-react-native";
 import { useTheme, getFontScale } from "../../theme/ThemeContext";
@@ -47,6 +46,17 @@ const GroupInfoScreen = ({ navigation, route }: Props) => {
   const searchTimeout = useRef<NodeJS.Timeout | null>(null);
 
   const MEMBERS_PAGE_SIZE = 12;
+
+  // Member action / role-picker popups — routed through the shared
+  // ActionSheet (instead of raw ActionSheetIOS/Alert.alert) so they can be
+  // dismissed by tapping outside or Cancel, not just by picking an option.
+  const [memberActionSheet, setMemberActionSheet] = useState<{
+    visible: boolean;
+    title: string;
+    options: ActionSheetOption[];
+  }>({ visible: false, title: "", options: [] });
+  const closeMemberActionSheet = () =>
+    setMemberActionSheet((prev) => ({ ...prev, visible: false }));
 
   // Edit group info form
   const [isEditingInfo, setIsEditingInfo] = useState(false);
@@ -180,8 +190,11 @@ const GroupInfoScreen = ({ navigation, route }: Props) => {
 
   // ── Leave Group ───────────────────────────────────────────────
   const handleLeaveGroup = () => {
+    // Copy follows the conversation type — this screen previously said
+    // "Leave Group" even inside a Care Circle.
+    const noun = isCareCircle ? "Care Circle" : "Group";
     Alert.alert(
-      "Leave Group",
+      `Leave ${noun}`,
       `Are you sure you want to leave "${conversation.name}"?`,
       [
         { text: "Cancel", style: "cancel" },
@@ -191,9 +204,19 @@ const GroupInfoScreen = ({ navigation, route }: Props) => {
           onPress: async () => {
             try {
               await chatService.removeMember(conversationId, user!.id);
-              navigation.popToTop();
+              // Confirm before navigating away: leaving used to pop straight
+              // back to the list with no acknowledgement at all, so it wasn't
+              // clear whether it had worked.
+              Alert.alert(
+                `Left ${noun}`,
+                `You have successfully left "${conversation.name}".`,
+                [{ text: "OK", onPress: () => navigation.popToTop() }]
+              );
             } catch (err: any) {
-              Alert.alert("Error", err?.response?.data?.message || "Failed to leave group.");
+              Alert.alert(
+                "Error",
+                err?.response?.data?.message || `Failed to leave ${noun.toLowerCase()}.`
+              );
             }
           },
         },
@@ -343,17 +366,14 @@ const GroupInfoScreen = ({ navigation, route }: Props) => {
 
   const promptCareCircleRole = (memberId: string, _currentRole: string, memberName: string) => {
     const roles = ["MEMBER", "CAREGIVER", "MENTOR", "PROFESSIONAL"];
-    if (Platform.OS === "ios") {
-      ActionSheetIOS.showActionSheetWithOptions(
-        { options: ["Cancel", ...roles.map((r) => r.charAt(0) + r.slice(1).toLowerCase())], cancelButtonIndex: 0 },
-        (idx) => { if (idx > 0) changeRole(memberId, roles[idx - 1]); }
-      );
-    } else {
-      Alert.alert("Change Role", `Select a role for ${memberName}`, [
-        ...roles.map((r) => ({ text: r.charAt(0) + r.slice(1).toLowerCase(), onPress: () => changeRole(memberId, r) })),
-        { text: "Cancel", style: "cancel" },
-      ]);
-    }
+    setMemberActionSheet({
+      visible: true,
+      title: `Change role for ${memberName}`,
+      options: roles.map((r) => ({
+        label: r.charAt(0) + r.slice(1).toLowerCase(),
+        onPress: () => changeRole(memberId, r),
+      })),
+    });
   };
 
   const handleMemberAction = (memberId: string, currentRole: string, memberName: string) => {
@@ -361,60 +381,33 @@ const GroupInfoScreen = ({ navigation, route }: Props) => {
     if (memberId === user?.id) return;
 
     if (isCareCircle && (myRole === "OWNER" || myRole === "CAREGIVER")) {
-      const options = isOwner
-        ? ["Cancel", "Change Role", "Transfer Ownership", "Remove Member"]
-        : ["Cancel", "Change Role", "Remove Member"];
-      const destructiveIndex = isOwner ? 3 : 2;
-
-      if (Platform.OS === "ios") {
-        ActionSheetIOS.showActionSheetWithOptions(
-          { options, cancelButtonIndex: 0, destructiveButtonIndex: destructiveIndex },
-          (idx) => {
-            if (idx === 1) promptCareCircleRole(memberId, currentRole, memberName);
-            if (isOwner && idx === 2) handleTransferOwnership(memberId, memberName);
-            if (idx === destructiveIndex) confirmRemoveMember(memberId, memberName);
-          }
-        );
-      } else {
-        const alertButtons: any[] = [
-          { text: "Change Role", onPress: () => promptCareCircleRole(memberId, currentRole, memberName) },
-          ...(isOwner ? [{ text: "Transfer Ownership", onPress: () => handleTransferOwnership(memberId, memberName) }] : []),
-          { text: "Remove Member", style: "destructive", onPress: () => confirmRemoveMember(memberId, memberName) },
-          { text: "Cancel", style: "cancel" },
-        ];
-        Alert.alert(memberName, "Choose an action", alertButtons);
-      }
+      const options: ActionSheetOption[] = [
+        { label: "Change Role", onPress: () => promptCareCircleRole(memberId, currentRole, memberName) },
+        ...(isOwner
+          ? [{ label: "Transfer Ownership", onPress: () => handleTransferOwnership(memberId, memberName) }]
+          : []),
+        { label: "Remove Member", destructive: true, onPress: () => confirmRemoveMember(memberId, memberName) },
+      ];
+      setMemberActionSheet({ visible: true, title: memberName, options });
     } else if (!isCareCircle && isOwner) {
       const promoteLabel = currentRole === "ADMIN" ? "Dismiss as Admin" : "Make Admin";
-      if (Platform.OS === "ios") {
-        ActionSheetIOS.showActionSheetWithOptions(
-          { options: ["Cancel", promoteLabel, "Transfer Ownership", "Remove Member"], cancelButtonIndex: 0, destructiveButtonIndex: 3 },
-          (idx) => {
-            if (idx === 1) changeRole(memberId, currentRole === "ADMIN" ? "MEMBER" : "ADMIN");
-            if (idx === 2) handleTransferOwnership(memberId, memberName);
-            if (idx === 3) confirmRemoveMember(memberId, memberName);
-          }
-        );
-      } else {
-        Alert.alert(memberName, "Choose an action", [
-          { text: promoteLabel, onPress: () => changeRole(memberId, currentRole === "ADMIN" ? "MEMBER" : "ADMIN") },
-          { text: "Transfer Ownership", onPress: () => handleTransferOwnership(memberId, memberName) },
-          { text: "Remove Member", style: "destructive", onPress: () => confirmRemoveMember(memberId, memberName) },
-          { text: "Cancel", style: "cancel" },
-        ]);
-      }
+      setMemberActionSheet({
+        visible: true,
+        title: memberName,
+        options: [
+          { label: promoteLabel, onPress: () => changeRole(memberId, currentRole === "ADMIN" ? "MEMBER" : "ADMIN") },
+          { label: "Transfer Ownership", onPress: () => handleTransferOwnership(memberId, memberName) },
+          { label: "Remove Member", destructive: true, onPress: () => confirmRemoveMember(memberId, memberName) },
+        ],
+      });
     } else if (hasAdminRights && currentRole === "MEMBER") {
-      if (Platform.OS === "ios") {
-        ActionSheetIOS.showActionSheetWithOptions(
-          { options: ["Cancel", "Remove Member"], cancelButtonIndex: 0, destructiveButtonIndex: 1 },
-          (idx) => { if (idx === 1) confirmRemoveMember(memberId, memberName); }
-        );
-      } else {
-        Alert.alert(memberName, "Choose an action", [
-          { text: "Remove Member", style: "destructive", onPress: () => confirmRemoveMember(memberId, memberName) },
-          { text: "Cancel", style: "cancel" },
-        ]);
-      }
+      setMemberActionSheet({
+        visible: true,
+        title: memberName,
+        options: [
+          { label: "Remove Member", destructive: true, onPress: () => confirmRemoveMember(memberId, memberName) },
+        ],
+      });
     }
   };
 
@@ -498,9 +491,8 @@ const GroupInfoScreen = ({ navigation, route }: Props) => {
         <AccessibleText variant="title" style={[styles.headerTitle, { color: colors.white }]}>Group Info</AccessibleText>
       </View>
 
-      <KeyboardAvoidingView
+      <SheetKeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
         keyboardVerticalOffset={insets.top + 60}
       >
       <ScrollView style={[styles.content, { backgroundColor: colors.background }]} contentContainerStyle={{ paddingBottom: 40 }} keyboardShouldPersistTaps="handled">
@@ -868,17 +860,24 @@ const GroupInfoScreen = ({ navigation, route }: Props) => {
           ) : (
             <AccessibleButton
               variant="danger"
-              accessibilityLabel="Leave group"
+              accessibilityLabel={isCareCircle ? "Leave care circle" : "Leave group"}
               accessibilityHint={`Leaves ${conversation.name}`}
               style={styles.leaveBtn}
               onPress={handleLeaveGroup}
             >
-              Leave Group
+              {isCareCircle ? "Leave Care Circle" : "Leave Group"}
             </AccessibleButton>
           )}
         </View>
       </ScrollView>
-      </KeyboardAvoidingView>
+      </SheetKeyboardAvoidingView>
+
+      <ActionSheet
+        visible={memberActionSheet.visible}
+        title={memberActionSheet.title}
+        options={memberActionSheet.options}
+        onClose={closeMemberActionSheet}
+      />
     </ScreenWrapper>
   );
 };

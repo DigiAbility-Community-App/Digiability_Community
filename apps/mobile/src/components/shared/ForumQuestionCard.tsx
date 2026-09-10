@@ -51,7 +51,6 @@ export const ForumQuestionCard: React.FC<ForumQuestionCardProps> = ({
     return `${day}/${month}/${year}`;
   };
 
-  const reputation = question.author?.forumStats?.reputation ?? 0;
   const authorRole = question.author?.role ? String(question.author.role).toUpperCase() : null;
 
   // Custom typography settings for Dyslexia Mode
@@ -75,7 +74,7 @@ export const ForumQuestionCard: React.FC<ForumQuestionCardProps> = ({
       accessibilityRole="button"
       accessibilityLabel={`Question: ${question.title}. Category: ${question.category}. Status: ${
         isSolved ? 'Resolved' : 'Open'
-      }. Asked by ${question.author?.name} with reputation ${reputation}.`}
+      }. Asked by ${question.author?.name}.`}
     >
       <View style={styles.header}>
         <View style={styles.authorRow}>
@@ -89,11 +88,6 @@ export const ForumQuestionCard: React.FC<ForumQuestionCardProps> = ({
               <AccessibleText style={[styles.authorName, textStyle]}>
                 {question.author ? formatUserDisplayName(question.author) : 'Anonymous'}
               </AccessibleText>
-              {reputation > 0 && (
-                <View style={styles.repBadge}>
-                  <AccessibleText style={styles.repText}>★ {reputation}</AccessibleText>
-                </View>
-              )}
               {authorRole && (
                 <View style={[styles.roleBadge, { backgroundColor: colors.surface }]}>
                   <AccessibleText style={[styles.roleText, { color: colors.primary }]}>
@@ -206,20 +200,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: '#1F2937',
-  },
-  repBadge: {
-    backgroundColor: '#FFFBEB',
-    borderColor: '#FBBF24',
-    borderWidth: 0.5,
-    borderRadius: 4,
-    paddingHorizontal: 4,
-    paddingVertical: 1,
-    marginLeft: 6,
-  },
-  repText: {
-    fontSize: 9,
-    fontWeight: 'bold',
-    color: '#D97706',
   },
   roleBadge: {
     borderRadius: 4,
