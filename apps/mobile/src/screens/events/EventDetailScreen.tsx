@@ -20,6 +20,7 @@ import {
   ExternalLink,
 } from "lucide-react-native";
 import { useRoute, useNavigation } from "@react-navigation/native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import ScreenWrapper from "../../components/layout/ScreenWrapper";
 import AppHeader from "../../components/layout/AppHeader";
 import AppFooter from "../../components/layout/AppFooter";
@@ -63,6 +64,7 @@ export default function EventDetailScreen() {
   const route = useRoute<any>();
   const navigation = useNavigation<any>();
   const { colors, spacing, highContrast } = useTheme();
+  const insets = useSafeAreaInsets();
 
   const { eventId } = route.params || {};
   const [event, setEvent] = useState<EventModel | null>(null);
@@ -201,7 +203,7 @@ export default function EventDetailScreen() {
         }
       />
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={[styles.scrollContent, { paddingBottom: Math.max(insets.bottom + 100, 120) }]}>
         {/* HERO IMAGE + TAG PILLS */}
         <TouchableOpacity style={styles.imageContainer} activeOpacity={0.9} onPress={() => setMediaViewerOpen(true)}>
           <Image source={{ uri: event.image }} style={[styles.bannerImage, { backgroundColor: '#000' }]} resizeMode="contain" />
@@ -381,7 +383,6 @@ export default function EventDetailScreen() {
           </AccessibleButton>
         </View>
 
-        <View style={{ height: 140 }} />
       </ScrollView>
 
       {mediaViewerOpen && event?.image && (

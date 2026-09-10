@@ -10,6 +10,7 @@
     "services/*"
   ],
   "scripts": {
+    "postinstall": "patch-package",
     "dev": "turbo run dev",
     "build": "turbo run build",
     "lint": "turbo run lint",
@@ -33,6 +34,7 @@
   },
   "devDependencies": {
     "@types/react": "~19.1.0",
+    "patch-package": "^8.0.1",
     "prisma": "^5.10.0",
     "turbo": "^2.0.0"
   },

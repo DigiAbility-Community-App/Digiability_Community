@@ -81,8 +81,18 @@ interface ChatState {
   presence: Record<string, { status: string; lastSeen: string }>;
   typing: Record<string, string[]>; // conversationId -> array of userIds typing
   pendingInvites: GroupInvite[];
+  /**
+   * Bumped whenever membership changes anywhere (join, leave, removal, invite
+   * accepted). The Groups and Care Circles tabs keep their own lists from
+   * chatService.fetchAllGroups rather than deriving from `conversations` —
+   * Care Circles deliberately lists circles the user has NOT joined, which
+   * aren't conversations — so they watch this counter to know when to refetch
+   * instead of only loading once on mount.
+   */
+  communityGroupsRefreshToken: number;
 
   setConnectionState: (state: 'connected' | 'disconnected' | 'connecting') => void;
+  refreshCommunityGroups: () => void;
   setLastSyncTime: (time: string) => void;
   
   setConversations: (conversations: Conversation[]) => void;
@@ -125,8 +135,11 @@ export const useChatStore = create<ChatState>((set) => ({
   presence: {},
   typing: {},
   pendingInvites: [],
+  communityGroupsRefreshToken: 0,
 
   setConnectionState: (state) => set({ connectionState: state }),
+  refreshCommunityGroups: () =>
+    set((state) => ({ communityGroupsRefreshToken: state.communityGroupsRefreshToken + 1 })),
   setLastSyncTime: (time) => set({ lastSyncTime: time }),
 
   setConversations: (convos) =>

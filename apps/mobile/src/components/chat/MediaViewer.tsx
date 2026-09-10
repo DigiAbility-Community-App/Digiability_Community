@@ -23,10 +23,11 @@ import {
   ActivityIndicator,
   Alert,
   Linking,
+  Platform,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Video, ResizeMode } from "expo-av";
-import { File, Paths, downloadAsync } from "expo-file-system";
+import { File, Paths } from "expo-file-system";
 import * as MediaLibrary from "expo-media-library";
 import * as Sharing from "expo-sharing";
 import ImageViewing from "react-native-image-viewing";
@@ -127,8 +128,10 @@ export function MediaViewer({
       const safeExt = validExts.includes(ext) ? ext : (isVideo ? "mp4" : "jpg");
       const filename = `digiability-${Date.now()}.${safeExt}`;
       const destFile = new File(Paths.cache, filename);
-      const res = await downloadAsync(src, destFile.uri);
-      fileUri = res.uri;
+      // downloadAsync was removed from the main expo-file-system export in
+      // SDK 54 (throws at runtime) — File.downloadFileAsync is its replacement.
+      const downloadedFile = await File.downloadFileAsync(src, destFile, { idempotent: true });
+      fileUri = downloadedFile.uri;
 
       const savedFile = new File(fileUri);
       if (savedFile.exists && (savedFile.size ?? 0) > MAX_DOWNLOAD_BYTES) {
@@ -278,6 +281,38 @@ export function MediaViewer({
   }
 
   // ── IMAGE: react-native-image-viewing handles pinch-to-zoom, pan, centering natively ──
+  // The library hides the Android status bar while the viewer is open
+  // (StatusBarManager calls StatusBar.setHidden for overFullScreen, which is
+  // Android-only), but insets.top still reports the inset for it — so padding
+  // by insets.top there pushed the bar well below the top edge. iOS keeps the
+  // status bar visible and still needs the real inset.
+  const imageHeaderTopPadding = Platform.OS === "android" ? 12 : Math.max(insets.top, 16);
+
+  // Defined once rather than inline: passing an arrow to HeaderComponent makes
+  // it a new component type on every render, so React remounts the header and
+  // the download spinner / success tick lose their state mid-download.
+  const ImageViewerHeader = useCallback(() => (
+    <View style={[styles.topBarSafe, { paddingTop: imageHeaderTopPadding }]}>
+      <View style={styles.topBar}>
+        <TouchableOpacity style={styles.backBtn} onPress={handleClose} accessibilityRole="button" accessibilityLabel="Back" hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+          <ArrowLeft size={22} color="#fff" strokeWidth={2.2} />
+          <AccessibleText numberOfLines={1} style={styles.headerTitle}>{alt || title}</AccessibleText>
+        </TouchableOpacity>
+        <View style={styles.actionsRow}>
+          <TouchableOpacity style={[styles.iconBtn, downloadSuccess && styles.iconBtnSuccess]} onPress={handleDownload} disabled={downloading} accessibilityRole="button" accessibilityLabel="Save to Gallery" hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            {downloading ? <ActivityIndicator size="small" color="#fff" /> : downloadSuccess ? <Check size={20} color="#4ADE80" strokeWidth={2.5} /> : <Download size={20} color="#fff" strokeWidth={2} />}
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.iconBtn} onPress={handleShare} accessibilityRole="button" accessibilityLabel="Share" hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Share2 size={20} color="#fff" strokeWidth={2} />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.closeBtn} onPress={handleClose} accessibilityRole="button" accessibilityLabel="Close" hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <X size={20} color="#fff" strokeWidth={2.2} />
+          </TouchableOpacity>
+        </View>
+      </View>
+    </View>
+  ), [imageHeaderTopPadding, alt, title, downloading, downloadSuccess, handleClose, handleDownload, handleShare]);
+
   return (
     <>
       <StatusBar barStyle="light-content" backgroundColor="#000" />
@@ -290,28 +325,15 @@ export function MediaViewer({
         backgroundColor="#000"
         swipeToCloseEnabled={false}
         doubleTapToZoomEnabled={true}
+        // Without this, the library's own Android modal adds a
+        // StatusBar.currentHeight top offset AND our own topBarSafe below
+        // adds insets.top on top of that — double-compensating and pushing
+        // the header bar down. overFullScreen makes the modal true top:0
+        // full-screen (and hides the status bar while open, standard for a
+        // photo viewer), leaving insets.top as the only offset applied.
+        presentationStyle="overFullScreen"
         // Custom header with download + share
-        HeaderComponent={() => (
-          <View style={[styles.topBarSafe, { paddingTop: Math.max(insets.top, 16) }]}>
-            <View style={styles.topBar}>
-              <TouchableOpacity style={styles.backBtn} onPress={handleClose} accessibilityRole="button" accessibilityLabel="Back" hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
-                <ArrowLeft size={22} color="#fff" strokeWidth={2.2} />
-                <AccessibleText numberOfLines={1} style={styles.headerTitle}>{alt || title}</AccessibleText>
-              </TouchableOpacity>
-              <View style={styles.actionsRow}>
-                <TouchableOpacity style={[styles.iconBtn, downloadSuccess && styles.iconBtnSuccess]} onPress={handleDownload} disabled={downloading} accessibilityRole="button" accessibilityLabel="Save to Gallery" hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                  {downloading ? <ActivityIndicator size="small" color="#fff" /> : downloadSuccess ? <Check size={20} color="#4ADE80" strokeWidth={2.5} /> : <Download size={20} color="#fff" strokeWidth={2} />}
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.iconBtn} onPress={handleShare} accessibilityRole="button" accessibilityLabel="Share" hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                  <Share2 size={20} color="#fff" strokeWidth={2} />
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.closeBtn} onPress={handleClose} accessibilityRole="button" accessibilityLabel="Close" hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                  <X size={20} color="#fff" strokeWidth={2.2} />
-                </TouchableOpacity>
-              </View>
-            </View>
-          </View>
-        )}
+        HeaderComponent={ImageViewerHeader}
       />
     </>
   );

@@ -14,6 +14,7 @@ import {
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { useNavigation } from "@react-navigation/native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as WebBrowser from "expo-web-browser";
 import { useTheme } from "../../theme/ThemeContext";
 import { AccessibleText } from "../../components/shared/AccessibleText";
@@ -124,6 +125,7 @@ const MOCK_SERVICES: ServiceModel[] = [
 export const ServicesScreen = () => {
   const navigation = useNavigation<any>();
   const { colors, spacing, highContrast } = useTheme();
+  const insets = useSafeAreaInsets();
   const [activeCategory, setActiveCategory] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
@@ -434,7 +436,7 @@ export const ServicesScreen = () => {
         <ScrollView
           showsVerticalScrollIndicator={false}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[colors.primary]} />}
-          contentContainerStyle={[styles.scrollContent, { paddingBottom: Platform.OS === "ios" ? 150 : 120 }]}
+          contentContainerStyle={[styles.scrollContent, { paddingBottom: Platform.OS === "ios" ? 150 : Math.max(insets.bottom + 120, 140) }]}
         >
           {filteredServices.map((service) => {
           const isAvailabilityExpanded = !!expandedAvailability[service.id];
@@ -449,7 +451,11 @@ export const ServicesScreen = () => {
             >
               <View style={styles.serviceHeader}>
                 <View style={[styles.providerLogo, { backgroundColor: colors.surface }]}>
-                  {service.image && service.image.startsWith("http") ? (
+                  {/* Admin saves provider logos as base64 data URLs (there is
+                      no upload endpoint), so an http-only guard hid every
+                      uploaded image behind the emoji fallback. */}
+                  {service.image &&
+                  (service.image.startsWith("http") || service.image.startsWith("data:image/")) ? (
                     <Image
                       source={{ uri: service.image }}
                       style={{ width: 44, height: 44, borderRadius: 12 }}

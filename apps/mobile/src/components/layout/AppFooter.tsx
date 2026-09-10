@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { View, StyleSheet, TouchableOpacity, Platform, Animated } from "react-native";
 import { useNavigation } from "@react-navigation/native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTheme } from "../../theme/ThemeContext";
 import { AccessibleText } from "../shared/AccessibleText";
 import {
@@ -37,6 +38,15 @@ export const AppFooter: React.FC<AppFooterProps> = ({
 }) => {
   const standaloneNavigation = useNavigation<any>();
   const { colors, highContrast, spacing, reduceMotion } = useTheme();
+  // Called directly (not read from the `insets` prop react-navigation's tabBar
+  // render function passes) since AppFooter is also rendered standalone, outside
+  // that slot, on several stack screens (NotificationScreen, ConversationListScreen,
+  // EventDetailScreen, EventsScreen) where that prop never arrives.
+  const insets = useSafeAreaInsets();
+  // Expo SDK 54 makes edge-to-edge rendering mandatory on Android, so the true
+  // bottom of the screen is always behind the system nav bar there. iOS isn't
+  // affected (not reported broken, already tuned) so it keeps its plain offset.
+  const bottomOffset = 16 + (Platform.OS === "android" ? insets.bottom : 0);
 
   // Tab definitions
   const tabs = [
@@ -162,7 +172,10 @@ export const AppFooter: React.FC<AppFooterProps> = ({
           borderTopColor: highContrast ? "#000000" : "rgba(0,0,0,0.05)",
           borderTopWidth: highContrast ? 2 : 1,
           paddingBottom: Platform.OS === "ios" ? 20 : 8,
-          height: Platform.OS === "ios" ? 85 : 70,
+          // minHeight, not height: at the larger text sizes the label needs
+          // more room than the old fixed 85/70, and a hard height clipped it.
+          minHeight: Platform.OS === "ios" ? 85 : 70,
+          bottom: bottomOffset,
         },
       ]}
       accessibilityRole="tablist"
@@ -213,10 +226,12 @@ export const AppFooter: React.FC<AppFooterProps> = ({
               }
             />
 
+            {/* No adjustsFontSizeToFit here: it auto-shrank the label to fit
+                the tab cell, which silently cancelled out the user's text-size
+                preference. Two lines are allowed instead so the label can grow. */}
             <AccessibleText
               variant="caption"
-              numberOfLines={1}
-              adjustsFontSizeToFit={true}
+              numberOfLines={2}
               style={[
                 styles.navText,
                 {

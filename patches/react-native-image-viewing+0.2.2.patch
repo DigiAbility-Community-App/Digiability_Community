@@ -1,0 +1,38 @@
+diff --git a/node_modules/react-native-image-viewing/dist/components/ImageItem/ImageItem.android.js b/node_modules/react-native-image-viewing/dist/components/ImageItem/ImageItem.android.js
+index 5fcaa9f..398d26d 100644
+--- a/node_modules/react-native-image-viewing/dist/components/ImageItem/ImageItem.android.js
++++ b/node_modules/react-native-image-viewing/dist/components/ImageItem/ImageItem.android.js
+@@ -28,7 +28,12 @@ const ImageItem = ({ imageSrc, onZoom, onRequestClose, onLongPress, delayLongPre
+         onZoom(isZoomed);
+         if ((_a = imageContainer) === null || _a === void 0 ? void 0 : _a.current) {
+             imageContainer.current.setNativeProps({
+-                scrollEnabled: !isZoomed,
++                // Only re-enable the outer ScrollView when swipe-to-close is
++                // actually meant to be usable — otherwise, zooming out via
++                // double-tap re-enables it regardless of swipeToCloseEnabled,
++                // and it then competes with the image's own PanResponder for
++                // the touch stream, breaking the very next pinch gesture.
++                scrollEnabled: !isZoomed && swipeToCloseEnabled,
+             });
+         }
+     }, [imageContainer]);
+diff --git a/node_modules/react-native-image-viewing/dist/hooks/usePanResponder.js b/node_modules/react-native-image-viewing/dist/hooks/usePanResponder.js
+index 99dcbc7..684d2b3 100644
+--- a/node_modules/react-native-image-viewing/dist/hooks/usePanResponder.js
++++ b/node_modules/react-native-image-viewing/dist/hooks/usePanResponder.js
+@@ -87,7 +87,14 @@ const usePanResponder = ({ initialScale, initialTranslate, onZoom, doubleTapToZo
+             // Handle double tap event by calculating diff between first and second taps timestamps
+             isDoubleTapPerformed = Boolean(lastTapTS && tapTS - lastTapTS < DOUBLE_TAP_DELAY);
+             if (doubleTapToZoomEnabled && isDoubleTapPerformed) {
+-                const isScaled = currentTranslate.x !== initialTranslate.x; // currentScale !== initialScale;
++                // Was: currentTranslate.x !== initialTranslate.x — i.e. it
++                // inferred "already zoomed" from horizontal displacement. A
++                // double-tap near the horizontal centre leaves x unchanged, so
++                // isScaled stayed false and the next double-tap zoomed IN
++                // again instead of out, compounding the translate off
++                // initialTranslate each time until the image left the screen.
++                // Scale is the thing actually being toggled, so test that.
++                const isScaled = currentScale !== initialScale;
+                 const { pageX: touchX, pageY: touchY } = event.nativeEvent.touches[0];
+                 const targetScale = SCALE_MAX;
+                 const nextScale = isScaled ? initialScale : targetScale;
