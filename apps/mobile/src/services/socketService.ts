@@ -303,12 +303,16 @@ const handleSocketEvent = (message: any) => {
     case 'invite.cancelled':
       console.log(`📪 Invite ${type.split('.')[1]}:`, payload.inviteId);
       store.removePendingInvite(payload.inviteId);
+      // An accepted invite adds a membership, which the Groups / Care Circles
+      // tabs need to pick up — they don't derive from `conversations`.
+      store.refreshCommunityGroups();
       break;
 
     case 'member.joined':
       console.log('👤 Member joined:', payload);
       // Refresh conversations to get updated members
       chatService.getConversations().then(convos => store.setConversations(convos));
+      store.refreshCommunityGroups();
       break;
 
     case 'member.left':
@@ -316,6 +320,7 @@ const handleSocketEvent = (message: any) => {
       console.log('👤 Member left/removed:', payload);
       // Refresh conversations to get updated members
       chatService.getConversations().then(convos => store.setConversations(convos));
+      store.refreshCommunityGroups();
       break;
 
     case 'group.settings.updated':

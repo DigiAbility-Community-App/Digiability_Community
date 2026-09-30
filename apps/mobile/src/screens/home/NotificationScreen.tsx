@@ -37,6 +37,8 @@ interface UnifiedNotification {
     iconBg: string;
     /** ID to navigate to: questionId for forum notifs, inviteId for invites */
     relatedId: string | null;
+    /** admin_audit_log entry behind an enforcement notice — drives the Appeal button. */
+    auditLogId: string | null;
     isInvite: boolean;
 }
 
@@ -133,6 +135,7 @@ const NotificationsScreen = () => {
             read: false,
             ...iconForType("INVITE"),
             relatedId: inv.id,
+            auditLogId: null,
             isInvite: true,
         })),
         [pendingInvites]
@@ -156,6 +159,7 @@ const NotificationsScreen = () => {
                     read: n.read,
                     ...iconForType(n.type),
                     relatedId: n.relatedId ?? null,
+                    auditLogId: (n as { auditLogId?: string | null }).auditLogId ?? null,
                     isInvite: false,
                 }))
             );
@@ -242,6 +246,7 @@ const NotificationsScreen = () => {
                 type: item.type,
                 relatedId: item.relatedId,
                 time: item.time,
+                auditLogId: item.auditLogId,
             });
             return;
         }

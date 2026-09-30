@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAdminAuth } from "@/lib/auth";
+import { requireAdminAuth, getAdminSession, getRequestIp } from "@/lib/auth";
 import { dbPool } from "@/lib/db";
 import { writeAudit } from "@/lib/audit";
+import { DEFAULT_IDLE_MINUTES } from "@/lib/session";
 
 async function ensureTable() {
   await dbPool.query(`
@@ -15,23 +16,25 @@ async function ensureTable() {
       require_special BOOLEAN DEFAULT true,
       max_failed_attempts INT DEFAULT 5,
       lockout_duration_mins INT DEFAULT 15,
-      session_timeout_mins INT DEFAULT 30,
+      session_timeout_mins INT DEFAULT 120,
       updated_at TIMESTAMPTZ DEFAULT NOW()
     );
     ALTER TABLE admin_security_settings ADD COLUMN IF NOT EXISTS max_password_len INT DEFAULT 16;
-    ALTER TABLE admin_security_settings ALTER COLUMN session_timeout_mins SET DEFAULT 30;
+    ALTER TABLE admin_security_settings ALTER COLUMN session_timeout_mins SET DEFAULT 120;
   `);
 
-  // Until now `session_timeout_mins` was stored and served but read by nothing,
-  // so the 1440 sitting in existing rows is a dead default rather than a choice
-  // any admin made. Now that it actually controls the idle timeout, a full day
-  // would defeat the point — move only that exact stale value to 30 minutes and
-  // leave any deliberately-chosen value alone.
-  await dbPool.query(`
-    UPDATE admin_security_settings
-    SET session_timeout_mins = 30
-    WHERE id = 'default' AND session_timeout_mins = 1440
-  `);
+  // Neither value below was ever a deliberate choice: 1440 was the dead column
+  // default from when nothing read this setting, and 30 came from the migration
+  // that replaced it. There is still no Settings UI field for the timeout and
+  // the POST handler below doesn't persist this column, so no admin has ever
+  // been able to pick a value — anything matching those two is a stale default,
+  // safe to move up to the current DEFAULT_IDLE_MINUTES (2 hours).
+  await dbPool.query(
+    `UPDATE admin_security_settings
+     SET session_timeout_mins = $1
+     WHERE id = 'default' AND session_timeout_mins IN (1440, 30)`,
+    [DEFAULT_IDLE_MINUTES]
+  );
 }
 
 // ─────────────────────────────────────────────
@@ -73,6 +76,9 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const authError = await requireAdminAuth(request);
   if (authError) return authError;
+  // Actor identity for the audit trail — see lib/audit.ts.
+  const actor = await getAdminSession(request);
+  const ip = getRequestIp(request);
 
   try {
     await ensureTable();
@@ -110,7 +116,7 @@ export async function POST(request: NextRequest) {
       [twoFa, minLen, maxLen, upperCase, numbers, special, maxAttempts, lockout]
     );
 
-    await writeAudit({
+    await writeAudit({ adminEmail: actor?.email, ipAddress: ip,
       action: "update_security_policy",
       reason: `min_len=${minLen}, max_len=${maxLen}, max_attempts=${maxAttempts}, 2fa=${twoFa}`,
     });
@@ -133,7 +139,7 @@ function formatRow(row: any) {
     special: Boolean(row.require_special),
     maxAttempts: String(row.max_failed_attempts ?? 5),
     lockout: String(row.lockout_duration_mins ?? 15),
-    sessionTimeout: String(row.session_timeout_mins ?? 1440),
+    sessionTimeout: String(row.session_timeout_mins ?? DEFAULT_IDLE_MINUTES),
     updatedAt: row.updated_at,
   };
 }

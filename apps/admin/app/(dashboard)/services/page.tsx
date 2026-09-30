@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { WeeklyScheduleEditor } from "@/components/shared/WeeklyScheduleEditor";
 import { ConfirmModal } from "@/components/shared/ConfirmModal";
+import { ModalErrorBanner } from "@/components/shared/ModalErrorBanner";
 import { WeeklySchedule, defaultWeeklySchedule, isValidWeeklySchedule } from "@/lib/availabilitySchedule";
 
 // ─────────────────────────────────────────────
@@ -43,6 +44,18 @@ interface ServiceItem {
 // ─────────────────────────────────────────────
 // MAIN COMPONENT
 // ─────────────────────────────────────────────
+/**
+ * A saved provider image is a base64 data URL, because the upload is done
+ * client-side with FileReader and stored inline — there is no upload endpoint.
+ * The previous `startsWith("http")` guard therefore rejected every image that
+ * had actually been saved, silently falling back to the emoji logo, which is
+ * why an uploaded logo vanished after save while the in-modal preview worked.
+ */
+function isRenderableImage(image?: string | null): image is string {
+  if (!image) return false;
+  return image.startsWith("http") || image.startsWith("data:image/");
+}
+
 export default function ServicesPage() {
   const router = useRouter();
   const [search, setSearch] = useState("");
@@ -425,7 +438,7 @@ export default function ServicesPage() {
                         <tr key={srv.id} className="hover:bg-[#FAFAFA] transition">
                           <td className="px-5 py-4">
                             <div className="flex items-center gap-3">
-                              {srv.image && srv.image.startsWith("http") ? (
+                              {isRenderableImage(srv.image) ? (
                                 <img src={srv.image} alt={srv.name} className="w-10 h-10 rounded-xl object-cover shrink-0 border border-gray-100 shadow-sm" />
                               ) : (
                                 <div className="w-10 h-10 rounded-xl bg-violet-50 flex items-center justify-center shrink-0 text-xl border border-violet-100">
@@ -545,11 +558,6 @@ export default function ServicesPage() {
 
             {/* Form */}
             <form onSubmit={handleSaveService} className="flex-1 overflow-y-auto p-6 space-y-5">
-              {serviceErrorMsg && (
-                <div className="p-3.5 bg-red-50 border border-red-200 text-red-600 rounded-xl text-sm font-semibold">
-                  {serviceErrorMsg}
-                </div>
-              )}
               {serviceSuccessMsg && (
                 <div className="p-3.5 bg-green-50 border border-green-200 text-green-700 rounded-xl text-sm font-semibold flex items-center gap-2">
                   <CheckCircle2 className="w-4 h-4" /> {serviceSuccessMsg}
@@ -785,8 +793,12 @@ export default function ServicesPage() {
                 </div>
               </div>
 
-              {/* Modal Footer */}
-              <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
+              {/* Modal Footer — the error sits with the submit button rather
+                  than at the top of this scrolling form, where it was out of
+                  view for anyone who had scrolled down to press Save. */}
+              <div className="flex flex-col gap-3 pt-4 border-t border-slate-100">
+                <ModalErrorBanner message={serviceErrorMsg} />
+                <div className="flex justify-end gap-3">
                 <button
                   type="button"
                   onClick={() => setIsServiceModalOpen(false)}
@@ -802,6 +814,7 @@ export default function ServicesPage() {
                   {serviceSubmitting && <Loader2 className="w-4 h-4 animate-spin" />}
                   {editingServiceId ? "Save Changes" : "Publish Service"}
                 </button>
+                </div>
               </div>
             </form>
           </div>

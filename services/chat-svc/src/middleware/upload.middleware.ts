@@ -14,6 +14,7 @@
 import multer from "multer";
 import path from "path";
 import fs from "fs";
+import crypto from "crypto";
 import { Request } from "express";
 
 const uploadDir = path.join(__dirname, "../../uploads");
@@ -25,9 +26,19 @@ if (!fs.existsSync(uploadDir)) {
 const storage = multer.diskStorage({
   destination: (_req, _file, cb) => cb(null, uploadDir),
   filename: (_req, file, cb) => {
-    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
+    // crypto.randomUUID, not Date.now() + Math.round(Math.random() * 1e9).
+    //
+    // These files are served from a static, unauthenticated /uploads mount, so
+    // the filename is the only thing standing between a private DM or Care
+    // Circle attachment and anyone who asks for it. The old scheme offered a
+    // predictable timestamp plus ~30 bits from Math.random(), which is neither
+    // cryptographic nor large enough to resist enumeration. This is 122 random
+    // bits from a CSPRNG.
+    //
+    // Unguessable is not the same as access-controlled — see the note on the
+    // static mount in index.ts about the signed-URL work still outstanding.
     const ext = path.extname(file.originalname) || extFromMime(file.mimetype);
-    cb(null, `${file.fieldname}-${uniqueSuffix}${ext}`);
+    cb(null, `${file.fieldname}-${crypto.randomUUID()}${ext}`);
   },
 });
 

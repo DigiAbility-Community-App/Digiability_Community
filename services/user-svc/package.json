@@ -12,6 +12,7 @@
     "db:push": "prisma db push --schema=./prisma/schema.prisma",
     "db:studio": "bash scripts/studio.sh",
     "db:seed-bot": "ts-node prisma/seed-bot.ts",
+    "db:seed-demo": "ts-node prisma/seed-demo.ts",
     "db:seed-admin": "ts-node prisma/seed-admin-user.ts"
   },
   "dependencies": {
@@ -41,6 +42,7 @@
     "@types/node": "^20.14.0",
     "@types/nodemailer": "^6.4.15",
     "prisma": "^5.14.0",
+    "ts-node": "^10.9.2",
     "ts-node-dev": "^2.0.0",
     "typescript": "^5.4.5"
   }

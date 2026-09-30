@@ -2,6 +2,7 @@ import { Router } from "express";
 import { internalAuth } from "../middleware/internal.middleware";
 import {
   removeUserMemberships,
+  removeUserContent,
   adminDeleteConversation,
   adminDeleteMessage,
   adminSuccessionCheck,
@@ -32,6 +33,12 @@ router.delete("/conversations/:conversationId", adminDeleteConversation);
 // Called by the admin moderation panel to remove a reported message with
 // real-time propagation. Body: { conversationId }.
 router.delete("/messages/:messageId", adminDeleteMessage);
+
+// DELETE /api/internal/users/:userId/content
+// Called by user-svc on account deletion to blank the content the user
+// authored (message bodies, report snapshots). Distinct from the membership
+// removal above, which only strips them from conversations.
+router.delete("/users/:userId/content", removeUserContent);
 
 // POST /api/internal/users/:userId/admin-succession-check
 // Called by the admin panel when a user is suspended (non-destructive —

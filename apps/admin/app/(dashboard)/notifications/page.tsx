@@ -15,8 +15,9 @@ const AUDIENCE_OPTIONS = [
   { value: "caregiver", label: "Caregivers",   desc: "Users with Caregiver role" },
   { value: "therapist", label: "Therapists",   desc: "Verified therapists" },
   { value: "ngo",       label: "NGO Workers",  desc: "NGO registered users" },
-  { value: "volunteer", label: "Volunteers",   desc: "Active volunteers" },
-  { value: "student",   label: "Students",     desc: "Student community members" },
+  { value: "volunteer", label: "Volunteers",     desc: "Active volunteers" },
+  // `student` is the DB value behind the app's "Skill Trainer" role.
+  { value: "student",   label: "Skill Trainers", desc: "Users who teach or train PwDs" },
 ];
 
 const TYPE_OPTIONS = [

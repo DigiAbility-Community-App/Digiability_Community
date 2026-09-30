@@ -143,7 +143,49 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
 }
 
 function startHttpServer(): http.Server {
-  const server = http.createServer(async (req, res) => {
+  // ─────────────────────────────────────────────────────────────
+// Internal API auth — mirrors services/chat-svc/src/middleware/internal.middleware.ts
+//
+// Two layers:
+//   1. Shared secret  — x-internal-secret must equal INTERNAL_API_SECRET.
+//   2. Timestamp      — x-internal-ts within ±30s, so a captured valid
+//                       request cannot be replayed later.
+//
+// Fails CLOSED when the secret is unset: an unconfigured service must not be
+// an open one. That is the state this endpoint was previously in permanently.
+// ─────────────────────────────────────────────────────────────
+const TIMESTAMP_TOLERANCE_MS = 30_000;
+
+function checkInternalAuth(
+  req: http.IncomingMessage
+): { status: number; message: string } | null {
+  const secret = process.env.INTERNAL_API_SECRET;
+  if (!secret) {
+    console.error(
+      "[notif-svc] INTERNAL_API_SECRET is not set — refusing /internal/notify. " +
+        "Set it to the same value as chat-svc and user-svc."
+    );
+    return { status: 503, message: "Internal API not configured." };
+  }
+
+  if (req.headers["x-internal-secret"] !== secret) {
+    return { status: 401, message: "Unauthorized." };
+  }
+
+  const tsHeader = req.headers["x-internal-ts"];
+  if (!tsHeader || typeof tsHeader !== "string") {
+    return { status: 400, message: "Missing x-internal-ts header." };
+  }
+
+  const ts = parseInt(tsHeader, 10);
+  if (isNaN(ts) || Math.abs(Date.now() - ts) > TIMESTAMP_TOLERANCE_MS) {
+    return { status: 400, message: "Request timestamp out of range." };
+  }
+
+  return null;
+}
+
+const server = http.createServer(async (req, res) => {
     if (req.method === "GET" && req.url === "/health") {
       // DB: the pg Pool has spare connections, so a probe query is safe.
       const dbOk = await withTimeout(pool.query("SELECT 1"), 2000).then(() => true).catch(() => false);
@@ -161,6 +203,22 @@ function startHttpServer(): http.Server {
     }
 
     if (req.method === "POST" && req.url === "/internal/notify") {
+      // ── Internal auth ────────────────────────────────────────────────
+      // This endpoint had NO authentication of any kind, while taking the
+      // target `userId` straight from the request body — so anyone who could
+      // reach this service could push an arbitrary notification to any user.
+      //
+      // Mirrors chat-svc's internalAuth middleware: shared secret plus a
+      // timestamp window for replay protection. notif-svc runs a raw http
+      // server rather than Express, so the check is inline rather than
+      // middleware, but the contract is identical.
+      const authError = checkInternalAuth(req);
+      if (authError) {
+        res.writeHead(authError.status, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: authError.message }));
+        return;
+      }
+
       let body = "";
       req.on("data", (chunk) => { body += chunk; });
       req.on("end", async () => {

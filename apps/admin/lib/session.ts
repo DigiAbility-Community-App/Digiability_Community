@@ -8,8 +8,15 @@
 // the admin ticked "Remember me", so closing the browser ends the session.
 // ─────────────────────────────────────────────────────────────
 
-/** Idle window used when the Security setting is missing or unreadable. */
-export const DEFAULT_IDLE_MINUTES = 30;
+/**
+ * Idle window used when the Security setting is missing or unreadable.
+ *
+ * 30 minutes was too aggressive in practice — an admin reading through a
+ * moderation queue or writing a long reason field kept getting the "Still
+ * there?" warning mid-task. 2 hours still bounds an unattended session well
+ * inside the 12-hour absolute ceiling below.
+ */
+export const DEFAULT_IDLE_MINUTES = 120;
 
 /** Hard ceiling on one login, regardless of continuous activity. */
 export const ABSOLUTE_SESSION_HOURS = 12;

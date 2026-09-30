@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
+import { ModalErrorBanner } from "@/components/shared/ModalErrorBanner";
 import {
   Clock, Shield, Bell, Pencil,
   UserX, ChevronDown, X, AlertTriangle,
@@ -46,6 +47,10 @@ interface UserDetail {
   speciality: string | null;
   organization: string | null;
   yearsOfExperience: number | null;
+  skillsTaught: string | null;
+  teachingMode: string | null;
+  trainingLocation: string | null;
+  trainingAddress: string | null;
   supportNeeded: string | null;
   forumStats?: { questions: string; answers: string };
 }
@@ -234,7 +239,11 @@ export default function UserDetailPage() {
               { label: "City", value: user.city || "—" },
               { label: "Joined Date", value: user.createdAt },
               { label: "Disability", value: user.disabilityType || "—" },
-              { label: "Last Active", value: user.lastSeen || "—" },
+              // users."lastSeen" is only written on login and on email
+              // verification (user-svc auth.service.ts) — never by ongoing
+              // activity, which lives in Redis and isn't read here. Labelling
+              // it "Last Active" overstated what the value means.
+              { label: "Last Login", value: user.lastSeen || "Never" },
             ].map((item) => (
               <div key={item.label} className="flex items-center justify-between">
                 <span className="text-xs text-[#7D7387]">{item.label}</span>
@@ -368,13 +377,16 @@ function ProfileTab({ user }: { user: UserDetail }) {
   const hasRole = (r: string) => user.roles.includes(r);
 
   /** Role label → friendly display name */
+  // The DB Role enum predates the app's vocabulary: STUDENT is the app's
+  // "Skill Trainer" and VOLUNTEER is its "Volunteer" (swapped by migration
+  // 20260908010000). Label them the way users and admins actually speak.
   const ROLE_LABELS: Record<string, string> = {
     PWD: "Person with Disability (PwD)",
     CAREGIVER: "Caregiver",
     THERAPIST: "Therapist",
     NGO: "NGO Worker",
     VOLUNTEER: "Volunteer",
-    STUDENT: "Student",
+    STUDENT: "Skill Trainer",
     MENTOR: "Mentor",
   };
 
@@ -385,7 +397,7 @@ function ProfileTab({ user }: { user: UserDetail }) {
     if (role === "THERAPIST") return user.speciality ? `Speciality: ${user.speciality}` : "Therapist profile active";
     if (role === "NGO") return user.ngoName ? `${user.ngoName}` : "NGO profile active";
     if (role === "VOLUNTEER") return "Community volunteer";
-    if (role === "STUDENT") return "Student member";
+    if (role === "STUDENT") return user.skillsTaught ? `Skills: ${user.skillsTaught}` : "Skill Trainer profile active";
     if (role === "MENTOR") return "Community mentor";
     return "Active";
   };
@@ -513,6 +525,32 @@ function ProfileTab({ user }: { user: UserDetail }) {
             <InfoItem label="NGO NAME" value={user.ngoName || "—"} />
             <InfoItem label="ROLE IN NGO" value={user.ngoRole || "—"} />
             {user.district && <InfoItem label="OPERATIONAL DISTRICT" value={user.district} />}
+          </div>
+        </section>
+      )}
+
+      {/* ── SKILL TRAINER DETAILS ── */}
+      {/* STUDENT is the DB value behind the app's "Skill Trainer" role. */}
+      {(hasRole("STUDENT") || user.skillsTaught) && (
+        <section>
+          <SectionHeader icon={<Briefcase className="w-3.5 h-3.5" />} title="Skill Trainer Details" />
+          <div className="grid grid-cols-2 gap-x-8 gap-y-5">
+            <InfoItem label="SKILLS TAUGHT" value={user.skillsTaught || "—"} />
+            <InfoItem
+              label="TEACHING MODE"
+              value={
+                user.teachingMode
+                  ? user.teachingMode.charAt(0).toUpperCase() + user.teachingMode.slice(1)
+                  : "—"
+              }
+            />
+            {/* Location and address only apply to in-person training. */}
+            {user.teachingMode !== "online" && (
+              <>
+                <InfoItem label="TRAINING LOCATION" value={user.trainingLocation || "—"} />
+                <InfoItem label="TRAINING ADDRESS" value={user.trainingAddress || "—"} />
+              </>
+            )}
           </div>
         </section>
       )}
@@ -1037,6 +1075,12 @@ function EditUserModal({
   const [ngoRole, setNgoRole] = useState(user.ngoRole || "");
   const [district, setDistrict] = useState(user.district || "");
 
+  // Skill Trainer (DB role STUDENT)
+  const [skillsTaught, setSkillsTaught] = useState(user.skillsTaught || "");
+  const [teachingMode, setTeachingMode] = useState(user.teachingMode || "");
+  const [trainingLocation, setTrainingLocation] = useState(user.trainingLocation || "");
+  const [trainingAddress, setTrainingAddress] = useState(user.trainingAddress || "");
+
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -1074,7 +1118,7 @@ function EditUserModal({
   }, []);
 
   const hasRole = (r: string) => selectedRoles.includes(r);
-  const hasRoleDetails = hasRole("CAREGIVER") || hasRole("THERAPIST") || hasRole("NGO");
+  const hasRoleDetails = hasRole("CAREGIVER") || hasRole("THERAPIST") || hasRole("NGO") || hasRole("STUDENT");
 
   const TABS: TabKey[] = ["Basic Info & Address", "Roles", "Disability", ...(hasRoleDetails ? ["Role Details" as TabKey] : [])];
 
@@ -1097,6 +1141,40 @@ function EditUserModal({
   };
 
   const handleSave = async () => {
+    // Skill Trainer (DB role STUDENT) requires its role fields, matching
+    // user-svc's getMissingRoleFieldMessages. Checked here so the admin sees
+    // the problem inline instead of via a 422 round-trip; the API enforces the
+    // same rules regardless.
+    if (selectedRoles.includes("STUDENT")) {
+      const mode = teachingMode.trim().toLowerCase();
+      if (!skillsTaught.trim()) {
+        setError("Skills taught is required for a Skill Trainer.");
+        return;
+      }
+      if (!mode) {
+        setError("Please select how the Skill Trainer teaches.");
+        return;
+      }
+      if (mode === "physical" || mode === "both") {
+        if (!trainingLocation.trim()) {
+          setError("Training location is required when teaching is Physical or Both.");
+          return;
+        }
+        if (!trainingAddress.trim()) {
+          setError("Address is required when teaching is Physical or Both.");
+          return;
+        }
+        if (!/\p{L}/u.test(trainingAddress)) {
+          setError("Address may not be only numbers or symbols.");
+          return;
+        }
+        if (!/\p{L}/u.test(trainingLocation)) {
+          setError("Training location may not be only numbers or symbols.");
+          return;
+        }
+      }
+    }
+
     setSaving(true);
     setError("");
     try {
@@ -1129,6 +1207,10 @@ function EditUserModal({
           ngoName: ngoName || null,
           ngoRole: ngoRole || null,
           district: district || null,
+          skillsTaught: skillsTaught || null,
+          teachingMode: teachingMode || null,
+          trainingLocation: trainingLocation || null,
+          trainingAddress: trainingAddress || null,
         }),
       });
       const data = await res.json();
@@ -1181,7 +1263,7 @@ function EditUserModal({
                   <input
                     value={fullName}
                     onChange={e => setFullName(e.target.value)}
-                    placeholder="e.g. Prathmesh Sunil Kadam"
+                    placeholder="e.g. John Doe"
                     className="w-full h-12 rounded-xl border border-gray-200 px-4 text-sm outline-none focus:border-[#8A38F5]"
                   />
                 </FormField>
@@ -1191,7 +1273,7 @@ function EditUserModal({
                     <input
                       value={username.replace(/^@/, "")}
                       onChange={e => setUsername(e.target.value)}
-                      placeholder="p7953k"
+                      placeholder="e.g. johndoe"
                       className="w-full h-12 rounded-xl border border-gray-200 pl-8 pr-4 text-sm outline-none focus:border-[#8A38F5]"
                     />
                   </div>
@@ -1217,7 +1299,7 @@ function EditUserModal({
                   <input
                     value={phone}
                     onChange={e => setPhone(e.target.value)}
-                    placeholder="e.g. 9175177953"
+                    placeholder="e.g. 917xxxxxxxx"
                     className="w-full h-12 rounded-xl border border-gray-200 px-4 text-sm outline-none focus:border-[#8A38F5]"
                   />
                 </FormField>
@@ -1257,7 +1339,7 @@ function EditUserModal({
                     <input
                       value={addressLine1}
                       onChange={e => setAddressLine1(e.target.value)}
-                      placeholder="e.g. Namrata Crystal Park"
+                      placeholder="e.g. House No./ Building Name"
                       className="w-full h-12 rounded-xl border border-gray-200 px-4 text-sm outline-none focus:border-[#8A38F5]"
                     />
                   </FormField>
@@ -1265,7 +1347,7 @@ function EditUserModal({
                     <input
                       value={streetArea}
                       onChange={e => setStreetArea(e.target.value)}
-                      placeholder="e.g. Kalewadi"
+                      placeholder="e.g. Street Name / Area"
                       className="w-full h-12 rounded-xl border border-gray-200 px-4 text-sm outline-none focus:border-[#8A38F5]"
                     />
                   </FormField>
@@ -1300,7 +1382,7 @@ function EditUserModal({
                       <input
                         value={pincode}
                         onChange={e => setPincode(e.target.value)}
-                        placeholder="e.g. 411017"
+                        placeholder="e.g. 411011"
                         className="w-full h-12 rounded-xl border border-gray-200 px-4 text-sm outline-none focus:border-[#8A38F5]"
                       />
                     </FormField>
@@ -1318,7 +1400,7 @@ function EditUserModal({
               { key: "THERAPIST", label: "Therapist / Medical Professional", description: "Provides therapy or medical support", color: "bg-green-50 text-green-700 border-green-200" },
               { key: "NGO", label: "NGO Worker", description: "Works with a non-governmental organisation", color: "bg-blue-50 text-blue-700 border-blue-200" },
               { key: "VOLUNTEER", label: "Volunteer", description: "Community volunteer", color: "bg-orange-50 text-orange-700 border-orange-200" },
-              { key: "STUDENT", label: "Student", description: "Student or young adult", color: "bg-pink-50 text-pink-700 border-pink-200" },
+              { key: "STUDENT", label: "Skill Trainer", description: "Teaches or trains PwDs", color: "bg-pink-50 text-pink-700 border-pink-200" },
               { key: "MENTOR", label: "Mentor", description: "Community peer mentor", color: "bg-indigo-50 text-indigo-700 border-indigo-200" },
             ];
             return (
@@ -1537,14 +1619,74 @@ function EditUserModal({
                   </FormField>
                 </div>
               )}
-              {error && <p className="text-xs text-red-500 font-semibold">{error}</p>}
+
+              {/* STUDENT is the DB value behind the app's "Skill Trainer" role. */}
+              {hasRole("STUDENT") && (
+                <div className="bg-[#FAF9FC] p-5 rounded-2xl border border-gray-100 space-y-4">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Briefcase className="w-4 h-4 text-pink-600" />
+                    <h4 className="text-sm font-extrabold text-[#1A1C1C]">Skill Trainer Information</h4>
+                  </div>
+                  <FormField label="Name of skills you teach">
+                    <input
+                      value={skillsTaught}
+                      onChange={e => setSkillsTaught(e.target.value)}
+                      placeholder="e.g. Tailoring, Computer Basics"
+                      className="w-full h-12 rounded-xl border border-gray-200 px-4 text-sm outline-none focus:border-[#8A38F5] bg-white"
+                    />
+                  </FormField>
+                  <FormField label="How do they teach the skill?">
+                    <div className="flex gap-2">
+                      {["physical", "online", "both"].map(mode => (
+                        <button
+                          key={mode}
+                          type="button"
+                          onClick={() => setTeachingMode(mode)}
+                          className={`flex-1 h-12 rounded-xl border text-sm font-semibold capitalize transition ${
+                            teachingMode === mode
+                              ? "bg-[#8A38F5] text-white border-[#8A38F5]"
+                              : "bg-white text-[#4B4355] border-gray-200 hover:bg-gray-50"
+                          }`}
+                        >
+                          {mode}
+                        </button>
+                      ))}
+                    </div>
+                  </FormField>
+                  {/* Location and address only apply to in-person training. */}
+                  {(teachingMode === "physical" || teachingMode === "both") && (
+                    <>
+                      <FormField label="Location where they provide the training">
+                        <input
+                          value={trainingLocation}
+                          onChange={e => setTrainingLocation(e.target.value)}
+                          placeholder="e.g. Andheri, Mumbai"
+                          className="w-full h-12 rounded-xl border border-gray-200 px-4 text-sm outline-none focus:border-[#8A38F5] bg-white"
+                        />
+                      </FormField>
+                      <FormField label="Address">
+                        <input
+                          value={trainingAddress}
+                          onChange={e => setTrainingAddress(e.target.value)}
+                          placeholder="Full address"
+                          className="w-full h-12 rounded-xl border border-gray-200 px-4 text-sm outline-none focus:border-[#8A38F5] bg-white"
+                        />
+                      </FormField>
+                    </>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
         </div>
 
-        {/* FOOTER */}
-        <div className="px-8 py-5 border-t border-gray-100 flex justify-end gap-3">
+        {/* FOOTER — the error was previously rendered inside the "Role Details"
+            tab, so a validation failure raised from any other tab appeared
+            nowhere at all. Here it is always visible, next to Save. */}
+        <div className="px-8 py-5 border-t border-gray-100 flex flex-col gap-3">
+          <ModalErrorBanner message={error} />
+          <div className="flex justify-end gap-3">
           <button onClick={onClose} className="h-11 px-6 rounded-xl border border-gray-200 text-[#4B4355] font-semibold text-sm hover:bg-gray-50 transition">Cancel</button>
           <button
             onClick={handleSave}
@@ -1553,6 +1695,7 @@ function EditUserModal({
           >
             {saving ? "Saving..." : "Save Changes"}
           </button>
+          </div>
         </div>
       </div>
     </div>

@@ -219,12 +219,17 @@ export async function validateEmailVerificationOtp(
     orderBy: { createdAt: "desc" },
   });
 
-  if (!stored) throw new Error("No verification OTP found. Please request a new one.");
-  if (stored.expiresAt < new Date()) throw new Error("OTP has expired. Please request a new one.");
+  // createError, not `new Error`: a bare Error has no statusCode and no
+  // isOperational flag, so errorHandler returns 500 with the generic
+  // "An unexpected error occurred" and the user never sees the instruction
+  // below. That is what made a locked-out OTP look like "the code never came".
+  if (!stored) throw createError("No verification OTP found. Please request a new one.", 400);
+  if (stored.expiresAt < new Date())
+    throw createError("OTP has expired. Please request a new one.", 400);
 
   if (stored.attempts >= EMAIL_OTP_MAX_ATTEMPTS) {
     await prisma.emailVerificationToken.delete({ where: { id: stored.id } });
-    throw new Error("Too many incorrect attempts. Please request a new verification code.");
+    throw createError("Too many incorrect attempts. Please request a new verification code.", 429);
   }
 
   const otpHash = hashToken(rawOtp);
@@ -235,7 +240,7 @@ export async function validateEmailVerificationOtp(
       data: { attempts: { increment: 1 } },
     });
     const remaining = EMAIL_OTP_MAX_ATTEMPTS - stored.attempts - 1;
-    throw new Error(`Invalid OTP. ${remaining} attempt${remaining === 1 ? "" : "s"} remaining.`);
+    throw createError(`Invalid OTP. ${remaining} attempt${remaining === 1 ? "" : "s"} remaining.`, 400);
   }
 
   return stored.userId;

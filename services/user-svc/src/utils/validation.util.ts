@@ -31,6 +31,23 @@ export const RegisterSchema = z.object({
     .optional(),
   role: z.enum(["pwd", "caregiver", "therapist", "ngo", "volunteer", "student", "other"]).optional(),
   roles: z.array(z.enum(["pwd", "caregiver", "therapist", "ngo", "volunteer", "student", "other"])).optional(),
+  // z.literal(true) rather than z.boolean(): a request that omits this field,
+  // or sends false, fails validation outright. The gate is structurally
+  // unskippable rather than a runtime check a caller could bypass.
+  acceptedTerms: z.literal(true, {
+    errorMap: () => ({ message: "You must accept the Terms of Use and Community Guidelines to continue." }),
+  }),
+  // The version of docs/legal the client actually showed the user. Compared
+  // server-side against the current version so an old app build can't record
+  // acceptance of text nobody displayed.
+  policyVersion: z.string({ required_error: "policyVersion is required" }),
+  // Required: Digiability is an 18+ platform (DPDP §9). The eligibility rule
+  // itself lives in age.util and is applied in registerUser — this only
+  // guarantees a parseable date arrives, so the schema and the gate can't
+  // drift apart. Accepts YYYY-MM-DD.
+  dateOfBirth: z
+    .string({ required_error: "Date of birth is required" })
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "Date of birth must be in YYYY-MM-DD format"),
 });
 
 export const LoginSchema = z.object({

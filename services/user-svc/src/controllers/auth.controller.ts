@@ -15,6 +15,7 @@ import {
   searchUsers,
   registerDeviceToken,
   removeDeviceToken,
+  submitDateOfBirth,
 } from "../services/auth.service";
 import { rotateRefreshToken, revokeRefreshToken } from "../services/token.service";
 import {
@@ -58,6 +59,8 @@ export const checkEmailHandler = asyncHandler(async (req: Request, res: Response
 
   const existing = await prisma.user.findUnique({
     where: { email },
+    // deletedAt matters: a soft-deleted account still occupies the unique
+    // email index, so registering it again would fail regardless.
     select: { id: true },
   });
 
@@ -199,7 +202,15 @@ export const deleteAccountHandler = asyncHandler(
   async (req: Request, res: Response) => {
     // req.user is set by authenticate middleware
     const userId = req.user!.sub;
-    const result = await deleteAccount(userId);
+
+    // Re-authentication: a valid access token is no longer sufficient for an
+    // irreversible destructive action.
+    const { password } = req.body as { password?: string };
+    if (!password || typeof password !== "string") {
+      throw createError("Your password is required to delete your account.", 400);
+    }
+
+    const result = await deleteAccount(userId, password);
     clearRefreshTokenCookie(res);
     res.status(200).json({ success: true, message: result.message, data: {} });
   }
@@ -320,3 +331,19 @@ export const checkMaintenanceHandler = asyncHandler(async (_req: Request, res: R
     });
   }
 });
+
+// ── POST /api/auth/date-of-birth ──────────────────────
+// Backfill for accounts predating the age gate (docs/legal/06 §2.4).
+export const submitDateOfBirthHandler = asyncHandler(
+  async (req: Request, res: Response) => {
+    const userId = req.user!.sub;
+    const { dateOfBirth } = req.body as { dateOfBirth?: string };
+
+    if (!dateOfBirth || !/^\d{4}-\d{2}-\d{2}$/.test(dateOfBirth)) {
+      throw createError("Date of birth must be in YYYY-MM-DD format.", 400);
+    }
+
+    const result = await submitDateOfBirth(userId, dateOfBirth);
+    res.status(200).json({ success: true, message: result.message, data: { eligible: result.eligible } });
+  }
+);

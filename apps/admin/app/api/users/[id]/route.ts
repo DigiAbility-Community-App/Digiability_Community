@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { dbPool } from "@/lib/db";
 import crypto from "crypto";
-import { requireAdminAuth } from "@/lib/auth";
+import { requireAdminAuth, getAdminSession, getRequestIp } from "@/lib/auth";
 import { writeAudit } from "@/lib/audit";
+import { formatDate, formatDateTime } from "@/lib/date";
 
 function parseRoles(raw: any): string[] {
   if (!raw) return [];
@@ -54,6 +55,7 @@ export async function GET(
           up."carePersonName", up."careRelation", up."careDob", up."careDisabilityType",
           up."ngoName", up."ngoRole", up.district,
           up.speciality, up.organization, up."yearsOfExperience",
+          up."skillsTaught", up."teachingMode", up."trainingLocation", up."trainingAddress",
           up."supportNeeded",
           u."isSuspended",
           u."suspendedUntil",
@@ -118,14 +120,12 @@ export async function GET(
         status,
         verificationStatus,
         isSuspended: isCurrentlySuspended,
-        createdAt: new Date(row.createdAt).toLocaleDateString("en-GB", {
-          day: "2-digit",
-          month: "short",
-          year: "numeric",
-        }),
-        lastSeen: row.lastSeen
-          ? new Date(row.lastSeen).toLocaleString("en-GB")
-          : null,
+        // "Joined Date" — the account creation timestamp, distinct from
+        // lastSeen below. Both rendered in IST; see lib/date.ts.
+        createdAt: formatDate(row.createdAt),
+        createdAtRaw: row.createdAt,
+        lastSeen: row.lastSeen ? formatDateTime(row.lastSeen) : null,
+        lastSeenRaw: row.lastSeen,
         forumStats: forumStatsResult.rows[0],
       },
     });
@@ -144,6 +144,9 @@ export async function PATCH(
 ) {
   const authError = await requireAdminAuth(request);
   if (authError) return authError;
+  // Actor identity for the audit trail — see lib/audit.ts.
+  const actor = await getAdminSession(request);
+  const ip = getRequestIp(request);
 
   try {
     const { id } = await params;
@@ -212,7 +215,22 @@ export async function PATCH(
         );
       }
 
-      await writeAudit({ userId: realUserId, action: "suspend", reason, message });
+      const suspendAuditId = await writeAudit({ adminEmail: actor?.email, ipAddress: ip, userId: realUserId, action: "suspend", reason, message });
+
+      // Tell the user. Suspending from this screen previously sent no notice
+      // at all — the account simply stopped working — so they had neither an
+      // explanation nor the audit reference an appeal has to point at.
+      await dbPool.query(
+        `INSERT INTO forum_notifications (id, "userId", type, title, message, read, "auditLogId", "createdAt")
+         VALUES (gen_random_uuid()::text, $1, $2, $3, $4, false, $5, NOW())`,
+        [
+          realUserId,
+          "MODERATION_BAN",
+          isPermanent ? "Your account has been suspended" : "Your account has been temporarily suspended",
+          message || reason || "Your account has been suspended for violating our community guidelines.",
+          suspendAuditId,
+        ]
+      );
 
       // Suspension deliberately does NOT remove group memberships (unlike
       // a ban) — the suspended user keeps their seat for when they return.
@@ -246,7 +264,7 @@ export async function PATCH(
         `UPDATE forum_user_stats SET "isSuspended" = false, "suspendedUntil" = NULL WHERE "userId" = $1`,
         [realUserId]
       );
-      await writeAudit({ userId: realUserId, action: "unsuspend" });
+      await writeAudit({ adminEmail: actor?.email, ipAddress: ip, userId: realUserId, action: "unsuspend" });
     } else if (action === "update") {
       const {
         fullName, username, phoneNo, gender, dob,
@@ -256,8 +274,55 @@ export async function PATCH(
         carePersonName, careRelation, careDob, careDisabilityType,
         speciality, organization, yearsOfExperience,
         ngoName, ngoRole, district,
+        skillsTaught, teachingMode, trainingLocation, trainingAddress,
         verificationStatus,
       } = body;
+
+      // Role-specific validation — mirrors getMissingRoleFieldMessages in
+      // services/user-svc/src/routes/profile.routes.ts so an admin edit can't
+      // create a profile the mobile app would reject as incomplete.
+      // Skill Trainer is the DB role `student` (see migration 20260908010000).
+      const rolesForValidation = Array.isArray(roles)
+        ? roles.map((r: string) => String(r).toLowerCase().trim())
+        : null;
+
+      if (rolesForValidation?.includes("student")) {
+        const fieldErrors: { field: string; message: string }[] = [];
+        const mode = teachingMode ? String(teachingMode).trim().toLowerCase() : "";
+
+        if (!skillsTaught || !String(skillsTaught).trim()) {
+          fieldErrors.push({ field: "skillsTaught", message: "Skills taught is required for a Skill Trainer" });
+        }
+        if (!mode) {
+          fieldErrors.push({ field: "teachingMode", message: "Teaching mode is required for a Skill Trainer" });
+        } else if (!["physical", "online", "both"].includes(mode)) {
+          fieldErrors.push({ field: "teachingMode", message: "Teaching mode must be physical, online, or both" });
+        }
+        if (mode === "physical" || mode === "both") {
+          if (!trainingLocation || !String(trainingLocation).trim()) {
+            fieldErrors.push({ field: "trainingLocation", message: "Training location is required for physical or both" });
+          }
+          if (!trainingAddress || !String(trainingAddress).trim()) {
+            fieldErrors.push({ field: "trainingAddress", message: "Address is required for physical or both" });
+          }
+        }
+        // Same \p{L} rule the app and user-svc use — rejects a pure
+        // digits/symbols value like "152562782" in a location field.
+        const PLACE_TEXT = /\p{L}/u;
+        if (trainingLocation && String(trainingLocation).trim() && !PLACE_TEXT.test(String(trainingLocation))) {
+          fieldErrors.push({ field: "trainingLocation", message: "Training location may not be only numbers or symbols" });
+        }
+        if (trainingAddress && String(trainingAddress).trim() && !PLACE_TEXT.test(String(trainingAddress))) {
+          fieldErrors.push({ field: "trainingAddress", message: "Address may not be only numbers or symbols" });
+        }
+
+        if (fieldErrors.length > 0) {
+          return NextResponse.json(
+            { success: false, message: "Validation failed", errors: fieldErrors },
+            { status: 422 }
+          );
+        }
+      }
 
       // 1. Update users table for name and phone
       if (fullName !== undefined && fullName !== null) {
@@ -290,6 +355,14 @@ export async function PATCH(
             [rolesArray, realUserId]
           );
         }
+
+        // A role change grants or revokes capability, so it belongs in the
+        // audit trail every bit as much as a suspension does.
+        await writeAudit({
+          adminEmail: actor?.email, ipAddress: ip,
+          action: "role_change", targetType: "user", targetId: realUserId,
+          message: `roles set to [${rolesArray.join(", ")}]`,
+        });
       }
 
       // 3. Parse dates safely
@@ -320,6 +393,7 @@ export async function PATCH(
            "carePersonName", "careRelation", "careDob", "careDisabilityType",
            speciality, organization, "yearsOfExperience",
            "ngoName", "ngoRole", district,
+           "skillsTaught", "teachingMode", "trainingLocation", "trainingAddress",
            "verificationStatus",
            "updatedAt"
          )
@@ -330,7 +404,8 @@ export async function PATCH(
            $15, $16, $17, $18,
            $19, $20, $21,
            $22, $23, $24,
-           $25,
+           $25, $26, $27, $28,
+           $29,
            NOW()
          )
          ON CONFLICT ("userId") DO UPDATE SET
@@ -356,6 +431,10 @@ export async function PATCH(
            "ngoName"            = EXCLUDED."ngoName",
            "ngoRole"            = EXCLUDED."ngoRole",
            district             = EXCLUDED.district,
+           "skillsTaught"       = EXCLUDED."skillsTaught",
+           "teachingMode"       = EXCLUDED."teachingMode",
+           "trainingLocation"   = EXCLUDED."trainingLocation",
+           "trainingAddress"    = EXCLUDED."trainingAddress",
            "verificationStatus" = COALESCE(EXCLUDED."verificationStatus", user_profiles."verificationStatus"),
            "updatedAt"          = NOW()`,
         [
@@ -383,6 +462,12 @@ export async function PATCH(
           ngoName || null,
           ngoRole || null,
           district || null,
+          skillsTaught || null,
+          // Stored lowercase to match what the mobile app writes ("physical"
+          // | "online" | "both"); validated against that set above.
+          teachingMode ? String(teachingMode).trim().toLowerCase() : null,
+          trainingLocation || null,
+          trainingAddress || null,
           verificationStatus || null,
         ]
       );
@@ -410,6 +495,9 @@ export async function DELETE(
 ) {
   const authError = await requireAdminAuth(request);
   if (authError) return authError;
+  // Actor identity for the audit trail — see lib/audit.ts.
+  const actor = await getAdminSession(request);
+  const ip = getRequestIp(request);
 
   try {
     const { id } = await params;
@@ -443,17 +531,30 @@ export async function DELETE(
       [realUserId]
     );
 
-    // Also clear the profile so no PII remains visible
+    // Also clear the profile so no PII remains visible.
+    // Every role-specific field is scrubbed too, not just the basic ones:
+    // a care recipient's name, an NGO/employer, a therapist's practice and a
+    // Skill Trainer's training address are all personal data (and the care
+    // recipient's name is a *third party's* data), so leaving them behind
+    // defeated the point of the scrub.
     await dbPool.query(
       `UPDATE user_profiles SET
          "fullName" = NULL, username = NULL, city = NULL, state = NULL,
          gender = NULL, dob = NULL, "disabilityType" = NULL, "addressLine1" = NULL,
-         "streetArea" = NULL, pincode = NULL, "locationDistrict" = NULL
+         "streetArea" = NULL, pincode = NULL, "locationDistrict" = NULL,
+         "disabilitySince" = NULL, "supportNeeded" = NULL,
+         "carePersonName" = NULL, "careRelation" = NULL, "careDob" = NULL,
+         "careDisabilityType" = NULL,
+         speciality = NULL, organization = NULL, "yearsOfExperience" = NULL,
+         "ngoName" = NULL, "ngoRole" = NULL, district = NULL,
+         "skillsTaught" = NULL, "teachingMode" = NULL,
+         "trainingLocation" = NULL, "trainingAddress" = NULL,
+         "verificationDoc" = NULL
        WHERE "userId" = $1`,
       [realUserId]
     );
 
-    await writeAudit({ userId: realUserId, action: "delete_user", reason: "admin deletion (soft-delete + PII scrub)" });
+    await writeAudit({ adminEmail: actor?.email, ipAddress: ip, userId: realUserId, action: "delete_user", reason: "admin deletion (soft-delete + PII scrub)" });
 
     // Best-effort: remove the deleted user from every chat group they
     // belonged to, and auto-promote a stand-in admin in any group where

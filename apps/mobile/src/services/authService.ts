@@ -30,6 +30,12 @@ export interface RegisterInput {
   phoneNo?: string;
   role?: string;
   roles?: string[];
+  /** Required — user-svc's RegisterSchema rejects a request without this. */
+  acceptedTerms: true;
+  /** The policy version actually shown to the user; see legal-docs.generated. */
+  policyVersion: string;
+  /** YYYY-MM-DD. Required — Digiability is an 18+ platform (DPDP §9). */
+  dateOfBirth: string;
 }
 
 export interface LoginInput {
@@ -91,13 +97,17 @@ async function persistRefreshToken(headers: Record<string, string | string[]>) {
 
 // ── Role Mapping ───────────────────────────────────────────
 
+// The DB Role enum predates the app's role vocabulary, so three ids differ
+// from what the user sees. Skill Trainer stores as `student` and Volunteer as
+// `volunteer` — these were swapped by migration 20260908010000 so that the
+// "Volunteer" the user picks is literally `volunteer` in the database.
 const ROLE_MAP_TO_BACKEND: Record<string, string> = {
   pwd: 'pwd',
   caregiver: 'caregiver',
   educator: 'therapist',
   ngo_worker: 'ngo',
-  skill_trainer: 'volunteer',
-  community_member: 'student',
+  skill_trainer: 'student',
+  volunteer: 'volunteer',
 };
 
 const ROLE_MAP_TO_FRONTEND: Record<string, string> = {
@@ -105,8 +115,8 @@ const ROLE_MAP_TO_FRONTEND: Record<string, string> = {
   caregiver: 'caregiver',
   therapist: 'educator',
   ngo: 'ngo_worker',
-  volunteer: 'skill_trainer',
-  student: 'community_member',
+  student: 'skill_trainer',
+  volunteer: 'volunteer',
 };
 
 function mapUserToFrontend(user: any): any {
@@ -312,9 +322,29 @@ export async function updateRole(
 
 // ── Delete account (DPDP right to erasure) ─────────────────
 
-export async function deleteAccount(): Promise<void> {
-  await apiClient.delete('/api/auth/delete-account');
+export async function deleteAccount(password: string): Promise<void> {
+  // The server requires re-authentication for this irreversible action, so the
+  // password travels in the request body (axios needs `data` for DELETE).
+  await apiClient.delete('/api/auth/delete-account', { data: { password } });
   // Clear all local state after the server confirms deletion
   clearUserScopedStores();
   await SecureStore.deleteItemAsync(REFRESH_TOKEN_KEY);
+}
+
+/**
+ * Backfill a date of birth for an account created before the age gate.
+ * Returns whether the declared date meets the 18+ requirement; an ineligible
+ * (but plausible) date is recorded and routed to moderation, not rejected.
+ */
+export async function submitDateOfBirth(
+  dateOfBirth: string,
+): Promise<{ eligible: boolean; message: string }> {
+  const response = await apiClient.post<ApiResponse<{ eligible: boolean }>>(
+    '/api/auth/date-of-birth',
+    { dateOfBirth },
+  );
+  return {
+    eligible: response.data.data.eligible,
+    message: response.data.message ?? '',
+  };
 }

@@ -171,8 +171,10 @@ export const chatService = {
     // Drop soft-deleted messages so a refetch matches what happens live.
     // The server keeps the row (blanking content but leaving type as IMAGE /
     // VIDEO) and this mapper used to discard deletedAt entirely — so a
-    // deleted image came back looking like a live image with an empty URI and
-    // rendered as MessageMedia's grey placeholder box.
+    // deleted or unsent image came back looking like a live image with an empty
+    // URI and rendered as MessageMedia's grey placeholder box. Unsending also
+    // removes the message from the store immediately, and it now stays gone on
+    // reload.
     const visibleMessages = rawMessages.filter((m: any) => !m.deletedAt);
     // Map REST response to ChatMessage shape
     return visibleMessages.map((m: any) => {
@@ -391,6 +393,14 @@ export const chatService = {
   getBlockedIds: async (): Promise<string[]> => {
     const res = await apiClient.get(`${CHAT_BASE_URL}/api/moderation/blocked`);
     return res.data.data.blockedIds;
+  },
+
+  /** Blocked users with display names, for the Blocked Users screen. */
+  getBlockedUsers: async (): Promise<
+    Array<{ id: string; name: string; blockedAt: string }>
+  > => {
+    const res = await apiClient.get(`${CHAT_BASE_URL}/api/moderation/blocked`);
+    return res.data.data.blocked ?? [];
   },
 
   reportUser: async (payload: {

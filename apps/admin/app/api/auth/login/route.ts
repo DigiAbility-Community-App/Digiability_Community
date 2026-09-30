@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import fs from "fs";
 import path from "path";
 import bcrypt from "bcryptjs";
@@ -10,8 +10,13 @@ import {
   sessionCookieOptions,
 } from "@/lib/session";
 import { getIdleTimeoutMinutes } from "@/lib/sessionPolicy.server";
+import { checkLoginAllowed, recordLoginAttempt } from "@/lib/loginRateLimit";
+import { getRequestIp } from "@/lib/auth";
+import { writeAudit } from "@/lib/audit";
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
+  const ip = getRequestIp(request);
+
   try {
     const { email, password, rememberMe } = await request.json();
 
@@ -22,23 +27,61 @@ export async function POST(request: Request) {
       );
     }
 
+    // This endpoint previously accepted unlimited guesses. See lib/loginRateLimit.
+    const verdict = await checkLoginAllowed(email, ip);
+    if (!verdict.allowed) {
+      await writeAudit({
+        adminEmail: null,
+        ipAddress: ip,
+        action: "admin_login_blocked",
+        targetType: "admin",
+        targetId: String(email).toLowerCase(),
+        reason: "rate limited",
+      });
+      return NextResponse.json(
+        {
+          success: false,
+          message: `Too many failed attempts. Try again in ${verdict.retryAfterMinutes} minutes.`,
+        },
+        { status: 429 }
+      );
+    }
+
+    // Credentials live in data/credentials.json, which is gitignored.
+    //
+    // This used to fall back to two bcrypt hashes hardcoded right here — so the
+    // admin password hashes were in a tracked source file regardless of whether
+    // the JSON was committed. They have been removed. The store is now seeded
+    // from the environment on first run, or not at all.
     const filePath = path.join(process.cwd(), "data", "credentials.json");
-    
-    // Default hashed credentials if file is empty
-    let credentials: Record<string, string> = {
-      "superadmin@digiability.com": "$2a$10$eBSM.BRyfK1Bw8kfP/UV4.8mGT3iE7aO/B6tODXe.0oW9XBJpLVTq",
-      "prathmesh@digiability.com": "$2a$10$tyCeQlnkWqRD09jA7sjrb.ZKG5/78nzltt4e.eL8oK1dTu8tW36UK"
-    };
+    let credentials: Record<string, string> = {};
 
     if (fs.existsSync(filePath)) {
-      const fileData = fs.readFileSync(filePath, "utf-8");
-      credentials = JSON.parse(fileData);
+      credentials = JSON.parse(fs.readFileSync(filePath, "utf-8"));
     } else {
-      const dirPath = path.dirname(filePath);
-      if (!fs.existsSync(dirPath)) {
-        fs.mkdirSync(dirPath, { recursive: true });
+      const seedEmail = process.env.ADMIN_SEED_EMAIL;
+      const seedPassword = process.env.ADMIN_SEED_PASSWORD;
+
+      if (!seedEmail || !seedPassword) {
+        // Refuse rather than inventing a default account. A predictable
+        // bootstrap credential is how this problem started.
+        console.error(
+          "[admin-login] No credentials store and no ADMIN_SEED_EMAIL/ADMIN_SEED_PASSWORD set. " +
+            "Set both once to create the first admin account, then remove them from the environment."
+        );
+        return NextResponse.json(
+          { success: false, message: "Admin authentication is not configured." },
+          { status: 500 }
+        );
       }
+
+      credentials = {
+        [seedEmail.toLowerCase()]: bcrypt.hashSync(seedPassword, 12),
+      };
+      const dirPath = path.dirname(filePath);
+      if (!fs.existsSync(dirPath)) fs.mkdirSync(dirPath, { recursive: true });
       fs.writeFileSync(filePath, JSON.stringify(credentials, null, 2), "utf-8");
+      console.warn(`[admin-login] Seeded the admin credential store for ${seedEmail}.`);
     }
 
     const hashedPassword = credentials[email.toLowerCase()];
@@ -87,8 +130,28 @@ export async function POST(request: Request) {
       // is why closing the laptop and reopening left the admin still signed in.
       response.cookies.set(SESSION_COOKIE, token, sessionCookieOptions({ isHttps, remember }));
 
+      await recordLoginAttempt(email, ip, true);
+      await writeAudit({
+        adminEmail: email.toLowerCase(),
+        ipAddress: ip,
+        action: "admin_login_success",
+        targetType: "admin",
+        targetId: email.toLowerCase(),
+      });
+
       return response;
     }
+
+    // Counted toward the rate limit, and recorded — admin login success and
+    // failure were previously not logged at all.
+    await recordLoginAttempt(email, ip, false);
+    await writeAudit({
+      adminEmail: null,
+      ipAddress: ip,
+      action: "admin_login_failure",
+      targetType: "admin",
+      targetId: String(email).toLowerCase(),
+    });
 
     return NextResponse.json(
       { success: false, message: "Invalid email or password" },

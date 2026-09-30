@@ -13,9 +13,17 @@ import { getRedis } from "../config/redis";
 //   /register         — 10 per hour
 //   /forgot-password  — 5 per hour    (avoids email flooding)
 //   /reset-password   — 5 per hour
-//   /verify-email     — 10 per hour
-//   /resend-otp       — 5 per hour
+//   /verify-email     — 10 per hour  (per IP)
+//   /resend-otp       — 5 per hour PER EMAIL, plus 20 per hour per IP
 //   Global API        — 200 per min   (all other routes)
+//
+// Note on /resend-otp keying: it is limited by EMAIL, not IP. Indian mobile
+// carriers put large numbers of subscribers behind carrier-grade NAT, so an
+// IP-keyed resend budget is shared between strangers — one person retrying
+// could lock out everyone else on the same carrier egress. The email key makes
+// the budget follow the account it is protecting. A looser IP limit still runs
+// alongside it so the endpoint cannot be used as a mail cannon across many
+// addresses.
 // ─────────────────────────────────────────────────────
 
 function makeStore(prefix: string) {
@@ -26,6 +34,18 @@ function makeStore(prefix: string) {
     sendCommand: ((...args: string[]) => (client as any).call(...args)) as any,
     prefix: `rl:${prefix}:`,
   });
+}
+
+/**
+ * Key by the email in the request body, falling back to IP when absent.
+ *
+ * Runs before `validate()`, so the body is parsed but not yet validated —
+ * hence the defensive normalisation here.
+ */
+function makeEmailKey(req: Express.Request): string {
+  const body = (req as any).body;
+  const email = typeof body?.email === "string" ? body.email.trim().toLowerCase() : "";
+  return email.length > 0 ? `email:${email}` : `ip:${makeIpKey(req)}`;
 }
 
 function makeIpKey(req: Express.Request): string {
@@ -83,14 +103,58 @@ export const passwordResetLimiter = rateLimit({
   message: { success: false, message: "Too many password reset requests. Please try again in an hour." },
 });
 
-export const otpLimiter = rateLimit({
+/**
+ * Verification attempts. Keyed by IP: submitting codes is a guessing attack, and
+ * the thing being protected is the OTP itself rather than a person's inbox.
+ *
+ * This used to be a single `otpLimiter` shared with /resend-otp, so ten mistyped
+ * codes consumed the entire resend budget too — the user then could not request
+ * a working code, which reads as "the OTP never arrived".
+ */
+export const verifyOtpLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
   max: 10,
   keyGenerator: makeIpKey,
-  store: makeStore("otp"),
+  store: makeStore("otp-verify"),
   standardHeaders: "draft-7",
   legacyHeaders: false,
-  message: { success: false, message: "Too many OTP requests. Please try again in an hour." },
+  message: {
+    success: false,
+    message: "Too many verification attempts. Please request a new code in an hour.",
+  },
+});
+
+/**
+ * Resends, keyed by EMAIL — the budget belongs to the inbox being protected,
+ * not to whatever IP the request happened to arrive from.
+ */
+export const resendOtpLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 5,
+  keyGenerator: makeEmailKey,
+  store: makeStore("otp-resend-email"),
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  message: {
+    success: false,
+    message:
+      "You've requested several codes for this address. Please try again in an hour, or contact support.",
+  },
+});
+
+/**
+ * Anti-abuse companion to the above: stops one host cycling through many
+ * addresses to use us as a mail cannon. Deliberately generous, because a shared
+ * carrier NAT can legitimately produce a lot of signups.
+ */
+export const resendOtpIpLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 20,
+  keyGenerator: makeIpKey,
+  store: makeStore("otp-resend-ip"),
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  message: { success: false, message: "Too many requests from this network. Please try again later." },
 });
 
 export const globalApiLimiter = rateLimit({

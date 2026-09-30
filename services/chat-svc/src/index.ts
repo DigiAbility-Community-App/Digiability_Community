@@ -100,7 +100,31 @@ app.use("/api/media", mediaRoutes);
 app.use("/api/moderation", moderationRoutes);
 
 // Serve uploaded chat attachments (images + voice notes).
-app.use("/uploads", express.static(path.join(__dirname, "../uploads")));
+// Chat attachments (images, voice notes).
+//
+// ⚠️ This mount is UNAUTHENTICATED. Filenames are now 122-bit random UUIDs, so
+// they cannot realistically be enumerated, but an unguessable URL is a weaker
+// control than a membership check: anyone who obtains the link — a forward, a
+// referrer header, a shoulder-surf — can fetch a private attachment forever.
+//
+// The proper fix is short-lived signed URLs minted per view after a membership
+// check. That needs the message to store the filename rather than a baked URL,
+// which touches message rendering on both clients, so it is deliberately NOT
+// bundled into this security pass.
+app.use(
+  "/uploads",
+  express.static(path.join(__dirname, "../uploads"), {
+    index: false,           // no directory listings
+    dotfiles: "deny",       // never serve dotfiles even if one lands here
+    setHeaders: (res) => {
+      // Stop a crafted upload being rendered as an HTML/script document.
+      res.setHeader("X-Content-Type-Options", "nosniff");
+      res.setHeader("Content-Security-Policy", "default-src 'none'; sandbox");
+      // Private attachments must not be cached by shared proxies.
+      res.setHeader("Cache-Control", "private, max-age=3600");
+    },
+  })
+);
 
 // 404 + Error Handlers
 app.use(notFoundHandler);

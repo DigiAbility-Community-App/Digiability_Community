@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { dbPool } from "@/lib/db";
-import { requireAdminAuth } from "@/lib/auth";
+import { requireAdminAuth, getAdminSession, getRequestIp } from "@/lib/auth";
 import { writeAudit } from "@/lib/audit";
 
 // Suspension is stored in its own columns on chat.conversations
@@ -50,6 +50,9 @@ export async function POST(
 ) {
   const authError = await requireAdminAuth(req);
   if (authError) return authError;
+  // Actor identity for the audit trail — see lib/audit.ts.
+  const actor = await getAdminSession(req);
+  const ip = getRequestIp(req);
 
   try {
     const { id } = await params;
@@ -90,7 +93,7 @@ export async function POST(
         [id]
       );
 
-      await writeAudit({
+      await writeAudit({ adminEmail: actor?.email, ipAddress: ip,
         action: "unsuspend_group",
         reason: `Reactivated group "${groupName}" (ID: ${id})`,
       });
@@ -122,7 +125,7 @@ export async function POST(
       ? `${period} (until ${suspendedUntil.toISOString()})`
       : "Indefinite";
 
-    await writeAudit({
+    await writeAudit({ adminEmail: actor?.email, ipAddress: ip,
       action: "suspend_group",
       reason: `Group "${groupName}" (ID: ${id}) - Suspended for ${periodLabel} due to: ${resolvedReason}${resolvedNote ? ` (Note: ${resolvedNote})` : ""}`,
     });

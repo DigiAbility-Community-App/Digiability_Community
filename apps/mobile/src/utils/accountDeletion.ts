@@ -1,21 +1,26 @@
 import { Alert } from 'react-native';
-import { deleteAccount } from '@services/authService';
 
 interface ConfirmDeleteAccountOptions {
-  onStart: () => void;
-  onError: (message: string) => void;
+  /** Called once the user has passed both warnings — open the password modal. */
+  onConfirmed: () => void;
 }
 
 /**
- * Two-step destructive confirm for account deletion, shared by every
- * screen that offers it. `deleteAccount()` doesn't hard-delete the row —
- * it anonymises it and sets a deletion flag — so the copy here describes
- * that, rather than promising the record is wiped from our systems.
+ * Two-step destructive confirm for account deletion, shared by every screen
+ * that offers it.
+ *
+ * This no longer performs the deletion itself. The server requires the user's
+ * password for this irreversible action, and Alert.prompt is iOS-only, so the
+ * final step is a DeleteAccountModal the caller renders.
+ *
+ * Deletion anonymises the account immediately rather than dropping the row, and
+ * a minimal registration record is retained for 180 days as Indian intermediary
+ * rules require — the copy below says so rather than promising a full wipe.
  */
-export function confirmDeleteAccount({ onStart, onError }: ConfirmDeleteAccountOptions): void {
+export function confirmDeleteAccount({ onConfirmed }: ConfirmDeleteAccountOptions): void {
   Alert.alert(
     'Delete Account',
-    'This deactivates your account immediately and anonymises your profile, preferences, messages, and forum posts. Your account will no longer be usable or visible to others. Some records are retained in our systems, marked as deleted, as required by law — they are not shared or used after this point.',
+    'This deactivates your account immediately and erases your profile, preferences, messages, and personal details. Your forum posts remain but are shown as written by "Deleted User", so conversations others took part in stay readable.',
     [
       { text: 'Cancel', style: 'cancel' },
       {
@@ -24,20 +29,13 @@ export function confirmDeleteAccount({ onStart, onError }: ConfirmDeleteAccountO
         onPress: () =>
           Alert.alert(
             'Are you absolutely sure?',
-            'This cannot be undone from within the app. Your name, email, and profile details will be replaced with anonymised placeholders right away.',
+            'This cannot be undone. A minimal registration record is kept for 180 days because Indian law requires it, and is then destroyed.',
             [
               { text: 'No, keep my account', style: 'cancel' },
               {
-                text: 'Yes, delete my account',
+                text: 'Yes, continue',
                 style: 'destructive',
-                onPress: async () => {
-                  onStart();
-                  try {
-                    await deleteAccount();
-                  } catch {
-                    onError('Could not delete account. Please try again.');
-                  }
-                },
+                onPress: onConfirmed,
               },
             ],
           ),

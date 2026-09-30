@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { dbPool } from "@/lib/db";
 import { requireAdminAuth } from "@/lib/auth";
+import { formatDate } from "@/lib/date";
 
 // Helper to parse custom Postgres enum array string formats like "{pwd,caregiver}"
 function parsePostgresArray(val: any): string[] {
@@ -51,12 +52,8 @@ export async function GET(request: NextRequest) {
       const rawRoles = parsePostgresArray(row.roles);
       const roles = rawRoles.map((r: string) => r.toUpperCase());
 
-      const joinedDate = new Date(row.joined);
-      const formattedJoined = joinedDate.toLocaleDateString("en-GB", {
-        day: "2-digit",
-        month: "short",
-        year: "numeric",
-      });
+      // Account creation date (users."createdAt"), rendered in IST — see lib/date.ts.
+      const formattedJoined = formatDate(row.joined);
 
       // Determine status — suspended takes priority; an account that never
       // verified its OTP is "Pending Verification", distinct from

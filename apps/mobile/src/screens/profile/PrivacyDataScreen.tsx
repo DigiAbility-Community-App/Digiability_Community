@@ -8,6 +8,7 @@ import { AccessibleButton } from "../../components/shared/AccessibleButton";
 import ScreenWrapper from "../../components/layout/ScreenWrapper";
 import AppHeader from "../../components/layout/AppHeader";
 import { confirmDeleteAccount } from "../../utils/accountDeletion";
+import { DeleteAccountModal } from "../../components/account/DeleteAccountModal";
 import {
     ConsentRecord,
     ConsentType,
@@ -36,7 +37,7 @@ export default function PrivacyDataScreen() {
     const [consents, setConsents] = useState<ConsentRecord[]>([]);
     const [consentBusy, setConsentBusy] = useState<Partial<Record<ConsentType, boolean>>>({});
     const [exporting, setExporting] = useState(false);
-    const [deletingAccount, setDeletingAccount] = useState(false);
+    const [showDeleteModal, setShowDeleteModal] = useState(false);
 
     const cardBorder = highContrast
         ? { borderWidth: 2, borderColor: "#000000" }
@@ -102,13 +103,9 @@ export default function PrivacyDataScreen() {
     };
 
     const handleDeleteAccount = () => {
-        confirmDeleteAccount({
-            onStart: () => setDeletingAccount(true),
-            onError: (message) => {
-                setDeletingAccount(false);
-                Alert.alert("Error", message);
-            },
-        });
+        // Two warnings first, then the password modal — the server requires
+        // re-authentication for this irreversible action.
+        confirmDeleteAccount({ onConfirmed: () => setShowDeleteModal(true) });
     };
 
     return (
@@ -196,21 +193,26 @@ export default function PrivacyDataScreen() {
 
                 <View style={[styles.card, { backgroundColor: colors.card }, cardBorder]}>
                     <AccessibleText variant="body" style={{ color: colors.subtext, marginBottom: 12 }}>
-                        Deleting your account deactivates it immediately and anonymises your profile,
-                        preferences, messages, and forum posts. Some records are retained, marked as
-                        deleted, as required by law.
+                        Deleting your account erases your profile, preferences, personal details and
+                        message content immediately. Your forum posts remain but are shown as written
+                        by "Deleted User". A minimal registration record is kept for 180 days because
+                        Indian law requires it, and is then destroyed.
                     </AccessibleText>
                     <AccessibleButton
                         variant="danger"
                         accessibilityLabel="Delete my account"
                         accessibilityHint="Deactivates and anonymises your account and personal data"
-                        disabled={deletingAccount}
                         onPress={handleDeleteAccount}
                     >
-                        {deletingAccount ? "Deleting account…" : "Delete my account"}
+                        Delete my account
                     </AccessibleButton>
                 </View>
             </ScrollView>
+
+            <DeleteAccountModal
+                visible={showDeleteModal}
+                onClose={() => setShowDeleteModal(false)}
+            />
         </ScreenWrapper>
     );
 }

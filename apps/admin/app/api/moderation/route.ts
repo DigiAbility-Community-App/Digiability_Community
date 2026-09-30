@@ -1,7 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAdminAuth } from "@/lib/auth";
+import { requireAdminAuth, getAdminSession, getRequestIp } from "@/lib/auth";
 import { dbPool } from "@/lib/db";
 import { writeAudit } from "@/lib/audit";
+import { logMessageAccess } from "@/lib/messageAccess";
+import {
+  preserveRemovedContent,
+  readMessageForPreservation,
+  readQuestionForPreservation,
+  readAnswerForPreservation,
+} from "@/lib/preserveRemovedContent";
 import crypto from "crypto";
 
 // Allowlist mapping from the UI's ban durations to safe SQL intervals.
@@ -107,12 +114,16 @@ async function notifyUser(
   type: string,
   title: string,
   message: string,
-  relatedId?: string | null
+  relatedId?: string | null,
+  // The admin_audit_log entry that produced this notice. Carried so the user
+  // can appeal the specific decision, and so the appeal can be routed away
+  // from the admin who made it.
+  auditLogId?: string | null
 ) {
   await dbPool.query(
-    `INSERT INTO forum_notifications (id, "userId", type, title, message, read, "relatedId", "createdAt")
-     VALUES (gen_random_uuid()::text, $1, $2, $3, $4, false, $5, NOW())`,
-    [userId, type, title, message, relatedId ?? null]
+    `INSERT INTO forum_notifications (id, "userId", type, title, message, read, "relatedId", "auditLogId", "createdAt")
+     VALUES (gen_random_uuid()::text, $1, $2, $3, $4, false, $5, $6, NOW())`,
+    [userId, type, title, message, relatedId ?? null, auditLogId ?? null]
   );
 }
 
@@ -151,7 +162,32 @@ function buildModerationMessage(
 // taking effect on their next fetch. Falls back to a direct DB soft-delete
 // if chat-svc/the internal secret aren't configured, mirroring the identical
 // pattern already used for admin group deletion (groups/[id]/route.ts).
-async function deleteMessage(messageId: string, conversationId?: string | null) {
+async function deleteMessage(
+  messageId: string,
+  conversationId?: string | null,
+  // Preservation context (IT Rules 3(1)(d)). Optional so existing callers keep
+  // working, but every moderation call site passes it.
+  preservation?: { removedBy: string | null | undefined; reason?: string | null; sourceReportId?: string | null }
+) {
+  // Snapshot FIRST. Both removal paths below destroy the body — chat-svc's
+  // internal delete and the direct SQL fallback — so this has to happen before
+  // either runs, not inside one of them.
+  if (preservation) {
+    const original = await readMessageForPreservation(messageId);
+    if (original) {
+      await preserveRemovedContent({
+        contentType: "CHAT_MESSAGE",
+        contentId: messageId,
+        contentSnapshot: original.content,
+        authorId: original.senderId,
+        conversationId: original.conversationId,
+        removedBy: preservation.removedBy,
+        reason: preservation.reason,
+        sourceReportId: preservation.sourceReportId,
+      });
+    }
+  }
+
   const chatSvcUrl = process.env.CHAT_SVC_URL;
   const internalSecret = process.env.INTERNAL_API_SECRET;
 
@@ -246,6 +282,10 @@ async function fetchBlockedStats(): Promise<{ chat: number; forum: number; total
 export async function GET(request: NextRequest) {
   const authError = await requireAdminAuth(request);
   if (authError) return authError;
+  // Needed because this panel renders reported message content — see the
+  // logMessageAccess call below.
+  const actor = await getAdminSession(request);
+  const ip = getRequestIp(request);
 
   try {
     await ensureTables();
@@ -451,6 +491,22 @@ export async function GET(request: NextRequest) {
     // formatResolvedAt in moderation/page.tsx).
     const history = historyResult.rows;
 
+    // Reported chat messages carry a content snapshot, so rendering this panel
+    // exposes private message content. Terms §7: every such access is logged.
+    const exposedMessageIds = allReports
+      .filter((r: any) => r.source === "chat" && r.messageId)
+      .map((r: any) => r.messageId as string);
+    if (exposedMessageIds.length > 0) {
+      await logMessageAccess({
+        adminEmail: actor?.email,
+        ipAddress: ip,
+        accessType: "queue_listing",
+        conversationId: null,
+        messageIds: exposedMessageIds,
+        justification: "Moderation panel listing",
+      });
+    }
+
     return NextResponse.json({
       success: true,
       reports: allReports,
@@ -475,6 +531,9 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const authError = await requireAdminAuth(request);
   if (authError) return authError;
+  // Actor identity for the audit trail — see lib/audit.ts.
+  const actor = await getAdminSession(request);
+  const ip = getRequestIp(request);
 
   try {
     await ensureTables();
@@ -514,7 +573,7 @@ export async function POST(request: NextRequest) {
         actionTaken: "APPROVED",
         adminNotes: message || "No violation found. Content approved.",
       });
-      await writeAudit({ action: "report_dismiss", reason: `forum report ${reportId}` });
+      await writeAudit({ adminEmail: actor?.email, ipAddress: ip, action: "report_dismiss", reason: `forum report ${reportId}` });
     } else if (action === "dismiss_chat" || action === "approve_chat") {
       if (reportId) {
         await dbPool.query(`UPDATE chat.reports SET status = 'DISMISSED' WHERE id = $1`, [reportId]);
@@ -531,9 +590,22 @@ export async function POST(request: NextRequest) {
         actionTaken: "APPROVED",
         adminNotes: message || "Chat message dismissed. No violation.",
       });
-      await writeAudit({ action: "report_dismiss", reason: `chat report ${reportId}` });
+      await writeAudit({ adminEmail: actor?.email, ipAddress: ip, action: "report_dismiss", reason: `chat report ${reportId}` });
     } else if (action === "delete_post" && (questionId || answerId || messageId)) {
       if (questionId) {
+        // Snapshot before the soft-delete (IT Rules 3(1)(d)).
+        const original = await readQuestionForPreservation(questionId);
+        if (original) {
+          await preserveRemovedContent({
+            contentType: "FORUM_QUESTION",
+            contentId: questionId,
+            contentSnapshot: original.content,
+            authorId: original.authorId,
+            removedBy: actor?.email,
+            reason: reason || category || null,
+            sourceReportId: reportId ?? null,
+          });
+        }
         await dbPool.query(
           `UPDATE forum_questions SET "deletedAt" = NOW() WHERE id = $1`,
           [questionId]
@@ -551,7 +623,7 @@ export async function POST(request: NextRequest) {
           actionTaken: "CONTENT_REMOVED",
           adminNotes: message || "Question permanently removed from forum.",
         });
-        await writeAudit({ action: "delete_post", reason: `question ${questionId}` });
+        await writeAudit({ adminEmail: actor?.email, ipAddress: ip, action: "delete_post", reason: `question ${questionId}` });
         if (userId && notifyAuthor !== false) {
           await notifyUser(
             userId,
@@ -562,6 +634,19 @@ export async function POST(request: NextRequest) {
         }
       }
       if (answerId) {
+        // Snapshot before the soft-delete (IT Rules 3(1)(d)).
+        const originalAnswer = await readAnswerForPreservation(answerId);
+        if (originalAnswer) {
+          await preserveRemovedContent({
+            contentType: "FORUM_ANSWER",
+            contentId: answerId,
+            contentSnapshot: originalAnswer.content,
+            authorId: originalAnswer.authorId,
+            removedBy: actor?.email,
+            reason: reason || category || null,
+            sourceReportId: reportId ?? null,
+          });
+        }
         await dbPool.query(
           `UPDATE forum_answers SET "deletedAt" = NOW() WHERE id = $1`,
           [answerId]
@@ -579,7 +664,7 @@ export async function POST(request: NextRequest) {
           actionTaken: "CONTENT_REMOVED",
           adminNotes: message || "Answer permanently removed from forum.",
         });
-        await writeAudit({ action: "delete_post", reason: `answer ${answerId}` });
+        await writeAudit({ adminEmail: actor?.email, ipAddress: ip, action: "delete_post", reason: `answer ${answerId}` });
         if (userId && notifyAuthor !== false) {
           await notifyUser(
             userId,
@@ -590,7 +675,11 @@ export async function POST(request: NextRequest) {
         }
       }
       if (messageId) {
-        await deleteMessage(messageId, conversationId);
+        await deleteMessage(messageId, conversationId, {
+          removedBy: actor?.email,
+          reason: reason || category || null,
+          sourceReportId: reportId ?? null,
+        });
         if (reportId) {
           await dbPool.query(`UPDATE chat.reports SET status = 'ACTIONED' WHERE id = $1`, [reportId]);
         }
@@ -606,7 +695,7 @@ export async function POST(request: NextRequest) {
           actionTaken: "CONTENT_REMOVED",
           adminNotes: message || "Message permanently purged from group/chat conversation.",
         });
-        await writeAudit({ action: "delete_post", reason: `chat message ${messageId}` });
+        await writeAudit({ adminEmail: actor?.email, ipAddress: ip, action: "delete_post", reason: `chat message ${messageId}` });
         if (userId && notifyAuthor !== false) {
           const groupName = await getConversationName(conversationId);
           await notifyUser(
@@ -637,7 +726,7 @@ export async function POST(request: NextRequest) {
         actionTaken: "UNSUSPENDED",
         adminNotes: "Account suspension lifted.",
       });
-      await writeAudit({ userId, action: "unsuspend" });
+      await writeAudit({ adminEmail: actor?.email, ipAddress: ip, userId, action: "unsuspend" });
     } else if (action === "warn" && userId) {
       // Notify the offending user; optionally trigger a 7-day suspension.
       const title = `Warning: ${category || "Community Guidelines"}`;
@@ -647,7 +736,12 @@ export async function POST(request: NextRequest) {
       if (warnGroupName) warnParts.push(`Group: ${warnGroupName}`);
       if (contentPreview) warnParts.push(`Flagged content: "${contentPreview}"`);
       const warnMessage = warnParts.join("\n\n");
-      await notifyUser(userId, "MODERATION_WARNING", title, warnMessage, conversationId);
+      // The audit row is written below (one write, not two) and its id is
+      // threaded into the notice so the user can appeal this exact decision.
+      const warnAuditId = await writeAudit({
+        adminEmail: actor?.email, ipAddress: ip, userId, action: "warn", reason: category, message,
+      });
+      await notifyUser(userId, "MODERATION_WARNING", title, warnMessage, conversationId, warnAuditId);
       if (body.triggerSuspend) {
         await suspendUser(userId, "7 days", warnMessage);
       }
@@ -669,7 +763,6 @@ export async function POST(request: NextRequest) {
         actionTaken: body.triggerSuspend ? "USER_WARNED_AND_SUSPENDED" : "USER_WARNED",
         adminNotes: warnMessage,
       });
-      await writeAudit({ userId, action: "warn", reason: category, message });
     } else if (action === "ban" && userId) {
       // Suspend the offending user (permanent unless a duration is given).
       // The user-facing message is always built from the ban reason +
@@ -685,7 +778,10 @@ export async function POST(request: NextRequest) {
         banGroupName
       );
       await suspendUser(userId, interval, banMessage);
-      await notifyUser(userId, "MODERATION_BAN", "Your account has been suspended", banMessage, conversationId);
+      const banAuditId = await writeAudit({
+        adminEmail: actor?.email, ipAddress: ip, userId, action: "ban", reason, message: internalNotes,
+      });
+      await notifyUser(userId, "MODERATION_BAN", "Your account has been suspended", banMessage, conversationId, banAuditId);
       if (reportId) {
         await dbPool.query(`DELETE FROM forum_reports WHERE id = $1`, [reportId]);
         try {
@@ -704,7 +800,6 @@ export async function POST(request: NextRequest) {
         actionTaken: interval ? `USER_SUSPENDED_${duration?.replace(/\s+/g, "_").toUpperCase()}` : "USER_PERMANENTLY_BANNED",
         adminNotes: internalNotes || banMessage,
       });
-      await writeAudit({ userId, action: "ban", reason, message: internalNotes });
     } else {
       return NextResponse.json(
         { success: false, message: "Invalid or incomplete moderation action" },

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { dbPool } from "@/lib/db";
-import { requireAdminAuth } from "@/lib/auth";
+import { requireAdminAuth, getAdminSession, getRequestIp } from "@/lib/auth";
 import { writeAudit } from "@/lib/audit";
 import { sendBroadcastPush } from "@/lib/push";
 
@@ -26,6 +26,9 @@ export async function POST(
 ) {
   const authError = await requireAdminAuth(req);
   if (authError) return authError;
+  // Actor identity for the audit trail — see lib/audit.ts.
+  const actor = await getAdminSession(req);
+  const ip = getRequestIp(req);
 
   try {
     await ensureNotificationLogsTable();
@@ -196,7 +199,7 @@ export async function POST(
     `, [notifTitle, notifBody, notifType, audienceLabel, targetUserIds.length]);
 
     // 10. Audit log
-    await writeAudit({
+    await writeAudit({ adminEmail: actor?.email, ipAddress: ip,
       action: "send_group_message",
       reason: `Broadcasted "${trimmedSubject}" (${messageType || 'General Update'}) to ${targetUserIds.length} members in "${groupName}" (Audience: ${sendToArr.join(', ')})`,
     });

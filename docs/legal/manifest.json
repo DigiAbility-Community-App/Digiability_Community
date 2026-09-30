@@ -1,0 +1,51 @@
+{
+  "_comment": "Single source of truth for the published legal document set. scripts/sync-legal-docs.js generates the app-side modules from this. Do not hand-edit the generated files.",
+
+  "policyVersion": "2026-09-06",
+  "_policyVersionNote": "Must equal the Effective date printed in the documents. Bumping this forces every user to re-accept the Terms and Community Guidelines on next launch, so change it only when the documents materially change. Set it to the real effective date when legal counsel signs off and the [DATE] placeholders are filled.",
+
+  "documents": [
+    {
+      "id": "privacy-policy",
+      "file": "01-privacy-policy.md",
+      "title": "Privacy Policy",
+      "slug": "privacy-policy",
+      "requiresAcceptance": false
+    },
+    {
+      "id": "community-guidelines",
+      "file": "02-community-guidelines.md",
+      "title": "Community Guidelines",
+      "slug": "community-guidelines",
+      "requiresAcceptance": true
+    },
+    {
+      "id": "terms-of-use",
+      "file": "03-terms-of-use.md",
+      "title": "Terms of Use",
+      "slug": "terms",
+      "requiresAcceptance": true
+    },
+    {
+      "id": "child-safety-standards",
+      "file": "04-child-safety-standards.md",
+      "title": "Child Safety Standards",
+      "slug": "child-safety",
+      "requiresAcceptance": false
+    },
+    {
+      "id": "account-deletion-and-retention",
+      "file": "05-account-deletion-and-retention.md",
+      "title": "Account Deletion and Retention",
+      "slug": "account-deletion-policy",
+      "requiresAcceptance": false
+    },
+    {
+      "id": "age-policy",
+      "file": "06-age-policy-and-gate-spec.md",
+      "title": "Age Policy",
+      "slug": "age-policy",
+      "requiresAcceptance": false
+    }
+  ]
+}

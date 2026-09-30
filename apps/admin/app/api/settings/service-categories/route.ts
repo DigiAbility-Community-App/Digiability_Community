@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAdminAuth } from "@/lib/auth";
+import { requireAdminAuth, getAdminSession, getRequestIp } from "@/lib/auth";
 import { dbPool } from "@/lib/db";
 import { writeAudit } from "@/lib/audit";
 import { generateCategoryId } from "@/lib/categoryId";
@@ -27,6 +27,9 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const authError = await requireAdminAuth(request);
   if (authError) return authError;
+  // Actor identity for the audit trail — see lib/audit.ts.
+  const actor = await getAdminSession(request);
+  const ip = getRequestIp(request);
 
   try {
     await ensureTable();
@@ -86,7 +89,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    await writeAudit({
+    await writeAudit({ adminEmail: actor?.email, ipAddress: ip,
       action: "create_service_category",
       reason: `Added service category "${name}"`,
     });
@@ -107,6 +110,9 @@ export async function POST(request: NextRequest) {
 export async function PATCH(request: NextRequest) {
   const authError = await requireAdminAuth(request);
   if (authError) return authError;
+  // Actor identity for the audit trail — see lib/audit.ts.
+  const actor = await getAdminSession(request);
+  const ip = getRequestIp(request);
 
   try {
     await ensureTable();
@@ -133,7 +139,7 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ success: false, message: "Category not found" }, { status: 404 });
     }
 
-    await writeAudit({
+    await writeAudit({ adminEmail: actor?.email, ipAddress: ip,
       action: "update_service_category",
       reason: `Updated service category "${result.rows[0].name}" (${status ? `status=${status}` : `name=${name}`})`,
     });
@@ -154,6 +160,9 @@ export async function PATCH(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
   const authError = await requireAdminAuth(request);
   if (authError) return authError;
+  // Actor identity for the audit trail — see lib/audit.ts.
+  const actor = await getAdminSession(request);
+  const ip = getRequestIp(request);
 
   try {
     await ensureTable();
@@ -193,7 +202,7 @@ export async function DELETE(request: NextRequest) {
 
     await dbPool.query(`DELETE FROM service_categories WHERE id = $1`, [id]);
 
-    await writeAudit({
+    await writeAudit({ adminEmail: actor?.email, ipAddress: ip,
       action: "delete_service_category",
       reason: `Deleted service category "${catName}"`,
     });

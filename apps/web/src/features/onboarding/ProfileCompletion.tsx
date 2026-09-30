@@ -44,14 +44,23 @@ const ProfileCompletion = () => {
     const clean = val.trim().toLowerCase().replace(/^@+/, '');
     
     if (!clean) {
+      // Cancel any in-flight debounced check from a previous, valid
+      // keystroke — otherwise it can resolve after the field is already
+      // blank and overwrite this "idle" state with a stale "available".
+      if (debounceRef.current) clearTimeout(debounceRef.current);
       setUsernameStatus('idle');
       setUsernameMsg('');
       return;
     }
-    
-    if (!/^[a-z0-9_.]{3,20}$/.test(clean)) {
+
+    const hasEnoughAlnum = (clean.match(/[a-z0-9]/g)?.length ?? 0) >= 3;
+    if (!/^[a-z0-9_.]{3,20}$/.test(clean) || !hasEnoughAlnum) {
+      // Same stale-debounce risk as above — a previously-scheduled check
+      // for an earlier valid value must not be allowed to land later and
+      // overwrite this "invalid" state with "available"/"taken".
+      if (debounceRef.current) clearTimeout(debounceRef.current);
       setUsernameStatus('invalid');
-      setUsernameMsg('3-20 lowercase letters, numbers, _ or .');
+      setUsernameMsg('3-20 lowercase letters, numbers, _ or ., with at least 3 letters or numbers');
       return;
     }
     

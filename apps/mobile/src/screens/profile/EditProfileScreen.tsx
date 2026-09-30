@@ -16,10 +16,10 @@ import {
     TextInput,
     ActivityIndicator,
 } from "react-native";
+import { KeyboardAwareScrollView } from "react-native-keyboard-aware-scroll-view";
 
 import { ConfirmDialog } from "../../components/chat/ConfirmDialog";
 
-import { KeyboardAwareScrollView } from "react-native-keyboard-aware-scroll-view";
 import ScreenWrapper from "../../components/layout/ScreenWrapper";
 import SafeScreen from "../../components/layout/SafeScreen";
 import AppHeader from "../../components/layout/AppHeader";
@@ -38,6 +38,9 @@ import {
 } from "@services/profileService";
 import apiClient from "@services/apiClient";
 import { sanitizeNameInput, isValidNameFormat } from "../../utils/nameValidation";
+import { sanitizeMobileInput, isValidMobileFormat } from "../../utils/mobileValidation";
+import { isValidPlaceText } from "../../utils/locationValidation";
+import { isValidUsernameFormat } from "../../utils/usernameValidation";
 
 import { useTheme, getFontScale } from "../../theme/ThemeContext";
 import { AccessibleText } from "../../components/shared/AccessibleText";
@@ -68,11 +71,6 @@ const FALLBACK_DISABILITY_OPTIONS = [
 // No existing canonical list for these two fields — reasonable defaults.
 const RELATION_OPTIONS = ["Parent", "Sibling", "Spouse", "Child", "Guardian", "Other"];
 
-// Mirrors the backend's USERNAME_REGEX / requiredBasicProfileSchema
-// (services/user-svc/src/routes/profile.routes.ts) so Save fails fast
-// client-side instead of round-tripping to the API first.
-const USERNAME_REGEX = /^[a-zA-Z0-9_.]{1,15}$/;
-const MOBILE_REGEX = /^[6-9]\d{9}$/; // same pattern used at signup in WelcomeScreen
 const PINCODE_REGEX = /^\d{6}$/;
 
 const CURRENT_YEAR = new Date().getFullYear();
@@ -208,6 +206,13 @@ const EditProfileScreen = () => {
 
     const [district, setDistrict] =
         useState("");
+
+    // ───────────────── Skill Trainer ─────────────────
+
+    const [skillsTaught, setSkillsTaught] = useState("");
+    const [teachingMode, setTeachingMode] = useState<"physical" | "online" | "both" | "">("");
+    const [trainingLocation, setTrainingLocation] = useState("");
+    const [trainingAddress, setTrainingAddress] = useState("");
 
     // ───────────────── COMMON ─────────────────
 
@@ -386,6 +391,13 @@ const EditProfileScreen = () => {
                 );
             }
 
+            if (roles.includes("skill_trainer")) {
+                setSkillsTaught(details?.skillsTaught || "");
+                setTeachingMode((details?.teachingMode as any) || "");
+                setTrainingLocation(details?.trainingLocation || "");
+                setTrainingAddress(details?.trainingAddress || "");
+            }
+
         } catch (error) {
             setConfirmState({
                 title: "Error",
@@ -430,6 +442,14 @@ const EditProfileScreen = () => {
                 payload.district = district;
             }
 
+            if (roles.includes("skill_trainer")) {
+                payload.skillsTaught = skillsTaught;
+                payload.teachingMode = teachingMode;
+                const needsLocation = teachingMode === "physical" || teachingMode === "both";
+                payload.trainingLocation = needsLocation ? trainingLocation : "";
+                payload.trainingAddress = needsLocation ? trainingAddress : "";
+            }
+
             return payload;
         };
 
@@ -468,9 +488,9 @@ const EditProfileScreen = () => {
 
         if (!username.trim()) {
             newErrors.username = "Username is required";
-        } else if (!USERNAME_REGEX.test(username.trim())) {
+        } else if (!isValidUsernameFormat(username.trim())) {
             newErrors.username =
-                "Username may only contain letters, numbers, periods, and underscores (max 15 characters)";
+                "Username may only contain letters, numbers, periods, and underscores (max 15 characters), with at least 3 letters or numbers";
         }
 
         if (!dob.trim()) {
@@ -485,8 +505,30 @@ const EditProfileScreen = () => {
         }
 
         if (!gender.trim()) newErrors.gender = "Gender is required";
-        if (!city.trim()) newErrors.city = "City is required";
-        if (!state.trim()) newErrors.state = "State is required";
+
+        if (!city.trim()) {
+            newErrors.city = "City is required";
+        } else if (!isValidPlaceText(city)) {
+            newErrors.city = "City may not be only numbers or symbols";
+        }
+
+        if (!state.trim()) {
+            newErrors.state = "State is required";
+        } else if (!isValidPlaceText(state)) {
+            newErrors.state = "State may not be only numbers or symbols";
+        }
+
+        if (addressLine1.trim() && !isValidPlaceText(addressLine1)) {
+            newErrors.addressLine1 = "Address may not be only numbers or symbols";
+        }
+
+        if (streetArea.trim() && !isValidPlaceText(streetArea)) {
+            newErrors.streetArea = "Street/Area may not be only numbers or symbols";
+        }
+
+        if (locationDistrict.trim() && !isValidPlaceText(locationDistrict)) {
+            newErrors.locationDistrict = "District may not be only numbers or symbols";
+        }
 
         if (!pincode.trim()) {
             newErrors.pincode = "Pincode is required";
@@ -496,7 +538,7 @@ const EditProfileScreen = () => {
 
         if (!phoneNo.trim()) {
             newErrors.phoneNo = "Mobile number is required";
-        } else if (!MOBILE_REGEX.test(phoneNo.trim())) {
+        } else if (!isValidMobileFormat(phoneNo.trim())) {
             newErrors.phoneNo = "Enter a valid 10-digit mobile number";
         }
 
@@ -531,6 +573,25 @@ const EditProfileScreen = () => {
 
         if (roles.includes("ngo_worker")) {
             if (!ngoName.trim()) newErrors.ngoName = "NGO name is required";
+        }
+
+        if (roles.includes("skill_trainer")) {
+            if (!skillsTaught.trim()) {
+                newErrors.skillsTaught = "Please tell us the skills you teach";
+            }
+            if (!teachingMode) {
+                newErrors.teachingMode = "Please select how you teach";
+            }
+            if (teachingMode === "physical" || teachingMode === "both") {
+                if (!trainingLocation.trim()) {
+                    newErrors.trainingLocation = "Training location is required";
+                }
+                if (!trainingAddress.trim()) {
+                    newErrors.trainingAddress = "Address is required";
+                } else if (!isValidPlaceText(trainingAddress)) {
+                    newErrors.trainingAddress = "Address may not be only numbers or symbols";
+                }
+            }
         }
 
         setFieldErrors(newErrors);
@@ -633,19 +694,30 @@ const EditProfileScreen = () => {
             />
 
             {/* BODY */}
-            {/* KeyboardAwareScrollView, not a plain ScrollView: this screen had
-                no keyboard handling at all, and the oversized bottom padding
-                below was standing in for it. contentContainerStyle must stay a
-                single flat object — with enableOnAndroid this library reads
-                (contentContainerStyle || {}).paddingBottom to add its own
-                keyboard padding, which is undefined on an array, and its
-                replacement then becomes the only paddingBottom RN keeps. */}
             <KeyboardAwareScrollView
-                showsVerticalScrollIndicator={false}
-                contentContainerStyle={styles.scrollContent}
+                showsVerticalScrollIndicator={
+                    false
+                }
+                // NOTE: must be a single flat object, not a style array — with
+                // enableOnAndroid, this library internally does
+                // `(contentContainerStyle || {}).paddingBottom` to add its own
+                // keyboard-space padding on top of ours. On an array, that
+                // property read is undefined, so its computed replacement
+                // becomes the ONLY paddingBottom left after RN flattens the
+                // style array — silently discarding ours entirely (0 with the
+                // keyboard closed, which is exactly why the last field was
+                // sitting flush behind the footer button with no gap at all).
+                contentContainerStyle={{
+                    ...styles.scrollContent,
+                    // Footer button's own footprint is ~ insets.bottom + 24 + 58 —
+                    // this needs to clear that with real visual breathing room,
+                    // not just barely enough to not technically overlap.
+                    paddingBottom: Math.max(insets.bottom + 160, 180),
+                }}
                 keyboardShouldPersistTaps="handled"
                 enableOnAndroid={true}
-                extraScrollHeight={100}
+                enableResetScrollToCoords={false}
+                extraScrollHeight={140}
             >
                 {/* PROFILE BANNER */}
                 <View
@@ -804,7 +876,8 @@ const EditProfileScreen = () => {
                         placeholder="Address Line 1"
                         containerStyle={styles.fieldSpacing}
                         value={addressLine1}
-                        onChangeText={setAddressLine1}
+                        onChangeText={(v: string) => { setAddressLine1(v); clearError("addressLine1"); }}
+                        error={fieldErrors.addressLine1}
                         accessibilityLabel="Address line 1"
                     />
 
@@ -813,7 +886,8 @@ const EditProfileScreen = () => {
                         placeholder="Street / Area"
                         containerStyle={styles.fieldSpacing}
                         value={streetArea}
-                        onChangeText={setStreetArea}
+                        onChangeText={(v: string) => { setStreetArea(v); clearError("streetArea"); }}
+                        error={fieldErrors.streetArea}
                         accessibilityLabel="Street or area"
                     />
 
@@ -822,7 +896,8 @@ const EditProfileScreen = () => {
                         placeholder="District"
                         containerStyle={styles.fieldSpacing}
                         value={locationDistrict}
-                        onChangeText={setLocationDistrict}
+                        onChangeText={(v: string) => { setLocationDistrict(v); clearError("locationDistrict"); }}
+                        error={fieldErrors.locationDistrict}
                         accessibilityLabel="District"
                     />
 
@@ -843,7 +918,7 @@ const EditProfileScreen = () => {
                         placeholder="Phone Number"
                         containerStyle={styles.fieldSpacing}
                         value={phoneNo}
-                        onChangeText={(v: string) => { setPhoneNo(v); clearError("phoneNo"); }}
+                        onChangeText={(v: string) => { setPhoneNo(sanitizeMobileInput(v)); clearError("phoneNo"); }}
                         error={fieldErrors.phoneNo}
                         keyboardType="phone-pad"
                         maxLength={10}
@@ -1091,6 +1166,93 @@ const EditProfileScreen = () => {
                         </View>
                     )}
 
+                {/* SKILL TRAINER */}
+                {roles.includes("skill_trainer") && (
+                        <View
+                            style={[styles.card, { backgroundColor: colors.card }, cardBorder]}
+                        >
+                            <AccessibleText
+                                style={[styles.sectionTitle, { fontSize: fs(18), color: colors.primary }]}
+                            >
+                                Skill Training Info
+                            </AccessibleText>
+
+                            <Input
+                                label="Name of skills you teach"
+                                placeholder="e.g. Tailoring, Computer Basics"
+                                containerStyle={styles.fieldSpacing}
+                                value={skillsTaught}
+                                onChangeText={
+                                    (v: string) => { setSkillsTaught(v); clearError("skillsTaught"); }
+                                }
+                                error={fieldErrors.skillsTaught}
+                                accessibilityLabel="Skills you teach"
+                            />
+
+                            <AccessibleText
+                                variant="label"
+                                style={{ color: placeholderColor, marginBottom: 8, marginTop: 4 }}
+                            >
+                                How do you teach the skill?
+                            </AccessibleText>
+                            <View style={styles.modeRow}>
+                                {(["physical", "online", "both"] as const).map((mode) => {
+                                    const selected = teachingMode === mode;
+                                    return (
+                                        <TouchableOpacity
+                                            key={mode}
+                                            style={[
+                                                styles.modeChip,
+                                                { backgroundColor: selected ? colors.primary : colors.surface },
+                                                highContrast && { borderWidth: 2, borderColor: "#000000" },
+                                            ]}
+                                            onPress={() => { setTeachingMode(mode); clearError("teachingMode"); }}
+                                            accessibilityRole="radio"
+                                            accessibilityState={{ checked: selected }}
+                                            accessibilityLabel={mode === "physical" ? "Physical" : mode === "online" ? "Online" : "Both"}
+                                        >
+                                            <AccessibleText style={[styles.modeChipText, { color: selected ? "#FFFFFF" : colors.text }]}>
+                                                {mode === "physical" ? "Physical" : mode === "online" ? "Online" : "Both"}
+                                            </AccessibleText>
+                                        </TouchableOpacity>
+                                    );
+                                })}
+                            </View>
+                            {fieldErrors.teachingMode && (
+                                <AccessibleText style={[styles.errorText, { color: colors.error, marginTop: 8 }]} accessibilityRole="alert">
+                                    {fieldErrors.teachingMode}
+                                </AccessibleText>
+                            )}
+
+                            {(teachingMode === "physical" || teachingMode === "both") && (
+                                <>
+                                    <Input
+                                        label="Location where you provide the skill training"
+                                        placeholder="e.g. Andheri, Mumbai"
+                                        containerStyle={{ marginBottom: 14, marginTop: 14 }}
+                                        value={trainingLocation}
+                                        onChangeText={
+                                            (v: string) => { setTrainingLocation(v); clearError("trainingLocation"); }
+                                        }
+                                        error={fieldErrors.trainingLocation}
+                                        accessibilityLabel="Training location"
+                                    />
+
+                                    <Input
+                                        label="Address"
+                                        placeholder="Full address"
+                                        containerStyle={{ marginBottom: 14 }}
+                                        value={trainingAddress}
+                                        onChangeText={
+                                            (v: string) => { setTrainingAddress(v); clearError("trainingAddress"); }
+                                        }
+                                        error={fieldErrors.trainingAddress}
+                                        accessibilityLabel="Training address"
+                                    />
+                                </>
+                            )}
+                        </View>
+                    )}
             </KeyboardAwareScrollView>
 
             {/* FOOTER */}
@@ -1231,6 +1393,25 @@ const styles =
 
         fieldSpacing: {
             marginBottom: 14,
+        },
+
+        modeRow: {
+            flexDirection: "row",
+            gap: 10,
+        },
+
+        modeChip: {
+            flex: 1,
+            minHeight: 48,
+            borderRadius: 14,
+            justifyContent: "center",
+            alignItems: "center",
+            paddingHorizontal: 8,
+        },
+
+        modeChipText: {
+            fontSize: 14,
+            fontWeight: "600",
         },
 
         // Matches the Input component's own label styling so the date fields
