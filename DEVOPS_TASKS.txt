@@ -446,3 +446,44 @@ h) After the deploy, please verify:
      curl -sI -H 'Origin: https://evil.example' https://forum.community.digiability.in/health \
        | grep -i access-control-allow-origin                                       # nothing
      curl -s -o /dev/null -w '%{http_code}\n' -X POST https://api.community.digiability.in/api/auth/logout-all   # 401 (route exists)
+
+
+=====================================================================
+18. ADMIN PANEL DEPLOY — credentials must move to a k8s Secret
+=====================================================================
+The admin login reads data/credentials.json (bcrypt hashes). That file used to
+be committed to git and baked into the image; it has been removed from the repo
+(it held credential hashes). The current live admin pod still has it inside its
+OLD image — new images will not.
+
+Do this BEFORE rolling out a new admin image (while the old pod still runs):
+
+  # 1. Copy the current credential store out of the running pod
+  kubectl -n communityapp exec deploy/admin -- cat /app/data/credentials.json > credentials.json
+
+  # 2. Store it as a Secret, then delete the local copy
+  kubectl -n communityapp create secret generic admin-credentials --from-file=credentials.json
+  shred -u credentials.json   # or rm -P on macOS
+
+  # 3. Mount it in communityapp/admin.yaml (Deployment), as a single file:
+        spec.template.spec.volumes:
+          - name: admin-credentials
+            secret:
+              secretName: admin-credentials
+        containers[admin].volumeMounts:
+          - name: admin-credentials
+            mountPath: /app/data/credentials.json
+            subPath: credentials.json
+            readOnly: true
+
+  # 4. Then deploy the new admin image (manual path: build --platform
+  #    linux/amd64 from main -> docker save -> scp -> k3s ctr images import
+  #    -> bump tag in admin.yaml -> kubectl rollout).
+
+Without step 3, admin login on the new image returns "Admin authentication is
+not configured" (unless ADMIN_SEED_EMAIL/ADMIN_SEED_PASSWORD are set, and even
+then the seeded file is lost on every pod restart).
+
+Changing an admin password later = update the Secret (bcrypt hash) and restart
+the pod. If you'd rather keep it in Infisical, the same file content can be an
+Infisical secret synced to `admin-credentials` by the operator.

@@ -43,16 +43,18 @@ RUN addgroup -S -g 1001 nodejs && adduser -S -u 1001 nextjs
 
 # `output: "standalone"` traces only the server bundle + the node_modules
 # it actually needs into .next/standalone — it does NOT include
-# public/ or .next/static (Next expects those copied in separately),
-# and it does NOT include arbitrary app files like data/.
-#
-# data/credentials.json is read at runtime via
-# path.join(process.cwd(), "data", "credentials.json")
-# (app/api/auth/login/route.ts) — without this explicit COPY, login
-# would silently fall back to the hardcoded default password baked into
-# the route code, defeating the whole point of rotating it.
+# public/ or .next/static (Next expects those copied in separately).
 COPY --from=builder --chown=nextjs:nodejs /app/public ./public
-COPY --from=builder --chown=nextjs:nodejs /app/data ./data
+
+# Admin credentials (data/credentials.json, read by
+# app/api/auth/login/route.ts) are NOT baked into the image any more — the
+# file is gitignored and no longer in the repo. In the cluster it is mounted
+# from the k8s Secret `admin-credentials` at /app/data/credentials.json
+# (subPath mount). Without that mount, login seeds the file once from
+# ADMIN_SEED_EMAIL / ADMIN_SEED_PASSWORD, but a file written inside the
+# container is lost on restart. The directory must exist and be writable by
+# the app user either way.
+RUN mkdir -p /app/data && chown nextjs:nodejs /app/data
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
