@@ -1,5 +1,6 @@
 import axios from 'axios';
 import apiClient from './apiClient';
+import { ADMIN_API_URL } from '@config/env';
 
 export type DayKey =
   | 'monday' | 'tuesday' | 'wednesday' | 'thursday'
@@ -70,14 +71,7 @@ export interface ServiceModel {
   updatedAt?: string;
 }
 
-const ADMIN_BASE_URL =
-  // .env/.env.example/eas.json all define EXPO_PUBLIC_ADMIN_API_URL — this
-  // previously read a differently-named var that was never set anywhere,
-  // so it silently always fell through to the derived guess below.
-  (process.env.EXPO_PUBLIC_ADMIN_API_URL as string | undefined) ??
-  (process.env.EXPO_PUBLIC_API_BASE_URL
-    ? process.env.EXPO_PUBLIC_API_BASE_URL.replace(/:30501$/, ':30504').replace(/:4001$/, ':3001')
-    : 'http://10.0.2.2:3001');
+const ADMIN_BASE_URL = ADMIN_API_URL;
 
 /**
  * Fetch all published services from backend

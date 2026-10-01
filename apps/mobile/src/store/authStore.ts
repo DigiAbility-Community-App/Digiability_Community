@@ -30,6 +30,12 @@ export interface AuthUser {
    */
   policyReacceptanceRequired?: boolean;
   /**
+   * True until the user has consented to the current data-processing notice
+   * (docs/legal/07). Every account that predates the separate notice is asked
+   * once; bumping CONSENT_NOTICE_VERSION asks everyone again.
+   */
+  dataConsentRequired?: boolean;
+  /**
    * True for accounts created before the age gate, which have no recorded date
    * of birth. Asked for at the same interception point as re-acceptance so the
    * population converges rather than drifting (docs/legal/06 §2.4).

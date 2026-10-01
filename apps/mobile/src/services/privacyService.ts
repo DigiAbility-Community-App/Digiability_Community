@@ -32,7 +32,9 @@ export interface DataExportBundle {
   mentorProfile: Record<string, unknown> | null;
   mentorReviewsGiven: Array<Record<string, unknown>>;
   deviceTokens: Array<{ platform: string; registeredAt: string }>;
+  sessions?: Array<Record<string, unknown>>;
   consents: Array<Record<string, unknown>>;
+  guardianAttestations?: Array<Record<string, unknown>>;
   reportsFiled: Array<Record<string, unknown>>;
   crossServiceData: { chatService: string; forumService: string };
 }

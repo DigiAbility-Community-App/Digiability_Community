@@ -13,6 +13,7 @@ import NotificationsScreen from '@screens/home/NotificationScreen';
 import WarningDetailsScreen from '@screens/home/WarningDetailsScreen';
 import EditProfileScreen from '@screens/profile/EditProfileScreen';
 import PrivacyDataScreen from '@screens/profile/PrivacyDataScreen';
+import MyDataScreen from '@screens/profile/MyDataScreen';
 import BlockedUsersScreen from '@screens/profile/BlockedUsersScreen';
 import ChatsStack from './ChatsStack';
 import AskQuestionScreen from '@screens/community/AskQuestionScreen';
@@ -27,6 +28,7 @@ import SafetyResourcesScreen from '@screens/profile/SafetyResourcesScreen';
 import HelpCenterScreen from '@screens/profile/HelpCenterScreen';
 import LegalScreen from '@screens/legal/LegalScreen';
 import { PolicyReacceptanceGate } from '../components/legal/PolicyReacceptanceGate';
+import { DataConsentGate } from '../components/legal/DataConsentGate';
 import { DateOfBirthGate } from '../components/legal/DateOfBirthGate';
 import type { LegalDocSlug } from '../legal/legal-docs.generated';
 import { useAuthStore } from '@store/authStore';
@@ -55,6 +57,7 @@ export type MainStackParamList = {
   };
   EditProfile: undefined;
   PrivacyData: undefined;
+  MyData: undefined;
   BlockedUsers: undefined;
   AskQuestion: undefined;
   QuestionDetails: { questionId: string };
@@ -183,10 +186,12 @@ const MainNavigator = () => {
 
   return (
     <>
-    {/* Blocks interaction until the current policy version is accepted, and
-        until an account predating the age gate has declared a date of birth.
-        DateOfBirthGate defers to the policy gate so the two never stack. */}
+    {/* Blocks interaction until, in order: the current Terms/Guidelines are
+        accepted, the current data-processing notice is consented to, and an
+        account predating the age gate has declared a date of birth. Each gate
+        defers to the ones before it so they never stack. */}
     <PolicyReacceptanceGate />
+    <DataConsentGate />
     <DateOfBirthGate />
     <Stack.Navigator
       key={user?.id ?? 'guest'}
@@ -206,6 +211,7 @@ const MainNavigator = () => {
       <Stack.Screen name="WarningDetails" component={WarningDetailsScreen} />
       <Stack.Screen name="EditProfile" component={EditProfileScreen} />
       <Stack.Screen name="PrivacyData" component={PrivacyDataScreen} />
+      <Stack.Screen name="MyData" component={MyDataScreen} />
       <Stack.Screen name="BlockedUsers" component={BlockedUsersScreen} />
       <Stack.Screen name="AskQuestion" component={AskQuestionScreen} />
       <Stack.Screen name="QuestionDetails" component={QuestionDetailsScreen} />

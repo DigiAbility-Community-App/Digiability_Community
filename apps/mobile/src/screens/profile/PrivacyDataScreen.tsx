@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { View, StyleSheet, ScrollView, Switch, Alert } from "react-native";
+import { useNavigation } from "@react-navigation/native";
 import { File, Paths } from "expo-file-system";
 import * as Sharing from "expo-sharing";
 import { useTheme } from "../../theme/ThemeContext";
@@ -58,6 +59,9 @@ export default function PrivacyDataScreen() {
         loadConsents();
     }, [loadConsents]);
 
+    const navigation = useNavigation<any>();
+    const dataProcessingRecord = consents.find((c) => c.consentType === "DATA_PROCESSING");
+
     const isAccepted = (type: ConsentType) =>
         consents.find((c) => c.consentType === type)?.accepted ?? false;
 
@@ -110,14 +114,61 @@ export default function PrivacyDataScreen() {
 
     return (
         <ScreenWrapper>
-            <AppHeader title="Privacy & Data" />
+            <AppHeader title="My data & privacy" />
 
             <ScrollView
                 showsVerticalScrollIndicator={false}
                 contentContainerStyle={styles.scrollContent}
             >
+                {/* ── MY DATA (DPDP §11 access, §12 correction; erasure below) ── */}
+                <AccessibleText variant="overline" style={{ color: colors.subtext, marginBottom: 8 }} accessibilityRole="header">
+                    MY DATA
+                </AccessibleText>
+
+                <View style={[styles.card, { backgroundColor: colors.card }, cardBorder]}>
+                    <AccessibleText variant="body" style={{ color: colors.subtext, marginBottom: 12 }}>
+                        See everything we hold about you, download a copy, or correct it. Messages and
+                        forum posts live on separate services and aren't included — contact support if
+                        you need those too.
+                    </AccessibleText>
+                    <AccessibleButton
+                        accessibilityLabel="View my data"
+                        accessibilityHint="Shows the personal data we hold about you"
+                        onPress={() => navigation.navigate("MyData")}
+                    >
+                        View my data
+                    </AccessibleButton>
+                    <AccessibleButton
+                        variant="outline"
+                        accessibilityLabel="Download a copy of my data"
+                        accessibilityHint="Saves your personal data as a file you can keep or share"
+                        disabled={exporting}
+                        onPress={handleExport}
+                        style={styles.stackedBtn}
+                    >
+                        {exporting ? "Preparing download…" : "Download a copy"}
+                    </AccessibleButton>
+                    <AccessibleButton
+                        variant="outline"
+                        accessibilityLabel="Correct my details"
+                        accessibilityHint="Opens your profile so you can fix anything that's wrong"
+                        onPress={() => navigation.navigate("EditProfile")}
+                        style={styles.stackedBtn}
+                    >
+                        Correct my details
+                    </AccessibleButton>
+                    <AccessibleButton
+                        variant="secondary"
+                        accessibilityLabel="Read how we use your data"
+                        onPress={() => navigation.navigate("Legal", { doc: "data-processing-notice" })}
+                        style={styles.stackedBtn}
+                    >
+                        How we use your data
+                    </AccessibleButton>
+                </View>
+
                 {/* ── YOUR CONSENTS ── */}
-                <AccessibleText variant="overline" style={{ color: colors.subtext, marginBottom: 8 }}>
+                <AccessibleText variant="overline" style={{ color: colors.subtext, marginTop: 24, marginBottom: 8 }}>
                     YOUR CONSENTS
                 </AccessibleText>
 
@@ -130,6 +181,11 @@ export default function PrivacyDataScreen() {
                             <AccessibleText variant="body" style={{ color: colors.subtext, marginTop: 4 }}>
                                 Required to operate your account. To stop this, delete your account below.
                             </AccessibleText>
+                            {dataProcessingRecord?.acceptedAt ? (
+                                <AccessibleText variant="caption" style={{ color: colors.subtext, marginTop: 4 }}>
+                                    You agreed on {new Date(dataProcessingRecord.acceptedAt).toLocaleDateString()} (notice version {dataProcessingRecord.version}).
+                                </AccessibleText>
+                            ) : null}
                         </View>
                         <AccessibleText variant="caption" style={{ color: colors.subtext }}>
                             Required
@@ -163,28 +219,6 @@ export default function PrivacyDataScreen() {
                         </View>
                     </View>
                 ))}
-
-                {/* ── YOUR DATA ── */}
-                <AccessibleText variant="overline" style={{ color: colors.subtext, marginTop: 24, marginBottom: 8 }}>
-                    YOUR DATA
-                </AccessibleText>
-
-                <View style={[styles.card, { backgroundColor: colors.card }, cardBorder]}>
-                    <AccessibleText variant="body" style={{ color: colors.subtext, marginBottom: 12 }}>
-                        Download a copy of the personal data we hold about you, including your profile,
-                        mentor activity, and consent history. Messages and forum posts live on separate
-                        services and aren't included here — contact support if you need those too.
-                    </AccessibleText>
-                    <AccessibleButton
-                        variant="outline"
-                        accessibilityLabel="Export my data"
-                        accessibilityHint="Downloads a copy of your personal data as a file"
-                        disabled={exporting}
-                        onPress={handleExport}
-                    >
-                        {exporting ? "Preparing export…" : "Export my data"}
-                    </AccessibleButton>
-                </View>
 
                 {/* ── DANGER ZONE ── */}
                 <AccessibleText variant="overline" style={{ color: colors.subtext, marginTop: 24, marginBottom: 8 }}>
@@ -239,5 +273,8 @@ const styles = StyleSheet.create({
     switchText: {
         flex: 1,
         paddingRight: 16,
+    },
+    stackedBtn: {
+        marginTop: 10,
     },
 });

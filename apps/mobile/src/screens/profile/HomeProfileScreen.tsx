@@ -18,7 +18,7 @@ import ScreenWrapper from "../../components/layout/ScreenWrapper";
 import AppHeader from "../../components/layout/AppHeader";
 import { confirmDeleteAccount } from "../../utils/accountDeletion";
 import { DeleteAccountModal } from "../../components/account/DeleteAccountModal";
-import { logout } from "@services/authService";
+import { logout, logoutAllDevices } from "@services/authService";
 import { forumService } from "@services/forumService";
 import { getNotificationPermissionStatus } from "@services/notificationService";
 import { ConfirmDialog } from "../../components/chat/ConfirmDialog";
@@ -120,6 +120,31 @@ const HomeProfileScreen = () => {
                     setConfirmState({
                         title: "Error",
                         message: "Failed to log out. Please try again.",
+                        confirmLabel: "OK",
+                        hideCancel: true,
+                        onConfirm: () => setConfirmState(null),
+                    });
+                }
+            },
+        });
+    };
+
+    const handleLogoutAll = () => {
+        setConfirmState({
+            title: "Log out of all devices",
+            message:
+                "This signs you out everywhere you're logged in, including this device. Use it if you've lost a phone or think someone else has access to your account.",
+            confirmLabel: "Log out everywhere",
+            destructive: true,
+            onConfirm: async () => {
+                setLoggingOut(true);
+                try {
+                    await logoutAllDevices();
+                } catch {
+                    setLoggingOut(false);
+                    setConfirmState({
+                        title: "Couldn't log out other devices",
+                        message: "Check your connection and try again. You are still logged in on this device.",
                         confirmLabel: "OK",
                         hideCancel: true,
                         onConfirm: () => setConfirmState(null),
@@ -329,8 +354,8 @@ const HomeProfileScreen = () => {
                     />
                     <MenuItem
                         icon="🔒"
-                        title="Privacy & Security"
-                        subtitle="Manage consent, export, and delete your data"
+                        title="My data & privacy"
+                        subtitle="View, download, correct or delete your data; manage consent"
                         onPress={() => navigation.navigate("PrivacyData")}
                         colors={colors}
                         highContrast={highContrast}
@@ -441,6 +466,21 @@ const HomeProfileScreen = () => {
                 >
                     {loggingOut ? "LOGGING OUT…" : "LOGOUT"}
                 </AccessibleButton>
+
+                {/* ── LOGOUT ALL DEVICES ── */}
+                <TouchableOpacity
+                    style={styles.logoutAllBtn}
+                    onPress={handleLogoutAll}
+                    disabled={loggingOut}
+                    accessibilityRole="button"
+                    accessibilityLabel="Log out of all devices"
+                    accessibilityHint="Signs you out on every device where you are logged in, including this one"
+                    accessibilityState={{ disabled: loggingOut }}
+                >
+                    <AccessibleText style={[styles.logoutAllText, { color: colors.text }]}>
+                        Log out of all devices
+                    </AccessibleText>
+                </TouchableOpacity>
 
                 {/* ── DELETE ACCOUNT ── */}
                 <TouchableOpacity
@@ -697,6 +737,20 @@ const styles = StyleSheet.create({
         justifyContent: "center",
         alignItems: "center",
         marginTop: 16,
+    },
+
+    logoutAllBtn: {
+        alignSelf: "center",
+        minHeight: 44,
+        justifyContent: "center",
+        marginTop: 12,
+        paddingHorizontal: 16,
+    },
+
+    logoutAllText: {
+        fontSize: 14,
+        fontWeight: "600",
+        textDecorationLine: "underline",
     },
 
     deleteAccountBtn: {

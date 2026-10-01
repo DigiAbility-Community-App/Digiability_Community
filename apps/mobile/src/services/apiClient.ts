@@ -2,6 +2,7 @@ import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
 import * as SecureStore from 'expo-secure-store';
 import { useAuthStore } from '@store/authStore';
 import { useSystemStore } from '@store/systemStore';
+import { API_URL } from '@config/env';
 
 // ─────────────────────────────────────────────────────────
 // API Client
@@ -19,10 +20,7 @@ import { useSystemStore } from '@store/systemStore';
 //   automatically. On native we manage the refresh token ourselves.
 // ─────────────────────────────────────────────────────────
 
-// Use env or fall back to Android emulator localhost alias
-const BASE_URL =
-  (process.env.EXPO_PUBLIC_API_BASE_URL as string | undefined) ??
-  'http://10.0.2.2:4001';
+const BASE_URL = API_URL;
 
 export const REFRESH_TOKEN_KEY = 'digiability_refresh_token';
 

@@ -1,15 +1,7 @@
 import { create } from 'zustand';
 import axios from 'axios';
 
-// Base URL for user-svc
-const API_BASE_URL =
-  (process.env.EXPO_PUBLIC_API_BASE_URL as string | undefined) ??
-  'http://187.127.191.28:30501';
-
-// Base URLs for Admin portal (live remote + local fallbacks)
-const ADMIN_BASE_URL =
-  (process.env.EXPO_PUBLIC_ADMIN_API_URL as string | undefined) ??
-  'http://187.127.191.28:30504';
+import { API_URL as API_BASE_URL, ADMIN_API_URL as ADMIN_BASE_URL } from '@config/env';
 
 interface SystemState {
   isMaintenanceMode: boolean;
@@ -33,37 +25,26 @@ export const useSystemStore = create<SystemState>((set) => ({
       let foundSupportInfo = false;
       let maintenanceResult = false;
 
-      // 1. Check Admin API endpoint first for direct live settings
-      const adminEndpoints = [
-        `${ADMIN_BASE_URL}/api/maintenance`,
-        'http://187.127.191.28:30504/api/maintenance',
-        'http://192.168.1.11:3001/api/maintenance',
-        'http://localhost:3001/api/maintenance',
-        'http://10.0.2.2:3001/api/maintenance',
-      ];
+      // 1. Check the Admin API first for direct live settings
+      try {
+        const adminRes = await axios.get<{
+          success: boolean;
+          inMaintenance: boolean;
+          supportPhone?: string;
+          supportEmail?: string;
+        }>(`${ADMIN_BASE_URL}/api/maintenance`, { timeout: 2500 });
 
-      for (const endpoint of adminEndpoints) {
-        try {
-          const adminRes = await axios.get<{
-            success: boolean;
-            inMaintenance: boolean;
-            supportPhone?: string;
-            supportEmail?: string;
-          }>(endpoint, { timeout: 2500 });
-
-          if (adminRes.data && adminRes.data.success) {
-            maintenanceResult = Boolean(adminRes.data.inMaintenance);
-            set({
-              isMaintenanceMode: maintenanceResult,
-              ...(adminRes.data.supportPhone ? { supportPhone: adminRes.data.supportPhone } : {}),
-              ...(adminRes.data.supportEmail ? { supportEmail: adminRes.data.supportEmail } : {}),
-            });
-            foundSupportInfo = true;
-            break;
-          }
-        } catch {
-          // Try next endpoint
+        if (adminRes.data && adminRes.data.success) {
+          maintenanceResult = Boolean(adminRes.data.inMaintenance);
+          set({
+            isMaintenanceMode: maintenanceResult,
+            ...(adminRes.data.supportPhone ? { supportPhone: adminRes.data.supportPhone } : {}),
+            ...(adminRes.data.supportEmail ? { supportEmail: adminRes.data.supportEmail } : {}),
+          });
+          foundSupportInfo = true;
         }
+      } catch {
+        // Fall through to user-svc
       }
 
       // 2. Also check user-svc /api/auth/maintenance

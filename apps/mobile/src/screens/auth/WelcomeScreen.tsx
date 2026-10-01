@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
   Platform,
   Alert,
+  Modal,
 } from "react-native";
 import { KeyboardAwareScrollView } from "react-native-keyboard-aware-scroll-view";
 
@@ -33,7 +34,6 @@ import { AccessibleButton } from "../../components/shared/AccessibleButton";
 import { Input } from "../../components/shared/Input";
 import ScreenWrapper from "../../components/layout/ScreenWrapper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import * as WebBrowser from "expo-web-browser";
 import DateTimePickerModal from "react-native-modal-datetime-picker";
 import {
   isOldEnough,
@@ -42,7 +42,9 @@ import {
   toDisplayDate,
   MINIMUM_AGE,
 } from "../../utils/ageValidation";
-import { POLICY_VERSION } from "../../legal/legal-docs.generated";
+import { POLICY_VERSION, CONSENT_NOTICE_VERSION } from "../../legal/legal-docs.generated";
+import { ConsentNoticeContent } from "../../components/legal/ConsentNoticeContent";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 // Green used for a satisfied password rule / an available email. The theme has
 // no success colour, and the brand purple would read as "selected" rather than
@@ -187,6 +189,9 @@ const WelcomeScreen = ({ navigation }: Props) => {
   // Real checkbox, not the passive caption this used to be. Registration is
   // blocked until this is checked — see the guard in handleSignUp below.
   const [acceptedTerms, setAcceptedTerms] = useState(false);
+  // Data-processing notice (DPDP §5/§6) shown after the form validates.
+  const [showConsent, setShowConsent] = useState(false);
+  const [consentError, setConsentError] = useState<string | null>(null);
   // Digiability is an 18+ platform (DPDP §9). The server is the real gate;
   // collecting it here gives a clear message before submitting.
   const [dob, setDob] = useState<Date | null>(null);
@@ -268,18 +273,32 @@ const WelcomeScreen = ({ navigation }: Props) => {
       return;
     }
 
+    // Form is valid — show the data-processing notice. The account is only
+    // created once the user ticks its separate consent box and agrees.
+    setConsentError(null);
+    setShowConsent(true);
+  };
+
+  // Called from the data-processing notice after the user ticked the box.
+  const handleConsentAgree = async () => {
+    if (!dob) return;
+    const trimmedEmail = signUpEmail.trim().toLowerCase();
+    setConsentError(null);
     setLoading(true);
 
     try {
       const result = await register({
-        name: trimmedName,
+        name: name.trim(),
         email: trimmedEmail,
-        password: trimmedPassword,
-        phoneNo: trimmedPhone,
+        password: signUpPassword.trim(),
+        phoneNo: signUpPhone.trim(),
         acceptedTerms: true,
         policyVersion: POLICY_VERSION,
+        acceptedDataProcessing: true,
+        consentNoticeVersion: CONSENT_NOTICE_VERSION,
         dateOfBirth: toApiDate(dob),
       });
+      setShowConsent(false);
       // Registration no longer starts a session (the server issues tokens only
       // after the OTP is verified), so navigate to Verify Email explicitly
       // rather than relying on setAuth flipping RootNavigator to the Main stack.
@@ -294,10 +313,17 @@ const WelcomeScreen = ({ navigation }: Props) => {
       navigation.navigate("VerifyEmail", { email: trimmedEmail });
     } catch (err: unknown) {
       console.error("[SignUpError]", err);
-      setError(getApiErrorMessage(err, "Registration failed."));
+      setConsentError(getApiErrorMessage(err, "Registration failed."));
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleConsentDecline = () => {
+    setShowConsent(false);
+    setError(
+      "We can't create an account without your consent to process your data — the service can't run without it. You can review the notice again whenever you're ready."
+    );
   };
 
   // Login
@@ -731,7 +757,7 @@ const WelcomeScreen = ({ navigation }: Props) => {
         {/* [LEGAL PLACEHOLDER] The documents themselves are still drafts.
             These open in-app now — the old external links were built from
             EXPO_PUBLIC_WEB_BASE_URL, which is defined nowhere, so every
-            build fell back to http://localhost:3000 and went nowhere. */}
+            build fell back to a localhost URL and went nowhere. */}
         <AccessibleText variant="caption" style={{ marginTop: spacing.xl, textAlign: 'center', lineHeight: 22 }}>
           By continuing, you agree to our{" "}
           <Text
@@ -753,6 +779,26 @@ const WelcomeScreen = ({ navigation }: Props) => {
           </Text>
         </AccessibleText>
       </KeyboardAwareScrollView>
+
+      {/* Data-processing notice + separate consent (DPDP §5/§6). A modal, not
+          a pushed screen, so the password never goes into navigation params. */}
+      <Modal
+        visible={showConsent}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        onRequestClose={handleConsentDecline}
+      >
+        <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
+          <ConsentNoticeContent
+            agreeLabel="Agree and create account"
+            declineLabel="Go back"
+            busy={loading}
+            error={consentError}
+            onAgree={handleConsentAgree}
+            onDecline={handleConsentDecline}
+          />
+        </SafeAreaView>
+      </Modal>
     </ScreenWrapper>
   );
 };

@@ -41,7 +41,9 @@ export function DateOfBirthGate() {
   const [submitting, setSubmitting] = useState(false);
 
   // Policy re-acceptance takes precedence, so the two gates never stack.
-  const visible = Boolean(user?.dateOfBirthRequired) && !user?.policyReacceptanceRequired;
+  // Defers to the policy and data-consent gates so they never stack.
+  const visible =
+    Boolean(user?.dateOfBirthRequired) && !user?.policyReacceptanceRequired && !user?.dataConsentRequired;
 
   const handleSubmit = async () => {
     if (!dob) {

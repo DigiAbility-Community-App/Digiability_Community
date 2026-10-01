@@ -1,6 +1,7 @@
 import { io, Socket } from 'socket.io-client';
 import { useAuthStore } from '../store/authStore';
 import { useForumStore } from '../store/forumStore';
+import { FORUM_SOCKET_URL } from '@config/env';
 
 let socket: Socket | null = null;
 
@@ -11,13 +12,9 @@ export const forumSocketService = {
 
     if (socket?.connected) return;
 
-    const baseUrl =
-      process.env.EXPO_PUBLIC_FORUM_API_URL ||
-      (process.env.EXPO_PUBLIC_API_BASE_URL || 'http://10.0.2.2:4001').replace('4001', '4003');
+    console.log(`[ForumSocket] Connecting to ${FORUM_SOCKET_URL}...`);
 
-    console.log(`[ForumSocket] Connecting to ${baseUrl}...`);
-
-    socket = io(baseUrl, {
+    socket = io(FORUM_SOCKET_URL, {
       auth: { token },
       transports: ['websocket'],
       reconnectionAttempts: 3,

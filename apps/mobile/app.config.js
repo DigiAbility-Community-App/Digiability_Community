@@ -65,5 +65,15 @@ module.exports = ({ config }) => {
     return plugin;
   });
 
-  return { ...config, ios, plugins };
+  // Read at runtime by src/config/env.ts, which refuses to start a production
+  // build whose endpoints aren't https/wss.
+  const extra = { ...(config.extra ?? {}), buildProfile: profile };
+
+  // Store builds: strip the dev-client URL scheme, unused permissions and
+  // needlessly exported components (plugins/withAndroidReleaseHardening.js).
+  if (isProduction) {
+    plugins.push("./plugins/withAndroidReleaseHardening");
+  }
+
+  return { ...config, ios, plugins, extra };
 };

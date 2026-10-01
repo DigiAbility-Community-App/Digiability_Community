@@ -1,9 +1,8 @@
 import apiClient from './apiClient';
 import { useAuthStore } from '@store/authStore';
+import { CHAT_API_URL } from '@config/env';
 
-export const CHAT_BASE_URL =
-  process.env.EXPO_PUBLIC_CHAT_API_URL ||
-  (process.env.EXPO_PUBLIC_API_BASE_URL || 'http://10.0.2.2:4001').replace('4001', '4002');
+export const CHAT_BASE_URL = CHAT_API_URL;
 
 // Resolve a media path/URL returned by the server. New uploads return a
 // host-relative path ("/uploads/x.jpg") which each client resolves against its
@@ -31,30 +30,38 @@ const BOT_USER_ID = '00000000-0000-0000-0000-000000000001';
 
 export interface BatchLookupUser {
   name: string;
-  deletedAt: string | null;
-  isSuspended: boolean | null;
 }
+
+// user-svc caps /auth/users/batch at 50 ids per request.
+const BATCH_LOOKUP_MAX = 50;
 
 export const chatService = {
   /**
-   * Batch-resolve minimal user info (name, deletedAt, isSuspended) for a
-   * list of user IDs via user-svc's /auth/users/batch endpoint. Shared by
-   * getConversations() (current participants) and anywhere else that needs
-   * to resolve a handful of userIds to display names without N+1 requests
-   * (e.g. former group members — see getConversationMemberHistory).
+   * Batch-resolve display names for a list of user IDs via user-svc's
+   * /auth/users/batch endpoint. Shared by getConversations() (current
+   * participants), group member history and the group invite list, to avoid
+   * N+1 requests.
+   *
+   * user-svc only returns users the caller shares a conversation or invite
+   * with, and never returns deleted accounts. An id missing from the result
+   * is therefore treated as an account that no longer exists.
    */
   batchLookupUsers: async (ids: string[]): Promise<Map<string, BatchLookupUser>> => {
     const map = new Map<string, BatchLookupUser>();
     const uniqueIds = [...new Set(ids)].filter((id) => id !== BOT_USER_ID);
     if (uniqueIds.length === 0) return map;
 
-    const lookupRes = await apiClient.post('/api/auth/users/batch', { ids: uniqueIds });
-    for (const u of lookupRes.data.data.users) {
-      map.set(u.id, {
-        name: u.name,
-        deletedAt: u.deletedAt ?? null,
-        isSuspended: u.isSuspended ?? null,
-      });
+    const chunks: string[][] = [];
+    for (let i = 0; i < uniqueIds.length; i += BATCH_LOOKUP_MAX) {
+      chunks.push(uniqueIds.slice(i, i + BATCH_LOOKUP_MAX));
+    }
+    const responses = await Promise.all(
+      chunks.map((chunk) => apiClient.post('/api/auth/users/batch', { ids: chunk }))
+    );
+    for (const res of responses) {
+      for (const u of res.data.data.users) {
+        map.set(u.id, { name: u.name });
+      }
     }
     return map;
   },
@@ -121,9 +128,8 @@ export const chatService = {
               ...m,
               user: {
                 id: m.userId,
-                name: isBot ? 'DigiBot' : (looked?.name || 'Unknown'),
-                deletedAt: isBot ? null : (looked?.deletedAt ?? null),
-                isSuspended: isBot ? null : (looked?.isSuspended ?? null),
+                name: isBot ? 'DigiBot' : (looked?.name ?? ''),
+                unavailable: !isBot && !looked,
               },
             };
           });
@@ -139,8 +145,6 @@ export const chatService = {
           user: {
             id: m.userId,
             name: m.userId === BOT_USER_ID ? 'DigiBot' : 'Unknown',
-            deletedAt: null,
-            isSuspended: null,
           },
         }));
       }
@@ -332,17 +336,14 @@ export const chatService = {
   getGroupInvites: async (conversationId: string) => {
     const res = await apiClient.get(`${CHAT_BASE_URL}/api/conversations/${conversationId}/invites`);
     const invites: any[] = res.data.data || [];
-    const ids = [...new Set(invites.map((i) => i.inviteeId).filter(Boolean))];
-    let nameMap = new Map<string, string>();
-    if (ids.length > 0) {
-      try {
-        const lookup = await apiClient.post('/api/auth/users/batch', { ids });
-        for (const u of lookup.data.data.users) nameMap.set(u.id, u.name);
-      } catch {
-        // names are best-effort
-      }
+    const ids = invites.map((i) => i.inviteeId).filter(Boolean);
+    let nameMap = new Map<string, BatchLookupUser>();
+    try {
+      nameMap = await chatService.batchLookupUsers(ids);
+    } catch {
+      // names are best-effort
     }
-    return invites.map((i) => ({ ...i, inviteeName: nameMap.get(i.inviteeId) || 'Unknown user' }));
+    return invites.map((i) => ({ ...i, inviteeName: nameMap.get(i.inviteeId)?.name || 'Unknown user' }));
   },
 
   // ─── Admin Controls ──────────────────────────
@@ -414,9 +415,9 @@ export const chatService = {
   },
 
   getMyReportedMessageIds: async (conversationId: string): Promise<string[]> => {
-    const res = await apiClient.get(`${CHAT_BASE_URL}/api/moderation/reports/mine`, {
-      params: { conversationId },
-    });
+    const res = await apiClient.get(
+      `${CHAT_BASE_URL}/api/moderation/reports/mine/${encodeURIComponent(conversationId)}`
+    );
     return res.data.data.messageIds;
   },
 };
