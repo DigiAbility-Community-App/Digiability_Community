@@ -12,7 +12,7 @@ what we keep afterwards, and for how long. It supports the [Privacy Policy](./01
 
 ## 1. How to delete your account
 
-**In the app:** Profile → Privacy & Data → Delete account.
+**In the app:** Profile → My data & privacy → Delete my account.
 
 **On the web, without signing in to the app:** [ACCOUNT DELETION URL]. Use this if you have
 already uninstalled the app or cannot sign in to it.
@@ -125,8 +125,8 @@ configured in one place so this table and the system cannot drift apart.
 
 ## 5. Exporting your data first
 
-You can download everything we hold about you before deleting: Settings → Privacy & Data →
-Export my data. We recommend doing this first, because deletion cannot be reversed.
+You can download everything we hold about you before deleting: Profile → My data & privacy →
+Download a copy. We recommend doing this first, because deletion cannot be reversed.
 
 ## 6. Deleting individual content without deleting your account
 

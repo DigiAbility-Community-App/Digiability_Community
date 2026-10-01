@@ -40,10 +40,14 @@ function loadManifest() {
     }
     return { ...doc, markdown: fs.readFileSync(full, "utf8") };
   });
-  return { policyVersion: manifest.policyVersion, docs };
+  if (!manifest.consentNoticeVersion) {
+    console.error("sync:legal — manifest.json is missing consentNoticeVersion");
+    process.exit(1);
+  }
+  return { policyVersion: manifest.policyVersion, consentNoticeVersion: manifest.consentNoticeVersion, docs };
 }
 
-function renderClientModule({ policyVersion, docs }) {
+function renderClientModule({ policyVersion, consentNoticeVersion, docs }) {
   const ids = docs.map((d) => JSON.stringify(d.id)).join(" | ");
   const slugs = docs.map((d) => JSON.stringify(d.slug)).join(" | ");
   const entries = docs
@@ -61,6 +65,10 @@ function renderClientModule({ policyVersion, docs }) {
   return `${BANNER}
 /** Version of the published policy set. Drives consent records and re-acceptance. */
 export const POLICY_VERSION = ${JSON.stringify(policyVersion)};
+
+/** Version of the data-processing consent notice (DPDP §5). Stamped on the
+ * DATA_PROCESSING consent record; changing it re-asks only that consent. */
+export const CONSENT_NOTICE_VERSION = ${JSON.stringify(consentNoticeVersion)};
 
 export type LegalDocId = ${ids};
 
@@ -95,13 +103,16 @@ export function getLegalDocBySlug(slug: string): LegalDoc | undefined {
 `;
 }
 
-function renderServerModule({ policyVersion }) {
+function renderServerModule({ policyVersion, consentNoticeVersion }) {
   return `${BANNER}
 // The server never needs the document text — only the version it must stamp on
 // consent records and compare against to decide whether re-acceptance is due.
 
 /** Version of the published policy set. Must match docs/legal/manifest.json. */
 export const POLICY_VERSION = ${JSON.stringify(policyVersion)};
+
+/** Version of the data-processing consent notice. Must match docs/legal/manifest.json. */
+export const CONSENT_NOTICE_VERSION = ${JSON.stringify(consentNoticeVersion)};
 `;
 }
 
@@ -122,7 +133,7 @@ function main() {
   const client = renderClientModule(data);
   const server = renderServerModule(data);
 
-  console.log(`sync:legal — policy version ${data.policyVersion}, ${data.docs.length} documents`);
+  console.log(`sync:legal — policy version ${data.policyVersion}, consent notice ${data.consentNoticeVersion}, ${data.docs.length} documents`);
   write(path.join(ROOT, "apps", "mobile", "src", "legal", "legal-docs.generated.ts"), client);
   write(path.join(ROOT, "apps", "web", "src", "legal", "legal-docs.generated.ts"), client);
   write(

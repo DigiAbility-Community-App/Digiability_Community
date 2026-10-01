@@ -11,9 +11,10 @@
  * the clear. It also made two published claims untrue — Terms §7 and Privacy
  * Policy §10 both state that messages are encrypted in transit.
  *
- * This check exists so that cannot come back by accident. It deliberately does
- * NOT police the development or preview profiles: those are internal builds
- * against LAN addresses and are expected to use cleartext.
+ * This check exists so that cannot come back by accident. The preview and
+ * production EAS profiles both talk to the live backend, so both must use
+ * https/wss. The development profile carries no URLs (it reads the local,
+ * gitignored .env), which is the only place http:// / ws:// belong.
  */
 
 const fs = require("fs");
@@ -22,14 +23,18 @@ const path = require("path");
 const ROOT = path.join(__dirname, "..");
 const problems = [];
 
-// ── 1. EAS production profile must not use http:// ──────────────────────────
+// ── 1. EAS preview + production profiles must use https / wss ──────────────
 const easPath = path.join(ROOT, "apps/mobile/eas.json");
 if (fs.existsSync(easPath)) {
   const eas = JSON.parse(fs.readFileSync(easPath, "utf8"));
-  const env = eas.build?.production?.env ?? {};
-  for (const [key, value] of Object.entries(env)) {
-    if (typeof value === "string" && value.startsWith("http://")) {
-      problems.push(`eas.json production profile: ${key} is cleartext (${value})`);
+  for (const profile of ["preview", "production"]) {
+    const env = eas.build?.[profile]?.env ?? {};
+    for (const [key, value] of Object.entries(env)) {
+      if (typeof value !== "string" || !key.endsWith("_URL")) continue;
+      const scheme = key.endsWith("_SOCKET_URL") ? "wss://" : "https://";
+      if (!value.startsWith(scheme)) {
+        problems.push(`eas.json ${profile} profile: ${key} must start with ${scheme} (${value})`);
+      }
     }
   }
 }
@@ -66,9 +71,38 @@ try {
   if (buildProps?.[1]?.android?.usesCleartextTraffic) {
     problems.push("app.config.js: production allows Android cleartext traffic");
   }
+
+  // src/config/env.ts keys its startup https/wss guard off this value.
+  if (cfg.extra?.buildProfile !== "production") {
+    problems.push("app.config.js: extra.buildProfile is not exposed, so the runtime https guard is off");
+  }
 } catch (e) {
   problems.push(`could not resolve the production Expo config: ${e.message}`);
 }
+
+// ── 4. No cleartext URLs hardcoded in mobile source ─────────────────────────
+// Endpoints come only from src/config/env.ts. A literal http:// or ws:// URL in
+// source is a fallback waiting to ship. Bare scheme strings ("http://") used
+// for prefix checks have no host and don't match.
+const SKIP = new Set(["legal-docs.generated.ts"]);
+const CLEARTEXT_URL = /["'`](?:http|ws):\/\/[^"'`\s]+/;
+function scan(dir) {
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      scan(full);
+    } else if (/\.(ts|tsx|js)$/.test(entry.name) && !SKIP.has(entry.name)) {
+      fs.readFileSync(full, "utf8").split("\n").forEach((line, i) => {
+        const code = line.trim();
+        if (code.startsWith("//") || code.startsWith("*")) return;
+        if (CLEARTEXT_URL.test(code)) {
+          problems.push(`${path.relative(ROOT, full)}:${i + 1}: hardcoded cleartext URL`);
+        }
+      });
+    }
+  }
+}
+scan(path.join(ROOT, "apps/mobile/src"));
 
 if (problems.length > 0) {
   console.error(`\ncheck:transport FAILED — ${problems.length} problem(s):\n`);
@@ -81,5 +115,5 @@ if (problems.length > 0) {
 }
 
 console.log(
-  "check:transport passed — production uses https, ATS is enforced, cleartext is denied."
+  "check:transport passed — preview/production use https/wss, ATS is enforced, cleartext is denied, no cleartext URLs in source."
 );

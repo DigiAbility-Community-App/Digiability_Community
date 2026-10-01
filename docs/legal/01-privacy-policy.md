@@ -53,31 +53,39 @@ We do not run advertising, and we do not sell your data to anyone.
 
 ## 4. Legal basis for processing
 
-**Consent (DPDP §6).** We record your explicit consent at registration for data processing,
-and separately for our Terms of Use and Community Guidelines. Optional consents — push
-notifications and marketing — can be withdrawn at any time from Settings → Privacy & Data.
+**Consent (DPDP §6).** Before your account is created we show you a short notice —
+[How we use your data](./07-data-processing-notice.md) — listing what we collect and why, and
+ask for your consent with its own checkbox, which is never pre-ticked and is separate from
+accepting our Terms of Use and Community Guidelines. If we change that notice materially, we
+ask again. Optional consents — push notifications and marketing — can be withdrawn at any
+time from Profile → My data & privacy.
 
-Each consent record stores who consented, which consent it was, the version of the notice you
-accepted, and when. It also stores your IP address **truncated** — the last block of an IPv4
+Each consent record stores who consented, which consent it was, the version of the notice or
+policy you accepted, and when. It also stores your IP address **truncated** — the last block of an IPv4
 address is discarded, so it identifies a network rather than a device.
 
 **Legitimate uses (DPDP §7).** We rely on §7 for compliance with law and for responding to
 credible threats to someone's life or safety.
 
-## 5. Third-party services
+## 5. Who processes your data for us
 
-These services may receive your data. A full inventory is maintained internally and reviewed
-annually.
+These organisations process personal data on our behalf, only for the purposes below. A full
+inventory is maintained internally and reviewed annually.
 
-| Service | What it receives | Why |
-|---|---|---|
-| Expo Push Notifications (delivering via Apple APNs on iOS, Google FCM on Android) | Device push token; notification previews may include short message excerpts | To notify you of activity |
-| OpenAI Moderation API | Submitted text. No personal identifier is included in the request | Automated screening for harmful content |
-| Google Cloud Vision API | Images you upload | Automated screening for inappropriate imagery |
-| [EMAIL PROVIDER NAME] | Your email address and message content | Verification codes, password resets, service notices |
-| [HOSTING PROVIDER NAME] | All stored data | Running the service |
+| Processor | What it receives | Why | Where the data is |
+|---|---|---|---|
+| **Hostinger** (virtual private server) | All stored data — accounts, profiles, messages, forum posts, uploaded images and files, consent records | Running the application servers and database | [HOSTINGER DATA CENTRE LOCATION — client to confirm, e.g. "Mumbai, India"] |
+| **[S3-COMPATIBLE STORAGE PROVIDER NAME]** (object storage) | [WHAT IS STORED — e.g. encrypted database backups and/or uploaded media] | [PURPOSE — e.g. backups and disaster recovery] | [STORAGE REGION] |
+| **Google Firebase Cloud Messaging** (Android) and **Apple Push Notification service** (iOS), reached through **Expo Push Notifications** | Your device's push token; notification previews may include a sender's name and a short message excerpt | Delivering notifications to your phone | Global infrastructure, including the United States |
+| **OpenAI** Moderation API | Text you submit. No name, email or account identifier is sent with it | Automated screening for harmful content | United States |
+| **Google Cloud Vision** API | Images you upload | Automated screening for inappropriate imagery | [REGION — client to confirm] |
+| **[EMAIL PROVIDER NAME]** | Your email address and the content of the emails we send you | Verification codes, password resets, service notices | [REGION] |
 
-[LEGAL PLACEHOLDER — confirm a Data Processing Agreement is in place with each provider above.]
+[LEGAL PLACEHOLDER — confirm whether the S3-compatible storage provider is in use for the
+Community app. As of this draft, uploaded images and files are stored on the Hostinger server
+itself; delete that row if no object storage is used.]
+
+[LEGAL PLACEHOLDER — confirm a Data Processing Agreement is in place with each processor above.]
 
 ## 6. Children's data
 
@@ -106,10 +114,10 @@ We do not use children's data for behavioural tracking or advertising in any cir
 
 | Right | How to use it |
 |---|---|
-| **Access** | Download everything we hold about you: Settings → Privacy & Data → Export my data |
-| **Correction** | Update your profile at any time from Settings |
-| **Erasure** | Settings → Privacy & Data → Delete account, or at [ACCOUNT DELETION URL] if you have uninstalled the app. See Section 8 |
-| **Withdraw consent** | Settings → Privacy & Data. Withdrawing data-processing consent means deleting your account, since we cannot run the service without it |
+| **Access** | See everything we hold about you in the app — Profile → My data & privacy → View my data — or download a copy with Download a copy |
+| **Correction** | Profile → My data & privacy → Correct my details, at any time |
+| **Erasure** | Profile → My data & privacy → Delete my account, or at [ACCOUNT DELETION URL] if you have uninstalled the app. See Section 8 |
+| **Withdraw consent** | Profile → My data & privacy. Withdrawing data-processing consent means deleting your account, since we cannot run the service without it |
 | **Grievance redressal** | Contact our Grievance Officer, Section 11 |
 | **Nominate** | DPDP §14 lets you nominate someone to exercise your rights if you die or become incapacitated. [LEGAL PLACEHOLDER — describe the nomination mechanism, or state plainly that it is not yet available and how to make such a request by email in the meantime.] |
 
@@ -135,17 +143,28 @@ Other retention periods:
 | Admin audit logs | 2 years |
 | Reports and moderation records | 2 years |
 | Automated moderation flags | 1 year |
+| Push notification tokens | Until you log out on that device or delete your account |
+| Sign-in sessions (device type, sign-in times), once ended | 35 days |
 | Revoked session tokens | 35 days |
 | Verification and password-reset codes | 1 day after they expire |
+| Backups | [BACKUP RETENTION PERIOD — client to confirm] |
+| Server and security logs | [LOG RETENTION PERIOD — client to confirm] |
 
 [LEGAL PLACEHOLDER — confirm these periods satisfy DPDP Act §8(7) and any sectoral rules.]
 
-## 9. Cross-border data transfers
+## 9. Where your data is stored
 
-[LEGAL PLACEHOLDER — BLOCKED: DPDP Act §16 restricts transfer of personal data to countries
-outside those the Government permits. This section cannot be completed until the hosting region
-of the production database is confirmed and each vendor's data-centre location is documented.
-Do not publish this policy with this section unresolved.]
+Your data is stored on servers operated by Hostinger in
+[HOSTINGER DATA CENTRE LOCATION — client to confirm country and city].
+
+Some of the processors in Section 5 handle data outside India — in particular push
+notifications (Google, Apple, Expo) and automated text moderation (OpenAI), which operate in the
+United States. Each row in Section 5 shows where that processor holds data.
+
+[LEGAL PLACEHOLDER — DPDP Act §16 lets the Government restrict transfers of personal data to
+notified countries. Confirm that every location above is permitted, and update this section
+whenever a processor or location changes. Do not publish this policy until the Hostinger
+location and every region in Section 5 are confirmed.]
 
 ## 10. How we protect your data, and when we look at it
 
@@ -167,9 +186,16 @@ Under DPDP Act §13(5) and the Information Technology (Intermediary Guidelines a
 Ethics Code) Rules, 2021, we publish a named officer to receive complaints about how we handle
 your personal data.
 
-**Grievance Officer:** [GRIEVANCE OFFICER NAME]
+**Grievance Officer:** [GRIEVANCE OFFICER FULL NAME]
+**Designation:** [DESIGNATION]
 **Email:** [GRIEVANCE EMAIL]
+**Phone:** [GRIEVANCE PHONE NUMBER]
 **Address:** [REGISTERED POSTAL ADDRESS]
+**Hours:** [WORKING DAYS AND HOURS, e.g. Monday–Friday, 10:00–18:00 IST]
+
+[LEGAL PLACEHOLDER — the client must name a real person here. The IT Rules 2021 require the
+Grievance Officer's name and contact details to be published; a role or a shared inbox alone is
+not enough.]
 
 We acknowledge complaints **within 24 hours** and resolve them **within 15 days** of receipt,
 and we give you a ticket reference. If you are unsatisfied, you may complain to the Data

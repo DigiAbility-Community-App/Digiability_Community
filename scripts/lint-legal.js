@@ -20,7 +20,7 @@ const fs = require("fs");
 const path = require("path");
 
 const LEGAL_DIR = path.join(__dirname, "..", "docs", "legal");
-const EXCLUDED = new Set(["HOLD-unpublished-sections.md"]);
+const EXCLUDED = new Set(["HOLD-unpublished-sections.md", "CLIENT-APPROVAL.md"]);
 
 // A bracketed span, non-greedy, allowed to span lines, not followed by "(".
 const PLACEHOLDER = /\[([^\[\]]+)\](?!\()/g;
