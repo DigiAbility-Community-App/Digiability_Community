@@ -1,14 +1,15 @@
 import { Request, Response, NextFunction } from "express";
 import { verifyAccessToken, AccessTokenPayload } from "../utils/jwt.util";
-import { isJtiRevoked } from "../config/redis";
+import { isSessionActive } from "../services/session.service";
 import prisma from "../models/prisma.client";
 import { isCurrentlySuspended } from "../utils/suspension.util";
 
 // ─────────────────────────────────────────────────────
 // Auth Middleware
 // 1. Verifies the RS256 access token from Authorization header.
-// 2. Checks the JTI against the Redis revocation blocklist
-//    (populated on logout / account deletion).
+// 2. Checks the token's session (`sid`) is still active — logout, logout-all,
+//    password reset, refresh-token reuse and account deletion revoke it, and
+//    the token stops working on its very next request (VAPT M-003).
 // 3. Confirms the account has not been soft-deleted.
 // ─────────────────────────────────────────────────────
 
@@ -53,14 +54,18 @@ export async function authenticate(
     return;
   }
 
-  // Check JTI blocklist — token may have been revoked by logout/deletion
-  // even though it hasn't expired yet.
-  if (payload.jti) {
-    const revoked = await isJtiRevoked(payload.jti).catch(() => false);
-    if (revoked) {
-      res.status(401).json({ success: false, message: "Session has been revoked. Please log in again." });
-      return;
-    }
+  // Tokens minted before sessions existed carry no sid. Rejecting them is
+  // safe: clients refresh on 401, and refresh issues a session-bound token.
+  if (!payload.sid) {
+    res.status(401).json({ success: false, message: "Session expired. Please log in again." });
+    return;
+  }
+
+  // Session check — the token may belong to a session that was revoked
+  // (logout etc.) even though the token itself hasn't expired.
+  if (!(await isSessionActive(payload.sid))) {
+    res.status(401).json({ success: false, message: "Session has been revoked. Please log in again." });
+    return;
   }
 
   // Guard against soft-deleted accounts (single indexed PK lookup)

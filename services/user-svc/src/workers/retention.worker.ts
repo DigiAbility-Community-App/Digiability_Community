@@ -49,6 +49,16 @@ async function runRetentionPass(): Promise<void> {
     });
     results.revokedRefreshTokens = rrtResult.count;
 
+    // 3b. Ended login sessions (revoked or expired) past the retention window.
+    //     Cascades to their refresh-token history.
+    const endedBefore = daysAgo(RETENTION_DAYS.endedSessions);
+    const sessResult = await prisma.session.deleteMany({
+      where: {
+        OR: [{ revokedAt: { lt: endedBefore } }, { expiresAt: { lt: endedBefore } }],
+      },
+    });
+    results.endedSessions = sessResult.count;
+
     // 4. Admin audit log entries older than the retention window
     const aalResult = await prisma.adminAuditLog.deleteMany({
       where: { createdAt: { lt: daysAgo(RETENTION_DAYS.adminAuditLog) } },

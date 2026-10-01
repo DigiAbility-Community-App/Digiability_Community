@@ -2,6 +2,7 @@ import "dotenv/config";
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
+import { API_HELMET_OPTIONS, corsOriginCheck, loadAllowedOrigins } from "./config/cors";
 import cookieParser from "cookie-parser";
 import { existsSync } from "fs";
 import prisma from "./models/prisma.client";
@@ -88,25 +89,15 @@ function getDatabaseHelpMessage() {
 }
 
 // ─── Security Headers ──────────────────────────────────
-app.use(
-  helmet({
-    // This is a JSON API — no HTML served, so relax CSP to API-appropriate defaults
-    contentSecurityPolicy: {
-      directives: {
-        defaultSrc: ["'none'"],
-        frameAncestors: ["'none'"],
-      },
-    },
-    crossOriginEmbedderPolicy: false, // Not needed for API
-  })
-);
+app.use(helmet(API_HELMET_OPTIONS));
 
 // ─── Global Middleware ─────────────────────────────────
+// Explicit allowlist from CORS_ALLOWED_ORIGINS (see config/cors.ts); startup
+// fails in production if it's missing or a placeholder.
+const allowedOrigins = loadAllowedOrigins();
 app.use(
   cors({
-    origin: process.env.NODE_ENV === "production"
-      ? process.env.CLIENT_BASE_URL ?? "http://localhost:3000"
-      : true,   // Allow all origins in development (mobile devices, emulators)
+    origin: corsOriginCheck(allowedOrigins),
     credentials: true,          // Required for cross-origin cookies
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],

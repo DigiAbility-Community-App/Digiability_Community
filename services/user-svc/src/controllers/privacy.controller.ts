@@ -62,9 +62,9 @@ export const updateConsent = asyncHandler(
     }
 
     const type = parseConsentType(consentType);
-    const ip = req.headers["x-forwarded-for"]?.toString().split(",")[0] || req.socket.remoteAddress;
-
-    await recordConsent(userId, type, accepted, ip);
+    // req.ip honours `trust proxy` (index.ts); reading X-Forwarded-For
+    // directly would let a client put any address on its consent record.
+    await recordConsent(userId, type, accepted, req.ip);
 
     auditLog(accepted ? "privacy.consent_recorded" : "privacy.consent_withdrawn", {
       userId,

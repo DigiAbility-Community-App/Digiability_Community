@@ -20,6 +20,10 @@ export const RETENTION_DAYS = {
   // Revoked refresh tokens kept for replay-detection; purge after max token lifetime + buffer
   revokedRefreshTokens: 35,
 
+  // Login sessions (device user-agent, sign-in times) once ended — logged out,
+  // revoked or expired. Kept briefly for security investigation, then deleted.
+  endedSessions: 35,
+
   // Admin audit log (append-only, immutable) — 2 years for compliance investigation window
   // [LEGAL PLACEHOLDER] — confirm with legal whether a longer period is required
   adminAuditLog: 730,

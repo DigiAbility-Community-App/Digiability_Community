@@ -3,7 +3,7 @@ import Redis from "ioredis";
 // ─────────────────────────────────────────────────────
 // Redis Client — user-svc
 // Used for:
-//   • JTI revocation blocklist (access token invalidation)
+//   • Session revocation cache + revocation events (see utils/session-cache.ts)
 //   • Rate-limit counters (express-rate-limit store)
 // ─────────────────────────────────────────────────────
 
@@ -35,23 +35,12 @@ export async function disconnectRedis(): Promise<void> {
   }
 }
 
-// ─── JTI blocklist helpers ────────────────────────────
+// ─── Session revocation events ───────────────────────
+// Published whenever a session is revoked so services holding live
+// connections for it (chat-svc WebSockets) can drop them immediately.
 
-const JTI_PREFIX = "revoked:jti:";
+export const SESSION_REVOKED_CHANNEL = "auth:session-revoked";
 
-/**
- * Add a JTI to the revocation set. TTL = remaining token lifetime so
- * the key expires automatically after the token would have expired anyway.
- */
-export async function revokeJti(jti: string, ttlSeconds: number): Promise<void> {
-  if (ttlSeconds <= 0) return;
-  await getRedis().set(`${JTI_PREFIX}${jti}`, "1", "EX", ttlSeconds);
-}
-
-/**
- * Returns true if the JTI has been explicitly revoked before expiry.
- */
-export async function isJtiRevoked(jti: string): Promise<boolean> {
-  const val = await getRedis().get(`${JTI_PREFIX}${jti}`);
-  return val === "1";
+export async function publishSessionRevoked(sid: string, userId: string): Promise<void> {
+  await getRedis().publish(SESSION_REVOKED_CHANNEL, JSON.stringify({ sid, userId }));
 }

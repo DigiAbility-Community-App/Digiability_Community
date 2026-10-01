@@ -1,24 +1,30 @@
 import prisma from "../models/prisma.client";
 import { hashPassword, comparePassword } from "../utils/hash.util";
-import { signAccessToken } from "../utils/jwt.util";
 import { createError } from "../middleware/error.middleware";
 import { assertNotSuspended, isCurrentlySuspended } from "../utils/suspension.util";
 import {
   createEmailVerificationOtp,
   validateEmailVerificationOtp,
   deleteEmailVerificationOtp,
-  createRefreshToken,
+  createSession,
   createPasswordResetOtp,
   validatePasswordResetOtp,
   deletePasswordResetOtp,
-  revokeAllUserRefreshTokens,
+  revokeAllUserSessions,
+  broadcastSessionsEnded,
 } from "./token.service";
 import {
   sendVerificationOtpEmail,
   sendPasswordResetOtpEmail,
 } from "./email.service";
 import { auditLog } from "./audit.service";
-import { recordRegistrationConsents, CURRENT_POLICY_VERSION, needsPolicyReacceptance } from "./consent.service";
+import {
+  recordRegistrationConsents,
+  CURRENT_POLICY_VERSION,
+  CURRENT_CONSENT_NOTICE_VERSION,
+  needsPolicyReacceptance,
+  needsDataConsent,
+} from "./consent.service";
 import { eraseCrossServiceContent, recordErasureOutcome } from "./erasure.service";
 import { RETENTION_DAYS } from "../config/retention.config";
 import { checkAgeEligibility } from "../utils/age.util";
@@ -41,7 +47,8 @@ import { Role } from "../generated/client";
 
 export async function verifyEmailOtp(
   email: string,
-  otp: string
+  otp: string,
+  userAgent?: string
 ): Promise<LoginResult & { message: string }> {
   // 1. Find user by email
   const user = await prisma.user.findUnique({ where: { email } });
@@ -68,8 +75,7 @@ export async function verifyEmailOtp(
   // or forum-svc, which only verify the JWT signature. Minting only after
   // verification means no valid token can exist for an unverified account,
   // so every downstream service is protected without changing any of them.
-  const accessToken = signAccessToken({ sub: verifiedUser.id, email: verifiedUser.email });
-  const refreshToken = await createRefreshToken(verifiedUser.id);
+  const { accessToken, refreshToken } = await createSession(verifiedUser, userAgent);
 
   return {
     accessToken,
@@ -194,7 +200,7 @@ export async function registerUser(
   input: RegisterInput,
   ip?: string
 ): Promise<RegisterResult> {
-  const { name, email, password, role, roles, phoneNo, policyVersion, dateOfBirth } = input as any;
+  const { name, email, password, role, roles, phoneNo, policyVersion, consentNoticeVersion, dateOfBirth } = input as any;
 
   // ── Age gate (DPDP §9) ──────────────────────────────────
   // The server is the gate: a request that bypasses the app entirely is
@@ -217,6 +223,15 @@ export async function registerUser(
   if (policyVersion !== CURRENT_POLICY_VERSION) {
     throw createError(
       "The Terms of Use and Community Guidelines have been updated. Please refresh and review the latest version before continuing.",
+      409
+    );
+  }
+
+  // Same rule for the data-processing notice: consent only counts for the
+  // notice text the user was actually shown.
+  if (consentNoticeVersion !== CURRENT_CONSENT_NOTICE_VERSION) {
+    throw createError(
+      "Our data-processing notice has been updated. Please update the app and review it before continuing.",
       409
     );
   }
@@ -289,7 +304,7 @@ const MAX_LOGIN_ATTEMPTS = 10;
 // Lockout duration in minutes
 const LOCKOUT_MINUTES = 15;
 
-export async function loginUser(input: LoginInput): Promise<LoginResult> {
+export async function loginUser(input: LoginInput, userAgent?: string): Promise<LoginResult> {
   const { email, password } = input;
 
   // 1. Find user (select lockout fields)
@@ -365,9 +380,8 @@ export async function loginUser(input: LoginInput): Promise<LoginResult> {
     data: { loginAttempts: 0, lockedUntil: null, lastSeen: new Date() },
   });
 
-  // 7. Sign access token + issue refresh token
-  const accessToken = signAccessToken({ sub: user.id, email: user.email });
-  const refreshToken = await createRefreshToken(user.id);
+  // 7. Start a session: access token (bound to it via `sid`) + refresh token
+  const { accessToken, refreshToken } = await createSession(user, userAgent);
 
   auditLog("auth.login_success", { userId: user.id, email: user.email });
 
@@ -433,14 +447,13 @@ export async function resetPassword(
   // 2. Hash new password
   const hashedPassword = await hashPassword(password);
 
-  // 3. Update password + revoke all refresh tokens (force re-login)
-  await Promise.all([
-    prisma.user.update({
-      where: { id: userId },
-      data: { password: hashedPassword },
-    }),
-    revokeAllUserRefreshTokens(userId),
-  ]);
+  // 3. Update password, then end every session on every device — access
+  // tokens included, not just refresh tokens (force re-login everywhere).
+  await prisma.user.update({
+    where: { id: userId },
+    data: { password: hashedPassword },
+  });
+  await revokeAllUserSessions(userId, "password_reset");
 
   // 4. Delete used reset OTP
   await deletePasswordResetOtp(userId);
@@ -475,6 +488,13 @@ export async function deleteAccount(
     auditLog("auth.account_deletion_denied", { userId });
     throw createError("Incorrect password", 401);
   }
+
+  // Collected before the transaction deletes them, so the revocation can be
+  // broadcast afterwards (instant 401s, and chat WebSockets dropped).
+  const endedSessions = await prisma.session.findMany({
+    where: { userId, revokedAt: null },
+    select: { id: true },
+  });
 
   await prisma.$transaction(async (tx) => {
     // 0. Seal a minimal registration record BEFORE anonymising, because the
@@ -540,6 +560,7 @@ export async function deleteAccount(
 
     // 3. Revoke all auth tokens so existing sessions stop working immediately
     await tx.refreshToken.deleteMany({ where: { userId } });
+    await tx.session.deleteMany({ where: { userId } });
     await tx.emailVerificationToken.deleteMany({ where: { userId } });
     await tx.passwordResetToken.deleteMany({ where: { userId } });
 
@@ -556,6 +577,7 @@ export async function deleteAccount(
   });
 
   auditLog("auth.account_deleted", { userId });
+  await broadcastSessionsEnded(userId, endedSessions.map((s) => s.id));
 
   // 6. Erase content owned by the other services. Awaited and recorded, rather
   //    than the fire-and-forget it used to be — a failure here is now visible
@@ -603,6 +625,10 @@ export async function getCurrentUser(userId: string) {
   // every existing user back into this state on their next session restore.
   const policyReacceptanceRequired = await needsPolicyReacceptance(userId);
 
+  // True until the user has consented to the CURRENT data-processing notice —
+  // including every account that predates the separate notice (DPDP §5/§6).
+  const dataConsentRequired = await needsDataConsent(userId);
+
   // Accounts created before the age gate have no recorded date of birth,
   // because it used to be an optional profile field. They are asked for it at
   // the same interception point, so the population converges instead of
@@ -614,6 +640,7 @@ export async function getCurrentUser(userId: string) {
     role: user.roles[0] || null,
     isSuspended: isCurrentlySuspended(user),
     policyReacceptanceRequired,
+    dataConsentRequired,
     dateOfBirthRequired,
   };
 }
@@ -662,31 +689,75 @@ export async function updateUserRole(userId: string, input: UpdateRoleInput) {
 }
 
 // ─── Batch User Lookup ─────────────────────────────────
-// Returns minimal user info (id, name, deletedAt, isSuspended) for a list of
-// IDs. Used by the mobile app to resolve participant names in
-// conversation lists without making N+1 requests. deletedAt lets
-// clients distinguish a soft-deleted account from a real user who
-// happens to be named "Deleted User". isSuspended lets clients render
-// "Name (Inactive)" for suspended-but-not-deleted accounts.
+// Resolves display names for users the requester is allowed to see
+// (VAPT M-002 / OWASP API1:2023). chat-svc stores only userIds, so clients
+// look names up here; without a check, any account could enumerate any other.
+//
+// A user is returned only if they are:
+//   • the requester themselves;
+//   • a current or former member of a conversation the requester is an
+//     active member of (participant lists, and group history showing
+//     people who left);
+//   • the invitee on an invite to a conversation the requester is an active
+//     admin of (reviewing invites and join requests — chat-svc only shows
+//     that list to admins; admin roles mirror chat-svc's hasAdminAccess:
+//     OWNER/ADMIN in groups, OWNER/CAREGIVER in Care Circles);
+//   • someone who invited the requester.
+// Soft-deleted accounts are never returned; clients show a missing id as
+// "This user no longer exists". Unauthorised ids are omitted rather than rejected with a
+// 403, so the response doesn't reveal whether an id shares a conversation.
+//
+// The filter runs in Postgres in one query. It reads chat-svc's tables in the
+// `chat` schema with raw SQL instead of Prisma models: declaring chat models
+// in this service's schema would let user-svc's `prisma db push` try to
+// manage tables it doesn't own.
 
-export async function getUsersByIds(ids: string[]) {
-  const uniqueIds = [...new Set(ids)];
-  if (uniqueIds.length === 0) return [];
-  if (uniqueIds.length > 100) {
-    throw createError("Too many IDs — max 100 per request", 400);
-  }
+export interface PublicUserDTO {
+  id: string;
+  name: string;
+}
 
-  const users = await prisma.user.findMany({
-    where: { id: { in: uniqueIds } },
-    select: {
-      id: true,
-      name: true,
-      deletedAt: true,
-      isSuspended: true,
-    },
-  });
+export async function getUsersByIds(requesterId: string, ids: string[]): Promise<PublicUserDTO[]> {
+  if (ids.length === 0) return [];
 
-  return users;
+  return prisma.$queryRaw<PublicUserDTO[]>`
+    SELECT u.id, u.name
+    FROM public.users u
+    WHERE u.id = ANY(${ids}::text[])
+      AND u."deletedAt" IS NULL
+      AND (
+        u.id = ${requesterId}
+        OR EXISTS (
+          SELECT 1
+          FROM chat.conversation_members mine
+          JOIN chat.conversations c ON c.id = mine."conversationId" AND c."deletedAt" IS NULL
+          JOIN chat.conversation_members theirs ON theirs."conversationId" = mine."conversationId"
+          WHERE mine."userId" = ${requesterId}
+            AND mine."leftAt" IS NULL
+            AND theirs."userId" = u.id
+        )
+        OR EXISTS (
+          SELECT 1
+          FROM chat.conversation_members mine
+          JOIN chat.conversations c ON c.id = mine."conversationId" AND c."deletedAt" IS NULL
+          JOIN chat.group_invites gi ON gi."conversationId" = mine."conversationId"
+          WHERE mine."userId" = ${requesterId}
+            AND mine."leftAt" IS NULL
+            AND (
+              mine.role = 'OWNER'
+              OR (c."subType" = 'CARE_CIRCLE' AND mine.role = 'CAREGIVER')
+              OR (c."subType" IS DISTINCT FROM 'CARE_CIRCLE' AND mine.role = 'ADMIN')
+            )
+            AND gi."inviteeId" = u.id
+        )
+        OR EXISTS (
+          SELECT 1
+          FROM chat.group_invites gi
+          WHERE gi."inviteeId" = ${requesterId}
+            AND gi."inviterId" = u.id
+        )
+      )
+  `;
 }
 
 // ─── Device Token ─────────────────────────────────────

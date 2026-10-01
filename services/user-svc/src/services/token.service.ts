@@ -1,26 +1,28 @@
 import crypto from "crypto";
 import prisma from "../models/prisma.client";
 import { generateToken, hashToken } from "../utils/hash.util";
-import { signAccessToken, decodeToken } from "../utils/jwt.util";
-import { revokeJti } from "../config/redis";
+import { signAccessToken } from "../utils/jwt.util";
+import { publishSessionRevoked } from "../config/redis";
+import { markSessionRevoked } from "./session.service";
 import { auditLog } from "./audit.service";
 import { createError } from "../middleware/error.middleware";
 import { assertNotSuspended } from "../utils/suspension.util";
 
 // ─────────────────────────────────────────────────────
 // Token Service
-// Manages refresh tokens, email verification OTPs,
-// and password reset tokens.
+// Manages login sessions, refresh tokens, email verification OTPs,
+// and password reset OTPs.
 //
-// Refresh token security model:
-//   • Every token is hashed (SHA-256) before storage.
-//   • Tokens belong to a "family" (familyId UUID). A family
-//     is the chain of all tokens issued from one login event.
-//   • On rotation: old token is MARKED REVOKED (not deleted),
-//     new token inherits the same familyId.
-//   • If a revoked token is presented, we detect session theft:
-//     revoke the ENTIRE family so the attacker's newer token
-//     also becomes invalid.
+// Session model (VAPT M-003 / CWE-613):
+//   • Each login creates a row in `sessions`. Its id is the `sid` claim in
+//     every access token minted for that login, and every service rejects a
+//     token whose session is revoked — so logout is immediate, not "when the
+//     access token expires".
+//   • Refresh tokens are hashed (SHA-256) and rotated on every use. The old
+//     token is marked revoked (kept, not deleted) and the session points at
+//     the new one.
+//   • Presenting an already-rotated refresh token is a theft signal: the
+//     whole session is revoked, killing the attacker's copy and the victim's.
 // ─────────────────────────────────────────────────────
 
 const REFRESH_TOKEN_EXPIRES_DAYS = parseInt(
@@ -30,41 +32,161 @@ const REFRESH_TOKEN_EXPIRES_DAYS = parseInt(
 const PASSWORD_RESET_OTP_EXPIRES_MINUTES = 10;
 const PASSWORD_RESET_OTP_MAX_ATTEMPTS = 5;
 
-// ─── Refresh Tokens ────────────────────────────────────
+export type SessionRevokeReason =
+  | "logout"
+  | "logout_all"
+  | "password_reset"
+  | "reuse_detected"
+  | "account_deleted";
 
-/**
- * Create a new refresh token, optionally within an existing family.
- * Returns the raw token (sent to the client via cookie/header).
- */
-export async function createRefreshToken(
-  userId: string,
-  familyId: string = crypto.randomUUID()
-): Promise<string> {
-  const { rawToken, tokenHash } = generateToken(64);
-
+function refreshExpiry(): Date {
   const expiresAt = new Date();
   expiresAt.setDate(expiresAt.getDate() + REFRESH_TOKEN_EXPIRES_DAYS);
+  return expiresAt;
+}
 
-  await prisma.refreshToken.create({
-    data: { userId, tokenHash, familyId, expiresAt, revoked: false },
+// ─── Sessions ──────────────────────────────────────────
+
+/**
+ * Start a session for a freshly authenticated user. Returns the raw refresh
+ * token (sent to the client via cookie/header) and an access token bound to
+ * the new session.
+ */
+export async function createSession(
+  user: { id: string; email: string },
+  userAgent?: string
+): Promise<{ sessionId: string; accessToken: string; refreshToken: string }> {
+  const { rawToken, tokenHash } = generateToken(64);
+  const expiresAt = refreshExpiry();
+  const sessionId = crypto.randomUUID();
+
+  await prisma.$transaction([
+    prisma.session.create({
+      data: {
+        id: sessionId,
+        userId: user.id,
+        refreshTokenHash: tokenHash,
+        userAgent: userAgent ? userAgent.slice(0, 255) : null,
+        expiresAt,
+      },
+    }),
+    prisma.refreshToken.create({
+      data: { userId: user.id, tokenHash, familyId: sessionId, sessionId, expiresAt },
+    }),
+  ]);
+
+  const accessToken = signAccessToken({ sub: user.id, email: user.email, sid: sessionId });
+  return { sessionId, accessToken, refreshToken: rawToken };
+}
+
+/** Tell every service the session is dead, and drop its live sockets. */
+async function broadcastRevocation(sid: string, userId: string): Promise<void> {
+  await markSessionRevoked(sid);
+  await publishSessionRevoked(sid, userId).catch(() => {
+    // Non-fatal: REST checks still see the revocation via the cache/DB.
   });
+}
 
-  return rawToken;
+/** Broadcast that sessions already removed from the DB (account deletion) are dead. */
+export async function broadcastSessionsEnded(userId: string, sids: string[]): Promise<void> {
+  await Promise.all(sids.map((sid) => broadcastRevocation(sid, userId)));
 }
 
 /**
- * Validate a raw refresh token.
- *
- * Reuse detection: if the token hash is found but revoked=true, it means
- * a previously-rotated token is being replayed. This is a theft signal —
- * revoke every token in the same family to invalidate any stolen session.
+ * Revoke one session: its access tokens stop working on their next request
+ * and its refresh tokens can no longer be used. Idempotent.
  */
-export async function validateRefreshToken(rawToken: string) {
-  const tokenHash = hashToken(rawToken);
+export async function revokeSession(sid: string, reason: SessionRevokeReason): Promise<boolean> {
+  const session = await prisma.session.findUnique({
+    where: { id: sid },
+    select: { userId: true },
+  });
+  if (!session) return false;
 
+  await prisma.$transaction([
+    prisma.session.updateMany({
+      where: { id: sid, revokedAt: null },
+      data: { revokedAt: new Date(), revokedReason: reason },
+    }),
+    prisma.refreshToken.updateMany({
+      where: { sessionId: sid },
+      data: { revoked: true },
+    }),
+  ]);
+
+  await broadcastRevocation(sid, session.userId);
+  auditLog("auth.session_revoked", { userId: session.userId, detail: { sid, reason } });
+  return true;
+}
+
+/**
+ * Revoke every session a user has (logout all devices, password reset).
+ * Returns how many live sessions were ended.
+ */
+export async function revokeAllUserSessions(
+  userId: string,
+  reason: SessionRevokeReason
+): Promise<number> {
+  const live = await prisma.session.findMany({
+    where: { userId, revokedAt: null },
+    select: { id: true },
+  });
+
+  await prisma.$transaction([
+    prisma.session.updateMany({
+      where: { userId, revokedAt: null },
+      data: { revokedAt: new Date(), revokedReason: reason },
+    }),
+    // All of the user's refresh tokens, including any that predate sessions.
+    prisma.refreshToken.updateMany({
+      where: { userId },
+      data: { revoked: true },
+    }),
+  ]);
+
+  await Promise.all(live.map((s) => broadcastRevocation(s.id, userId)));
+  auditLog("auth.sessions_revoked_all", { userId, detail: { reason, count: live.length } });
+  return live.length;
+}
+
+/**
+ * Logout by refresh token, for clients whose access token is gone or expired.
+ * Returns false when the token is unknown.
+ */
+export async function revokeSessionByRefreshToken(
+  rawToken: string,
+  reason: SessionRevokeReason
+): Promise<boolean> {
   const stored = await prisma.refreshToken.findFirst({
-    where: { tokenHash },
+    where: { tokenHash: hashToken(rawToken) },
+    select: { sessionId: true, familyId: true },
+  });
+  if (!stored) return false;
+
+  if (stored.sessionId) return revokeSession(stored.sessionId, reason);
+
+  // Token from before sessions existed: end its family instead.
+  await prisma.refreshToken.updateMany({
+    where: { familyId: stored.familyId },
+    data: { revoked: true },
+  });
+  return true;
+}
+
+// ─── Refresh Tokens ────────────────────────────────────
+
+class RefreshReuseError extends Error {}
+
+/**
+ * Validate a raw refresh token and its session. A revoked token on a live
+ * session means a rotated token is being replayed — the session is revoked
+ * before rejecting.
+ */
+async function validateRefreshToken(rawToken: string) {
+  const stored = await prisma.refreshToken.findFirst({
+    where: { tokenHash: hashToken(rawToken) },
     include: {
+      session: { select: { id: true, revokedAt: true } },
       user: {
         select: {
           id: true,
@@ -81,18 +203,13 @@ export async function validateRefreshToken(rawToken: string) {
 
   if (!stored) throw createError("Invalid refresh token", 401);
 
+  if (stored.session?.revokedAt) {
+    throw createError("Your session has ended. Please log in again.", 401);
+  }
+
   if (stored.revoked) {
-    // Reuse of a rotated token: revoke the entire family to invalidate
-    // any token the attacker may have obtained through the rotation chain.
-    await prisma.refreshToken.updateMany({
-      where: { familyId: stored.familyId },
-      data: { revoked: true },
-    });
-    auditLog("auth.token_reuse", {
-      userId: stored.userId,
-      detail: { familyId: stored.familyId },
-    });
-    throw createError("Refresh token reuse detected. All sessions have been revoked.", 401);
+    await handleReuse(stored.userId, stored.sessionId, stored.familyId);
+    throw createError("Refresh token reuse detected. This session has been revoked.", 401);
   }
 
   if (stored.expiresAt < new Date()) throw createError("Refresh token expired", 401);
@@ -114,74 +231,65 @@ export async function validateRefreshToken(rawToken: string) {
   return stored;
 }
 
+async function handleReuse(userId: string, sessionId: string | null, familyId: string) {
+  if (sessionId) {
+    await revokeSession(sessionId, "reuse_detected");
+  } else {
+    await prisma.refreshToken.updateMany({ where: { familyId }, data: { revoked: true } });
+  }
+  auditLog("auth.token_reuse", { userId, detail: { sessionId, familyId } });
+}
+
 /**
- * Rotate a refresh token: mark old as revoked, issue new in the same family.
- * Returns new raw refresh token + new access token.
+ * Rotate a refresh token: the presented token is consumed, a new one is
+ * issued on the same session, and a fresh access token is signed for it.
  */
 export async function rotateRefreshToken(
   rawOldToken: string
 ): Promise<{ accessToken: string; refreshToken: string }> {
   const stored = await validateRefreshToken(rawOldToken);
+  const { rawToken, tokenHash } = generateToken(64);
+  const expiresAt = refreshExpiry();
+  // Tokens from before sessions existed get one now, keyed by their family,
+  // so users who were logged in across the migration are not logged out.
+  const sessionId = stored.sessionId ?? stored.familyId;
 
-  // Mark old token revoked (keep it so reuse can be detected)
-  await prisma.refreshToken.update({
-    where: { id: stored.id },
-    data: { revoked: true },
-  });
-
-  // Issue new token in the same family
-  const newRefreshToken = await createRefreshToken(stored.userId, stored.familyId);
-  const accessToken = signAccessToken({ sub: stored.user.id, email: stored.user.email });
-
-  return { accessToken, refreshToken: newRefreshToken };
-}
-
-/**
- * Revoke a specific refresh token (logout single device).
- * Also adds the accompanying access token JTI to the Redis blocklist.
- */
-export async function revokeRefreshToken(
-  rawToken: string,
-  accessToken?: string
-): Promise<void> {
-  const tokenHash = hashToken(rawToken);
-  await prisma.refreshToken.updateMany({
-    where: { tokenHash },
-    data: { revoked: true },
-  });
-
-  // Immediately invalidate the current access token before it expires
-  if (accessToken) {
-    await addAccessTokenToBlocklist(accessToken);
-  }
-}
-
-/**
- * Revoke ALL refresh tokens for a user (logout all devices, password reset, account deletion).
- */
-export async function revokeAllUserRefreshTokens(userId: string): Promise<void> {
-  await prisma.refreshToken.updateMany({
-    where: { userId },
-    data: { revoked: true },
-  });
-}
-
-/**
- * Add a raw access token's JTI to the Redis revocation blocklist.
- * TTL is set to the token's remaining lifetime so the key self-cleans.
- */
-export async function addAccessTokenToBlocklist(rawAccessToken: string): Promise<void> {
   try {
-    const payload = decodeToken(rawAccessToken);
-    if (!payload?.jti) return;
+    await prisma.$transaction(async (tx) => {
+      // Conditional consume: if two requests race with the same token, only
+      // one wins; the loser is treated as reuse.
+      const { count } = await tx.refreshToken.updateMany({
+        where: { id: stored.id, revoked: false },
+        data: { revoked: true },
+      });
+      if (count === 0) throw new RefreshReuseError();
 
-    const nowSeconds = Math.floor(Date.now() / 1000);
-    const ttl = payload.exp ? payload.exp - nowSeconds : 0;
+      await tx.session.upsert({
+        where: { id: sessionId },
+        update: { refreshTokenHash: tokenHash, lastUsedAt: new Date(), expiresAt },
+        create: { id: sessionId, userId: stored.userId, refreshTokenHash: tokenHash, expiresAt },
+      });
 
-    await revokeJti(payload.jti, ttl);
-  } catch {
-    // Non-fatal: if Redis is unavailable, token expires naturally in ≤15m
+      await tx.refreshToken.create({
+        data: { userId: stored.userId, tokenHash, familyId: stored.familyId, sessionId, expiresAt },
+      });
+      if (!stored.sessionId) {
+        await tx.refreshToken.updateMany({
+          where: { familyId: stored.familyId, sessionId: null },
+          data: { sessionId },
+        });
+      }
+    });
+  } catch (err) {
+    if (err instanceof RefreshReuseError) {
+      await handleReuse(stored.userId, sessionId, stored.familyId);
+      throw createError("Refresh token reuse detected. This session has been revoked.", 401);
+    }
+    throw err;
   }
+
+  const accessToken = signAccessToken({ sub: stored.user.id, email: stored.user.email, sid: sessionId });
+  return { accessToken, refreshToken: rawToken };
 }
 
 // ─── Email Verification OTPs ───────────────────────────

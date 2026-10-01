@@ -10,7 +10,7 @@
 import prisma from "../models/prisma.client";
 import { ConsentType, Prisma } from "../generated/client";
 import { createError } from "../middleware/error.middleware";
-import { POLICY_VERSION } from "../config/policy-version.generated";
+import { POLICY_VERSION, CONSENT_NOTICE_VERSION } from "../config/policy-version.generated";
 
 // Accepts an optional transaction client so registration can record consent
 // in the same transaction as user creation — a partial failure must not leave
@@ -22,6 +22,18 @@ type Db = typeof prisma | Prisma.TransactionClient;
 // hardcode a version string here — it would let the stamped consent version
 // disagree with the document text a user actually read.
 export const CURRENT_POLICY_VERSION = POLICY_VERSION;
+
+// DATA_PROCESSING is consent to the data-processing notice
+// (docs/legal/07-data-processing-notice.md), versioned separately so the
+// notice can change without forcing everyone to re-accept the Terms.
+export const CURRENT_CONSENT_NOTICE_VERSION = CONSENT_NOTICE_VERSION;
+
+/** The document version a consent of this type refers to. */
+export function versionFor(consentType: ConsentType): string {
+  return consentType === ConsentType.DATA_PROCESSING
+    ? CURRENT_CONSENT_NOTICE_VERSION
+    : CURRENT_POLICY_VERSION;
+}
 
 // Truncate IPv4 to /24 and IPv6 to /48 for data minimisation. Exported so
 // every consent-adjacent record (including guardian attestations) minimises the
@@ -61,7 +73,7 @@ export async function recordConsent(
     where: { userId_consentType: { userId, consentType } },
     update: {
       accepted,
-      version: CURRENT_POLICY_VERSION,
+      version: versionFor(consentType),
       ipAddress: truncateIp(ip),
       acceptedAt: accepted ? now : undefined,
       withdrawnAt: accepted ? null : now,
@@ -70,7 +82,7 @@ export async function recordConsent(
       userId,
       consentType,
       accepted,
-      version: CURRENT_POLICY_VERSION,
+      version: versionFor(consentType),
       ipAddress: truncateIp(ip),
       acceptedAt: accepted ? now : null,
       withdrawnAt: accepted ? null : now,
@@ -111,15 +123,18 @@ export async function withdrawConsent(
       userId,
       consentType,
       accepted: false,
-      version: CURRENT_POLICY_VERSION,
+      version: versionFor(consentType),
       withdrawnAt: now,
     },
   });
 }
 
-// Called at registration. Records DATA_PROCESSING (mandatory for the service
-// to operate) alongside the Terms and Guidelines acceptance the registration
-// gate requires — one consent store, not three separate ad-hoc tables.
+// Called at registration, after the request has passed RegisterSchema — which
+// requires BOTH acceptedTerms (Terms + Guidelines checkbox) and
+// acceptedDataProcessing (the separate, unticked-by-default checkbox on the
+// data-processing notice screen). DATA_PROCESSING is recorded because of that
+// second, specific agreement, not inferred from the Terms checkbox: bundling
+// the two is not valid consent under DPDP §6.
 export async function recordRegistrationConsents(
   userId: string,
   ip?: string,
@@ -132,15 +147,14 @@ export async function recordRegistrationConsents(
   ]);
 }
 
-// The set of consents that gate registration and must be re-accepted whenever
-// CURRENT_POLICY_VERSION changes.
+// Consents that must be re-accepted when CURRENT_POLICY_VERSION changes.
 const ACCEPTANCE_REQUIRED: ConsentType[] = [
   ConsentType.TERMS_OF_USE,
   ConsentType.COMMUNITY_GUIDELINES,
 ];
 
 /**
- * Required consents this user has not accepted at the current policy version —
+ * Terms/Guidelines this user has not accepted at the current policy version —
  * either never accepted, or accepted an older version. Drives the re-acceptance
  * prompt (and doubles as the annual-notice mechanism: bumping
  * CURRENT_POLICY_VERSION is what puts every existing user back in this list).
@@ -158,7 +172,21 @@ export async function getStaleConsents(userId: string): Promise<ConsentType[]> {
   });
 }
 
-/** True if this user must re-accept anything before creating content. */
+/** True if this user must re-accept the Terms/Guidelines before creating content. */
 export async function needsPolicyReacceptance(userId: string): Promise<boolean> {
   return (await getStaleConsents(userId)).length > 0;
+}
+
+/**
+ * True if this user has not consented to the CURRENT data-processing notice.
+ * Every account created before the separate notice existed has a
+ * DATA_PROCESSING row stamped with a policy version instead, so all of them
+ * are asked once.
+ */
+export async function needsDataConsent(userId: string): Promise<boolean> {
+  const row = await prisma.userConsent.findUnique({
+    where: { userId_consentType: { userId, consentType: ConsentType.DATA_PROCESSING } },
+    select: { accepted: true, version: true },
+  });
+  return !row || !row.accepted || row.version !== CURRENT_CONSENT_NOTICE_VERSION;
 }

@@ -32,6 +32,7 @@ export interface DataExportBundle {
   mentorProfile: Record<string, unknown> | null;
   mentorReviewsGiven: Array<Record<string, unknown>>;
   deviceTokens: Array<{ platform: string; registeredAt: string }>;
+  sessions: Array<{ device: string | null; signedInAt: string; lastUsedAt: string; endedAt: string | null; endedBecause: string | null }>;
   consents: Array<Record<string, unknown>>;
   guardianAttestations: Array<Record<string, unknown>>;
   reportsFiled: Array<Record<string, unknown>>;
@@ -112,6 +113,12 @@ export async function exportUserData(userId: string): Promise<DataExportBundle> 
       deviceTokens: {
         select: { platform: true, createdAt: true },
       },
+      // Login sessions (VAPT M-003): device user-agent and sign-in times are
+      // personal data, so they belong in a right-of-access export.
+      sessions: {
+        select: { userAgent: true, createdAt: true, lastUsedAt: true, revokedAt: true, revokedReason: true },
+        orderBy: { createdAt: "desc" },
+      },
       consents: {
         select: {
           consentType: true,
@@ -154,7 +161,7 @@ export async function exportUserData(userId: string): Promise<DataExportBundle> 
     throw createError("User not found", 404);
   }
 
-  const { userProfile, mentorProfile, givenReviews, deviceTokens, consents, guardianAttestations, filedReports, ...account } = user;
+  const { userProfile, mentorProfile, givenReviews, deviceTokens, sessions, consents, guardianAttestations, filedReports, ...account } = user;
 
   return {
     exportedAt: new Date().toISOString(),
@@ -208,10 +215,17 @@ export async function exportUserData(userId: string): Promise<DataExportBundle> 
       platform: t.platform,
       registeredAt: t.createdAt.toISOString(),
     })),
+    sessions: sessions.map((s) => ({
+      device: s.userAgent,
+      signedInAt: s.createdAt.toISOString(),
+      lastUsedAt: s.lastUsedAt.toISOString(),
+      endedAt: s.revokedAt?.toISOString() ?? null,
+      endedBecause: s.revokedReason,
+    })),
     consents: consents.map((c) => ({
       consentType: c.consentType,
       accepted: c.accepted,
-      policyVersion: c.version,
+      version: c.version, // policy version, or the data-processing notice version for DATA_PROCESSING
       acceptedAt: c.acceptedAt?.toISOString() ?? null,
       withdrawnAt: c.withdrawnAt?.toISOString() ?? null,
       lastUpdated: c.updatedAt.toISOString(),

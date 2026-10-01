@@ -9,6 +9,7 @@ import {
   ngoProfileService,
   profileService,
 } from '../services/profileService';
+import { sendRouteError } from '../middleware/error.middleware';
 import { auditLog } from '../services/audit.service';
 
 const router = Router();
@@ -208,7 +209,7 @@ router.get('/check-username', async (req: Request, res: Response) => {
       message: available ? 'Username is available' : 'Username is already taken',
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message || 'Failed to check username' });
+    sendRouteError(res, error, 'Failed to check username');
   }
 });
 
@@ -236,10 +237,7 @@ router.post('/', validate(basicProfileSchema), async (req: Request, res: Respons
       message: isNew ? 'Basic profile created successfully' : 'Basic profile updated successfully',
     });
   } catch (error: any) {
-    res.status(error.statusCode ?? 500).json({
-      success: false,
-      message: error.message || 'Failed to create basic profile',
-    });
+    sendRouteError(res, error, 'Failed to create basic profile');
   }
 });
 
@@ -288,10 +286,7 @@ router.put('/', validate(basicProfileSchema), async (req: Request, res: Response
       message: 'Basic profile updated successfully',
     });
   } catch (error: any) {
-    res.status(error.statusCode ?? 500).json({
-      success: false,
-      message: error.message || 'Failed to update basic profile',
-    });
+    sendRouteError(res, error, 'Failed to update basic profile');
   }
 });
 
@@ -403,10 +398,7 @@ router.post('/details', validate(profileDetailsSchema), async (req: Request, res
       message: 'Profile details saved successfully',
     });
   } catch (error: any) {
-    res.status(error.statusCode ?? 500).json({
-      success: false,
-      message: error.message || 'Failed to save profile details',
-    });
+    sendRouteError(res, error, 'Failed to save profile details');
   }
 });
 
@@ -446,10 +438,7 @@ router.put('/details', validate(profileDetailsSchema), async (req: Request, res:
       message: 'Profile details updated successfully',
     });
   } catch (error: any) {
-    res.status(error.statusCode ?? 500).json({
-      success: false,
-      message: error.message || 'Failed to update profile details',
-    });
+    sendRouteError(res, error, 'Failed to update profile details');
   }
 });
 
@@ -469,10 +458,7 @@ router.get('/me', async (req: Request, res: Response) => {
       data: profile,
     });
   } catch (error: any) {
-    res.status(error.statusCode ?? 500).json({
-      success: false,
-      message: error.message || 'Failed to fetch profile',
-    });
+    sendRouteError(res, error, 'Failed to fetch profile');
   }
 });
 
@@ -496,7 +482,7 @@ router.post('/pwd', validate(pwdProfileSchema), async (req: Request, res: Respon
     await profileService.markAsComplete(userId);
     res.status(201).json({ success: true, data: profile });
   } catch (error: any) {
-    res.status(error.statusCode ?? 500).json({ success: false, message: error.message });
+    sendRouteError(res, error);
   }
 });
 
@@ -507,7 +493,7 @@ router.get('/pwd/me', async (req: Request, res: Response) => {
     if (!profile) return res.status(404).json({ success: false, message: 'Profile not found' });
     res.json({ success: true, data: profile });
   } catch (error: any) {
-    res.status(error.statusCode ?? 500).json({ success: false, message: error.message });
+    sendRouteError(res, error);
   }
 });
 
@@ -521,7 +507,7 @@ router.get('/pwd/:userId', async (req: Request, res: Response) => {
     if (!profile) return res.status(404).json({ success: false, message: 'Profile not found' });
     res.json({ success: true, data: profile });
   } catch (error: any) {
-    res.status(error.statusCode ?? 500).json({ success: false, message: error.message });
+    sendRouteError(res, error);
   }
 });
 
@@ -541,7 +527,7 @@ router.put('/pwd/:userId', validate(pwdProfileSchema), async (req: Request, res:
     const profile = await pwdProfileService.update(userId, req.body);
     res.json({ success: true, data: profile });
   } catch (error: any) {
-    res.status(error.statusCode ?? 500).json({ success: false, message: error.message });
+    sendRouteError(res, error);
   }
 });
 
@@ -554,7 +540,7 @@ router.delete('/pwd/:userId', async (req: Request, res: Response) => {
     await pwdProfileService.delete(req.params.userId);
     res.json({ success: true, message: 'Profile deleted successfully' });
   } catch (error: any) {
-    res.status(error.statusCode ?? 500).json({ success: false, message: error.message });
+    sendRouteError(res, error);
   }
 });
 
@@ -569,7 +555,7 @@ router.post('/caregiver', validate(caregiverProfileSchema), async (req: Request,
     await profileService.markAsComplete(userId);
     res.status(201).json({ success: true, data: profile });
   } catch (error: any) {
-    res.status(error.statusCode ?? 500).json({ success: false, message: error.message });
+    sendRouteError(res, error);
   }
 });
 
@@ -580,7 +566,7 @@ router.get('/caregiver/me', async (req: Request, res: Response) => {
     if (!profile) return res.status(404).json({ success: false, message: 'Profile not found' });
     res.json({ success: true, data: profile });
   } catch (error: any) {
-    res.status(error.statusCode ?? 500).json({ success: false, message: error.message });
+    sendRouteError(res, error);
   }
 });
 
@@ -594,7 +580,7 @@ router.get('/caregiver/:userId', async (req: Request, res: Response) => {
     if (!profile) return res.status(404).json({ success: false, message: 'Profile not found' });
     res.json({ success: true, data: profile });
   } catch (error: any) {
-    res.status(error.statusCode ?? 500).json({ success: false, message: error.message });
+    sendRouteError(res, error);
   }
 });
 
@@ -607,7 +593,7 @@ router.put('/caregiver/:userId', validate(caregiverProfileSchema), async (req: R
     const profile = await caregiverProfileService.update(req.params.userId, req.body);
     res.json({ success: true, data: profile });
   } catch (error: any) {
-    res.status(error.statusCode ?? 500).json({ success: false, message: error.message });
+    sendRouteError(res, error);
   }
 });
 
@@ -620,7 +606,7 @@ router.delete('/caregiver/:userId', async (req: Request, res: Response) => {
     await caregiverProfileService.delete(req.params.userId);
     res.json({ success: true, message: 'Profile deleted successfully' });
   } catch (error: any) {
-    res.status(error.statusCode ?? 500).json({ success: false, message: error.message });
+    sendRouteError(res, error);
   }
 });
 
@@ -641,7 +627,7 @@ router.post('/therapist', validate(therapistProfileSchema), async (req: Request,
     await profileService.markAsComplete(userId);
     res.status(201).json({ success: true, data: profile });
   } catch (error: any) {
-    res.status(error.statusCode ?? 500).json({ success: false, message: error.message });
+    sendRouteError(res, error);
   }
 });
 
@@ -654,7 +640,7 @@ router.get('/therapist/list/verified', async (req: Request, res: Response) => {
     });
     res.json({ success: true, data: profiles });
   } catch (error: any) {
-    res.status(error.statusCode ?? 500).json({ success: false, message: error.message });
+    sendRouteError(res, error);
   }
 });
 
@@ -665,7 +651,7 @@ router.get('/therapist/me', async (req: Request, res: Response) => {
     if (!profile) return res.status(404).json({ success: false, message: 'Profile not found' });
     res.json({ success: true, data: profile });
   } catch (error: any) {
-    res.status(error.statusCode ?? 500).json({ success: false, message: error.message });
+    sendRouteError(res, error);
   }
 });
 
@@ -679,7 +665,7 @@ router.get('/therapist/:userId', async (req: Request, res: Response) => {
     if (!profile) return res.status(404).json({ success: false, message: 'Profile not found' });
     res.json({ success: true, data: profile });
   } catch (error: any) {
-    res.status(error.statusCode ?? 500).json({ success: false, message: error.message });
+    sendRouteError(res, error);
   }
 });
 
@@ -699,7 +685,7 @@ router.put('/therapist/:userId', validate(therapistProfileSchema), async (req: R
     const profile = await therapistProfileService.update(userId, req.body);
     res.json({ success: true, data: profile });
   } catch (error: any) {
-    res.status(error.statusCode ?? 500).json({ success: false, message: error.message });
+    sendRouteError(res, error);
   }
 });
 
@@ -712,7 +698,7 @@ router.delete('/therapist/:userId', async (req: Request, res: Response) => {
     await therapistProfileService.delete(req.params.userId);
     res.json({ success: true, message: 'Profile deleted successfully' });
   } catch (error: any) {
-    res.status(error.statusCode ?? 500).json({ success: false, message: error.message });
+    sendRouteError(res, error);
   }
 });
 
@@ -733,7 +719,7 @@ router.post('/ngo', validate(ngoProfileSchema), async (req: Request, res: Respon
     await profileService.markAsComplete(userId);
     res.status(201).json({ success: true, data: profile });
   } catch (error: any) {
-    res.status(error.statusCode ?? 500).json({ success: false, message: error.message });
+    sendRouteError(res, error);
   }
 });
 
@@ -745,7 +731,7 @@ router.get('/ngo/list/verified', async (req: Request, res: Response) => {
     });
     res.json({ success: true, data: profiles });
   } catch (error: any) {
-    res.status(error.statusCode ?? 500).json({ success: false, message: error.message });
+    sendRouteError(res, error);
   }
 });
 
@@ -756,7 +742,7 @@ router.get('/ngo/me', async (req: Request, res: Response) => {
     if (!profile) return res.status(404).json({ success: false, message: 'Profile not found' });
     res.json({ success: true, data: profile });
   } catch (error: any) {
-    res.status(error.statusCode ?? 500).json({ success: false, message: error.message });
+    sendRouteError(res, error);
   }
 });
 
@@ -770,7 +756,7 @@ router.get('/ngo/:userId', async (req: Request, res: Response) => {
     if (!profile) return res.status(404).json({ success: false, message: 'Profile not found' });
     res.json({ success: true, data: profile });
   } catch (error: any) {
-    res.status(error.statusCode ?? 500).json({ success: false, message: error.message });
+    sendRouteError(res, error);
   }
 });
 
@@ -790,7 +776,7 @@ router.put('/ngo/:userId', validate(ngoProfileSchema), async (req: Request, res:
     const profile = await ngoProfileService.update(userId, req.body);
     res.json({ success: true, data: profile });
   } catch (error: any) {
-    res.status(error.statusCode ?? 500).json({ success: false, message: error.message });
+    sendRouteError(res, error);
   }
 });
 
@@ -803,7 +789,7 @@ router.delete('/ngo/:userId', async (req: Request, res: Response) => {
     await ngoProfileService.delete(req.params.userId);
     res.json({ success: true, message: 'Profile deleted successfully' });
   } catch (error: any) {
-    res.status(error.statusCode ?? 500).json({ success: false, message: error.message });
+    sendRouteError(res, error);
   }
 });
 

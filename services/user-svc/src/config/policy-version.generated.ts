@@ -6,3 +6,6 @@
 
 /** Version of the published policy set. Must match docs/legal/manifest.json. */
 export const POLICY_VERSION = "2026-09-06";
+
+/** Version of the data-processing consent notice. Must match docs/legal/manifest.json. */
+export const CONSENT_NOTICE_VERSION = "2026-10-02";

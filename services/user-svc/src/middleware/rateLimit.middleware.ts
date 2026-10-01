@@ -17,6 +17,14 @@ import { getRedis } from "../config/redis";
 //   /resend-otp       — 5 per hour PER EMAIL, plus 20 per hour per IP
 //   Global API        — 200 per min   (all other routes)
 //
+// Per-ACCOUNT limits (keyed by the email in the body) run alongside the IP
+// limits on the credential-guessing routes, so an attacker rotating IPs
+// still can't hammer one account:
+//   /login            — 10 failed attempts per hour per email
+//   /verify-email     — 10 per hour per email
+//   /forgot-password  — 3 per hour per email   (each one sends an email)
+//   /reset-password   — 5 per hour per email
+//
 // Note on /resend-otp keying: it is limited by EMAIL, not IP. Indian mobile
 // carriers put large numbers of subscribers behind carrier-grade NAT, so an
 // IP-keyed resend budget is shared between strangers — one person retrying
@@ -155,6 +163,61 @@ export const resendOtpIpLimiter = rateLimit({
   standardHeaders: "draft-7",
   legacyHeaders: false,
   message: { success: false, message: "Too many requests from this network. Please try again later." },
+});
+
+// ─── Per-account limiters ─────────────────────────────
+
+export const loginAccountLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 10,
+  keyGenerator: makeEmailKey,
+  store: makeStore("login-email"),
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  skipSuccessfulRequests: true, // only failures count
+  message: {
+    success: false,
+    message: "Too many failed sign-in attempts for this account. Please try again in an hour or reset your password.",
+  },
+});
+
+export const verifyOtpAccountLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 10,
+  keyGenerator: makeEmailKey,
+  store: makeStore("otp-verify-email"),
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  message: {
+    success: false,
+    message: "Too many verification attempts for this account. Please request a new code in an hour.",
+  },
+});
+
+export const forgotPasswordAccountLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 3,
+  keyGenerator: makeEmailKey,
+  store: makeStore("pwd-forgot-email"),
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  message: {
+    success: false,
+    message: "Several reset codes have already been sent to this address. Please check your inbox or try again in an hour.",
+  },
+});
+
+export const resetPasswordAccountLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 5,
+  keyGenerator: makeEmailKey,
+  store: makeStore("pwd-reset-email"),
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  message: {
+    success: false,
+    message: "Too many password reset attempts for this account. Please try again in an hour.",
+  },
 });
 
 export const globalApiLimiter = rateLimit({

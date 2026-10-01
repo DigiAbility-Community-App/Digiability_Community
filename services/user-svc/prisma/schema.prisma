@@ -179,6 +179,7 @@ model User {
 
   // Relations
   refreshTokens           RefreshToken[]
+  sessions                Session[]
   emailVerificationTokens EmailVerificationToken[]
   passwordResetTokens     PasswordResetToken[]
   userProfile             UserProfile?
@@ -558,13 +559,43 @@ model RefreshToken {
   expiresAt DateTime
   revoked   Boolean  @default(false)
   createdAt DateTime @default(now())
+  // The login session this token belongs to. Null only on rows that predate
+  // sessions and belonged to no live family at migration time.
+  sessionId String?
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  session Session? @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([tokenHash])
   @@index([familyId])
+  @@index([sessionId])
   @@map("refresh_tokens")
+}
+
+// One row per login (device). Its id is the `sid` claim in every access token
+// minted for it, so revoking the row invalidates those tokens immediately —
+// every service checks the session on each request (VAPT M-003 / CWE-613).
+// refresh_tokens keeps the rotation history for reuse detection.
+model Session {
+  id               String    @id @default(uuid())
+  userId           String
+  // SHA-256 of the current (latest) refresh token for this session.
+  refreshTokenHash String
+  userAgent        String?   @db.VarChar(255)
+  createdAt        DateTime  @default(now())
+  lastUsedAt       DateTime  @default(now())
+  expiresAt        DateTime
+  revokedAt        DateTime?
+  // logout | logout_all | password_reset | reuse_detected | account_deleted
+  revokedReason    String?
+
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  refreshTokens RefreshToken[]
+
+  @@index([userId])
+  @@index([refreshTokenHash])
+  @@map("sessions")
 }
 
 // ─────────────────────────────────────────────

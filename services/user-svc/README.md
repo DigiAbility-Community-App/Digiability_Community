@@ -17,12 +17,13 @@ Implements a hybrid JWT + refresh token cookie pattern with email verification, 
 | Resend OTP | POST | `/resend-otp` | ❌ | `{ email }` |
 | Login | POST | `/login` | ❌ | `{ email, password }` |
 | Refresh Token | POST | `/refresh` | ❌ (cookie or Bearer) | — |
-| Logout | POST | `/logout` | ❌ (cookie) | — |
+| Logout | POST | `/logout` | ❌ (Bearer access token, or refresh token in body/cookie/`x-refresh-token`) | `{ refreshToken? }` — revokes the session; always 200 |
+| Logout all devices | POST | `/logout-all` | ✅ Bearer | — — revokes every session for the user |
 | Forgot Password | POST | `/forgot-password` | ❌ | `{ email }` |
 | Reset Password | POST | `/reset-password` | ❌ | `{ token, password }` |
 | Get Current User | GET | `/me` | ✅ Bearer | — |
 | Update Role | PATCH | `/role` | ✅ Bearer | `{ role }` or `{ roles }` |
-| Batch Lookup | POST | `/users/batch` | ✅ Bearer | `{ ids }` |
+| Batch Lookup | POST | `/users/batch` | ✅ Bearer | `{ ids }` — ≤50 UUIDs; returns `{ id, name }` only for users the caller shares a conversation/invite with |
 | Search Users | GET | `/users/search?q=` | ✅ Bearer | — |
 | Delete Account | DELETE | `/delete-account` | ✅ Bearer | — |
 | Register Push Token | POST | `/device-token` | ✅ Bearer | `{ token, platform }` |

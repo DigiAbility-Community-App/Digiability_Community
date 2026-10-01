@@ -26,6 +26,8 @@ export type AuditEventType =
   | "auth.account_locked"
   | "auth.logout"
   | "auth.token_reuse"
+  | "auth.session_revoked"
+  | "auth.sessions_revoked_all"
   | "auth.password_reset"
   | "auth.email_verified"
   | "auth.account_deleted"
