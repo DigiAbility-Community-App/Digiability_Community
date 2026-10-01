@@ -2,6 +2,7 @@ import "dotenv/config";
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
+import { API_HELMET_OPTIONS, corsOriginCheck, loadAllowedOrigins } from "./config/cors";
 import path from "path";
 import { keywordCache } from "./moderation/keyword-cache";
 import prisma from "./models/prisma.client";
@@ -15,23 +16,20 @@ const app = express();
 const PORT = parseInt(process.env.PORT ?? "4003", 10);
 const server = createServer(app);
 
+const allowedOrigins = loadAllowedOrigins();
+
 // Initialize Socket.io server
-initSocketServer(server);
+initSocketServer(server, allowedOrigins);
 
 // Security headers
-app.use(
-  helmet({
-    contentSecurityPolicy: {
-      directives: { defaultSrc: ["'none'"], frameAncestors: ["'none'"] },
-    },
-    crossOriginEmbedderPolicy: false,
-  })
-);
+app.use(helmet(API_HELMET_OPTIONS));
 
-// CORS configuration - Allow all in development for easy emulator/mobile access
+// Explicit CORS allowlist (config/cors.ts); startup fails in production if
+// CORS_ALLOWED_ORIGINS is missing or a placeholder. Native apps send no
+// Origin header and are unaffected.
 app.use(
   cors({
-    origin: true,
+    origin: corsOriginCheck(allowedOrigins),
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"]

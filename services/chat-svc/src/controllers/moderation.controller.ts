@@ -110,7 +110,7 @@ export const reportUser = asyncHandler(async (req: Request, res: Response) => {
 
 export const listMyReportedMessages = asyncHandler(async (req: Request, res: Response) => {
   const me = (req as AuthenticatedRequest).user.sub;
-  const { conversationId } = req.query as { conversationId?: string };
+  const { conversationId } = req.params as { conversationId?: string };
   if (!conversationId) {
     res.status(400).json({ success: false, message: "conversationId is required" });
     return;

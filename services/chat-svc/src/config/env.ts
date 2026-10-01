@@ -34,7 +34,6 @@ export const env = {
   JWT_PUBLIC_KEY: required("JWT_PUBLIC_KEY").replace(/\\n/g, "\n"),
 
   // Client
-  CLIENT_BASE_URL: optional("CLIENT_BASE_URL", "http://localhost:3000"),
 
   // Registry
   REGISTRY_TTL_SECONDS: parseInt(optional("REGISTRY_TTL_SECONDS", "120"), 10),

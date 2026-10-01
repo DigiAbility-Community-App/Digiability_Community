@@ -6,6 +6,7 @@
 
 import { Request, Response, NextFunction } from "express";
 import { verifyAccessToken } from "../utils/jwt.util";
+import { isSessionActive } from "../services/session.service";
 import { AuthenticatedUser } from "../types/common.types";
 import { checkSuspended } from "../utils/suspension.util";
 
@@ -45,6 +46,14 @@ export async function authenticate(
         : "Invalid or malformed token.";
 
     res.status(401).json({ success: false, message });
+    return;
+  }
+
+  // Logout / logout-all / password reset revoke the session; the token dies
+  // with it (VAPT M-003). Tokens without a sid predate sessions — the client
+  // refreshes on 401 and gets a session-bound one.
+  if (!payload.sid || !(await isSessionActive(payload.sid))) {
+    res.status(401).json({ success: false, message: "Session has been revoked. Please log in again." });
     return;
   }
 

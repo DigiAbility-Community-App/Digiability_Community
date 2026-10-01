@@ -9,6 +9,7 @@ import { enqueueForClassification } from '../moderation/classify-queue';
 import { calculateCosineSimilarity, generateThreadSummary } from '../services/ai.service';
 import { broadcastForumEvent, sendNotificationToUser } from '../websocket/socket';
 import { generateReferenceCode } from '../utils/reference-code.util';
+import { sendRouteError } from '../middleware/error.middleware';
 import { severityForReason } from '../utils/report-severity.util';
 
 const NOTIF_SVC_URL = process.env.NOTIF_SVC_URL ?? 'http://localhost:4004';
@@ -220,7 +221,7 @@ export const createQuestion = async (req: Request, res: Response): Promise<void>
     res.status(201).json({ success: true, data: mapQuestionRoles(question) });
   } catch (error: any) {
     console.error('Create Question Error:', error);
-    res.status(500).json({ success: false, message: error.message || 'Failed to create question' });
+    sendRouteError(res, error, 'Failed to create question');
   }
 };
 

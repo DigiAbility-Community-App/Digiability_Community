@@ -4,7 +4,7 @@
 //   DELETE /api/moderation/block/:userId
 //   GET    /api/moderation/blocked
 //   POST   /api/moderation/report         { reportedUserId, conversationId?, messageId?, reason }
-//   GET    /api/moderation/reports/mine   ?conversationId=:id
+//   GET    /api/moderation/reports/mine/:conversationId
 // ─────────────────────────────────────────────────────────────
 
 import { Router } from "express";
@@ -25,6 +25,6 @@ router.post("/block", blockUser);
 router.delete("/block/:userId", unblockUser);
 router.get("/blocked", listBlocked);
 router.post("/report", reportUser);
-router.get("/reports/mine", listMyReportedMessages);
+router.get("/reports/mine/:conversationId", listMyReportedMessages);
 
 export default router;

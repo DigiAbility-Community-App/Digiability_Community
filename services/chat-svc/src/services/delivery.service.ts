@@ -23,6 +23,7 @@ import { logger } from "../config/logger";
 import { connectionManager } from "../websocket/connection-manager";
 import { registryService } from "./registry.service";
 import { PUBSUB_CHANNELS } from "../streams/constants";
+import { SESSION_REVOKED_CHANNEL } from "./session.service";
 import { WS_EVENTS, WsEnvelope } from "../types/ws-events";
 import { DeliveryPayload, ReceiptBroadcastPayload } from "../types/message.types";
 
@@ -40,7 +41,7 @@ class DeliveryService {
     const receiptChannel = PUBSUB_CHANNELS.SERVER_RECEIPT(env.SERVER_ID);
     const typingChannel = PUBSUB_CHANNELS.SERVER_TYPING(env.SERVER_ID);
 
-    await redisSub.subscribe(deliverChannel, receiptChannel, typingChannel);
+    await redisSub.subscribe(deliverChannel, receiptChannel, typingChannel, SESSION_REVOKED_CHANNEL);
 
     redisSub.on("message", (channel: string, message: string) => {
       try {
@@ -50,6 +51,8 @@ class DeliveryService {
           this.handleReceiptMessage(message);
         } else if (channel === typingChannel) {
           this.handleTypingMessage(message);
+        } else if (channel === SESSION_REVOKED_CHANNEL) {
+          this.handleSessionRevoked(message);
         }
       } catch (err) {
         logger.error("Pub/Sub message handling failed", {
@@ -157,6 +160,17 @@ class DeliveryService {
   /**
    * Handle a typing indicator received via Pub/Sub.
    */
+  /**
+   * user-svc revoked a session — drop any socket on this server that was
+   * opened with it, so a logged-out device stops receiving messages now.
+   */
+  private handleSessionRevoked(raw: string): void {
+    const { sid } = JSON.parse(raw) as { sid?: string };
+    if (!sid) return;
+    const closed = connectionManager.closeBySession(sid);
+    if (closed > 0) logger.info("Closed WebSockets for revoked session", { closed });
+  }
+
   private handleTypingMessage(raw: string): void {
     const payload = JSON.parse(raw) as {
       event: string;

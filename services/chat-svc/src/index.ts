@@ -29,6 +29,7 @@ BigInt.prototype.toJSON = function () {
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
+import { API_HELMET_OPTIONS, corsOriginCheck, loadAllowedOrigins } from "./config/cors";
 import { env } from "./config/env";
 import { logger } from "./config/logger";
 import { disconnectRedis } from "./config/redis";
@@ -56,19 +57,14 @@ import path from "path";
 const app = express();
 
 // Security headers
-app.use(
-  helmet({
-    contentSecurityPolicy: {
-      directives: { defaultSrc: ["'none'"], frameAncestors: ["'none'"] },
-    },
-    crossOriginEmbedderPolicy: false,
-  })
-);
+app.use(helmet(API_HELMET_OPTIONS));
 
-// Global Middleware
+// Global Middleware — explicit CORS allowlist (config/cors.ts); startup fails
+// in production if CORS_ALLOWED_ORIGINS is missing or a placeholder.
+const allowedOrigins = loadAllowedOrigins();
 app.use(
   cors({
-    origin: env.CLIENT_BASE_URL,
+    origin: corsOriginCheck(allowedOrigins),
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],

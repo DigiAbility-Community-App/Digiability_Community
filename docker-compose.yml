@@ -132,6 +132,8 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-digiability}:${POSTGRES_PASSWORD:-digiability_secret}@postgres:5432/${POSTGRES_DB:-digiability_db}
       # Docker network service name, not localhost — .env's value is for bare-metal/local dev only.
       NOTIF_SVC_URL: http://notif-svc:4004
+      # Shared session-revocation cache + events: a logout is seen here instantly.
+      REDIS_URL: redis://:${REDIS_PASSWORD:-redis_secret}@redis:6379
     ports:
       - "${FORUM_SVC_PORT:-4003}:4003"
     networks:
