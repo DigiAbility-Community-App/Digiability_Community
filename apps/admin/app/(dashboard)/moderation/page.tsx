@@ -6,6 +6,7 @@ import {
   RefreshCw, ChevronDown, ChevronLeft, Bot, CheckCheck, XCircle,
   History, Eye, EyeOff, Clock, Maximize2, ImageIcon, X,
 } from "lucide-react";
+import Link from "next/link";
 import { ReviewQueue } from "./ReviewQueue";
 import { DateRangePicker, isWithinDateRange } from "@/components/shared/DateRangePicker";
 import { ConfirmModal } from "@/components/shared/ConfirmModal";
@@ -14,8 +15,8 @@ interface Report {
   id: string;
   reason: string;
   createdAt: string;
-  type: "question" | "answer" | "chat";
-  source: "forum" | "chat";
+  type: "question" | "answer" | "chat" | "profile";
+  source: "forum" | "chat" | "profile";
   questionId: string | null;
   answerId: string | null;
   questionTitle: string | null;
@@ -194,7 +195,13 @@ export default function ModerationPage() {
     let cancelled = false;
     setContextLoading(true);
     setContextMessages(null);
-    fetch(`/api/moderation/context?conversationId=${encodeURIComponent(workflowReport.conversationId)}&sequence=${encodeURIComponent(workflowReport.messageSequence)}`)
+    // reportId is passed so the message-access log records WHY this private
+    // conversation was read, not just that it was (Terms §7).
+    fetch(
+      `/api/moderation/context?conversationId=${encodeURIComponent(workflowReport.conversationId)}` +
+        `&sequence=${encodeURIComponent(workflowReport.messageSequence)}` +
+        `&reportId=${encodeURIComponent(workflowReport.id)}`
+    )
       .then((res) => res.json())
       .then((data) => {
         if (!cancelled && data.success) setContextMessages(data.messages);
@@ -216,6 +223,20 @@ export default function ModerationPage() {
       }
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
+
+    // Outstanding appeals, for the Appeals tab badge. Kept separate from the
+    // main fetch so a failure here can't blank the moderation queue.
+    try {
+      const [submitted, underReview] = await Promise.all([
+        fetch("/api/moderation/appeals?status=SUBMITTED").then((r) => r.json()),
+        fetch("/api/moderation/appeals?status=UNDER_REVIEW").then((r) => r.json()),
+      ]);
+      const open =
+        (submitted?.data?.appeals?.length ?? 0) + (underReview?.data?.appeals?.length ?? 0);
+      setOpenAppeals(open);
+    } catch (e) {
+      console.error("Failed to load appeal count:", e);
+    }
   };
 
   const fetchFlags = async () => {
@@ -277,6 +298,9 @@ export default function ModerationPage() {
   };
 
   const [activeTab, setActiveTab] = useState<"queue" | "forum-reports" | "ai-flags" | "history">("queue");
+  // Appeals live on their own route rather than as an in-page tab, so this
+  // is only used for the badge on the link.
+  const [openAppeals, setOpenAppeals] = useState(0);
   const [historyDateFrom, setHistoryDateFrom] = useState("");
   const [historyDateTo, setHistoryDateTo] = useState("");
   const [selectedHistoryEntry, setSelectedHistoryEntry] = useState<ModerationHistoryEntry | null>(null);
@@ -354,7 +378,14 @@ export default function ModerationPage() {
       // date-only string, which the header below would parse as midnight
       // and render with the wrong time; /api/moderation/review sends ISO.
       createdAt: item.createdAtISO || item.createdAt,
-      type: item.contentType === "question" ? "question" : item.contentType === "answer" ? "answer" : "chat",
+      type:
+        item.source === "profile"
+          ? "profile"
+          : item.contentType === "question"
+            ? "question"
+            : item.contentType === "answer"
+              ? "answer"
+              : "chat",
       source: item.source || (item.kind === "chat_report" ? "chat" : "forum"),
       questionId: item.questionId || (item.contentType === "question" ? item.contentId : null),
       answerId: item.answerId || (item.contentType === "answer" ? item.contentId : null),
@@ -402,8 +433,20 @@ export default function ModerationPage() {
                 <ChevronLeft className="w-4 h-4" /> Back to Queue
               </button>
               <h1 className="text-xl font-extrabold text-[#1A1C1C]">Review Workflow</h1>
-              <span className={`px-2.5 py-1 rounded-full text-xs font-extrabold uppercase ${workflowReport.source === "chat" ? "bg-blue-100 text-blue-700" : "bg-purple-100 text-purple-700"}`}>
-                {workflowReport.source === "chat" ? "💬 Chat Message" : "📋 Forum Content"}
+              <span
+                className={`px-2.5 py-1 rounded-full text-xs font-extrabold uppercase ${
+                  workflowReport.source === "chat"
+                    ? "bg-blue-100 text-blue-700"
+                    : workflowReport.source === "profile"
+                      ? "bg-rose-100 text-rose-700"
+                      : "bg-purple-100 text-purple-700"
+                }`}
+              >
+                {workflowReport.source === "chat"
+                  ? "💬 Chat Message"
+                  : workflowReport.source === "profile"
+                    ? "👤 User Profile"
+                    : "📋 Forum Content"}
               </span>
             </div>
             <p className="text-sm text-[#7D7387] mt-1.5">
@@ -518,6 +561,24 @@ export default function ModerationPage() {
           </div>
         )}
 
+        {/* PROFILE REPORT CONTEXT — a report about a person, not a post, so
+            there is no content panel to show; show who was reported. */}
+        {workflowReport.source === "profile" && (
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+            <h3 className="text-sm font-extrabold text-[#1A1C1C] mb-3">Reported User</h3>
+            <div className="bg-[#F7F5FA] rounded-xl p-4 border border-gray-200">
+              <p className="font-bold text-base text-[#1A1C1C] mb-1">
+                {workflowReport.authorName || "Unknown user"}
+              </p>
+              <p className="text-sm text-[#7D7387]">{workflowReport.authorEmail || "—"}</p>
+              <p className="text-sm text-[#4B4355] leading-relaxed mt-3">
+                <span className="font-semibold">Reporter's notes: </span>
+                {workflowReport.fullContent || "(none given)"}
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* FORUM CONTENT CONTEXT */}
         {workflowReport.source === "forum" && (
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
@@ -548,7 +609,10 @@ export default function ModerationPage() {
 
         {/* ACTION CARDS */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* REMOVE CONTENT CARD */}
+          {/* REMOVE CONTENT CARD — hidden for profile reports, which are about a
+              person rather than a post, so there is nothing to remove. Warning
+              and banning are the meaningful actions there. */}
+          {workflowReport.source !== "profile" && (
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 flex flex-col justify-between">
             <div>
               <div className="flex items-center gap-2 mb-4">
@@ -633,6 +697,7 @@ export default function ModerationPage() {
               </button>
             </div>
           </div>
+          )}
 
           {/* WARN USER CARD */}
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 flex flex-col justify-between">
@@ -864,6 +929,21 @@ export default function ModerationPage() {
             )}
           </button>
         ))}
+
+        {/* Appeals is a route of its own rather than an in-page tab, but it
+            belongs in this bar: it had no entry point anywhere in the admin
+            UI, so appeals users filed were simply never seen. */}
+        <Link
+          href="/moderation/appeals"
+          className="px-4 py-2.5 text-sm font-semibold rounded-t-lg transition -mb-px border-b-2 border-transparent text-[#7D7387] hover:text-[#1A1C1C] flex items-center gap-2"
+        >
+          <span>Appeals</span>
+          {openAppeals > 0 && (
+            <span className="px-2 py-0.5 rounded-full text-[11px] font-extrabold bg-amber-100 text-amber-700">
+              {openAppeals}
+            </span>
+          )}
+        </Link>
       </div>
 
       {/* REVIEW QUEUE TAB */}

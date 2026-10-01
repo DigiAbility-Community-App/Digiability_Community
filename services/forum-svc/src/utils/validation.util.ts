@@ -32,7 +32,10 @@ export const VoteSchema = z.object({
 export const ReportSchema = z.object({
   questionId: z.string().uuid('Invalid question ID').optional().nullable(),
   answerId: z.string().uuid('Invalid answer ID').optional().nullable(),
-  reason: z.string().min(5, 'Reason must be at least 5 characters long').max(500, 'Reason cannot exceed 500 characters'),
+  // 3, not 5: the client may send a bare category label as the whole reason,
+  // and "Spam" is four characters. The old floor rejected the single most
+  // common report in the system with a 422 the UI then swallowed.
+  reason: z.string().min(3, 'Reason must be at least 3 characters long').max(500, 'Reason cannot exceed 500 characters'),
 }).refine(data => data.questionId || data.answerId, {
   message: 'Either questionId or answerId must be provided',
   path: ['questionId'],

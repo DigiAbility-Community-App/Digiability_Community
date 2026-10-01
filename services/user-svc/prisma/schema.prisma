@@ -30,14 +30,60 @@ enum ReportTargetType {
   GROUP
 }
 
+// One reason per prohibited category in the Community Guidelines. The original
+// seven covered less than half the published list, which meant a reporter had no
+// accurate way to report the most serious categories.
 enum ReportReason {
-  SPAM
+  CSAE                    // child sexual abuse and exploitation — priority queue
+  SELF_HARM
+  VIOLENCE
   HARASSMENT
   HATE_SPEECH
+  SEXUAL_CONTENT
+  PRIVACY_VIOLATION       // doxxing, sharing another member's disclosures
+  HEALTH_MISINFORMATION
+  SCAM_FRAUD
+  ILLEGAL_ACTIVITY
+  IMPERSONATION
+  IP_INFRINGEMENT
+  BAN_EVASION
+  SPAM
   INAPPROPRIATE_CONTENT
   MISINFORMATION
-  IMPERSONATION
   OTHER
+}
+
+// Drives the acknowledgement/action deadlines published in the Community
+// Guidelines "How we respond to reports" table.
+enum ReportSeverity {
+  CRITICAL // CSAE, credible threats, trafficking — act immediately
+  HIGH     // self-harm risk — acknowledge 4h
+  ELEVATED // non-consensual imagery, impersonation — acknowledge and act 24h
+  MEDIUM   // harassment, hate speech, sexual content — ack 24h, act 72h
+  LOW      // spam and lower severity — ack 72h, act 7d
+}
+
+enum GrievanceStatus {
+  RECEIVED
+  ACKNOWLEDGED
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+
+enum AppealStatus {
+  SUBMITTED
+  UNDER_REVIEW
+  UPHELD      // original decision stands
+  OVERTURNED  // original decision reversed
+  REJECTED    // out of window, or a repeat of a decided appeal
+}
+
+enum RemovedContentType {
+  CHAT_MESSAGE
+  FORUM_QUESTION
+  FORUM_ANSWER
+  PROFILE_FIELD
 }
 
 enum ReportStatus {
@@ -82,9 +128,12 @@ enum FlagStatus {
 
 // DPDP Act 2023 §6 — recorded consent type
 enum ConsentType {
-  DATA_PROCESSING    // required — core service cannot operate without this
-  PUSH_NOTIFICATIONS // optional — device-push alerts
-  MARKETING          // optional — newsletters and promotional emails
+  DATA_PROCESSING       // required — core service cannot operate without this
+  TERMS_OF_USE          // required — accepted at registration, re-accepted on version bump
+  COMMUNITY_GUIDELINES  // required — accepted alongside the Terms
+  GUARDIAN_CONSENT      // guardian attestation for a Care Circle member (DPDP §9)
+  PUSH_NOTIFICATIONS    // optional — device-push alerts
+  MARKETING             // optional — newsletters and promotional emails
 }
 
 enum QuestionStatus {
@@ -108,6 +157,10 @@ model User {
   phoneNo         String?
   lastSeen        DateTime?
   isEmailVerified Boolean   @default(false)
+  // Eligibility gate (18+). Deliberately on User rather than UserProfile: it is
+  // checked before the account row is created, not collected later as a profile
+  // detail. Nullable only so pre-gate accounts can be backfilled on next launch.
+  dateOfBirth     DateTime?
   roles           Role[]    @default([])
   profileComplete Boolean   @default(false)
   deletedAt       DateTime?
@@ -126,6 +179,7 @@ model User {
 
   // Relations
   refreshTokens           RefreshToken[]
+  sessions                Session[]
   emailVerificationTokens EmailVerificationToken[]
   passwordResetTokens     PasswordResetToken[]
   userProfile             UserProfile?
@@ -134,6 +188,9 @@ model User {
   deviceTokens            DeviceToken[]
   filedReports            UserReport[]    @relation("ReporterRelation")
   consents                UserConsent[]
+  guardianAttestations    GuardianAttestation[] @relation("GuardianRelation")
+  grievances              GrievanceTicket[]
+  appeals                 Appeal[]
 
   // forum-svc-owned relations — NOT used by user-svc's own code. Declared
   // here only so `prisma db push` sees the full physical `users` table
@@ -264,11 +321,21 @@ model ForumReport {
   questionId String?
   answerId   String?
   reason     String
+  // This model previously had no status at all, so the admin panel resolved a
+  // report by DELETEing the row. That destroyed the audit trail an appeal needs
+  // and made the published response-time SLA unmeasurable for forum content.
+  status         ReportStatus   @default(PENDING)
+  referenceCode  String?        @unique
+  severity       ReportSeverity @default(MEDIUM)
+  acknowledgedAt DateTime?
+  actionedAt     DateTime?
+  reviewedBy     String?        // admin email
+  reviewedAt     DateTime?
   createdAt  DateTime @default(now())
   reporter   User @relation(fields: [reporterId], references: [id], onDelete: Cascade)
   question   ForumQuestion? @relation(fields: [questionId], references: [id], onDelete: Cascade)
   answer     ForumAnswer?   @relation(fields: [answerId],   references: [id], onDelete: Cascade)
-
+  @@index([status, createdAt(sort: Desc)])
   @@map("forum_reports")
 }
 
@@ -303,6 +370,14 @@ model Notification {
   message   String
   read      Boolean  @default(false)
   relatedId String?
+  // For enforcement notices (MODERATION_WARNING / MODERATION_BAN / content
+  // removal): the admin_audit_log entry that produced this notice.
+  //
+  // Without it an appeal has nothing to point at, and there is no way to tell
+  // which admin made the decision — so no way to honour the Community
+  // Guidelines' promise that an appeal is reviewed by someone not involved in
+  // the original decision.
+  auditLogId String?
   createdAt DateTime @default(now())
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -428,6 +503,12 @@ model UserProfile {
   ngoRole           String?
   district          String?
 
+  // Skill Trainer Fields
+  skillsTaught     String?
+  teachingMode     String? // "physical" | "online" | "both"
+  trainingLocation String?
+  trainingAddress  String?
+
   // Verification (for Therapist / NGO roles)
   verificationStatus String?  @default("pending") // pending, verified, rejected
   verificationDoc    String?  // URL to uploaded document
@@ -478,13 +559,43 @@ model RefreshToken {
   expiresAt DateTime
   revoked   Boolean  @default(false)
   createdAt DateTime @default(now())
+  // The login session this token belongs to. Null only on rows that predate
+  // sessions and belonged to no live family at migration time.
+  sessionId String?
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  session Session? @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([tokenHash])
   @@index([familyId])
+  @@index([sessionId])
   @@map("refresh_tokens")
+}
+
+// One row per login (device). Its id is the `sid` claim in every access token
+// minted for it, so revoking the row invalidates those tokens immediately —
+// every service checks the session on each request (VAPT M-003 / CWE-613).
+// refresh_tokens keeps the rotation history for reuse detection.
+model Session {
+  id               String    @id @default(uuid())
+  userId           String
+  // SHA-256 of the current (latest) refresh token for this session.
+  refreshTokenHash String
+  userAgent        String?   @db.VarChar(255)
+  createdAt        DateTime  @default(now())
+  lastUsedAt       DateTime  @default(now())
+  expiresAt        DateTime
+  revokedAt        DateTime?
+  // logout | logout_all | password_reset | reuse_detected | account_deleted
+  revokedReason    String?
+
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  refreshTokens RefreshToken[]
+
+  @@index([userId])
+  @@index([refreshTokenHash])
+  @@map("sessions")
 }
 
 // ─────────────────────────────────────────────
@@ -584,6 +695,16 @@ model UserReport {
   reason      ReportReason
   details     String?          // optional free-text, max 500 chars
   status      ReportStatus     @default(PENDING)
+  // Short human-readable ticket reference. The Community Guidelines promise the
+  // reporter "a reference number", so this is surfaced in the confirmation.
+  // Nullable to match ForumReport and chat.Report, and so adding this column
+  // doesn't require backfilling rows that predate it. The service always sets it.
+  referenceCode  String?       @unique
+  severity       ReportSeverity @default(MEDIUM)
+  // SLA tracking for the published "How we respond to reports" table. Without
+  // these the promised acknowledgement and action deadlines are unmeasurable.
+  acknowledgedAt DateTime?
+  actionedAt     DateTime?
   reviewedBy  String?          // admin userId who reviewed
   reviewedAt  DateTime?
   actionTaken String?
@@ -662,6 +783,7 @@ model AdminAuditLog {
   targetId   String   // ID of the item that was acted on
   reason     String?  // optional free-text justification
   detail     String?  // JSON for extra context (e.g. ban duration)
+  ipAddress  String?  // request IP of the acting admin, truncated for minimisation
   createdAt  DateTime @default(now())
 
   @@index([adminEmail])
@@ -670,3 +792,327 @@ model AdminAuditLog {
   @@map("admin_audit_log")
 }
 
+
+// ─────────────────────────────────────────────
+// REGISTRATION RECORD  (IT Rules 2021 — 180 days)
+//
+// Account deletion anonymises the user row in place, which destroys the very
+// registration details Indian intermediary rules require us to keep for 180
+// days after cancellation. This sealed copy is written immediately BEFORE the
+// anonymisation transaction runs.
+//
+// Deliberately NOT a relation to User: a cascade would delete this record the
+// moment the user row goes, defeating its entire purpose.
+// ─────────────────────────────────────────────
+model RegistrationRecord {
+  id           String   @id @default(uuid())
+  userId       String   @unique
+  email        String
+  phoneNo      String?
+  registeredAt DateTime
+  cancelledAt  DateTime @default(now())
+  // Purge deadline, enforced by the retention worker. cancelledAt + 180 days.
+  purgeAfter   DateTime
+
+  // Cross-service erasure state. chat-svc and forum-svc own their own schemas,
+  // so their cleanup is an HTTP call that can fail while the local deletion has
+  // already committed. Null means "not yet confirmed done"; the retention
+  // worker retries those on its daily pass rather than losing the obligation.
+  chatCleanupAt   DateTime?
+  forumCleanupAt  DateTime?
+  cleanupAttempts Int       @default(0)
+
+  @@index([purgeAfter])
+  @@index([chatCleanupAt])
+  @@index([forumCleanupAt])
+  @@map("registration_records")
+}
+
+// ─────────────────────────────────────────────
+// GUARDIAN ATTESTATION  (DPDP §9)
+//
+// Records a Care Circle owner's confirmation that they are the parent or lawful
+// guardian of a member, or have that guardian's permission.
+//
+// NOTE: this is an attestation, not verified consent. No mechanism currently
+// verifies the confirmer is an identifiable adult guardian, so this does not by
+// itself satisfy DPDP §9 / draft Rule 10. See docs/legal/06 for the honest
+// limitation, and the parked design decision on OTP / DigiLocker verification.
+// ─────────────────────────────────────────────
+model GuardianAttestation {
+  id             String   @id @default(uuid())
+  // The account holder making the confirmation.
+  guardianUserId String
+  // Who the confirmation is about. Free-form because the subject usually has no
+  // account of their own — that is the point of the Care Circle arrangement.
+  subjectName    String
+  subjectIsMinor Boolean  @default(true)
+  relationship   String   // Parent | Guardian | Spouse | Sibling | Child | Other
+  conversationId String?  // the Care Circle, owned by chat-svc's schema
+  policyVersion  String
+  ipAddress      String?  // truncated for minimisation, as with UserConsent
+  attestedAt     DateTime @default(now())
+  revokedAt      DateTime?
+
+  guardian User @relation("GuardianRelation", fields: [guardianUserId], references: [id], onDelete: Cascade)
+
+  @@index([guardianUserId])
+  @@index([conversationId])
+  @@map("guardian_attestations")
+}
+
+// ─────────────────────────────────────────────
+// GRIEVANCE TICKET  (IT Rules Rule 3(2))
+//
+// The formal grievance-redressal mechanism, distinct from content reports.
+// The published SLA is acknowledgement within 24 hours and resolution within
+// 15 days; acknowledgedAt/resolvedAt are what make that measurable rather than
+// aspirational, and dueBy is what lets the admin queue surface overdue items.
+// ─────────────────────────────────────────────
+model GrievanceTicket {
+  id             String          @id @default(uuid())
+  referenceCode  String          @unique
+  // Nullable: a grievance may arrive from someone without an account.
+  userId         String?
+  contactEmail   String
+  category       String
+  subject        String
+  body           String
+  status         GrievanceStatus @default(RECEIVED)
+  receivedAt     DateTime        @default(now())
+  acknowledgedAt DateTime?       // SLA: within 24h of receivedAt
+  resolvedAt     DateTime?       // SLA: within 15 days of receivedAt
+  resolutionNote String?
+  assignedTo     String?         // admin email
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([status, receivedAt])
+  @@index([acknowledgedAt])
+  @@map("grievance_tickets")
+}
+
+// ─────────────────────────────────────────────
+// APPEAL  (Community Guidelines — appeals)
+//
+// Published terms: 30 days to appeal a decision, responded to within 14 days
+// (7 where the account is suspended), reviewed by someone not involved in the
+// original decision. reviewedBy is compared against the original decider, which
+// only became possible once admin actions carried a real actor identity.
+// ─────────────────────────────────────────────
+model Appeal {
+  id             String       @id @default(uuid())
+  referenceCode  String       @unique
+  appellantId    String
+  // What is being appealed — an audit log entry, report, or moderation flag.
+  targetType     String       // admin_audit_log | user_report | moderation_flag
+  targetId       String
+  grounds        String
+  status         AppealStatus @default(SUBMITTED)
+  submittedAt    DateTime     @default(now())
+  // Response deadline: submittedAt + 14 days, or + 7 if the account is suspended.
+  dueBy          DateTime
+  respondedAt    DateTime?
+  // Admin email. Must differ from the original decision's adminEmail.
+  reviewedBy     String?
+  decisionNote   String?
+
+  appellant User @relation(fields: [appellantId], references: [id], onDelete: Cascade)
+
+  @@index([status, submittedAt])
+  @@index([targetType, targetId])
+  @@map("appeals")
+}
+
+// ─────────────────────────────────────────────
+// MESSAGE ACCESS LOG  (Terms of Use §7)
+//
+// The Terms state plainly: "We are technically able to access message content
+// ... Every such access is logged." Before this, admin routes read raw chat
+// message bodies with no trail whatsoever.
+//
+// No User relation — the actor is an admin identified by email, and there is no
+// Admin model in this system.
+// ─────────────────────────────────────────────
+model MessageAccessLog {
+  id             String   @id @default(uuid())
+  adminEmail     String
+  // What kind of read this was:
+  //   context_view   — deliberately opening a conversation to read the messages
+  //                    around a reported one. The deep read that most needs a trail.
+  //   queue_listing  — the moderation queue rendering reported-message snapshots.
+  //   report_detail  — a single report opened for review.
+  accessType     String   @default("context_view")
+  // Null for a queue listing, which spans many conversations rather than one.
+  conversationId String?
+  // Which messages were exposed — ids, or a sequence range for a context window.
+  messageIds     String[]
+  sequenceFrom   BigInt?
+  sequenceTo     BigInt?
+  // Why the access was lawful: the report or grievance being investigated.
+  justification  String
+  reportId       String?
+  ipAddress      String?
+  accessedAt     DateTime @default(now())
+
+  @@index([adminEmail, accessedAt(sort: Desc)])
+  @@index([conversationId])
+  @@index([accessType, accessedAt(sort: Desc)])
+  @@map("message_access_logs")
+}
+
+// ─────────────────────────────────────────────
+// REMOVED CONTENT RECORD  (IT Rules 3(1)(d) — 180 days)
+//
+// Every admin removal path currently destroys what it acts on: chat removal
+// sets content = '', and forum report rows are hard-deleted. That leaves no
+// record of removed unlawful content, which the rules require be retained for
+// 180 days.
+//
+// This snapshot MUST be written before the blanking runs — the ordering is the
+// entire point. Modelled on chat.reports.messageContent, which already proves
+// the immutable-snapshot-at-action-time pattern works here.
+//
+// authorId is a plain String, not a relation: a cascade on author deletion
+// would defeat the retention obligation.
+// ─────────────────────────────────────────────
+model RemovedContentRecord {
+  id             String             @id @default(uuid())
+  contentType    RemovedContentType
+  contentId      String
+  // Immutable snapshot taken at removal time.
+  contentSnapshot String
+  authorId       String
+  conversationId String?            // for chat content
+  removedBy      String             // admin email
+  reason         String?
+  // The report that prompted removal, where there was one. Null for proactive
+  // removals, which is exactly the case the report-snapshot approach missed.
+  sourceReportId String?
+  removedAt      DateTime           @default(now())
+  purgeAfter     DateTime           // removedAt + 180 days
+
+  @@index([purgeAfter])
+  @@index([authorId])
+  @@index([contentType, contentId])
+  @@map("removed_content_records")
+}
+
+// ─────────────────────────────────────────────
+// ADMIN-PANEL-OWNED TABLES — stub mirrors.
+//
+// These live in the `public` schema but are created by raw
+// `CREATE TABLE IF NOT EXISTS` statements in apps/admin's API routes, not by
+// any Prisma schema. Prisma therefore could not see them, and `prisma db push`
+// from this service would have DROPPED all six — including `services` and the
+// category master data, and `moderation_history`, which is the moderation
+// audit trail.
+//
+// Declared here (and mirrored into forum-svc) purely so a push leaves them
+// alone. user-svc's own code does not query them.
+//
+// Field names use @map because the admin panel created them snake_case, unlike
+// Prisma's camelCase convention elsewhere in this file.
+// ─────────────────────────────────────────────
+
+model AdminGeneralSettings {
+  id                 String   @id @default("default")
+  platformName       String?  @default("DigiAbility Admin Portal") @map("platform_name")
+  supportPhone       String?  @default("+91 88000 12345") @map("support_phone")
+  emailConfig        String?  @default("admin@digiability.org") @map("email_config")
+  maintenanceMode    Boolean? @default(false) @map("maintenance_mode")
+  supportedLanguages Json?    @default("[\"English\", \"Hindi\", \"Marathi\"]") @map("supported_languages")
+  updatedAt          DateTime? @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  @@map("admin_general_settings")
+}
+
+model AdminSecuritySettings {
+  id                  String    @id @default("default")
+  twoFaEnabled        Boolean?  @default(true) @map("two_fa_enabled")
+  minPasswordLen      Int?      @default(12) @map("min_password_len")
+  requireUppercase    Boolean?  @default(true) @map("require_uppercase")
+  requireNumbers      Boolean?  @default(true) @map("require_numbers")
+  requireSpecial      Boolean?  @default(true) @map("require_special")
+  maxFailedAttempts   Int?      @default(5) @map("max_failed_attempts")
+  lockoutDurationMins Int?      @default(15) @map("lockout_duration_mins")
+  sessionTimeoutMins  Int?      @default(30) @map("session_timeout_mins")
+  updatedAt           DateTime? @default(now()) @map("updated_at") @db.Timestamptz(6)
+  maxPasswordLen      Int?      @default(16) @map("max_password_len")
+
+  @@map("admin_security_settings")
+}
+
+model EventCategory {
+  id        String    @id @default(dbgenerated("(gen_random_uuid())::text"))
+  name      String    @unique
+  status    String    @default("Active")
+  createdAt DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@map("event_categories")
+}
+
+model ServiceCategory {
+  id        String    @id @default(dbgenerated("(gen_random_uuid())::text"))
+  name      String    @unique
+  status    String    @default("Active")
+  createdAt DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@map("service_categories")
+}
+
+model ModerationHistory {
+  id             String    @id @default(dbgenerated("(gen_random_uuid())::text"))
+  reportId       String?   @map("report_id")
+  source         String
+  contentType    String?   @map("content_type")
+  contentPreview String?   @map("content_preview")
+  reason         String?
+  authorId       String?   @map("author_id")
+  authorName     String?   @map("author_name")
+  reporterId     String?   @map("reporter_id")
+  reporterName   String?   @map("reporter_name")
+  actionTaken    String    @map("action_taken")
+  adminNotes     String?   @map("admin_notes")
+  resolvedAt     DateTime? @default(now()) @map("resolved_at") @db.Timestamptz(6)
+
+  @@map("moderation_history")
+}
+
+model DirectoryService {
+  id                   String   @id
+  name                 String
+  type                 String
+  category             String
+  logo                 String?
+  image                String?
+  description          String
+  location             String
+  contactPhone         String?
+  contactEmail         String?
+  contactUrl           String?
+  price                String   @default("Contact for pricing")
+  availability         String   @default("By appointment")
+  rating               Decimal  @default(4.9)
+  reviews              Int      @default(12)
+  verified             Boolean  @default(true)
+  status               String   @default("published")
+  createdAt            DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt            DateTime @default(now()) @db.Timestamptz(6)
+  availabilitySchedule Json?
+
+  @@map("services")
+}
+
+model AdminLoginAttempt {
+  id          String   @id @default(dbgenerated("(gen_random_uuid())::text"))
+  identifier  String
+  kind        String
+  succeeded   Boolean  @default(false)
+  attemptedAt DateTime @default(now()) @map("attemptedAt") @db.Timestamptz(6)
+
+  @@index([identifier, attemptedAt(sort: Desc)])
+  @@map("admin_login_attempts")
+}

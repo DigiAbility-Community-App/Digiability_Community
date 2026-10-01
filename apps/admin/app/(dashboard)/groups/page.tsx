@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { DateRangePicker, isWithinDateRange } from "@/components/shared/DateRangePicker";
 import { ConfirmModal } from "@/components/shared/ConfirmModal";
+import { ModalErrorBanner } from "@/components/shared/ModalErrorBanner";
 
 interface Group {
   id: string;
@@ -971,11 +972,6 @@ function CreateGroupModal({ onClose, onCreated }: { onClose: () => void; onCreat
         <div className="h-1 bg-[#F3F3F3]"><div className="h-full bg-[#7004DC] transition-all" style={{ width: step===1 ? "50%" : "100%" }} /></div>
 
         <div className="flex-1 overflow-y-auto px-8 py-6 space-y-5">
-          {error && (
-            <div className="flex items-center gap-2 bg-red-50 border border-red-200 text-red-600 rounded-xl px-4 py-3 text-sm font-semibold">
-              <AlertTriangle className="w-4 h-4 shrink-0" />{error}
-            </div>
-          )}
 
           {/* ── STEP 1 ── */}
           {step === 1 && (
@@ -1135,8 +1131,11 @@ function CreateGroupModal({ onClose, onCreated }: { onClose: () => void; onCreat
           )}
         </div>
 
-        {/* FOOTER */}
-        <div className="px-8 py-5 border-t border-gray-100 flex justify-between gap-3">
+        {/* FOOTER — the error lives here, not at the top of the scroll body,
+            so it can't end up off-screen above a long form. */}
+        <div className="px-8 py-5 border-t border-gray-100 flex flex-col gap-3">
+          <ModalErrorBanner message={error} />
+          <div className="flex justify-between gap-3">
           <button onClick={() => step===1 ? onClose() : setStep(1)} className="h-11 px-5 rounded-xl border border-gray-200 text-[#4B4355] font-semibold text-sm hover:bg-gray-50 transition">
             {step===1 ? "Cancel" : "← Back"}
           </button>
@@ -1149,6 +1148,7 @@ function CreateGroupModal({ onClose, onCreated }: { onClose: () => void; onCreat
               {submitting ? <><Loader2 className="w-4 h-4 animate-spin" /> Creating...</> : "Create Group"}
             </button>
           )}
+          </div>
         </div>
       </div>
     </div>

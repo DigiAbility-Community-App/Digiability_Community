@@ -1,7 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAdminAuth } from "@/lib/auth";
+import { requireAdminAuth, getAdminSession, getRequestIp } from "@/lib/auth";
 import { dbPool } from "@/lib/db";
 import { writeAudit } from "@/lib/audit";
+import { logMessageAccess } from "@/lib/messageAccess";
+import {
+  preserveRemovedContent,
+  readMessageForPreservation,
+  readQuestionForPreservation,
+  readAnswerForPreservation,
+} from "@/lib/preserveRemovedContent";
 import crypto from "crypto";
 
 // ─────────────────────────────────────────────────────
@@ -90,11 +97,21 @@ async function suspendUser(userId: string, interval: string | null, reason?: str
   }
 }
 
-async function notifyUser(userId: string, type: string, title: string, message: string) {
+async function notifyUser(
+  userId: string,
+  type: string,
+  title: string,
+  message: string,
+  // The admin_audit_log entry this notice came from. Without it the mobile
+  // app hides the Appeal button (it has no decision to point at), so every
+  // action taken from the Review Queue was silently unappealable — unlike the
+  // same actions taken from api/moderation/route.ts, which always passed it.
+  auditLogId?: string | null
+) {
   await dbPool.query(
-    `INSERT INTO forum_notifications (id, "userId", type, title, message, read, "createdAt")
-     VALUES (gen_random_uuid()::text, $1, $2, $3, $4, false, NOW())`,
-    [userId, type, title, message]
+    `INSERT INTO forum_notifications (id, "userId", type, title, message, read, "auditLogId", "createdAt")
+     VALUES (gen_random_uuid()::text, $1, $2, $3, $4, false, $5, NOW())`,
+    [userId, type, title, message, auditLogId ?? null]
   );
 }
 
@@ -137,9 +154,24 @@ async function recordHistory(entry: {
 // GET — unified review queue
 // ─────────────────────────────────────────────────────
 
+// Child-safety and credible-threat reports must surface above everything else
+// regardless of age — see the "How we respond to reports" table in
+// docs/legal/02-community-guidelines.md.
+const SEVERITY_RANK: Record<string, number> = {
+  CRITICAL: 0,
+  HIGH: 1,
+  ELEVATED: 2,
+  MEDIUM: 3,
+  LOW: 4,
+};
+
 export async function GET(request: NextRequest) {
   const authError = await requireAdminAuth(request);
   if (authError) return authError;
+  // Needed because this queue renders reported message content — see the
+  // logMessageAccess call below.
+  const actor = await getAdminSession(request);
+  const ip = getRequestIp(request);
 
   const { searchParams } = new URL(request.url);
   const status = searchParams.get("status") ?? "PENDING";
@@ -155,6 +187,10 @@ export async function GET(request: NextRequest) {
         SELECT
           fr.id,
           fr.reason,
+          COALESCE(fr.severity::text, 'MEDIUM') as severity,
+          fr."referenceCode",
+          fr."acknowledgedAt",
+          COALESCE(fr.status::text, 'PENDING') as status,
           fr."createdAt",
           fr."questionId",
           fr."answerId",
@@ -205,6 +241,9 @@ export async function GET(request: NextRequest) {
             r."messageContent",
             r."messageSequence",
             COALESCE(r.status, 'OPEN') as status,
+            COALESCE(r.severity, 'MEDIUM') as severity,
+            r."referenceCode",
+            r."acknowledgedAt",
             reporter.id as "reporterId",
             reporter.name as "reporterName",
             reporter.email as "reporterEmail",
@@ -220,6 +259,46 @@ export async function GET(request: NextRequest) {
         chatRows = chatResult.rows;
       } catch (err) {
         console.error("Chat reports table query failed:", err);
+      }
+    }
+
+    // 2b. Profile reports (user_reports) — filed from the mobile user profile
+    // via user-svc's POST /api/reports. This table had no reader anywhere in
+    // the admin panel, so every profile report vanished on submission.
+    let profileRows: any[] = [];
+    if (type === "all" || type === "report" || type === "profile") {
+      try {
+        const profileStatusClause =
+          status && status !== "ALL" ? `WHERE ur.status = '${status}'` : "";
+
+        const profileResult = await dbPool.query(`
+          SELECT
+            ur.id,
+            ur.reason::text as reason,
+            ur.details,
+            ur."targetType"::text as "targetType",
+            ur."targetId",
+            ur.status::text as status,
+            ur.severity::text as severity,
+            ur."referenceCode",
+            ur."acknowledgedAt",
+            ur."createdAt",
+            reporter.id as "reporterId",
+            reporter.name as "reporterName",
+            reporter.email as "reporterEmail",
+            target.id as "authorId",
+            target.name as "authorName",
+            target.email as "authorEmail"
+          FROM user_reports ur
+          LEFT JOIN users reporter ON ur."reporterId" = reporter.id
+          LEFT JOIN users target ON ur."targetType" = 'USER' AND ur."targetId" = target.id
+          ${profileStatusClause}
+          ORDER BY ur."createdAt" DESC
+          LIMIT 100
+        `);
+        profileRows = profileResult.rows;
+      } catch (err) {
+        console.error("user_reports query failed:", err);
       }
     }
 
@@ -282,6 +361,9 @@ export async function GET(request: NextRequest) {
         contentPreview: r.messageContent || "(no content preview)",
         imageUrl: extractImageUrl(r.messageContent),
         score: null as number | null,
+        severity: r.severity || "MEDIUM",
+        referenceCode: r.referenceCode || null,
+        acknowledgedAt: r.acknowledgedAt || null,
         status: r.status === "OPEN" ? "PENDING" : r.status,
         createdAt: r.createdAt,
       })),
@@ -303,7 +385,32 @@ export async function GET(request: NextRequest) {
         contentPreview: r.questionTitle || r.questionDescription || r.answerContent || "(no content preview)",
         imageUrl: r.questionImage || r.answerImage || extractImageUrl(r.questionDescription) || extractImageUrl(r.answerContent) || null,
         score: null as number | null,
-        status: "PENDING",
+        severity: r.severity || "MEDIUM",
+        referenceCode: r.referenceCode || null,
+        acknowledgedAt: r.acknowledgedAt || null,
+        status: r.status || "PENDING",
+        createdAt: r.createdAt,
+      })),
+      ...profileRows.map((r: any) => ({
+        id: r.id,
+        kind: "profile_report" as const,
+        source: "profile" as const,
+        contentType: (r.targetType || "USER").toLowerCase(),
+        contentId: r.targetId || r.id,
+        userId: r.authorId || r.targetId || "",
+        userEmail: r.authorEmail || "",
+        userName: r.authorName || "Reported User",
+        reporterId: r.reporterId || "",
+        reporterEmail: r.reporterEmail || "",
+        reporterName: r.reporterName || "Reporter",
+        summary: r.reason ? String(r.reason).replace(/_/g, " ") : "Reported profile",
+        contentPreview: r.details || "(no additional details given)",
+        imageUrl: null as string | null,
+        score: null as number | null,
+        severity: r.severity || "MEDIUM",
+        referenceCode: r.referenceCode || null,
+        acknowledgedAt: r.acknowledgedAt || null,
+        status: r.status || "PENDING",
         createdAt: r.createdAt,
       })),
       ...flagRows.map((f: any) => ({
@@ -321,10 +428,36 @@ export async function GET(request: NextRequest) {
         summary: Array.isArray(f.categories) ? f.categories.join(", ") : "AI Detected Anomaly",
         contentPreview: f.text?.slice(0, 140) || "(no preview)",
         score: typeof f.score === "number" ? f.score : null,
+        severity: "MEDIUM",
+        referenceCode: null as string | null,
+        acknowledgedAt: null as string | null,
         status: f.status || "PENDING",
         createdAt: f.createdAt,
       })),
-    ].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    ].sort((a, b) => {
+      const rank =
+        (SEVERITY_RANK[a.severity ?? "MEDIUM"] ?? 3) - (SEVERITY_RANK[b.severity ?? "MEDIUM"] ?? 3);
+      if (rank !== 0) return rank;
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    });
+
+    // Reported chat messages carry a content snapshot, so rendering the queue
+    // exposes private message content — less deeply than the context view, but
+    // it is still an access, and Terms §7 says every one is logged.
+    // One summary row per load rather than one per report: the queue spans many
+    // conversations, and a row per item would bury the deliberate reads.
+    if (chatRows.length > 0) {
+      await logMessageAccess({
+        adminEmail: actor?.email,
+        ipAddress: ip,
+        accessType: "queue_listing",
+        conversationId: null,
+        messageIds: chatRows
+          .map((r: any) => r.messageId)
+          .filter((id: string | null): id is string => Boolean(id)),
+        justification: `Moderation review queue (status=${status}, type=${type})`,
+      });
+    }
 
     return NextResponse.json({ success: true, data: { items, total: items.length } });
   } catch (err) {
@@ -340,6 +473,9 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const authError = await requireAdminAuth(request);
   if (authError) return authError;
+  // Actor identity for the audit trail — see lib/audit.ts.
+  const actor = await getAdminSession(request);
+  const ip = getRequestIp(request);
 
   let body: {
     id: string;
@@ -384,15 +520,39 @@ export async function POST(request: NextRequest) {
     await ensureTables();
 
     const isChat = source === "chat" || contentType === "chat_message" || Boolean(messageId);
+    const isProfile = source === "profile";
     const isQuestion = contentType === "question" || Boolean(questionId);
     const isAnswer = contentType === "answer" || Boolean(answerId);
+
+    // Resolve a profile report (user_reports). Kept as one helper so every
+    // action branch records the reviewer and the SLA timestamp consistently.
+    const resolveProfileReport = async (newStatus: string, actionTaken: string) => {
+      await dbPool.query(
+        `UPDATE user_reports
+            SET status = $1::"ReportStatus",
+                "reviewedBy" = $2,
+                "reviewedAt" = NOW(),
+                "acknowledgedAt" = COALESCE("acknowledgedAt", NOW()),
+                "actionedAt" = NOW(),
+                "actionTaken" = $3
+          WHERE id = $4`,
+        [newStatus, actor?.email ?? null, actionTaken, id]
+      );
+    };
 
     // ── 1. Action execution ──
     if (action === "dismiss") {
       if (isChat) {
         await dbPool.query(`UPDATE chat.reports SET status = 'DISMISSED' WHERE id = $1 OR "messageId" = $2`, [id, messageId || contentId]);
+      } else if (isProfile) {
+        await resolveProfileReport("DISMISSED", "dismissed");
       } else {
-        await dbPool.query(`DELETE FROM forum_reports WHERE id = $1`, [id]);
+        // Status update rather than DELETE: removing the row destroyed the
+        // trail an appeal needs and made the published SLA unmeasurable.
+        await dbPool.query(
+          `UPDATE forum_reports SET status = 'DISMISSED'::"ReportStatus", "reviewedBy" = $2, "reviewedAt" = NOW(), "acknowledgedAt" = COALESCE("acknowledgedAt", NOW()), "actionedAt" = NOW() WHERE id = $1`,
+          [id, actor?.email ?? null]
+        );
       }
 
       await recordHistory({
@@ -408,11 +568,26 @@ export async function POST(request: NextRequest) {
         adminNotes: "Report dismissed by admin review queue.",
       });
 
-      await writeAudit({ action: "report_dismiss", reason: `id ${id}` });
+      await writeAudit({ adminEmail: actor?.email, ipAddress: ip, action: "report_dismiss", reason: `id ${id}` });
     } else if (action === "remove_content") {
       if (isChat) {
         const msgTarget = messageId || contentId;
         if (msgTarget) {
+          // Snapshot BEFORE blanking (IT Rules 3(1)(d)) — both branches below
+          // set content = '', so afterwards there is nothing left to preserve.
+          const original = await readMessageForPreservation(msgTarget);
+          if (original) {
+            await preserveRemovedContent({
+              contentType: "CHAT_MESSAGE",
+              contentId: msgTarget,
+              contentSnapshot: original.content,
+              authorId: original.senderId,
+              conversationId: original.conversationId,
+              removedBy: actor?.email,
+              reason: reason ?? null,
+              sourceReportId: id,
+            });
+          }
           try {
             await dbPool.query(
               `UPDATE chat.messages SET status = 'DELETED', "deletedAt" = NOW(), content = '' WHERE id = $1`,
@@ -427,21 +602,60 @@ export async function POST(request: NextRequest) {
           }
         }
         await dbPool.query(`UPDATE chat.reports SET status = 'ACTIONED' WHERE id = $1 OR "messageId" = $2`, [id, msgTarget]);
+      } else if (isProfile) {
+        // A profile report is about a person, not a post — there is no content
+        // row to remove. Resolve the report so it leaves the queue; warn_user
+        // and ban_user are the meaningful actions here, and the UI hides
+        // "remove content" for this source.
+        await resolveProfileReport("ACTIONED", "reviewed — no content to remove");
       } else if (isQuestion) {
         const qTarget = questionId || contentId;
         if (qTarget) {
+          const originalQ = await readQuestionForPreservation(qTarget);
+          if (originalQ) {
+            await preserveRemovedContent({
+              contentType: "FORUM_QUESTION",
+              contentId: qTarget,
+              contentSnapshot: originalQ.content,
+              authorId: originalQ.authorId,
+              removedBy: actor?.email,
+              reason: reason ?? null,
+              sourceReportId: id,
+            });
+          }
           await dbPool.query(`UPDATE forum_questions SET "deletedAt" = NOW() WHERE id = $1`, [qTarget]);
-          await dbPool.query(`DELETE FROM forum_reports WHERE "questionId" = $1 OR id = $2`, [qTarget, id]);
+          await dbPool.query(
+            `UPDATE forum_reports SET status = 'ACTIONED'::"ReportStatus", "reviewedBy" = $3, "reviewedAt" = NOW(), "acknowledgedAt" = COALESCE("acknowledgedAt", NOW()), "actionedAt" = NOW() WHERE "questionId" = $1 OR id = $2`,
+            [qTarget, id, actor?.email ?? null]
+          );
         }
       } else if (isAnswer) {
         const aTarget = answerId || contentId;
         if (aTarget) {
+          const originalA = await readAnswerForPreservation(aTarget);
+          if (originalA) {
+            await preserveRemovedContent({
+              contentType: "FORUM_ANSWER",
+              contentId: aTarget,
+              contentSnapshot: originalA.content,
+              authorId: originalA.authorId,
+              removedBy: actor?.email,
+              reason: reason ?? null,
+              sourceReportId: id,
+            });
+          }
           await dbPool.query(`UPDATE forum_answers SET "deletedAt" = NOW() WHERE id = $1`, [aTarget]);
-          await dbPool.query(`DELETE FROM forum_reports WHERE "answerId" = $1 OR id = $2`, [aTarget, id]);
+          await dbPool.query(
+            `UPDATE forum_reports SET status = 'ACTIONED'::"ReportStatus", "reviewedBy" = $3, "reviewedAt" = NOW(), "acknowledgedAt" = COALESCE("acknowledgedAt", NOW()), "actionedAt" = NOW() WHERE "answerId" = $1 OR id = $2`,
+            [aTarget, id, actor?.email ?? null]
+          );
         }
       } else {
-        // Generic forum report delete
-        await dbPool.query(`DELETE FROM forum_reports WHERE id = $1`, [id]);
+        // Generic forum report resolution
+        await dbPool.query(
+          `UPDATE forum_reports SET status = 'ACTIONED'::"ReportStatus", "reviewedBy" = $2, "reviewedAt" = NOW(), "acknowledgedAt" = COALESCE("acknowledgedAt", NOW()), "actionedAt" = NOW() WHERE id = $1`,
+          [id, actor?.email ?? null]
+        );
       }
 
       await recordHistory({
@@ -457,22 +671,64 @@ export async function POST(request: NextRequest) {
         adminNotes: "Content permanently removed by admin.",
       });
 
-      await writeAudit({ action: "content_removed", reason: `id ${id}` });
+      // Removing someone's content is an enforcement decision like any other,
+      // so it is logged against the author and they are told — previously it
+      // was logged with targetType "system" and the author was never notified
+      // at all, which left them with nothing to appeal and no idea it had
+      // happened.
+      const removalAuditId = await writeAudit({
+        adminEmail: actor?.email,
+        ipAddress: ip,
+        action: "content_removed",
+        userId: userId || null,
+        reason: reason || `id ${id}`,
+      });
+
+      if (userId) {
+        await notifyUser(
+          userId,
+          "CONTENT_REMOVED",
+          "Your content was removed",
+          reason || "Content you posted was removed for violating our community guidelines.",
+          removalAuditId
+        );
+      }
     } else if (action === "warn_user") {
+      // The audit row is written BEFORE the notice so its id can be carried
+      // into the notification — that link is what makes the decision
+      // appealable. userId is passed so the row gets targetType "user";
+      // without it writeAudit defaults to "system" and appeal.service
+      // rejects the appeal as not being about the user's own account.
+      const warnAuditId = userId
+        ? await writeAudit({
+            adminEmail: actor?.email,
+            ipAddress: ip,
+            action: "warn_user",
+            userId,
+            reason: reason || `user ${userId}`,
+          })
+        : null;
+
       if (userId) {
         await suspendUser(userId, "7 days", reason || "7-day warning suspension from review queue");
         await notifyUser(
           userId,
           "WARNING",
           "Account Warning & 7-Day Suspension",
-          reason || "Your recent activity violated our community guidelines. Your account is temporarily suspended for 7 days."
+          reason || "Your recent activity violated our community guidelines. Your account is temporarily suspended for 7 days.",
+          warnAuditId
         );
       }
 
       if (isChat) {
         await dbPool.query(`UPDATE chat.reports SET status = 'ACTIONED' WHERE id = $1`, [id]);
+      } else if (isProfile) {
+        await resolveProfileReport("ACTIONED", "warned");
       } else {
-        await dbPool.query(`DELETE FROM forum_reports WHERE id = $1`, [id]);
+        await dbPool.query(
+          `UPDATE forum_reports SET status = 'ACTIONED'::"ReportStatus", "reviewedBy" = $2, "reviewedAt" = NOW(), "acknowledgedAt" = COALESCE("acknowledgedAt", NOW()), "actionedAt" = NOW() WHERE id = $1`,
+          [id, actor?.email ?? null]
+        );
       }
 
       await recordHistory({
@@ -488,22 +744,38 @@ export async function POST(request: NextRequest) {
         adminNotes: "User issued 7-day warning suspension.",
       });
 
-      await writeAudit({ action: "warn_user", reason: `user ${userId}` });
+      // Audit already written above, before the notification.
     } else if (action === "ban_user") {
+      const banAuditId = userId
+        ? await writeAudit({
+            adminEmail: actor?.email,
+            ipAddress: ip,
+            action: "ban_user",
+            userId,
+            reason: reason || `user ${userId}`,
+          })
+        : null;
+
       if (userId) {
         await suspendUser(userId, null, reason || "Permanent ban from review queue");
         await notifyUser(
           userId,
           "BANNED",
           "Account Permanently Banned",
-          reason || "Your account has been permanently suspended due to severe community guideline violations."
+          reason || "Your account has been permanently suspended due to severe community guideline violations.",
+          banAuditId
         );
       }
 
       if (isChat) {
         await dbPool.query(`UPDATE chat.reports SET status = 'ACTIONED' WHERE id = $1`, [id]);
+      } else if (isProfile) {
+        await resolveProfileReport("ACTIONED", "banned");
       } else {
-        await dbPool.query(`DELETE FROM forum_reports WHERE id = $1`, [id]);
+        await dbPool.query(
+          `UPDATE forum_reports SET status = 'ACTIONED'::"ReportStatus", "reviewedBy" = $2, "reviewedAt" = NOW(), "acknowledgedAt" = COALESCE("acknowledgedAt", NOW()), "actionedAt" = NOW() WHERE id = $1`,
+          [id, actor?.email ?? null]
+        );
       }
 
       await recordHistory({
@@ -519,7 +791,7 @@ export async function POST(request: NextRequest) {
         adminNotes: "User permanently banned.",
       });
 
-      await writeAudit({ action: "ban_user", reason: `user ${userId}` });
+      // Audit already written above, before the notification.
     }
 
     return NextResponse.json({ success: true });

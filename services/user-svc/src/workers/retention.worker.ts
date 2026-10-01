@@ -12,6 +12,8 @@
 
 import prisma from "../models/prisma.client";
 import { RETENTION_DAYS } from "../config/retention.config";
+import { retryPendingErasures } from "../services/erasure.service";
+import { raiseAlert } from "../services/alert.service";
 
 const RUN_INTERVAL_MS = 24 * 60 * 60 * 1000; // once per day
 
@@ -47,6 +49,16 @@ async function runRetentionPass(): Promise<void> {
     });
     results.revokedRefreshTokens = rrtResult.count;
 
+    // 3b. Ended login sessions (revoked or expired) past the retention window.
+    //     Cascades to their refresh-token history.
+    const endedBefore = daysAgo(RETENTION_DAYS.endedSessions);
+    const sessResult = await prisma.session.deleteMany({
+      where: {
+        OR: [{ revokedAt: { lt: endedBefore } }, { expiresAt: { lt: endedBefore } }],
+      },
+    });
+    results.endedSessions = sessResult.count;
+
     // 4. Admin audit log entries older than the retention window
     const aalResult = await prisma.adminAuditLog.deleteMany({
       where: { createdAt: { lt: daysAgo(RETENTION_DAYS.adminAuditLog) } },
@@ -71,6 +83,25 @@ async function runRetentionPass(): Promise<void> {
     });
     results.userReports = urResult.count;
 
+    // 7. Sealed registration records past their 180-day statutory window.
+    //    This is the last trace of a deleted account; once it goes, nothing
+    //    identifying that user remains anywhere in user-svc.
+    const rrResult = await prisma.registrationRecord.deleteMany({
+      where: { purgeAfter: { lt: new Date() } },
+    });
+    results.registrationRecords = rrResult.count;
+
+    // 8. Snapshots of removed content past their 180-day preservation window.
+    const rcResult = await prisma.removedContentRecord.deleteMany({
+      where: { purgeAfter: { lt: new Date() } },
+    });
+    results.removedContentRecords = rcResult.count;
+
+    // 9. Retry cross-service erasure that never confirmed. A deleted user's
+    //    chat or forum content still being intact is an outstanding erasure
+    //    obligation, not a transient blip, so it is retried rather than lost.
+    results.erasuresRepaired = await retryPendingErasures();
+
     const totalDeleted = Object.values(results).reduce((s, v) => s + v, 0);
     if (totalDeleted > 0) {
       process.stdout.write(
@@ -90,6 +121,19 @@ async function runRetentionPass(): Promise<void> {
         error: (err as Error).message,
       }) + "\n"
     );
+
+    // Every published retention period depends on this job. If it stops
+    // running, we breach all of them quietly — so this is worth waking
+    // someone for rather than leaving in a log nobody reads.
+    await raiseAlert({
+      severity: "critical",
+      title: "Data retention pass failed",
+      detail:
+        "The daily retention job did not complete. Until it runs successfully, data " +
+        "past its retention period is not being deleted, including the 180-day " +
+        "registration and removed-content records.",
+      context: { startedAt, error: (err as Error).message },
+    });
   }
 }
 

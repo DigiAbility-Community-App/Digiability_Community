@@ -11,7 +11,6 @@ import {
   TextInput,
   Dimensions,
   ScrollView,
-  KeyboardAvoidingView,
   Platform,
   TouchableWithoutFeedback,
   Keyboard
@@ -19,6 +18,8 @@ import {
 import { useRoute, useNavigation } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import ScreenWrapper from "../../components/layout/ScreenWrapper";
+import { SheetKeyboardAvoidingView } from "../../components/shared/SheetKeyboardAvoidingView";
+import { KeyboardAwareScrollView } from "react-native-keyboard-aware-scroll-view";
 import {
   ArrowLeft,
   CheckCircle2,
@@ -50,6 +51,7 @@ import CreateAnswerModal from "./CreateAnswerModal";
 import { useTheme } from "../../theme/ThemeContext";
 import { AccessibleText } from "../../components/shared/AccessibleText";
 import { AccessibleButton } from "../../components/shared/AccessibleButton";
+import { REPORT_REASONS } from "../../constants/reportReasons";
 
 const { height: SCREEN_HEIGHT } = Dimensions.get("window");
 
@@ -144,7 +146,12 @@ const QuestionDetailsScreen = () => {
     };
   }, []);
 
-  if (loading && !currentQuestion) {
+  // Belt-and-braces alongside the store now clearing currentQuestion: if the
+  // question in the store isn't the one this screen was opened for, treat it
+  // as still loading rather than rendering the wrong discussion.
+  const showingStaleQuestion = !!currentQuestion && currentQuestion.id !== questionId;
+
+  if ((loading && !currentQuestion) || showingStaleQuestion) {
     return (
       <View style={[styles.loadingContainer, { backgroundColor: colors.background }]}>
         <ActivityIndicator size="large" color={colors.primary} />
@@ -251,14 +258,6 @@ const QuestionDetailsScreen = () => {
     ]);
   };
 
-  const REPORT_REASONS = [
-    { key: "SPAM", label: "Spam" },
-    { key: "HARASSMENT", label: "Harassment" },
-    { key: "HATE_SPEECH", label: "Hate Speech" },
-    { key: "INAPPROPRIATE_CONTENT", label: "Inappropriate Content" },
-    { key: "MISINFORMATION", label: "Misinformation" },
-    { key: "OTHER", label: "Other" },
-  ];
 
   const openReportModal = (type: "question" | "answer", id: string) => {
     setReportTarget({ type, id });
@@ -297,11 +296,23 @@ const QuestionDetailsScreen = () => {
         }
       }
 
-      await reportContent(payload);
+      const result = await reportContent(payload);
       setReportModalVisible(false);
-      Alert.alert("Thank You", "Your report has been submitted to the moderation team.");
+      // The Community Guidelines promise the reporter a reference number.
+      const ref = result?.referenceCode;
+      Alert.alert(
+        "Thank You",
+        ref
+          ? `Your report has been submitted to the moderation team.\n\nReference: ${ref}`
+          : "Your report has been submitted to the moderation team."
+      );
     } catch (e: any) {
-      Alert.alert("Error", "Failed to submit report. Please try again.");
+      // Surface what the server actually said. This used to be a hardcoded
+      // string, which hid a 422 telling us the reason was too short.
+      const serverMsg =
+        e?.response?.data?.message ??
+        e?.response?.data?.errors?.[0]?.message;
+      Alert.alert("Error", serverMsg || "Failed to submit report. Please try again.");
     } finally {
       setReportSubmitting(false);
     }
@@ -379,18 +390,9 @@ const QuestionDetailsScreen = () => {
                 <AccessibleText numberOfLines={1} style={[styles.authorName, { color: colors.text }, textStyle]}>
                   {formatUserDisplayName(currentQuestion.author)}
                 </AccessibleText>
-                {currentQuestion.author.forumStats && currentQuestion.author.forumStats.reputation > 0 && (
-                  <View
-                    style={[
-                      styles.repBadge,
-                      { backgroundColor: highContrast ? "#FFFFFF" : "#FFFBEB", borderColor: colors.badge },
-                    ]}
-                  >
-                    <AccessibleText variant="overline" style={[styles.repText, { color: colors.badge }]}>
-                      ★ {currentQuestion.author.forumStats.reputation}
-                    </AccessibleText>
-                  </View>
-                )}
+                {/* The author reputation badge (★ N) was removed from the
+                    question header per QA. The answer badge below keeps it,
+                    which is why repBadge/repText remain in the stylesheet. */}
               </View>
               <AccessibleText numberOfLines={1} variant="caption" style={[styles.authorMeta, { color: colors.subtext }]}>
                 {currentQuestion.author.role?.toUpperCase()} •{" "}
@@ -986,16 +988,17 @@ const QuestionDetailsScreen = () => {
           {/* flex: 1 matters — KeyboardAvoidingView measures its own frame to
               compute the offset, and without it the frame is content-sized
               inside a flex-end parent, making the avoidance a no-op. */}
-          <KeyboardAvoidingView
-            behavior={Platform.OS === "ios" ? "padding" : "height"}
+          <SheetKeyboardAvoidingView
             style={{ width: "100%", justifyContent: "flex-end", flex: 1 }}
             keyboardVerticalOffset={Platform.OS === "ios" ? 20 : 0}
           >
             <View style={[styles.reportContent, { backgroundColor: colors.card }]}>
-              <ScrollView
+              <KeyboardAwareScrollView
                 showsVerticalScrollIndicator={false}
                 keyboardShouldPersistTaps="handled"
                 contentContainerStyle={{ paddingBottom: 16 }}
+                enableOnAndroid={true}
+                extraScrollHeight={60}
               >
                 <AccessibleText variant="title" style={[styles.reportTitle, { color: colors.text }]}>
                   Report {reportTarget?.type === "answer" ? "Answer" : "Post"}
@@ -1094,9 +1097,9 @@ const QuestionDetailsScreen = () => {
                     {reportSubmitting ? "Submitting..." : "Submit Report"}
                   </AccessibleButton>
                 </View>
-              </ScrollView>
+              </KeyboardAwareScrollView>
             </View>
-          </KeyboardAvoidingView>
+          </SheetKeyboardAvoidingView>
         </View>
       </Modal>
 
@@ -1419,13 +1422,22 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: "#16A34A",
     backgroundColor: "#F0FDF4",
-    paddingTop: 32
+    // NOT computed from the marker's actual rendered size — it's a fixed
+    // clearance for the current icon size (12) + label font size (8) +
+    // vertical padding (3) below. If acceptedMarker/acceptedMarkerText
+    // ever changes (bigger icon, longer label, larger font), re-check
+    // this value by hand or the badge will overlap answerContentRow again.
+    paddingTop: 40
   },
   acceptedMarker: {
     position: "absolute",
     top: 0,
     left: 0,
     backgroundColor: "#16A34A",
+    // Matches answerCard's own borderRadius (18) so the badge's corner
+    // follows the card's rounded edge instead of overhanging it with a
+    // sharp square corner.
+    borderTopLeftRadius: 18,
     borderBottomRightRadius: 10,
     flexDirection: "row",
     alignItems: "center",

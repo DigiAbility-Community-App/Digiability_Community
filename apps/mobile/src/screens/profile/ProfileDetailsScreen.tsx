@@ -15,7 +15,6 @@ import {
   View,
   StyleSheet,
   TouchableOpacity,
-  ScrollView,
   TextInput,
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -23,6 +22,7 @@ import {
   Alert,
   BackHandler,
 } from "react-native";
+import { KeyboardAwareScrollView } from "react-native-keyboard-aware-scroll-view";
 
 import DateTimePickerModal from "react-native-modal-datetime-picker";
 import SafeScreen from "../../components/layout/SafeScreen";
@@ -42,6 +42,7 @@ import {
 } from "@services/profileService";
 import apiClient from "@services/apiClient";
 import { sanitizeNameInput, isValidNameFormat } from "../../utils/nameValidation";
+import { isValidPlaceText } from "../../utils/locationValidation";
 import { useTheme } from "../../theme/ThemeContext";
 import { AccessibleText } from "../../components/shared/AccessibleText";
 import { AccessibleButton } from "../../components/shared/AccessibleButton";
@@ -125,6 +126,13 @@ const ProfileDetailsScreen = () => {
   const [ngoName, setNgoName] = useState("");
   const [ngoRole, setNgoRole] = useState("");
   const [district, setDistrict] = useState("");
+
+  // ───────────────── Skill Trainer ─────────────────
+
+  const [skillsTaught, setSkillsTaught] = useState("");
+  const [teachingMode, setTeachingMode] = useState<"physical" | "online" | "both" | "">("");
+  const [trainingLocation, setTrainingLocation] = useState("");
+  const [trainingAddress, setTrainingAddress] = useState("");
 
   // ───────────────── COMMON ─────────────────
 
@@ -244,6 +252,26 @@ const ProfileDetailsScreen = () => {
       }
     }
 
+    // Skill Trainer
+    if (roles.includes("skill_trainer")) {
+      if (!skillsTaught.trim()) {
+        newErrors.skillsTaught = "Please tell us the skills you teach";
+      }
+      if (!teachingMode) {
+        newErrors.teachingMode = "Please select how you teach";
+      }
+      if (teachingMode === "physical" || teachingMode === "both") {
+        if (!trainingLocation.trim()) {
+          newErrors.trainingLocation = "Training location is required";
+        }
+        if (!trainingAddress.trim()) {
+          newErrors.trainingAddress = "Address is required";
+        } else if (!isValidPlaceText(trainingAddress)) {
+          newErrors.trainingAddress = "Address may not be only numbers or symbols";
+        }
+      }
+    }
+
     setFieldErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -284,6 +312,14 @@ const ProfileDetailsScreen = () => {
       payload.district = district.trim();
     }
 
+    if (roles.includes("skill_trainer")) {
+      payload.skillsTaught = skillsTaught.trim();
+      payload.teachingMode = teachingMode;
+      const needsLocation = teachingMode === "physical" || teachingMode === "both";
+      payload.trainingLocation = needsLocation ? trainingLocation.trim() : "";
+      payload.trainingAddress = needsLocation ? trainingAddress.trim() : "";
+    }
+
     return payload;
   };
 
@@ -305,6 +341,7 @@ const ProfileDetailsScreen = () => {
 
       setUser({
         ...user,
+        name: pendingProfile?.fullName ?? user.name,
         fullName: pendingProfile?.fullName ?? user.fullName,
         username: pendingProfile?.username ?? user.username,
         role: roles[0] ?? null,
@@ -328,7 +365,7 @@ const ProfileDetailsScreen = () => {
   // ───────────────── ROLE CHECK ─────────────────
 
   const hasRoleSection = roles.some(r =>
-    ["pwd", "caregiver", "educator", "ngo_worker"].includes(r)
+    ["pwd", "caregiver", "educator", "ngo_worker", "skill_trainer"].includes(r)
   );
 
   const cardBorder = highContrast
@@ -371,11 +408,27 @@ const ProfileDetailsScreen = () => {
 
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        // Android already resizes the window natively on keyboard show/hide
+        // (app.json → android.softwareKeyboardLayoutMode: "resize"), which
+        // applies to full screens like this one (unlike a <Modal>, which
+        // renders in its own window and doesn't get that native resize).
+        // Also setting behavior="height" here made RN's own height-squish
+        // compensate on top of that native resize — the two didn't always
+        // re-sync when the keyboard closed, leaving a phantom gap below the
+        // footer button. iOS has no native equivalent, so it still needs
+        // "padding" here.
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
         keyboardVerticalOffset={Platform.OS === "ios" ? 20 : 0}
       >
         {/* BODY */}
-        <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+        <KeyboardAwareScrollView
+          style={{ flex: 1 }}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          enableOnAndroid={true}
+          extraScrollHeight={100}
+        >
           {/* HERO */}
           <View style={styles.heroSection}>
             <AccessibleText variant="heroTitle" style={[styles.heroTitle, { color: colors.text }]}>
@@ -637,6 +690,119 @@ const ProfileDetailsScreen = () => {
             </View>
           )}
 
+          {/* ───────── SKILL TRAINER ───────── */}
+          {roles.includes("skill_trainer") && (
+            <View style={[styles.sectionCard, { backgroundColor: colors.card }, cardBorder]}>
+              <View style={styles.sectionHeader}>
+                <AccessibleText variant="title" style={[styles.sectionTitle, { color: colors.primary }]}>
+                  Skill Training Info
+                </AccessibleText>
+                <View style={[styles.badge, { backgroundColor: highContrast ? "#FFFFFF" : "rgba(80,0,136,0.1)" }, highContrast && { borderWidth: 1, borderColor: "#000000" }]}>
+                  <AccessibleText style={[styles.badgeText, { color: colors.primary }]}>REQUIRED</AccessibleText>
+                </View>
+              </View>
+
+              <AccessibleText variant="label" style={[styles.label, { color: colors.subtext }]}>Name of skills you teach</AccessibleText>
+              <TextInput
+                placeholder="e.g. Tailoring, Computer Basics"
+                placeholderTextColor={colors.subtext}
+                style={[styles.input, { backgroundColor: colors.surface, color: colors.text }, fieldBorder(!!fieldErrors.skillsTaught)]}
+                value={skillsTaught}
+                onChangeText={(v) => {
+                  setSkillsTaught(v);
+                  if (fieldErrors.skillsTaught) {
+                    setFieldErrors((e) => ({ ...e, skillsTaught: undefined as any }));
+                  }
+                }}
+                accessibilityLabel="Skills you teach"
+              />
+              {fieldErrors.skillsTaught && (
+                <AccessibleText style={[styles.errorText, { color: colors.error }]} accessibilityRole="alert">
+                  {fieldErrors.skillsTaught}
+                </AccessibleText>
+              )}
+
+              <AccessibleText variant="label" style={[styles.label, { color: colors.subtext, marginTop: 18 }]}>How do you teach the skill?</AccessibleText>
+              <View style={styles.modeRow}>
+                {(["physical", "online", "both"] as const).map((mode) => {
+                  const selected = teachingMode === mode;
+                  return (
+                    <TouchableOpacity
+                      key={mode}
+                      style={[
+                        styles.modeChip,
+                        { backgroundColor: selected ? colors.primary : colors.surface },
+                        highContrast && { borderWidth: 2, borderColor: "#000000" },
+                      ]}
+                      onPress={() => {
+                        setTeachingMode(mode);
+                        if (fieldErrors.teachingMode) {
+                          setFieldErrors((e) => ({ ...e, teachingMode: undefined as any }));
+                        }
+                      }}
+                      accessibilityRole="radio"
+                      accessibilityState={{ checked: selected }}
+                      accessibilityLabel={mode === "physical" ? "Physical" : mode === "online" ? "Online" : "Both"}
+                    >
+                      <AccessibleText style={[styles.modeChipText, { color: selected ? "#FFFFFF" : colors.text }]}>
+                        {mode === "physical" ? "Physical" : mode === "online" ? "Online" : "Both"}
+                      </AccessibleText>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+              {fieldErrors.teachingMode && (
+                <AccessibleText style={[styles.errorText, { color: colors.error }]} accessibilityRole="alert">
+                  {fieldErrors.teachingMode}
+                </AccessibleText>
+              )}
+
+              {(teachingMode === "physical" || teachingMode === "both") && (
+                <>
+                  <AccessibleText variant="label" style={[styles.label, { color: colors.subtext, marginTop: 18 }]}>Location where you provide the skill training</AccessibleText>
+                  <TextInput
+                    placeholder="e.g. Andheri, Mumbai"
+                    placeholderTextColor={colors.subtext}
+                    style={[styles.input, { backgroundColor: colors.surface, color: colors.text }, fieldBorder(!!fieldErrors.trainingLocation)]}
+                    value={trainingLocation}
+                    onChangeText={(v) => {
+                      setTrainingLocation(v);
+                      if (fieldErrors.trainingLocation) {
+                        setFieldErrors((e) => ({ ...e, trainingLocation: undefined as any }));
+                      }
+                    }}
+                    accessibilityLabel="Training location"
+                  />
+                  {fieldErrors.trainingLocation && (
+                    <AccessibleText style={[styles.errorText, { color: colors.error }]} accessibilityRole="alert">
+                      {fieldErrors.trainingLocation}
+                    </AccessibleText>
+                  )}
+
+                  <AccessibleText variant="label" style={[styles.label, { color: colors.subtext, marginTop: 18 }]}>Address</AccessibleText>
+                  <TextInput
+                    placeholder="Full address"
+                    placeholderTextColor={colors.subtext}
+                    style={[styles.input, { backgroundColor: colors.surface, color: colors.text }, fieldBorder(!!fieldErrors.trainingAddress)]}
+                    value={trainingAddress}
+                    onChangeText={(v) => {
+                      setTrainingAddress(v);
+                      if (fieldErrors.trainingAddress) {
+                        setFieldErrors((e) => ({ ...e, trainingAddress: undefined as any }));
+                      }
+                    }}
+                    accessibilityLabel="Training address"
+                  />
+                  {fieldErrors.trainingAddress && (
+                    <AccessibleText style={[styles.errorText, { color: colors.error }]} accessibilityRole="alert">
+                      {fieldErrors.trainingAddress}
+                    </AccessibleText>
+                  )}
+                </>
+              )}
+            </View>
+          )}
+
           {/* ───────── BASIC ROLES ───────── */}
           {!hasRoleSection && (
             <View style={[styles.sectionCard, { backgroundColor: colors.card }, cardBorder]}>
@@ -662,16 +828,16 @@ const ProfileDetailsScreen = () => {
                     educator: 'Educator',
                     ngo_worker: 'NGO Worker',
                     skill_trainer: 'Skill Trainer',
-                    community_member: 'Community Member',
-                    therapist: 'Therapist',
                     volunteer: 'Volunteer',
-                    student: 'Student',
+                    therapist: 'Educator',
+                    ngo: 'NGO Worker',
+                    student: 'Skill Trainer',
                   } as Record<string, string>)[r] ?? r).join(", ")}
                 </AccessibleText>
               </View>
             </View>
           )}
-        </ScrollView>
+        </KeyboardAwareScrollView>
 
         {/* FOOTER */}
         <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 20) }]}>
@@ -897,6 +1063,25 @@ const styles = StyleSheet.create({
     marginTop: 4,
     marginBottom: 8,
     marginLeft: 4,
+  },
+
+  modeRow: {
+    flexDirection: "row",
+    gap: 10,
+  },
+
+  modeChip: {
+    flex: 1,
+    minHeight: 48,
+    borderRadius: 14,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 8,
+  },
+
+  modeChipText: {
+    fontSize: 14,
+    fontWeight: "600",
   },
 
 });

@@ -23,6 +23,21 @@ import {
 
 const PAGE_SIZE = 25;
 
+// The DB Role enum predates the app's vocabulary: STUDENT is the app's
+// "Skill Trainer" and VOLUNTEER is its "Volunteer" (swapped by migration
+// 20260908010000). Show admins the same words users see.
+const ROLE_LABELS: Record<string, string> = {
+  PWD: "PwD",
+  CAREGIVER: "Caregiver",
+  THERAPIST: "Therapist",
+  NGO: "NGO",
+  VOLUNTEER: "Volunteer",
+  STUDENT: "Skill Trainer",
+  MENTOR: "Mentor",
+};
+
+const roleLabel = (role: string) => ROLE_LABELS[role] ?? role;
+
 interface User {
   id: string;
   name: string;
@@ -291,13 +306,13 @@ export default function UserManagementPage() {
           </button>
           {roleDropdownOpen && (
             <div className="absolute top-11 left-0 w-44 bg-white border border-gray-100 rounded-xl shadow-lg z-50 py-1">
-              {["ALL", "PWD", "CAREGIVER", "THERAPIST", "NGO", "VOLUNTEER", "STUDENT"].map((r) => (
+              {["ALL", "PWD", "CAREGIVER", "THERAPIST", "NGO", "VOLUNTEER", "STUDENT", "MENTOR"].map((r) => (
                 <button
                   key={r}
                   onClick={() => { setSelectedRole(r); setRoleDropdownOpen(false); }}
                   className={`w-full text-left px-4 py-2 text-xs font-semibold hover:bg-[#F3F3F3] ${selectedRole === r ? "text-[#7004DC] font-bold" : "text-[#4B4355]"}`}
                 >
-                  {r === "ALL" ? "All Roles" : r}
+                  {r === "ALL" ? "All Roles" : roleLabel(r)}
                 </button>
               ))}
             </div>
@@ -423,7 +438,7 @@ export default function UserManagementPage() {
                       <td className="px-4 py-3.5">
                         {user.roles && user.roles.length > 0 ? (
                           <span className={`inline-block max-w-full truncate px-2.5 py-0.5 rounded-md text-[10px] font-bold uppercase ${user.roles[0] === "NGO" ? "bg-gray-100 text-slate-600" : "bg-[#EDDCFF] text-[#7004DC]"}`}>
-                            {user.roles[0]}
+                            {roleLabel(user.roles[0])}
                           </span>
                         ) : (
                           <span className="inline-block px-2.5 py-0.5 rounded-md text-[10px] font-bold uppercase bg-slate-100 text-slate-500">USER</span>

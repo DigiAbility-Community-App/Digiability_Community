@@ -32,7 +32,8 @@ export interface ConversationParticipant {
   role: 'OWNER' | 'ADMIN' | 'MEMBER' | 'CAREGIVER' | 'MENTOR' | 'PROFESSIONAL';
   lastReadSequenceNo?: number;
   isMuted?: boolean;
-  user?: { id: string; name: string; avatarUrl?: string; deletedAt?: string | null; isSuspended?: boolean | null };
+  /** `unavailable`: user-svc didn't return this user (deleted account). */
+  user?: { id: string; name: string; avatarUrl?: string; unavailable?: boolean };
 }
 
 export interface Conversation {

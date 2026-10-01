@@ -9,6 +9,7 @@ import { Router, Request, Response } from 'express';
 import { authenticate } from '../middleware/auth.middleware';
 import { z } from 'zod';
 import { validate } from '../middleware/validate.middleware';
+import { sendRouteError } from '../middleware/error.middleware';
 import { mentorService } from '../services/mentorService';
 
 const router = Router();
@@ -51,10 +52,7 @@ router.get('/match', async (req: Request, res: Response) => {
       count: mentors.length,
     });
   } catch (error: any) {
-    res.status(500).json({
-      success: false,
-      message: error.message || 'Failed to fetch matched mentors',
-    });
+    sendRouteError(res, error, 'Failed to fetch matched mentors');
   }
 });
 
@@ -76,10 +74,7 @@ router.get('/profile/me', async (req: Request, res: Response) => {
       data: profile,
     });
   } catch (error: any) {
-    res.status(500).json({
-      success: false,
-      message: error.message || 'Failed to fetch mentor profile',
-    });
+    sendRouteError(res, error, 'Failed to fetch mentor profile');
   }
 });
 
@@ -101,10 +96,7 @@ router.get('/:userId', async (req: Request, res: Response) => {
       data: profile,
     });
   } catch (error: any) {
-    res.status(500).json({
-      success: false,
-      message: error.message || 'Failed to fetch mentor profile',
-    });
+    sendRouteError(res, error, 'Failed to fetch mentor profile');
   }
 });
 
@@ -120,10 +112,7 @@ router.post('/profile', validate(mentorProfileSchema), async (req: Request, res:
       message: 'Mentor profile saved successfully',
     });
   } catch (error: any) {
-    res.status(500).json({
-      success: false,
-      message: error.message || 'Failed to save mentor profile',
-    });
+    sendRouteError(res, error, 'Failed to save mentor profile');
   }
 });
 
@@ -142,12 +131,8 @@ router.post('/:id/reviews', validate(mentorReviewSchema), async (req: Request, r
       message: 'Review submitted successfully',
     });
   } catch (error: any) {
-    const status = error.message.includes('not found') ? 404 : 
-                   error.message.includes('yourself') ? 400 : 500;
-    res.status(status).json({
-      success: false,
-      message: error.message || 'Failed to submit review',
-    });
+    // submitReview throws createError(404/400) for not-found / self-review.
+    sendRouteError(res, error, 'Failed to submit review');
   }
 });
 

@@ -1,13 +1,17 @@
 import apiClient from './apiClient';
 import { useAuthStore, type User } from '../store/authStore';
+import { POLICY_VERSION, CONSENT_NOTICE_VERSION } from '../legal/legal-docs.generated';
 
+// Keep in sync with apps/mobile/src/services/authService.ts. Skill Trainer
+// stores as `student` and Volunteer as `volunteer` — swapped by migration
+// 20260908010000 so the "Volunteer" a user picks is literally `volunteer`.
 const ROLE_MAP_TO_BACKEND: Record<string, string> = {
   pwd: 'pwd',
   caregiver: 'caregiver',
   educator: 'therapist',
   ngo_worker: 'ngo',
-  skill_trainer: 'volunteer',
-  community_member: 'student',
+  skill_trainer: 'student',
+  volunteer: 'volunteer',
 };
 
 const ROLE_MAP_TO_FRONTEND: Record<string, string> = {
@@ -15,8 +19,8 @@ const ROLE_MAP_TO_FRONTEND: Record<string, string> = {
   caregiver: 'caregiver',
   therapist: 'educator',
   ngo: 'ngo_worker',
-  volunteer: 'skill_trainer',
-  student: 'community_member',
+  student: 'skill_trainer',
+  volunteer: 'volunteer',
 };
 
 function mapUserToFrontend(user: any): any {
@@ -46,8 +50,22 @@ export const authService = {
     throw new Error(response.data.message || 'Login failed');
   },
 
-  register: async (name: string, email: string, password: string) => {
-    const response = await apiClient.post('/api/auth/register', { name, email, password });
+  register: async (name: string, email: string, password: string, dateOfBirth: string) => {
+    // acceptedTerms/policyVersion are required by user-svc's RegisterSchema.
+    // POLICY_VERSION comes from docs/legal/manifest.json via `npm run sync:legal`,
+    // so what we record is the version of the text actually shown to the user.
+    const response = await apiClient.post('/api/auth/register', {
+      name,
+      email,
+      password,
+      acceptedTerms: true,
+      policyVersion: POLICY_VERSION,
+      // Separate consent to the data-processing notice — its own checkbox.
+      acceptedDataProcessing: true,
+      consentNoticeVersion: CONSENT_NOTICE_VERSION,
+      // Required — Digiability is an 18+ platform (DPDP §9).
+      dateOfBirth,
+    });
 
     if (response.data.success) {
       // Registration no longer returns a session — the server issues tokens
@@ -86,8 +104,10 @@ export const authService = {
     }
   },
 
-  deleteAccount: async () => {
-    await apiClient.delete('/api/auth/delete-account');
+  deleteAccount: async (password: string) => {
+    // The server requires re-authentication for this irreversible action.
+    // Axios needs `data` for a DELETE body.
+    await apiClient.delete('/api/auth/delete-account', { data: { password } });
     useAuthStore.getState().clearAuth();
   },
 };

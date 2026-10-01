@@ -7,6 +7,7 @@ import {
   Edit3, Upload, Image as ImageIcon, CheckCircle2, Eye, EyeOff,
 } from "lucide-react";
 import { ConfirmModal } from "@/components/shared/ConfirmModal";
+import { ModalErrorBanner } from "@/components/shared/ModalErrorBanner";
 import { isValidLocation, INVALID_LOCATION_MESSAGE } from "@/lib/validation";
 
 interface EventType {
@@ -848,11 +849,6 @@ export default function EventsPage() {
 
             {/* FORM */}
             <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-5">
-              {errorMsg && (
-                <div className="p-3.5 bg-red-50 border border-red-200 text-red-600 rounded-xl text-sm font-semibold">
-                  {errorMsg}
-                </div>
-              )}
               {successMsg && (
                 <div className="p-3.5 bg-green-50 border border-green-200 text-green-700 rounded-xl text-sm font-semibold flex items-center gap-2">
                   <CheckCircle2 className="w-4 h-4" /> {successMsg}
@@ -1153,8 +1149,11 @@ export default function EventsPage() {
                 </div>
               </div>
 
-              {/* MODAL FOOTER */}
-              <div className="flex justify-end gap-3 pt-3 border-t border-slate-100">
+              {/* MODAL FOOTER — error shown here rather than at the top of
+                  this scrolling form, so it's visible from the submit button. */}
+              <div className="flex flex-col gap-3 pt-3 border-t border-slate-100">
+                <ModalErrorBanner message={errorMsg} />
+                <div className="flex justify-end gap-3">
                 <button
                   type="button"
                   onClick={() => setIsModalOpen(false)}
@@ -1173,6 +1172,7 @@ export default function EventsPage() {
                     : (editingEventId ? "Update Event" : "Publish Event")
                   }
                 </button>
+                </div>
               </div>
             </form>
           </div>

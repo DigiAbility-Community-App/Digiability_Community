@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAdminAuth } from "@/lib/auth";
+import { requireAdminAuth, getAdminSession, getRequestIp } from "@/lib/auth";
 import { dbPool } from "@/lib/db";
 import { isValidIndianPhone, INVALID_PHONE_MESSAGE, isValidEmail, INVALID_EMAIL_MESSAGE } from "@/lib/validation";
 import { writeAudit } from "@/lib/audit";
@@ -57,6 +57,9 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const authError = await requireAdminAuth(request);
   if (authError) return authError;
+  // Actor identity for the audit trail — see lib/audit.ts.
+  const actor = await getAdminSession(request);
+  const ip = getRequestIp(request);
 
   try {
     await ensureTable();
@@ -97,7 +100,7 @@ export async function POST(request: NextRequest) {
       [platformName, supportPhone, emailConfig, maintenanceMode, supportedLanguages]
     );
 
-    await writeAudit({
+    await writeAudit({ adminEmail: actor?.email, ipAddress: ip,
       action: "update_general_settings",
       reason: `maintenance_mode=${maintenanceMode}`,
     });

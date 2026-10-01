@@ -58,7 +58,7 @@ cp services/user-svc/.env.example services/user-svc/.env
 |-------------------|--------------------------------------------------|
 | `JWT_PRIVATE_KEY` | RSA private key (PEM format, `\n` for newlines)  |
 | `JWT_PUBLIC_KEY`  | RSA public key (PEM format, `\n` for newlines)   |
-| `JWT_EXPIRES_IN`  | Access token lifetime (default: `15m`)           |
+| `JWT_EXPIRES_IN`  | Access token lifetime (default: `10m`)           |
 
 **Generate RSA key pair:**
 
@@ -101,7 +101,7 @@ JWT_PUBLIC_KEY="-----BEGIN PUBLIC KEY-----\nMIIB...\n-----END PUBLIC KEY-----"
 
 | Variable          | Default                 | Description                                |
 |-------------------|-------------------------|--------------------------------------------|
-| `CLIENT_BASE_URL` | `http://localhost:3000` | Frontend URL used in email verification/reset links |
+| `CORS_ALLOWED_ORIGINS` | `http://localhost:3000,http://localhost:3001` | Comma-separated browser origins allowed by CORS. Required in production (https only, no `*`, no placeholders) or the service won't start |
 
 ### Redis (Optional)
 

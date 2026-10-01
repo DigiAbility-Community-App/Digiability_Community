@@ -233,7 +233,7 @@ Both workers start **automatically** inside chat-svc on boot (see `src/index.ts`
 
 - **user-svc only** holds the private key (`JWT_PRIVATE_KEY`) and signs access tokens.
 - **chat-svc and forum-svc** hold the public key only (`JWT_PUBLIC_KEY`) — they verify but never sign.
-- Access token lifetime: `15m` (env `JWT_EXPIRES_IN`)
+- Access token lifetime: `10m` (env `JWT_EXPIRES_IN`). Every access token carries a `sid` (row in `public.sessions`); user-svc, chat-svc and forum-svc reject it once that session is revoked (logout, logout-all, password reset, refresh-token reuse, account deletion) — see `src/utils/session-cache.ts` in each service
 - Refresh token lifetime: `30 days` (env `REFRESH_TOKEN_EXPIRES_DAYS`)
 - All tokens stored in DB as SHA-256 hashes (raw tokens are never persisted)
 
@@ -242,6 +242,15 @@ Both workers start **automatically** inside chat-svc on boot (see `src/index.ts`
 - **Web**: access token in Zustand (in-memory); refresh token in `localStorage` (key: `digiability_refresh_token`). Also set as HTTP-only `sameSite=strict` cookie. Token read from `x-refresh-token` response header or cookie.
 - **Mobile**: access token in Zustand; refresh token in `expo-secure-store` (key: `digiability_refresh_token`).
 - **Refresh endpoint**: `POST /api/auth/refresh`. Reads token from cookie first; falls back to `Authorization: Bearer <token>` header (native clients can't reliably read cookies).
+
+### Sessions and logout
+
+- Each login creates a row in `public.sessions` (owned by user-svc, stub-mirrored in forum-svc). Its id is the `sid` claim in every access token for that login.
+- user-svc, chat-svc (REST, WS upgrade, heartbeat) and forum-svc (REST, socket.io handshake) reject a token whose session is revoked. The check is cached in Redis under `auth:session:{sid}` (in-process LRU fallback) with a DB fallback — see `src/utils/session-cache.ts`, duplicated per service.
+- Revocation (`revokeSession` / `revokeAllUserSessions` in `services/user-svc/src/services/token.service.ts`) writes `revoked` to the cache and publishes `auth:session-revoked`, which chat-svc and forum-svc use to close live sockets.
+- `POST /api/auth/logout` works with an expired access token (falls back to the refresh token in body/cookie/header). `POST /api/auth/logout-all` ends every session.
+- Refresh tokens rotate on every use; replaying a rotated one revokes the whole session (`reuse_detected`).
+- Mobile `logout()` must call the server **before** wiping local tokens.
 
 ### Silent refresh (web)
 
@@ -258,7 +267,7 @@ Both workers start **automatically** inside chat-svc on boot (see `src/index.ts`
 ### Password reset
 
 - Token: 64-byte random, stored as SHA-256 hash, expires in 1 hour
-- On success: revokes all refresh tokens for the user (forces re-login on all devices)
+- On success: revokes all sessions for the user — access and refresh tokens on every device stop working immediately
 
 ### `auth.middleware.ts`
 
@@ -356,11 +365,11 @@ PORT=4001
 DATABASE_URL=postgresql://...@localhost:5432/digiability_db?schema=public
 JWT_PRIVATE_KEY=...        # RS256 private key — literal \n for line breaks
 JWT_PUBLIC_KEY=...         # RS256 public key
-JWT_EXPIRES_IN=15m
+JWT_EXPIRES_IN=10m
 REFRESH_TOKEN_EXPIRES_DAYS=30
 COOKIE_SECRET=...
 MAIL_HOST / MAIL_USER / MAIL_PASS / EMAIL_FROM
-CLIENT_BASE_URL=http://localhost:3000
+CORS_ALLOWED_ORIGINS=http://localhost:3000,http://localhost:3001   # required in production; startup fails on missing/placeholder
 REDIS_URL=redis://:password@localhost:6379
 ```
 
@@ -372,7 +381,7 @@ SERVER_ID=chat-svc-local-01     # unique per instance; used for Redis Pub/Sub ro
 DATABASE_URL=...?schema=chat    # "chat" schema, not "public"
 REDIS_URL=redis://:password@localhost:6379
 JWT_PUBLIC_KEY=...              # same public key as user-svc — copy it
-CLIENT_BASE_URL=http://localhost:3000
+CORS_ALLOWED_ORIGINS=http://localhost:3000,http://localhost:3001   # required in production; startup fails on missing/placeholder
 REGISTRY_TTL_SECONDS=120        # session TTL in Redis
 HEARTBEAT_INTERVAL_MS=30000     # client ping interval
 ```
@@ -389,8 +398,15 @@ NOTIF_SVC_URL=http://localhost:4004
 ### `apps/mobile/.env`
 
 ```
-EXPO_PUBLIC_API_BASE_URL=http://<LAN-IP>:4001   # LAN IP required for physical devices — not localhost
+EXPO_PUBLIC_API_URL=http://<LAN-IP>:4001             # LAN IP required for physical devices — not localhost
+EXPO_PUBLIC_CHAT_API_URL=http://<LAN-IP>:4002
+EXPO_PUBLIC_CHAT_SOCKET_URL=ws://<LAN-IP>:4002/ws
+EXPO_PUBLIC_FORUM_API_URL=http://<LAN-IP>:4003
+EXPO_PUBLIC_FORUM_SOCKET_URL=ws://<LAN-IP>:4003
+EXPO_PUBLIC_ADMIN_API_URL=http://<LAN-IP>:3001
 ```
+
+All six are required — read only in `apps/mobile/src/config/env.ts`, no fallbacks. EAS `preview`/`production` profiles set `https://`/`wss://` values in `eas.json`; a `production` build throws at startup on any non-https/wss URL, and `npm run check:transport` guards it in CI.
 
 ---
 

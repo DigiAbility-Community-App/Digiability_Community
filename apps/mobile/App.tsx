@@ -1,4 +1,7 @@
 import 'react-native-gesture-handler';
+// First: validates backend URLs and throws at startup if a production build
+// is misconfigured (see src/config/env.ts).
+import '@config/env';
 import React, { Component, ErrorInfo, ReactNode, useEffect, useRef } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { NavigationContainer, NavigationContainerRef } from '@react-navigation/native';
@@ -9,7 +12,11 @@ import { registerRootComponent } from 'expo';
 import RootNavigator from '@navigation/RootNavigator';
 import { AppThemeProvider } from './src/theme/ThemeContext';
 import { addNotificationResponseListener } from '@services/notificationService';
-import { useChatStore } from '@store/chatStore';
+import {
+  routeNotificationTap,
+  flushPendingNotificationRoute,
+  clearPendingNotificationRoute,
+} from '@navigation/notificationRouting';
 import { useAuthStore } from '@store/authStore';
 
 interface ErrorBoundaryProps {
@@ -62,60 +69,30 @@ export default function App() {
 
   // Push registration lives in RootNavigator (gated on auth) — this effect
   // only reacts to notification taps, which is safe to mount unconditionally.
+  // Taps are validated and auth-gated in notificationRouting.ts.
   useEffect(() => {
     let sub: { remove: () => void } | null = null;
     try {
       sub = addNotificationResponseListener((response) => {
-        const data = response?.notification?.request?.content?.data as Record<string, string> | undefined;
-        if (!navigationRef.current || !data) return;
-
-        if (data.type === 'forum_answer' && data.questionId) {
-          navigationRef.current.navigate('Main', {
-            screen: 'QuestionDetails',
-            params: { questionId: data.questionId },
-          });
-          return;
-        }
-
-        if (data.conversationId) {
-          const conversation = useChatStore.getState().conversations[data.conversationId];
-          if (conversation?.type === 'DIRECT') {
-            const myUserId = useAuthStore.getState().user?.id;
-            const other = conversation.participants?.find((p) => p.userId !== myUserId)?.user;
-            navigationRef.current.navigate('Main', {
-              screen: 'Chats',
-              params: {
-                screen: 'Chat',
-                params: {
-                  conversationId: data.conversationId,
-                  recipientName: other?.name ?? '',
-                  recipientAvatar: other?.avatarUrl,
-                },
-              },
-            });
-          } else {
-            navigationRef.current.navigate('Main', {
-              screen: 'Chats',
-              params: {
-                screen: 'GroupChat',
-                params: {
-                  conversationId: data.conversationId,
-                  groupName: conversation?.name ?? '',
-                  subType: conversation?.subType,
-                },
-              },
-            });
-          }
-        }
+        routeNotificationTap(
+          navigationRef.current,
+          response?.notification?.request?.content?.data,
+        ).catch(() => {});
       });
     } catch (e) {
       console.warn('[App] Failed to attach notification response listener:', e);
     }
 
+    // A tap held while signed out must never fire for whoever signs in next.
+    const unsubscribeAuth = useAuthStore.subscribe((state) => {
+      if (!state.isAuthenticated) clearPendingNotificationRoute();
+    });
+
     return () => {
       try {
         sub?.remove();
       } catch {}
+      unsubscribeAuth();
     };
   }, []);
 
@@ -123,7 +100,13 @@ export default function App() {
     <RootErrorBoundary>
       <GestureHandlerRootView style={{ flex: 1 }}>
         <SafeAreaProvider>
-          <NavigationContainer ref={navigationRef}>
+          <NavigationContainer
+            ref={navigationRef}
+            // Replays a notification tap held until the signed-in UI mounted.
+            onStateChange={() => {
+              flushPendingNotificationRoute(navigationRef.current).catch(() => {});
+            }}
+          >
             <AppThemeProvider>
               <StatusBar style="light" />
               <RootNavigator />

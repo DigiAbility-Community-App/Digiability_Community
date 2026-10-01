@@ -10,10 +10,15 @@ import jwt, { SignOptions, JwtPayload } from "jsonwebtoken";
 export interface AccessTokenPayload {
   sub: string;        // userId
   email: string;
-  jti: string;        // JWT ID — used for pre-expiry revocation via Redis blocklist
+  sid: string;        // session id (sessions.id) — revoking the session kills the token
+  jti: string;        // unique token id
   iat?: number;
   exp?: number;
 }
+
+// Short-lived on purpose: a session revocation is enforced on every request,
+// but a short TTL bounds the damage if a token is copied off a device.
+export const ACCESS_TOKEN_TTL = process.env.JWT_EXPIRES_IN ?? "10m";
 
 function getPrivateKey(): string {
   const key = process.env.JWT_PRIVATE_KEY;
@@ -28,15 +33,13 @@ function getPublicKey(): string {
 }
 
 /**
- * Sign an access token (RS256, short-lived: 15m default).
- * Includes a jti claim so the token can be added to the revocation blocklist
- * before it expires (e.g. on logout or account deletion).
+ * Sign an access token (RS256, short-lived: 10m default) bound to a session.
  */
 export function signAccessToken(payload: Omit<AccessTokenPayload, "jti">): string {
   const jti = crypto.randomUUID();
   const options: SignOptions = {
     algorithm: "RS256",
-    expiresIn: (process.env.JWT_EXPIRES_IN as SignOptions["expiresIn"]) ?? "15m",
+    expiresIn: ACCESS_TOKEN_TTL as SignOptions["expiresIn"],
   };
   return jwt.sign({ ...payload, jti }, getPrivateKey(), options);
 }
@@ -50,6 +53,17 @@ export function verifyAccessToken(token: string): AccessTokenPayload {
     algorithms: ["RS256"],
   }) as AccessTokenPayload;
   return decoded;
+}
+
+/**
+ * Verify the signature but ignore expiry — for logout, which must still work
+ * (and still only trust tokens we signed) after the access token has expired.
+ */
+export function verifyAccessTokenIgnoringExpiry(token: string): AccessTokenPayload {
+  return jwt.verify(token, getPublicKey(), {
+    algorithms: ["RS256"],
+    ignoreExpiration: true,
+  }) as AccessTokenPayload;
 }
 
 /**

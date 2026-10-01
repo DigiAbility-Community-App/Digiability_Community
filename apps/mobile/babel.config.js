@@ -16,9 +16,18 @@ module.exports = function (api) {
             '@store': './src/store',
             '@services': './src/services',
             '@utils': './src/utils',
+            '@config': './src/config',
           },
         },
       ],
     ],
+    env: {
+      // Release bundles (EAS sets NODE_ENV=production) ship without
+      // console.log/info/debug — they leak data to `adb logcat` and cost
+      // performance. error/warn stay for crash diagnosis.
+      production: {
+        plugins: [['transform-remove-console', { exclude: ['error', 'warn'] }]],
+      },
+    },
   };
 };

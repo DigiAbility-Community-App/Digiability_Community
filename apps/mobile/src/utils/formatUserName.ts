@@ -19,6 +19,10 @@ export interface DisplayableUser {
   deletedAt?: string | null;
   /** Set when the account is currently suspended (account still exists). */
   isSuspended?: boolean | null;
+  /** Set when user-svc's batch lookup didn't return this user. It never
+   *  returns deleted accounts (or anyone the viewer shares nothing with), so
+   *  in chat this means the account no longer exists. */
+  unavailable?: boolean;
   /** Set when this reflects a group membership the user has left or been
    *  removed from (account still exists, just no longer a member). */
   leftAt?: string | null;
@@ -31,7 +35,7 @@ export interface DisplayableUser {
 
 export function formatUserDisplayName(user?: DisplayableUser | null): string {
   if (!user) return "Unknown";
-  if (user.deletedAt) return "This user no longer exists";
+  if (user.deletedAt || user.unavailable) return "This user no longer exists";
   if (user.isSuspended) return `${user.name} (Inactive)`;
   if (user.leftAt) {
     // Everyone with a leftAt used to be labelled "(Removed)", so a member who

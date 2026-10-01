@@ -4,7 +4,7 @@
 // Handles application-level `session.ping` from clients.
 // On every ping we:
 //   1. Refresh the Redis registry TTL (keep session alive)
-//   2. Check whether the JWT has been revoked (logout/deletion)
+//   2. Check whether the token's session has been revoked (logout/deletion)
 //   3. Check whether the JWT has expired (long-lived connections)
 //   4. If invalid: send error event and close the connection
 //   5. Otherwise: send session.pong with server time
@@ -14,19 +14,8 @@ import WebSocket from "ws";
 import { WS_EVENTS, WS_ERROR_CODES, WsEnvelope } from "../../types/ws-events";
 import { registryService } from "../../services/registry.service";
 import { connectionManager } from "../connection-manager";
-import { redis } from "../../config/redis";
 import { logger } from "../../config/logger";
-
-const JTI_PREFIX = "revoked:jti:";
-
-async function isJtiRevoked(jti: string): Promise<boolean> {
-  try {
-    const val = await redis.get(`${JTI_PREFIX}${jti}`);
-    return val === "1";
-  } catch {
-    return false;
-  }
-}
+import { isSessionActive } from "../../services/session.service";
 
 export async function handleSessionPing(
   ws: WebSocket,
@@ -49,14 +38,11 @@ export async function handleSessionPing(
       return;
     }
 
-    // Check JTI revocation blocklist
-    if (conn.jti) {
-      const revoked = await isJtiRevoked(conn.jti);
-      if (revoked) {
-        logger.info("WS token revoked during session — closing connection", { connId, userId });
-        _closeWithError(ws, WS_ERROR_CODES.AUTH_FAILED, "Session has been revoked. Please log in again.");
-        return;
-      }
+    // Backstop for the auth:session-revoked broadcast (e.g. if it was missed)
+    if (!(await isSessionActive(conn.sid))) {
+      logger.info("WS session revoked — closing connection", { connId, userId });
+      _closeWithError(ws, WS_ERROR_CODES.AUTH_FAILED, "Session has been revoked. Please log in again.");
+      return;
     }
   }
 

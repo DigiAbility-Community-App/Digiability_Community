@@ -10,11 +10,6 @@
       "node": "24.14.1",
       "android": {
         "buildType": "apk"
-      },
-      "env": {
-        "EXPO_PUBLIC_API_BASE_URL": "http://187.127.191.28:30501",
-        "EXPO_PUBLIC_CHAT_API_URL": "http://187.127.191.28:30502",
-        "EXPO_PUBLIC_FORUM_API_URL": "http://187.127.191.28:30503"
       }
     },
     "preview": {
@@ -24,17 +19,26 @@
         "buildType": "apk"
       },
       "env": {
-        "EXPO_PUBLIC_API_BASE_URL": "http://187.127.191.28:30501",
-        "EXPO_PUBLIC_CHAT_API_URL": "http://187.127.191.28:30502",
-        "EXPO_PUBLIC_FORUM_API_URL": "http://187.127.191.28:30503"
+        "EXPO_PUBLIC_API_URL": "https://api.community.digiability.in",
+        "EXPO_PUBLIC_CHAT_API_URL": "https://chat.community.digiability.in",
+        "EXPO_PUBLIC_CHAT_SOCKET_URL": "wss://chat.community.digiability.in/ws",
+        "EXPO_PUBLIC_FORUM_API_URL": "https://forum.community.digiability.in",
+        "EXPO_PUBLIC_FORUM_SOCKET_URL": "wss://forum.community.digiability.in",
+        "EXPO_PUBLIC_ADMIN_API_URL": "https://admin.community.digiability.in"
       }
     },
     "production": {
       "node": "24.14.1",
+      "android": {
+        "buildType": "apk"
+      },
       "env": {
-        "EXPO_PUBLIC_API_BASE_URL": "http://187.127.191.28:30501",
-        "EXPO_PUBLIC_CHAT_API_URL": "http://187.127.191.28:30502",
-        "EXPO_PUBLIC_FORUM_API_URL": "http://187.127.191.28:30503"
+        "EXPO_PUBLIC_API_URL": "https://api.community.digiability.in",
+        "EXPO_PUBLIC_CHAT_API_URL": "https://chat.community.digiability.in",
+        "EXPO_PUBLIC_CHAT_SOCKET_URL": "wss://chat.community.digiability.in/ws",
+        "EXPO_PUBLIC_FORUM_API_URL": "https://forum.community.digiability.in",
+        "EXPO_PUBLIC_FORUM_SOCKET_URL": "wss://forum.community.digiability.in",
+        "EXPO_PUBLIC_ADMIN_API_URL": "https://admin.community.digiability.in"
       }
     }
   },

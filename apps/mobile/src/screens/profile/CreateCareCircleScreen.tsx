@@ -7,16 +7,22 @@ import {
   ScrollView,
   ActivityIndicator,
   Alert,
-  KeyboardAvoidingView,
-  Platform,
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import SafeScreen from "../../components/layout/SafeScreen";
 import { AccessibleText } from "../../components/shared/AccessibleText";
 import { AccessibleButton } from "../../components/shared/AccessibleButton";
+import { SheetKeyboardAvoidingView } from "../../components/shared/SheetKeyboardAvoidingView";
 import { chatService } from "../../services/chatService";
 import { useTheme } from "../../theme/ThemeContext";
+import { sanitizeNameInput, isValidNameFormat } from "../../utils/nameValidation";
+import { recordGuardianAttestation } from "../../services/privacyService";
+import { Check } from "lucide-react-native";
+
+// Mirrors RELATION_OPTIONS in EditProfileScreen and the server's
+// VALID_RELATIONSHIPS in guardian.service.ts.
+const RELATION_OPTIONS = ["Parent", "Guardian", "Sibling", "Spouse", "Child", "Other"];
 
 const CreateCareCircleScreen = () => {
   const navigation = useNavigation<any>();
@@ -27,6 +33,16 @@ const CreateCareCircleScreen = () => {
   const [description, setDescription] = useState("");
   const [loading, setLoading] = useState(false);
   const [nameError, setNameError] = useState("");
+
+  // Guardian attestation (DPDP §9). A Care Circle often exists precisely
+  // because someone is caring for a person who cannot consent for themselves,
+  // so the confirmation is captured at the point the circle is created.
+  const [caresForOther, setCaresForOther] = useState(false);
+  const [subjectName, setSubjectName] = useState("");
+  const [relationship, setRelationship] = useState("");
+  const [subjectIsMinor, setSubjectIsMinor] = useState(false);
+  const [attested, setAttested] = useState(false);
+  const [attestError, setAttestError] = useState("");
 
   const validate = () => {
     if (!name.trim()) {
@@ -41,15 +57,59 @@ const CreateCareCircleScreen = () => {
       setNameError("Name must be 50 characters or fewer.");
       return false;
     }
+    if (!isValidNameFormat(name)) {
+      setNameError("Name may only contain letters, spaces, and single hyphens or apostrophes between name parts.");
+      return false;
+    }
     setNameError("");
     return true;
   };
 
   const handleCreate = async () => {
     if (!validate()) return;
+
+    if (caresForOther) {
+      if (!subjectName.trim()) {
+        setAttestError("Please enter the name of the person you care for.");
+        return;
+      }
+      if (!relationship) {
+        setAttestError("Please choose your relationship to them.");
+        return;
+      }
+      if (!attested) {
+        setAttestError(
+          "Please confirm you are their parent or lawful guardian, or have that guardian's permission."
+        );
+        return;
+      }
+      setAttestError("");
+    }
+
     setLoading(true);
     try {
       const created = await chatService.createCareCircle(name.trim(), description.trim());
+
+      // Recorded AFTER the circle exists so the attestation can reference it,
+      // but posted to user-svc directly from the client rather than having
+      // chat-svc call user-svc — the architecture keeps those two services
+      // from calling each other at runtime (see CLAUDE.md).
+      //
+      // Best-effort: a failure here must not strand a Care Circle that was
+      // already created. It is a legal attestation record, not an
+      // authorisation gate.
+      if (caresForOther) {
+        try {
+          await recordGuardianAttestation({
+            subjectName: subjectName.trim(),
+            subjectIsMinor,
+            relationship,
+            conversationId: created.id,
+          });
+        } catch (attestErr) {
+          console.error("[CreateCareCircle] guardian attestation failed:", attestErr);
+        }
+      }
       // Reset to MainTabs + open the new care circle chat so the user lands directly in it
       navigation.reset({
         index: 1,
@@ -99,10 +159,7 @@ const CreateCareCircleScreen = () => {
         </AccessibleText>
       </View>
 
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-      >
+      <SheetKeyboardAvoidingView style={{ flex: 1 }}>
         <ScrollView
           showsVerticalScrollIndicator={false}
           contentContainerStyle={[styles.content, { paddingHorizontal: spacing.lg, paddingBottom: 160 }]}
@@ -127,7 +184,7 @@ const CreateCareCircleScreen = () => {
             <View style={[styles.inputRow, { backgroundColor: colors.surface }]}>
               <TextInput
                 value={name}
-                onChangeText={(v) => { setName(v.replace(/[0-9]/g, '')); if (nameError) setNameError(""); }}
+                onChangeText={(v) => { setName(sanitizeNameInput(v)); if (nameError) setNameError(""); }}
                 placeholder="e.g. My Family Circle"
                 placeholderTextColor="#9A94A3"
                 style={[styles.input, { color: colors.text }]}
@@ -168,6 +225,141 @@ const CreateCareCircleScreen = () => {
             </AccessibleText>
           </View>
 
+          {/* GUARDIAN ATTESTATION — DPDP Act 2023 §9 */}
+          <View style={styles.fieldGroup}>
+            <TouchableOpacity
+              onPress={() => { setCaresForOther((v) => !v); setAttestError(""); }}
+              style={styles.checkRow}
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: caresForOther }}
+              accessibilityLabel="This circle is for someone I care for"
+            >
+              <View
+                style={[
+                  styles.checkbox,
+                  {
+                    borderColor: caresForOther ? colors.primary : colors.border,
+                    backgroundColor: caresForOther ? colors.primary : "transparent",
+                  },
+                ]}
+              >
+                {caresForOther && <Check size={14} color="#fff" strokeWidth={3} />}
+              </View>
+              <AccessibleText variant="body" style={{ flex: 1, color: colors.text }}>
+                This circle is for someone I care for
+              </AccessibleText>
+            </TouchableOpacity>
+
+            {caresForOther && (
+              <View style={{ marginTop: 14, gap: 12 }}>
+                <View>
+                  <AccessibleText variant="label" style={{ color: colors.subtext, marginBottom: 8 }}>
+                    THEIR NAME *
+                  </AccessibleText>
+                  <View style={[styles.inputRow, { backgroundColor: colors.surface }]}>
+                    <TextInput
+                      value={subjectName}
+                      onChangeText={(v) => { setSubjectName(v); setAttestError(""); }}
+                      placeholder="Who are you caring for?"
+                      placeholderTextColor="#9A94A3"
+                      style={[styles.input, { color: colors.text }]}
+                      maxLength={80}
+                      accessibilityLabel="Name of the person you care for"
+                    />
+                  </View>
+                </View>
+
+                <View>
+                  <AccessibleText variant="label" style={{ color: colors.subtext, marginBottom: 8 }}>
+                    YOUR RELATIONSHIP TO THEM *
+                  </AccessibleText>
+                  <View style={styles.chipRow}>
+                    {RELATION_OPTIONS.map((opt) => {
+                      const selected = relationship === opt;
+                      return (
+                        <TouchableOpacity
+                          key={opt}
+                          onPress={() => { setRelationship(opt); setAttestError(""); }}
+                          style={[
+                            styles.chip,
+                            {
+                              backgroundColor: selected ? colors.primary : colors.surface,
+                              borderColor: selected ? colors.primary : colors.border,
+                            },
+                          ]}
+                          accessibilityRole="radio"
+                          accessibilityState={{ selected }}
+                          accessibilityLabel={opt}
+                        >
+                          <AccessibleText
+                            variant="caption"
+                            style={{ color: selected ? "#fff" : colors.text, fontWeight: "600" }}
+                          >
+                            {opt}
+                          </AccessibleText>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </View>
+
+                <TouchableOpacity
+                  onPress={() => setSubjectIsMinor((v) => !v)}
+                  style={styles.checkRow}
+                  accessibilityRole="checkbox"
+                  accessibilityState={{ checked: subjectIsMinor }}
+                  accessibilityLabel="They are under 18"
+                >
+                  <View
+                    style={[
+                      styles.checkbox,
+                      {
+                        borderColor: subjectIsMinor ? colors.primary : colors.border,
+                        backgroundColor: subjectIsMinor ? colors.primary : "transparent",
+                      },
+                    ]}
+                  >
+                    {subjectIsMinor && <Check size={14} color="#fff" strokeWidth={3} />}
+                  </View>
+                  <AccessibleText variant="body" style={{ flex: 1, color: colors.text }}>
+                    They are under 18
+                  </AccessibleText>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  onPress={() => { setAttested((v) => !v); setAttestError(""); }}
+                  style={styles.checkRow}
+                  accessibilityRole="checkbox"
+                  accessibilityState={{ checked: attested }}
+                  accessibilityLabel="I confirm I am their parent or lawful guardian, or have that guardian's permission"
+                >
+                  <View
+                    style={[
+                      styles.checkbox,
+                      {
+                        borderColor: attested ? colors.primary : colors.border,
+                        backgroundColor: attested ? colors.primary : "transparent",
+                      },
+                    ]}
+                  >
+                    {attested && <Check size={14} color="#fff" strokeWidth={3} />}
+                  </View>
+                  <AccessibleText variant="caption" style={{ flex: 1, color: colors.text, lineHeight: 19 }}>
+                    I confirm I am their parent or lawful guardian, or that I have that guardian's
+                    permission. Indian data protection law requires this before we may hold their
+                    information.
+                  </AccessibleText>
+                </TouchableOpacity>
+
+                {attestError ? (
+                  <AccessibleText style={[styles.errorText, { color: colors.error }]} accessibilityRole="alert">
+                    {attestError}
+                  </AccessibleText>
+                ) : null}
+              </View>
+            )}
+          </View>
+
           {/* INFO CARD */}
           <View style={[styles.infoCard, { backgroundColor: highContrast ? colors.surface : "#F3EAFF" }, highContrast && { borderWidth: 1, borderColor: "#000000" }]}>
             <AccessibleText style={[styles.infoText, { color: colors.secondary }]}>
@@ -201,7 +393,7 @@ const CreateCareCircleScreen = () => {
             </AccessibleText>
           </TouchableOpacity>
         </View>
-      </KeyboardAvoidingView>
+      </SheetKeyboardAvoidingView>
     </SafeScreen>
   );
 };
@@ -248,6 +440,31 @@ const styles = StyleSheet.create({
   heroTitle: {
     textAlign: "center",
     marginBottom: 8,
+  },
+  checkRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 10,
+  },
+  checkbox: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    borderWidth: 1.5,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 1,
+  },
+  chipRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  chip: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
   },
   fieldGroup: {
     width: "100%",

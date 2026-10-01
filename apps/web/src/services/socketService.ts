@@ -17,11 +17,12 @@ export const initSocket = () => {
   const token = useAuthStore.getState().accessToken;
   if (!token) return;
 
-  const wsUrl = `${CHAT_WS_URL}/ws?token=${token}`;
+  // Token goes in the subprotocol, not the URL (URLs get logged).
+  const wsUrl = `${CHAT_WS_URL}/ws`;
 
   if (socket?.readyState === WebSocket.OPEN || socket?.readyState === WebSocket.CONNECTING) return;
 
-  socket = new WebSocket(wsUrl);
+  socket = new WebSocket(wsUrl, ["digiability.bearer", token]);
 
   socket.onopen = () => {
     console.log('✅ WebSocket connected to chat-svc (Web)');

@@ -132,6 +132,8 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-digiability}:${POSTGRES_PASSWORD:-digiability_secret}@postgres:5432/${POSTGRES_DB:-digiability_db}
       # Docker network service name, not localhost — .env's value is for bare-metal/local dev only.
       NOTIF_SVC_URL: http://notif-svc:4004
+      # Shared session-revocation cache + events: a logout is seen here instantly.
+      REDIS_URL: redis://:${REDIS_PASSWORD:-redis_secret}@redis:6379
     ports:
       - "${FORUM_SVC_PORT:-4003}:4003"
     networks:
@@ -153,6 +155,11 @@ services:
       dockerfile: Dockerfile
     container_name: digiability_notif_svc
     restart: unless-stopped
+    # notif-svc was the only service without an env_file, so anything added to
+    # services/notif-svc/.env was silently ignored — including
+    # INTERNAL_API_SECRET, which /internal/notify now requires.
+    env_file:
+      - ./services/notif-svc/.env
     environment:
       PORT: "4004"
       NODE_ENV: production

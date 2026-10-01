@@ -9,6 +9,7 @@ import {
   ngoProfileService,
   profileService,
 } from '../services/profileService';
+import { sendRouteError } from '../middleware/error.middleware';
 import { auditLog } from '../services/audit.service';
 
 const router = Router();
@@ -32,6 +33,11 @@ const getUserIdFromAuthToken = (req: Request): string => {
 // ─────────────────────────────────────────────
 
 const USERNAME_REGEX = /^[a-zA-Z0-9_.]{1,15}$/;
+// A username of only underscores/periods (e.g. "_____") satisfies
+// USERNAME_REGEX alone — require some real alphanumeric content too.
+const USERNAME_MIN_ALNUM = 3;
+const hasEnoughAlnum = (v: string) => (v.match(/[a-zA-Z0-9]/g)?.length ?? 0) >= USERNAME_MIN_ALNUM;
+const USERNAME_ALNUM_MESSAGE = 'Username must include at least 3 letters or numbers';
 
 const basicProfileSchema = z.object({
   username: z
@@ -39,6 +45,7 @@ const basicProfileSchema = z.object({
     .min(1, 'Username must be between 1 and 15 characters')
     .max(15, 'Username must be between 1 and 15 characters')
     .regex(USERNAME_REGEX, 'Username may only contain letters, numbers, periods, and underscores')
+    .refine(hasEnoughAlnum, USERNAME_ALNUM_MESSAGE)
     .optional(),
   fullName: z.string().min(2, 'Full name must be at least 2 characters').optional(),
   dob: z.string().optional(),
@@ -57,13 +64,19 @@ const basicProfileSchema = z.object({
 // so onboarding's looser basicProfileSchema above keeps working unchanged.
 const PINCODE_REGEX = /^\d{6}$/;
 const MOBILE_REGEX = /^[6-9]\d{9}$/; // same pattern as mobile WelcomeScreen signup
+// Rejects a location value that's pure digits/symbols with no letters at
+// all (e.g. "152562782" typed into City) — mirrors the mobile app's
+// isValidPlaceText (apps/mobile/src/utils/locationValidation.ts) so a
+// client bypassing that check still can't slip invalid data past the API.
+const PLACE_TEXT_REGEX = /\p{L}/u;
 
 const requiredBasicProfileSchema = basicProfileSchema.extend({
   username: z
     .string()
     .min(1, 'Username is required')
     .max(15, 'Username must be between 1 and 15 characters')
-    .regex(USERNAME_REGEX, 'Username may only contain letters, numbers, periods, and underscores'),
+    .regex(USERNAME_REGEX, 'Username may only contain letters, numbers, periods, and underscores')
+    .refine(hasEnoughAlnum, USERNAME_ALNUM_MESSAGE),
   fullName: z.string().min(2, 'Full name is required'),
   dob: z
     .string()
@@ -73,8 +86,14 @@ const requiredBasicProfileSchema = basicProfileSchema.extend({
       return !isNaN(d.getTime()) && d.getTime() <= Date.now();
     }, 'Enter a valid date of birth'),
   gender: z.string().min(1, 'Gender is required'),
-  city: z.string().min(1, 'City is required'),
-  state: z.string().min(1, 'State is required'),
+  city: z.string().min(1, 'City is required').regex(PLACE_TEXT_REGEX, 'City may not be only numbers or symbols'),
+  state: z.string().min(1, 'State is required').regex(PLACE_TEXT_REGEX, 'State may not be only numbers or symbols'),
+  addressLine1: z.string().max(200).optional()
+    .refine((v) => !v || PLACE_TEXT_REGEX.test(v), 'Address may not be only numbers or symbols'),
+  streetArea: z.string().max(200).optional()
+    .refine((v) => !v || PLACE_TEXT_REGEX.test(v), 'Street/Area may not be only numbers or symbols'),
+  locationDistrict: z.string().max(100).optional()
+    .refine((v) => !v || PLACE_TEXT_REGEX.test(v), 'District may not be only numbers or symbols'),
   pincode: z.string().regex(PINCODE_REGEX, 'Enter a valid 6-digit pincode'),
   phoneNo: z.string().regex(MOBILE_REGEX, 'Enter a valid 10-digit mobile number'),
 });
@@ -101,6 +120,14 @@ const profileDetailsSchema = z.object({
   ngoRole: z.string().optional(),
   district: z.string().optional(),
 
+  // Skill Trainer Fields
+  skillsTaught: z.string().optional(),
+  teachingMode: z.string().optional(),
+  trainingLocation: z.string().optional()
+    .refine((v) => !v || PLACE_TEXT_REGEX.test(v), 'Training location may not be only numbers or symbols'),
+  trainingAddress: z.string().optional()
+    .refine((v) => !v || PLACE_TEXT_REGEX.test(v), 'Address may not be only numbers or symbols'),
+
   // Verification
   verificationStatus: z.string().optional(),
   verificationDoc: z.string().optional(),
@@ -110,7 +137,7 @@ const profileDetailsSchema = z.object({
 });
 
 const pwdProfileSchema = z.object({
-  username: z.string().min(1).max(15).optional(),
+  username: z.string().min(1).max(15).regex(USERNAME_REGEX).refine(hasEnoughAlnum, USERNAME_ALNUM_MESSAGE).optional(),
   dob: z.string().optional(),
   disabilityType: z.string().optional(),
   disabilitySince: z.number().min(1900).max(new Date().getFullYear()).optional(),
@@ -130,7 +157,7 @@ const caregiverProfileSchema = z.object({
 });
 
 const therapistProfileSchema = z.object({
-  username: z.string().min(1).max(15).optional(),
+  username: z.string().min(1).max(15).regex(USERNAME_REGEX).refine(hasEnoughAlnum, USERNAME_ALNUM_MESSAGE).optional(),
   dob: z.string().optional(),
   specialty: z.string().optional(),
   institution: z.string().optional(),
@@ -144,7 +171,7 @@ const therapistProfileSchema = z.object({
 
 const ngoProfileSchema = z.object({
   contactPersonName: z.string().optional(),
-  username: z.string().min(1).max(15).optional(),
+  username: z.string().min(1).max(15).regex(USERNAME_REGEX).refine(hasEnoughAlnum, USERNAME_ALNUM_MESSAGE).optional(),
   organizationName: z.string().optional(),
   registrationNumber: z.string().optional(),
   organizationType: z.string().optional(),
@@ -164,11 +191,11 @@ router.get('/check-username', async (req: Request, res: Response) => {
   try {
     const username = (req.query.username as string ?? '').toLowerCase().trim();
 
-    if (!username || !USERNAME_REGEX.test(username)) {
+    if (!username || !USERNAME_REGEX.test(username) || !hasEnoughAlnum(username)) {
       return res.status(400).json({
         success: false,
         available: false,
-        message: 'Invalid username format. Must be between 1 and 15 characters (letters, numbers, periods, underscores).',
+        message: 'Invalid username format. Must be 1-15 characters (letters, numbers, periods, underscores) with at least 3 letters or numbers.',
       });
     }
 
@@ -182,7 +209,7 @@ router.get('/check-username', async (req: Request, res: Response) => {
       message: available ? 'Username is available' : 'Username is already taken',
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message || 'Failed to check username' });
+    sendRouteError(res, error, 'Failed to check username');
   }
 });
 
@@ -210,10 +237,7 @@ router.post('/', validate(basicProfileSchema), async (req: Request, res: Respons
       message: isNew ? 'Basic profile created successfully' : 'Basic profile updated successfully',
     });
   } catch (error: any) {
-    res.status(error.statusCode ?? 500).json({
-      success: false,
-      message: error.message || 'Failed to create basic profile',
-    });
+    sendRouteError(res, error, 'Failed to create basic profile');
   }
 });
 
@@ -262,10 +286,7 @@ router.put('/', validate(basicProfileSchema), async (req: Request, res: Response
       message: 'Basic profile updated successfully',
     });
   } catch (error: any) {
-    res.status(error.statusCode ?? 500).json({
-      success: false,
-      message: error.message || 'Failed to update basic profile',
-    });
+    sendRouteError(res, error, 'Failed to update basic profile');
   }
 });
 
@@ -284,9 +305,11 @@ function hasRequiredRoleFields(roles: string[] | string | undefined | null, body
       case 'caregiver': return !!body.carePersonName;
       case 'therapist': return !!body.speciality;
       case 'ngo':       return !!body.ngoName;
-      // volunteer and student have no required role-specific fields
-      case 'volunteer':
-      case 'student':   return true;
+      case 'student': // Skill Trainer (frontend id "skill_trainer" maps to DB role "student")
+        return !!body.skillsTaught && !!body.teachingMode &&
+          (body.teachingMode === 'online' || (!!body.trainingLocation && !!body.trainingAddress));
+      // volunteer has no required role-specific fields
+      case 'volunteer': return true;
       default:          return false;
     }
   });
@@ -320,7 +343,15 @@ function getMissingRoleFieldMessages(
       case 'ngo':
         if (!body.ngoName) missing.push({ field: 'ngoName', message: 'NGO name is required' });
         break;
-      // volunteer and student have no required role-specific fields
+      case 'student': // Skill Trainer
+        if (!body.skillsTaught) missing.push({ field: 'skillsTaught', message: 'Please tell us the skills you teach' });
+        if (!body.teachingMode) missing.push({ field: 'teachingMode', message: 'Please select how you teach' });
+        if (body.teachingMode === 'physical' || body.teachingMode === 'both') {
+          if (!body.trainingLocation) missing.push({ field: 'trainingLocation', message: 'Training location is required' });
+          if (!body.trainingAddress) missing.push({ field: 'trainingAddress', message: 'Address is required' });
+        }
+        break;
+      // volunteer has no required role-specific fields
       default:
         break;
     }
@@ -367,10 +398,7 @@ router.post('/details', validate(profileDetailsSchema), async (req: Request, res
       message: 'Profile details saved successfully',
     });
   } catch (error: any) {
-    res.status(error.statusCode ?? 500).json({
-      success: false,
-      message: error.message || 'Failed to save profile details',
-    });
+    sendRouteError(res, error, 'Failed to save profile details');
   }
 });
 
@@ -410,10 +438,7 @@ router.put('/details', validate(profileDetailsSchema), async (req: Request, res:
       message: 'Profile details updated successfully',
     });
   } catch (error: any) {
-    res.status(error.statusCode ?? 500).json({
-      success: false,
-      message: error.message || 'Failed to update profile details',
-    });
+    sendRouteError(res, error, 'Failed to update profile details');
   }
 });
 
@@ -433,10 +458,7 @@ router.get('/me', async (req: Request, res: Response) => {
       data: profile,
     });
   } catch (error: any) {
-    res.status(error.statusCode ?? 500).json({
-      success: false,
-      message: error.message || 'Failed to fetch profile',
-    });
+    sendRouteError(res, error, 'Failed to fetch profile');
   }
 });
 
@@ -460,7 +482,7 @@ router.post('/pwd', validate(pwdProfileSchema), async (req: Request, res: Respon
     await profileService.markAsComplete(userId);
     res.status(201).json({ success: true, data: profile });
   } catch (error: any) {
-    res.status(error.statusCode ?? 500).json({ success: false, message: error.message });
+    sendRouteError(res, error);
   }
 });
 
@@ -471,7 +493,7 @@ router.get('/pwd/me', async (req: Request, res: Response) => {
     if (!profile) return res.status(404).json({ success: false, message: 'Profile not found' });
     res.json({ success: true, data: profile });
   } catch (error: any) {
-    res.status(error.statusCode ?? 500).json({ success: false, message: error.message });
+    sendRouteError(res, error);
   }
 });
 
@@ -485,7 +507,7 @@ router.get('/pwd/:userId', async (req: Request, res: Response) => {
     if (!profile) return res.status(404).json({ success: false, message: 'Profile not found' });
     res.json({ success: true, data: profile });
   } catch (error: any) {
-    res.status(error.statusCode ?? 500).json({ success: false, message: error.message });
+    sendRouteError(res, error);
   }
 });
 
@@ -505,7 +527,7 @@ router.put('/pwd/:userId', validate(pwdProfileSchema), async (req: Request, res:
     const profile = await pwdProfileService.update(userId, req.body);
     res.json({ success: true, data: profile });
   } catch (error: any) {
-    res.status(error.statusCode ?? 500).json({ success: false, message: error.message });
+    sendRouteError(res, error);
   }
 });
 
@@ -518,7 +540,7 @@ router.delete('/pwd/:userId', async (req: Request, res: Response) => {
     await pwdProfileService.delete(req.params.userId);
     res.json({ success: true, message: 'Profile deleted successfully' });
   } catch (error: any) {
-    res.status(error.statusCode ?? 500).json({ success: false, message: error.message });
+    sendRouteError(res, error);
   }
 });
 
@@ -533,7 +555,7 @@ router.post('/caregiver', validate(caregiverProfileSchema), async (req: Request,
     await profileService.markAsComplete(userId);
     res.status(201).json({ success: true, data: profile });
   } catch (error: any) {
-    res.status(error.statusCode ?? 500).json({ success: false, message: error.message });
+    sendRouteError(res, error);
   }
 });
 
@@ -544,7 +566,7 @@ router.get('/caregiver/me', async (req: Request, res: Response) => {
     if (!profile) return res.status(404).json({ success: false, message: 'Profile not found' });
     res.json({ success: true, data: profile });
   } catch (error: any) {
-    res.status(error.statusCode ?? 500).json({ success: false, message: error.message });
+    sendRouteError(res, error);
   }
 });
 
@@ -558,7 +580,7 @@ router.get('/caregiver/:userId', async (req: Request, res: Response) => {
     if (!profile) return res.status(404).json({ success: false, message: 'Profile not found' });
     res.json({ success: true, data: profile });
   } catch (error: any) {
-    res.status(error.statusCode ?? 500).json({ success: false, message: error.message });
+    sendRouteError(res, error);
   }
 });
 
@@ -571,7 +593,7 @@ router.put('/caregiver/:userId', validate(caregiverProfileSchema), async (req: R
     const profile = await caregiverProfileService.update(req.params.userId, req.body);
     res.json({ success: true, data: profile });
   } catch (error: any) {
-    res.status(error.statusCode ?? 500).json({ success: false, message: error.message });
+    sendRouteError(res, error);
   }
 });
 
@@ -584,7 +606,7 @@ router.delete('/caregiver/:userId', async (req: Request, res: Response) => {
     await caregiverProfileService.delete(req.params.userId);
     res.json({ success: true, message: 'Profile deleted successfully' });
   } catch (error: any) {
-    res.status(error.statusCode ?? 500).json({ success: false, message: error.message });
+    sendRouteError(res, error);
   }
 });
 
@@ -605,7 +627,7 @@ router.post('/therapist', validate(therapistProfileSchema), async (req: Request,
     await profileService.markAsComplete(userId);
     res.status(201).json({ success: true, data: profile });
   } catch (error: any) {
-    res.status(error.statusCode ?? 500).json({ success: false, message: error.message });
+    sendRouteError(res, error);
   }
 });
 
@@ -618,7 +640,7 @@ router.get('/therapist/list/verified', async (req: Request, res: Response) => {
     });
     res.json({ success: true, data: profiles });
   } catch (error: any) {
-    res.status(error.statusCode ?? 500).json({ success: false, message: error.message });
+    sendRouteError(res, error);
   }
 });
 
@@ -629,7 +651,7 @@ router.get('/therapist/me', async (req: Request, res: Response) => {
     if (!profile) return res.status(404).json({ success: false, message: 'Profile not found' });
     res.json({ success: true, data: profile });
   } catch (error: any) {
-    res.status(error.statusCode ?? 500).json({ success: false, message: error.message });
+    sendRouteError(res, error);
   }
 });
 
@@ -643,7 +665,7 @@ router.get('/therapist/:userId', async (req: Request, res: Response) => {
     if (!profile) return res.status(404).json({ success: false, message: 'Profile not found' });
     res.json({ success: true, data: profile });
   } catch (error: any) {
-    res.status(error.statusCode ?? 500).json({ success: false, message: error.message });
+    sendRouteError(res, error);
   }
 });
 
@@ -663,7 +685,7 @@ router.put('/therapist/:userId', validate(therapistProfileSchema), async (req: R
     const profile = await therapistProfileService.update(userId, req.body);
     res.json({ success: true, data: profile });
   } catch (error: any) {
-    res.status(error.statusCode ?? 500).json({ success: false, message: error.message });
+    sendRouteError(res, error);
   }
 });
 
@@ -676,7 +698,7 @@ router.delete('/therapist/:userId', async (req: Request, res: Response) => {
     await therapistProfileService.delete(req.params.userId);
     res.json({ success: true, message: 'Profile deleted successfully' });
   } catch (error: any) {
-    res.status(error.statusCode ?? 500).json({ success: false, message: error.message });
+    sendRouteError(res, error);
   }
 });
 
@@ -697,7 +719,7 @@ router.post('/ngo', validate(ngoProfileSchema), async (req: Request, res: Respon
     await profileService.markAsComplete(userId);
     res.status(201).json({ success: true, data: profile });
   } catch (error: any) {
-    res.status(error.statusCode ?? 500).json({ success: false, message: error.message });
+    sendRouteError(res, error);
   }
 });
 
@@ -709,7 +731,7 @@ router.get('/ngo/list/verified', async (req: Request, res: Response) => {
     });
     res.json({ success: true, data: profiles });
   } catch (error: any) {
-    res.status(error.statusCode ?? 500).json({ success: false, message: error.message });
+    sendRouteError(res, error);
   }
 });
 
@@ -720,7 +742,7 @@ router.get('/ngo/me', async (req: Request, res: Response) => {
     if (!profile) return res.status(404).json({ success: false, message: 'Profile not found' });
     res.json({ success: true, data: profile });
   } catch (error: any) {
-    res.status(error.statusCode ?? 500).json({ success: false, message: error.message });
+    sendRouteError(res, error);
   }
 });
 
@@ -734,7 +756,7 @@ router.get('/ngo/:userId', async (req: Request, res: Response) => {
     if (!profile) return res.status(404).json({ success: false, message: 'Profile not found' });
     res.json({ success: true, data: profile });
   } catch (error: any) {
-    res.status(error.statusCode ?? 500).json({ success: false, message: error.message });
+    sendRouteError(res, error);
   }
 });
 
@@ -754,7 +776,7 @@ router.put('/ngo/:userId', validate(ngoProfileSchema), async (req: Request, res:
     const profile = await ngoProfileService.update(userId, req.body);
     res.json({ success: true, data: profile });
   } catch (error: any) {
-    res.status(error.statusCode ?? 500).json({ success: false, message: error.message });
+    sendRouteError(res, error);
   }
 });
 
@@ -767,7 +789,7 @@ router.delete('/ngo/:userId', async (req: Request, res: Response) => {
     await ngoProfileService.delete(req.params.userId);
     res.json({ success: true, message: 'Profile deleted successfully' });
   } catch (error: any) {
-    res.status(error.statusCode ?? 500).json({ success: false, message: error.message });
+    sendRouteError(res, error);
   }
 });
 

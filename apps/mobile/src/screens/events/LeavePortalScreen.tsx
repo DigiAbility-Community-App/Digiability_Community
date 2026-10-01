@@ -18,6 +18,14 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { registerForEvent } from "../../services/eventService";
 import { formatEventDateDisplay } from "../../utils/dateHelpers";
 
+// Regex rather than `new URL()`: React Native's URL polyfill doesn't
+// implement every getter.
+const HTTPS_URL = /^https:\/\/[a-z0-9.-]+(?::\d+)?(?:[/?#]\S*)?$/i;
+
+function isSafeExternalUrl(value: unknown): value is string {
+  return typeof value === "string" && HTTPS_URL.test(value.trim());
+}
+
 export default function LeavePortalScreen() {
   const route = useRoute<any>();
   const navigation = useNavigation<any>();
@@ -28,7 +36,9 @@ export default function LeavePortalScreen() {
   const [loading, setLoading] = useState(false);
 
   const handleContinue = async () => {
-    if (!externalUrl) return;
+    // Event links come from server data — only ever open a well-formed https
+    // URL (no javascript:, intent:, file:, custom schemes or cleartext).
+    if (!isSafeExternalUrl(externalUrl)) return;
     try {
       setLoading(true);
       if (eventId) {

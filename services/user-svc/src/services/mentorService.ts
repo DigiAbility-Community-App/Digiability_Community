@@ -10,6 +10,7 @@
 // ─────────────────────────────────────────────────────────────
 
 import prisma from '../models/prisma.client';
+import { createError } from "../middleware/error.middleware";
 
 // Maximum possible score components
 const DISABILITY_MATCH_SCORE = 5;
@@ -193,7 +194,9 @@ export const mentorService = {
           select: {
             id: true,
             name: true,
-            email: true,
+            // `email` removed: this profile is fetchable by id by any
+            // authenticated user, and no client renders the mentor's address.
+            // It was the only place a full email was handed out unmasked.
             roles: true,
           },
           include: {
@@ -246,18 +249,18 @@ export const mentorService = {
   ) => {
     // Validate rating
     if (rating < 1 || rating > 5) {
-      throw new Error('Rating must be between 1 and 5');
+      throw createError('Rating must be between 1 and 5', 400);
     }
 
     // Verify mentor exists
     const mentor = await prisma.mentorProfile.findUnique({
       where: { id: mentorId },
     });
-    if (!mentor) throw new Error('Mentor not found');
+    if (!mentor) throw createError('Mentor not found', 404);
 
     // Cannot review yourself
     if (mentor.userId === reviewerId) {
-      throw new Error('You cannot review yourself');
+      throw createError('You cannot review yourself', 400);
     }
 
     return prisma.mentorReview.upsert({

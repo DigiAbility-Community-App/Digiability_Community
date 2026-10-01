@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { dbPool } from "@/lib/db";
-import { requireAdminAuth } from "@/lib/auth";
+import { requireAdminAuth, getAdminSession, getRequestIp } from "@/lib/auth";
+import { writeAudit } from "@/lib/audit";
 
 function adminRoleFor(subType: string): string {
   return subType === "CARE_CIRCLE" ? "CAREGIVER" : "ADMIN";
@@ -19,6 +20,8 @@ export async function POST(
 ) {
   const authError = await requireAdminAuth(req);
   if (authError) return authError;
+  const actor = await getAdminSession(req);
+  const ip = getRequestIp(req);
 
   try {
     const { id } = await params;
@@ -63,6 +66,11 @@ export async function POST(
           body: JSON.stringify({ newOwnerId }),
         });
         if (res.ok) {
+      await writeAudit({
+        adminEmail: actor?.email, ipAddress: ip,
+        action: "group_transfer_ownership", targetType: "group", targetId: id,
+        reason: `new owner ${newOwnerId}`,
+      });
           return NextResponse.json({ success: true });
         }
         const data = await res.json().catch(() => ({}));
@@ -101,6 +109,11 @@ export async function POST(
       client.release();
     }
 
+      await writeAudit({
+        adminEmail: actor?.email, ipAddress: ip,
+        action: "group_transfer_ownership", targetType: "group", targetId: id,
+        reason: `new owner ${newOwnerId}`,
+      });
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("Transfer ownership error:", error);

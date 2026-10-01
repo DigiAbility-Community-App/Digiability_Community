@@ -23,17 +23,18 @@ Typecheck: `npx tsc --noEmit`
 
 ## Backend URLs
 
-Three variables, one per service. They are **build-time** — Expo inlines any `EXPO_PUBLIC_*` value into the bundle, so changing a URL requires restarting `expo start` (dev) or making a new build (EAS).
+Six variables, all **required** and read in one place: [`src/config/env.ts`](./src/config/env.ts). They are **build-time** — Expo inlines any `EXPO_PUBLIC_*` value into the bundle, so changing a URL requires restarting `expo start` (dev) or making a new build (EAS).
 
 | Variable | Service | Used by |
 |---|---|---|
-| `EXPO_PUBLIC_API_BASE_URL` | user-svc | `apiClient.ts` (auth, profiles, events, push registration) |
-| `EXPO_PUBLIC_CHAT_API_URL` | chat-svc | `chatService.ts` REST **and** `socketService.ts` WebSocket |
-| `EXPO_PUBLIC_FORUM_API_URL` | forum-svc | `forumService.ts` REST **and** `forumSocketService.ts` Socket.io |
+| `EXPO_PUBLIC_API_URL` | user-svc | `apiClient.ts`, `systemStore.ts` |
+| `EXPO_PUBLIC_CHAT_API_URL` | chat-svc REST | `chatService.ts`, `MediaViewer.tsx` |
+| `EXPO_PUBLIC_CHAT_SOCKET_URL` | chat-svc WebSocket (`…/ws`) | `socketService.ts` |
+| `EXPO_PUBLIC_FORUM_API_URL` | forum-svc REST | `forumService.ts` |
+| `EXPO_PUBLIC_FORUM_SOCKET_URL` | forum-svc Socket.io | `forumSocketService.ts` |
+| `EXPO_PUBLIC_ADMIN_API_URL` | admin panel API | `systemStore.ts`, `serviceService.ts` |
 
-If the chat/forum variables are omitted they fall back to deriving from the API base by replacing port `4001` → `4002`/`4003`. **That fallback only works for local dev on the default ports** — it is a literal string replace, so it silently no-ops on any host whose URL doesn't contain `4001` (every real deployment). Always set all three explicitly outside local dev.
-
-The chat WebSocket URL is derived from `EXPO_PUBLIC_CHAT_API_URL` by swapping the scheme (`http`→`ws`, `https`→`wss`) and appending `/ws`; it needs no separate variable.
+There are no fallbacks: a missing variable throws at startup naming the variable. In a `production` build (`extra.buildProfile`, set by `app.config.js`), any URL that isn't `https://` — or socket URL that isn't `wss://` — also throws at startup.
 
 ### Choosing a host
 
@@ -42,7 +43,7 @@ The chat WebSocket URL is derived from `EXPO_PUBLIC_CHAT_API_URL` by swapping th
 | Android emulator | `10.0.2.2` (maps to your machine's localhost) |
 | iOS simulator | `localhost` |
 | Physical device | your machine's LAN IP — `ipconfig getifaddr en0` (macOS) |
-| Live servers | the deployed host/ports |
+| Live servers | `https://{api,chat,forum,admin}.community.digiability.in` |
 
 `localhost` will **not** resolve from a physical device — it points at the phone itself.
 
@@ -54,9 +55,9 @@ The chat WebSocket URL is derived from `EXPO_PUBLIC_CHAT_API_URL` by swapping th
 
 | Profile | Purpose | Backend |
 |---|---|---|
-| `development` | dev client | local (`10.0.2.2`) |
-| `preview` | internal distribution | live servers |
-| `production` | store submission | live servers |
+| `development` | dev client | your local `.env` (no URLs in `eas.json`) |
+| `preview` | internal distribution | live servers (https/wss) — cleartext still allowed by `app.config.js` |
+| `production` | store submission / release APK | live servers (https/wss), cleartext denied, ATS enforced |
 
 ```bash
 npm install -g eas-cli
@@ -73,8 +74,8 @@ eas submit --platform ios     --profile production
 ### Before a store build — known blockers
 
 - **`google-services.json` is missing.** [`app.json`](./app.json) references `android.googleServicesFile`, so the **Android build will fail** until you download it from the Firebase console into `apps/mobile/`. Required for Android push.
-- **Privacy policy URL.** `EXPO_PUBLIC_WEB_BASE_URL` still defaults to `http://localhost:3000`, so the Welcome screen's Terms/Privacy links are dead. Both stores require a reachable privacy policy to approve a build.
-- **Cleartext HTTP.** Both stores block plain `http://` by default. `app.json` currently opts in via `NSAllowsArbitraryLoads` (iOS ATS) and `usesCleartextTraffic` (Android, through `expo-build-properties`) because the backend is served over `http://` on a bare IP. **Apple review may reject or question this** — the durable fix is a domain with TLS in front of the backend, after which both exemptions should be removed.
+- **Privacy policy URL.** Terms/Privacy open in-app; the stores still need a public privacy policy URL in the listing.
+- **Cleartext HTTP.** Production builds deny cleartext and enforce ATS (`app.config.js`); `npm run check:transport` (repo root) fails if that regresses. They need the HTTPS hosts to be live — see `DEVOPS_TASKS.txt` at the repo root.
 - **Version bumps.** `app.json` sets `android.versionCode` and `ios.buildNumber`; both must increment on every store submission.
 
 ---

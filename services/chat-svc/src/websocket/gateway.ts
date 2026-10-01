@@ -5,8 +5,9 @@
 // This is the entry point for all client WebSocket connections.
 //
 // Authentication flow:
-//   1. Client connects: ws://host:4002/ws?token=JWT&deviceId=xxx
-//   2. Gateway extracts token from query string
+//   1. Client connects: ws://host:4002/ws?deviceId=xxx with the JWT in an
+//      Authorization header (mobile) or as a subprotocol (browsers)
+//   2. Gateway extracts the token (never from the query string)
 //   3. Verifies JWT using user-svc's public key
 //   4. If valid: upgrades connection, registers in manager + registry
 //   5. If invalid: rejects with 401
@@ -25,6 +26,7 @@ import { URL } from "url";
 import { env } from "../config/env";
 import { logger } from "../config/logger";
 import { tryVerifyAccessToken } from "../utils/jwt.util";
+import { isSessionActive } from "../services/session.service";
 import { generateConnId } from "../utils/id.util";
 import { connectionManager } from "./connection-manager";
 import { registryService } from "../services/registry.service";
@@ -38,8 +40,18 @@ import { checkSuspended } from "../utils/suspension.util";
  * Attach WebSocket server to an existing HTTP server.
  * Handles upgrade requests on the /ws path.
  */
+/** Subprotocol browser clients use to carry their access token. */
+const BEARER_SUBPROTOCOL = "digiability.bearer";
+
 export function attachWebSocketGateway(httpServer: HttpServer): WebSocketServer {
-  const wss = new WebSocketServer({ noServer: true });
+  const wss = new WebSocketServer({
+    noServer: true,
+    // Browsers can't set an Authorization header on a WebSocket, so the web
+    // app sends its token as a subprotocol: ["digiability.bearer", <jwt>].
+    // The server must echo the protocol name back (never the token).
+    handleProtocols: (protocols) =>
+      protocols.has(BEARER_SUBPROTOCOL) ? BEARER_SUBPROTOCOL : false,
+  });
 
   // Handle HTTP upgrade requests manually for auth
   httpServer.on("upgrade", async (request: IncomingMessage, socket, head) => {
@@ -63,6 +75,15 @@ export function attachWebSocketGateway(httpServer: HttpServer): WebSocketServer 
     const user = tryVerifyAccessToken(token);
     if (!user) {
       socket.write("HTTP/1.1 401 Unauthorized\r\nContent-Type: text/plain\r\n\r\nInvalid or expired token\n");
+      socket.destroy();
+      return;
+    }
+
+    // The token's session must still be live — a logged-out token can't open
+    // a socket (VAPT M-003). Open sockets are closed by the
+    // auth:session-revoked subscription in delivery.service.ts.
+    if (!user.sid || !(await isSessionActive(user.sid))) {
+      socket.write("HTTP/1.1 401 Unauthorized\r\nContent-Type: text/plain\r\n\r\nSession revoked\n");
       socket.destroy();
       return;
     }
@@ -102,14 +123,15 @@ export function attachWebSocketGateway(httpServer: HttpServer): WebSocketServer 
     const userId = user.sub;
     const now = new Date();
 
-    // Add to in-memory connection manager (store jti/exp for heartbeat revocation checks)
+    // Add to in-memory connection manager (sid/exp drive heartbeat re-checks
+    // and immediate close on session revocation)
     connectionManager.add({
       ws,
       userId,
       connId,
       deviceId,
       connectedAt: now,
-      jti: user.jti,
+      sid: user.sid!,
       tokenExp: user.exp,
     });
 
@@ -175,11 +197,14 @@ function parseToken(request: IncomingMessage): string | null {
       return authHeader.slice(7);
     }
 
-    // Fallback: query-string token for clients that cannot set headers during
-    // the WebSocket upgrade (deprecated; remove once all clients migrate).
-    const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
-    const queryToken = url.searchParams.get("token");
-    if (queryToken) return queryToken;
+    // Browser clients: Sec-WebSocket-Protocol: digiability.bearer, <jwt>.
+    // Tokens are deliberately NOT accepted from the query string — URLs end up
+    // in access logs, proxy logs and browser history (VAPT: sensitive data in URL).
+    const offered = String(request.headers["sec-websocket-protocol"] ?? "")
+      .split(",")
+      .map((p) => p.trim());
+    const i = offered.indexOf(BEARER_SUBPROTOCOL);
+    if (i !== -1 && offered[i + 1]) return offered[i + 1];
 
     return null;
   } catch {

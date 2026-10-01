@@ -348,6 +348,14 @@ model Report {
   messageSequence BigInt?
   reason         String
   status         String   @default("OPEN") // OPEN | REVIEWED | ACTIONED | DISMISSED
+  // Aligned with user-svc's UserReport and forum-svc's ForumReport so the admin
+  // queue can sort and SLA-track across all three report tables as one list.
+  // Plain strings rather than enums to match this model's existing convention.
+  referenceCode  String?  @unique
+  severity       String   @default("MEDIUM") // CRITICAL | HIGH | ELEVATED | MEDIUM | LOW
+  // SLA timestamps for the Community Guidelines "How we respond" table.
+  acknowledgedAt DateTime?
+  actionedAt     DateTime?
   createdAt      DateTime @default(now())
 
   @@index([status, createdAt])

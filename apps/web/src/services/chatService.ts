@@ -11,6 +11,29 @@ export function resolveMediaUrl(pathOrUrl: string): string {
   return `${CHAT_BASE_URL}${pathOrUrl.startsWith('/') ? '' : '/'}${pathOrUrl}`;
 }
 
+// Resolve display names via user-svc's /auth/users/batch (max 50 ids per
+// request). It only returns users the caller shares a conversation or invite
+// with and never returns deleted accounts, so a missing id means the account
+// no longer exists.
+const BATCH_LOOKUP_MAX = 50;
+const UNAVAILABLE_USER_NAME = 'This user no longer exists';
+
+async function lookupUserNames(ids: string[]): Promise<Map<string, string>> {
+  const unique = [...new Set(ids)];
+  const chunks: string[][] = [];
+  for (let i = 0; i < unique.length; i += BATCH_LOOKUP_MAX) {
+    chunks.push(unique.slice(i, i + BATCH_LOOKUP_MAX));
+  }
+  const responses = await Promise.all(
+    chunks.map((chunk) => apiClient.post('/api/auth/users/batch', { ids: chunk }))
+  );
+  const names = new Map<string, string>();
+  for (const res of responses) {
+    for (const u of res.data.data.users) names.set(u.id, u.name);
+  }
+  return names;
+}
+
 export const chatService = {
   getConversations: async () => {
     try {
@@ -30,9 +53,7 @@ export const chatService = {
       }
 
       if (allUserIds.size > 0) {
-        const lookupRes = await apiClient.post('/api/auth/users/batch', { ids: [...allUserIds] });
-        const userMap = new Map<string, string>();
-        for (const u of lookupRes.data.data.users) userMap.set(u.id, u.name);
+        const userMap = await lookupUserNames([...allUserIds]);
 
         for (const conv of conversations) {
           const members = conv.members || conv.participants || [];
@@ -42,7 +63,7 @@ export const chatService = {
               id: m.userId,
               name: m.userId === '00000000-0000-0000-0000-000000000001'
                 ? 'DigiBot'
-                : (userMap.get(m.userId) || 'Unknown User'),
+                : (userMap.get(m.userId) ?? UNAVAILABLE_USER_NAME),
             },
           }));
         }
@@ -184,12 +205,11 @@ export const chatService = {
   getGroupInvites: async (conversationId: string) => {
     const res = await apiClient.get(`${CHAT_BASE_URL}/api/conversations/${conversationId}/invites`);
     const invites: any[] = res.data.data || [];
-    const ids = [...new Set(invites.map((i) => i.inviteeId).filter(Boolean))];
-    const nameMap = new Map<string, string>();
+    const ids = invites.map((i) => i.inviteeId).filter(Boolean);
+    let nameMap = new Map<string, string>();
     if (ids.length > 0) {
       try {
-        const lookup = await apiClient.post('/api/auth/users/batch', { ids });
-        for (const u of lookup.data.data.users) nameMap.set(u.id, u.name);
+        nameMap = await lookupUserNames(ids);
       } catch {
         // names are best-effort
       }

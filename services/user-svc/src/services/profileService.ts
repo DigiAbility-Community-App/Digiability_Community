@@ -1,5 +1,6 @@
 import prisma from '../models/prisma.client';
 import { auditLog } from './audit.service';
+import { checkAgeEligibility } from "../utils/age.util";
 
 export type UserRole = 'pwd' | 'caregiver' | 'therapist' | 'ngo' | 'volunteer' | 'student';
 
@@ -41,6 +42,12 @@ export interface ProfileDetailsData {
   ngoRole?: string | null;
   district?: string | null;
 
+  // Skill Trainer Fields
+  skillsTaught?: string | null;
+  teachingMode?: string | null;
+  trainingLocation?: string | null;
+  trainingAddress?: string | null;
+
   // Verification
   verificationStatus?: string | null;
   verificationDoc?: string | null;
@@ -49,41 +56,82 @@ export interface ProfileDetailsData {
 // ─────────────────────────────────────────────
 // CHILDREN'S DATA — DPDP Act 2023 §9
 //
-// §9 prohibits processing personal data of children (< 18)
-// without verifiable parental consent, and prohibits
-// behavioural tracking/targeting of children entirely.
+// §9 prohibits processing personal data of children (< 18) without verifiable
+// parental consent, and prohibits behavioural tracking of children entirely.
 //
-// [LEGAL PLACEHOLDER] A parental-consent flow and verified
-// age-gate must be implemented before the platform accepts
-// users who disclose a DOB that makes them under 18.
-// Until that flow exists, under-18 registrations are flagged
-// in the audit log but NOT blocked (blocking requires the full
-// parental-consent implementation — see DPDP Act §9).
+// Digiability is an 18+ platform. Registration now enforces that server-side
+// (see the age gate in auth.service.registerUser, and age.util for the rule).
+//
+// This path handles the remaining case: an account that predates the gate, or
+// a profile edit that declares a date of birth making the holder under 18.
+// Those are routed to the moderation queue for a human decision rather than
+// deleted automatically — the likeliest cause of a surprising date of birth is
+// a typo, and terminating an account over one without recourse would be worse
+// than the problem. Terms §2 and docs/legal/06 §1.4 describe this.
 // ─────────────────────────────────────────────
 
-function calculateAge(dob: Date): number {
-  const today = new Date();
-  let age = today.getFullYear() - dob.getFullYear();
-  const m = today.getMonth() - dob.getMonth();
-  if (m < 0 || (m === 0 && today.getDate() < dob.getDate())) age -= 1;
-  return age;
-}
-
-export function checkMinorFlag(userId: string, dob: Date | null | undefined): void {
+export async function checkMinorFlag(
+  userId: string,
+  dob: Date | null | undefined
+): Promise<void> {
   if (!dob) return;
-  const age = calculateAge(dob);
-  if (age < 18) {
-    // [LEGAL PLACEHOLDER] Block this path and trigger parental-consent flow
-    // once that feature is implemented. For now, log for compliance audit.
-    auditLog("auth.register" as any, {
-      userId,
-      detail: {
-        warning: "MINOR_DATA_COLLECTED",
-        age,
-        note: "DPDP Act §9 requires verifiable parental consent — parental-consent flow not yet implemented",
+
+  const check = checkAgeEligibility(dob);
+  if (check.eligible) return;
+
+  auditLog("auth.underage_flagged_for_review", {
+    userId,
+    detail: {
+      age: check.age,
+      reason: check.reason,
+      note: "Under-18 account routed to the moderation queue (DPDP §9, Terms §2).",
+    },
+  });
+
+  // Surface it where moderators actually look. Reusing ModerationFlag rather
+  // than inventing a parallel queue means it appears in the existing admin
+  // review list with no new plumbing.
+  try {
+    await prisma.moderationFlag.upsert({
+      where: { contentType_contentId: { contentType: "account_age", contentId: userId } },
+      update: { status: "PENDING", updatedAt: new Date() },
+      create: {
+        contentType: "account_age",
+        contentId: userId,
+        userId,
+        text: `Declared date of birth makes this account holder ${check.age} years old. Digiability is 18+.`,
+        provider: "age-gate",
+        score: 1,
+        categories: ["UNDERAGE_ACCOUNT"],
       },
     });
+  } catch (err) {
+    // Never let a flagging failure block the profile update that triggered it.
+    console.error("[checkMinorFlag] failed to raise moderation flag:", err);
   }
+}
+
+/**
+ * Note that an account holder has declared a minor in their care.
+ *
+ * Deliberately NOT checkMinorFlag: that flags the account itself as underage,
+ * and a caregiver looking after a child is the expected case, not a breach.
+ * What DPDP §9 requires here is a recorded guardian attestation, captured on
+ * the Care Circle flow — this only leaves an audit trail that the situation
+ * exists, so a gap in attestations is discoverable.
+ */
+async function recordCareRecipientAge(userId: string, careDob: Date): Promise<void> {
+  const check = checkAgeEligibility(careDob);
+  if (check.eligible) return;
+
+  auditLog("auth.underage_flagged_for_review", {
+    userId,
+    detail: {
+      subject: "care_recipient",
+      age: check.age,
+      note: "Account holder declared a minor in their care. Guardian attestation required (DPDP §9).",
+    },
+  });
 }
 
 const getStringVal = (val: string | null | undefined): string | null | undefined => {
@@ -154,16 +202,27 @@ export const profileService = {
       locationDistrict: getStringVal(data.locationDistrict),
     };
 
-    // phoneNo lives on the User model — update it separately when provided
+    // phoneNo lives on the User model; fullName is mirrored onto User.name so
+    // every place that reads User.name (Home tab, chat, forum, admin) sees
+    // the latest value — UserProfile.fullName and User.name previously
+    // drifted permanently once either onboarding or Edit Profile touched
+    // fullName without updating User.name too (confirmed: live accounts
+    // already disagree). Only sync fullName when a real value is provided —
+    // never overwrite the required User.name with null/undefined.
+    const userUpdateData: { phoneNo?: string | null; name?: string } = {};
     if (data.phoneNo !== undefined) {
-      await prisma.user.update({
-        where: { id: userId },
-        data: { phoneNo: getStringVal(data.phoneNo) ?? null },
-      });
+      userUpdateData.phoneNo = getStringVal(data.phoneNo) ?? null;
+    }
+    if (updateData.fullName) {
+      userUpdateData.name = updateData.fullName;
+    }
+    if (Object.keys(userUpdateData).length > 0) {
+      await prisma.user.update({ where: { id: userId }, data: userUpdateData });
     }
 
-    // Flag if DOB indicates a minor — DPDP Act §9 requires parental consent (not yet implemented)
-    if (dobVal) checkMinorFlag(userId, dobVal);
+    // The account holder's own date of birth. Under 18 routes the account to the
+    // moderation queue — Digiability is 18+ (DPDP §9, Terms §2).
+    if (dobVal) await checkMinorFlag(userId, dobVal);
 
     return prisma.userProfile.upsert({
       where: { userId },
@@ -218,8 +277,16 @@ export const profileService = {
       }
     }
 
-    // Flag if care person's DOB indicates a minor — DPDP Act §9 requires parental consent
-    if (careDobVal) checkMinorFlag(userId, careDobVal);
+    // NOTE: careDob is the date of birth of the person being cared for, NOT the
+    // account holder. It must not go through checkMinorFlag — that flags the
+    // ACCOUNT as underage, and a caregiver looking after a child is the normal
+    // case here, not a violation.
+    //
+    // A minor in someone's care is the guardian-consent situation (DPDP §9,
+    // Terms §2): the guardian attests to the relationship and we record it.
+    // That attestation is captured on the Care Circle flow — see
+    // GuardianAttestation and docs/legal/06 §1.3.
+    if (careDobVal) await recordCareRecipientAge(userId, careDobVal);
 
     const updateData = {
       disabilityType: getStringVal(data.disabilityType),
@@ -238,6 +305,11 @@ export const profileService = {
       ngoName: getStringVal(data.ngoName),
       ngoRole: getStringVal(data.ngoRole),
       district: getStringVal(data.district),
+
+      skillsTaught: getStringVal(data.skillsTaught),
+      teachingMode: getStringVal(data.teachingMode),
+      trainingLocation: getStringVal(data.trainingLocation),
+      trainingAddress: getStringVal(data.trainingAddress),
 
       verificationStatus: getStringVal(data.verificationStatus),
       verificationDoc: getStringVal(data.verificationDoc),
@@ -264,6 +336,11 @@ export const profileService = {
         ngoName: getStringVal(data.ngoName) ?? null,
         ngoRole: getStringVal(data.ngoRole) ?? null,
         district: getStringVal(data.district) ?? null,
+
+        skillsTaught: getStringVal(data.skillsTaught) ?? null,
+        teachingMode: getStringVal(data.teachingMode) ?? null,
+        trainingLocation: getStringVal(data.trainingLocation) ?? null,
+        trainingAddress: getStringVal(data.trainingAddress) ?? null,
 
         verificationStatus: getStringVal(data.verificationStatus) ?? 'pending',
         verificationDoc: getStringVal(data.verificationDoc) ?? null,

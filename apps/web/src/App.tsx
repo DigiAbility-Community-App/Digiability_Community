@@ -21,8 +21,10 @@ import LearnPage from '@/features/learn/LearnPage';
 import SettingsPage from '@/features/settings/SettingsPage';
 import PrivacyDataPage from '@/features/settings/PrivacyDataPage';
 
-import PrivacyPolicy from '@/features/legal/PrivacyPolicy';
-import TermsOfService from '@/features/legal/TermsOfService';
+import LegalDocPage from '@/features/legal/LegalDocPage';
+import DeleteAccountPage from '@/features/account/DeleteAccountPage';
+import SafetyPage from '@/features/safety/SafetyPage';
+import { ALL_LEGAL_DOCS } from '@/legal/legal-docs.generated';
 import { useAuthStore } from '@/store/authStore';
 import { authService } from '@/services/authService';
 
@@ -95,8 +97,21 @@ const App = () => {
         </Route>
         
         {/* Legal / Privacy (public, no auth required) */}
-        <Route path="privacy-policy" element={<PrivacyPolicy />} />
-        <Route path="terms" element={<TermsOfService />} />
+        {/* Public account deletion — deliberately OUTSIDE MainLayout so it is
+            reachable without signing in. Required for the Play Console Data
+            Safety declaration; do not move it under an authenticated layout. */}
+        <Route path="delete-account" element={<DeleteAccountPage />} />
+
+        {/* Public safety resources. The Community Guidelines send people in
+            crisis to /safety — it must never require signing in. */}
+        <Route path="safety" element={<SafetyPage />} />
+
+        {/* One public route per document in docs/legal/manifest.json. Adding a
+            document there publishes it here automatically — no route to forget.
+            /privacy-policy and /terms keep their existing paths. */}
+        {ALL_LEGAL_DOCS.map((doc) => (
+          <Route key={doc.slug} path={doc.slug} element={<LegalDocPage slug={doc.slug} />} />
+        ))}
 
         {/* Fallback */}
         <Route path="*" element={<Navigate to="/app/chats" replace />} />

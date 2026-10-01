@@ -34,6 +34,10 @@ export async function GET(request: NextRequest) {
   }
   return NextResponse.json({
     authenticated: true,
+    // The signed-in admin's own email. Needed by the appeals page to explain
+    // why an appeal is locked ("you made this decision") before the request is
+    // made — the server remains the authority on that rule.
+    email: payload.email ?? null,
     // Seconds remaining before the idle deadline — drives the client's
     // countdown/warning without it needing to read the httpOnly cookie.
     expiresIn: Math.max(0, payload.exp - Math.floor(Date.now() / 1000)),

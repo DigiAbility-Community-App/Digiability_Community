@@ -90,10 +90,15 @@ REDIS_PASSWORD=redis_secret
 ipconfig getifaddr en0        # macOS
 ip route get 1 | awk '{print $7}' # Linux
 
-# Then update:
-EXPO_PUBLIC_API_BASE_URL=http://<your-lan-ip>:4001
+# Then set all six endpoint vars (see apps/mobile/.env.example):
+EXPO_PUBLIC_API_URL=http://<your-lan-ip>:4001
+EXPO_PUBLIC_CHAT_API_URL=http://<your-lan-ip>:4002
+EXPO_PUBLIC_CHAT_SOCKET_URL=ws://<your-lan-ip>:4002/ws
+EXPO_PUBLIC_FORUM_API_URL=http://<your-lan-ip>:4003
+EXPO_PUBLIC_FORUM_SOCKET_URL=ws://<your-lan-ip>:4003
+EXPO_PUBLIC_ADMIN_API_URL=http://<your-lan-ip>:3001
 ```
-> Emulators can use the default `http://10.0.2.2:4001` (Android) or `http://localhost:4001` (iOS Simulator) — no change needed.
+> Emulators use `10.0.2.2` (Android) or `localhost` (iOS Simulator) in place of the LAN IP. There are no built-in defaults — a missing variable stops the app at startup with an error naming it.
 
 ---
 
@@ -357,7 +362,7 @@ docker compose up -d postgres     # Start it if not
 ```
 
 ### ❌ "WebSocket won't connect" on physical device
-- Ensure `EXPO_PUBLIC_API_BASE_URL` in `apps/mobile/.env` uses your LAN IP, not `localhost`
+- Ensure `EXPO_PUBLIC_CHAT_SOCKET_URL` (and the other endpoint vars) in `apps/mobile/.env` use your LAN IP, not `localhost`
 - Run `ipconfig getifaddr en0` (Mac) to find it
 
 ### ❌ `EADDRINUSE` on port 4004 (notif-svc)

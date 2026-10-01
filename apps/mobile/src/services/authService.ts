@@ -4,6 +4,8 @@ import { useAuthStore, AuthUser } from '@store/authStore';
 import { useChatStore } from '@store/chatStore';
 import { useForumStore } from '@store/forumStore';
 import { removeDeviceToken } from './notificationService';
+import { closeSocket } from './socketService';
+import { forumSocketService } from './forumSocketService';
 
 /**
  * Wipes all user-scoped in-memory state. Called on logout and account
@@ -30,6 +32,16 @@ export interface RegisterInput {
   phoneNo?: string;
   role?: string;
   roles?: string[];
+  /** Required — user-svc's RegisterSchema rejects a request without this. */
+  acceptedTerms: true;
+  /** The policy version actually shown to the user; see legal-docs.generated. */
+  policyVersion: string;
+  /** Separate consent to the data-processing notice — the user ticked its own box. */
+  acceptedDataProcessing: true;
+  /** The notice version actually shown (CONSENT_NOTICE_VERSION). */
+  consentNoticeVersion: string;
+  /** YYYY-MM-DD. Required — Digiability is an 18+ platform (DPDP §9). */
+  dateOfBirth: string;
 }
 
 export interface LoginInput {
@@ -91,13 +103,17 @@ async function persistRefreshToken(headers: Record<string, string | string[]>) {
 
 // ── Role Mapping ───────────────────────────────────────────
 
+// The DB Role enum predates the app's role vocabulary, so three ids differ
+// from what the user sees. Skill Trainer stores as `student` and Volunteer as
+// `volunteer` — these were swapped by migration 20260908010000 so that the
+// "Volunteer" the user picks is literally `volunteer` in the database.
 const ROLE_MAP_TO_BACKEND: Record<string, string> = {
   pwd: 'pwd',
   caregiver: 'caregiver',
   educator: 'therapist',
   ngo_worker: 'ngo',
-  skill_trainer: 'volunteer',
-  community_member: 'student',
+  skill_trainer: 'student',
+  volunteer: 'volunteer',
 };
 
 const ROLE_MAP_TO_FRONTEND: Record<string, string> = {
@@ -105,8 +121,8 @@ const ROLE_MAP_TO_FRONTEND: Record<string, string> = {
   caregiver: 'caregiver',
   therapist: 'educator',
   ngo: 'ngo_worker',
-  volunteer: 'skill_trainer',
-  student: 'community_member',
+  student: 'skill_trainer',
+  volunteer: 'volunteer',
 };
 
 function mapUserToFrontend(user: any): any {
@@ -133,9 +149,10 @@ export interface EmailCheckResult {
  */
 export async function checkEmailAvailability(email: string): Promise<EmailCheckResult> {
   try {
-    const response = await apiClient.get<{ success: boolean; available: boolean; message: string }>(
+    // POST so the address never appears in a URL (proxy/access logs).
+    const response = await apiClient.post<{ success: boolean; available: boolean; message: string }>(
       '/api/auth/check-email',
-      { params: { email: email.trim().toLowerCase() } },
+      { email: email.trim().toLowerCase() },
     );
     return { available: response.data.available, message: response.data.message };
   } catch (error: any) {
@@ -201,28 +218,70 @@ export async function login(input: LoginInput): Promise<AuthUser> {
 
 // ── Logout ─────────────────────────────────────────────────
 
+// Server calls on logout are best-effort; never leave the user stuck on a
+// spinner because the network is down.
+const LOGOUT_TIMEOUT_MS = 5000;
+
+/**
+ * Wipe everything this device holds for the signed-in user: refresh token,
+ * auth header, live sockets, queued requests and cached user data.
+ */
+async function wipeLocalSession(): Promise<void> {
+  await SecureStore.deleteItemAsync(REFRESH_TOKEN_KEY).catch(() => {});
+  delete apiClient.defaults.headers.common.Authorization;
+  closeSocket();
+  forumSocketService.disconnect();
+  cancelPendingRequests();
+  // Clears auth + all user-scoped stores (chat, forum) so the next user
+  // starts clean and no in-flight response can repopulate them.
+  clearUserScopedStores();
+}
+
+/**
+ * Log out of this device. The server is told FIRST — while the access and
+ * refresh tokens still exist — so it can revoke the session; only then is
+ * local state wiped. (Clearing first meant the logout call went out with no
+ * credentials and the server never revoked anything: VAPT M-003.)
+ */
 export async function logout(): Promise<void> {
-  // Must run before clearAuth() below — DELETE /api/auth/device-token needs
-  // the still-valid bearer token from the auth store.
+  // DELETE /api/auth/device-token needs the still-valid bearer token.
   try {
     await removeDeviceToken();
   } catch {
     // Best-effort — never block logout on this.
   }
 
-  // H11: Clear local state FIRST to prevent any in-flight responses
-  // writing stale data to the stores after logout. Clears auth + all
-  // user-scoped stores (chat, forum) so the next user starts clean.
-  clearUserScopedStores();
-  await SecureStore.deleteItemAsync(REFRESH_TOKEN_KEY);
-
-  // Then cancel pending requests and notify the server (best-effort)
-  cancelPendingRequests();
   try {
-    await apiClient.post('/api/auth/logout');
+    // The refresh token in the body lets the server end the session even if
+    // the access token has already expired.
+    const refreshToken = await SecureStore.getItemAsync(REFRESH_TOKEN_KEY).catch(() => null);
+    await apiClient.post(
+      '/api/auth/logout',
+      refreshToken ? { refreshToken } : {},
+      { timeout: LOGOUT_TIMEOUT_MS },
+    );
   } catch {
-    // Swallow — local state is already cleared
+    // Offline or server error — still log out locally.
   }
+
+  await wipeLocalSession();
+}
+
+/**
+ * Log out of every device signed in to this account (all sessions are
+ * revoked server-side), then wipe this one.
+ * Throws if the server call fails, so the UI can say so — unlike plain
+ * logout, silently "succeeding" here would leave other devices signed in.
+ */
+export async function logoutAllDevices(): Promise<void> {
+  try {
+    await removeDeviceToken();
+  } catch {
+    // Best-effort.
+  }
+
+  await apiClient.post('/api/auth/logout-all', {}, { timeout: LOGOUT_TIMEOUT_MS });
+  await wipeLocalSession();
 }
 
 // ── Get current user (protected) ───────────────────────────
@@ -312,9 +371,29 @@ export async function updateRole(
 
 // ── Delete account (DPDP right to erasure) ─────────────────
 
-export async function deleteAccount(): Promise<void> {
-  await apiClient.delete('/api/auth/delete-account');
+export async function deleteAccount(password: string): Promise<void> {
+  // The server requires re-authentication for this irreversible action, so the
+  // password travels in the request body (axios needs `data` for DELETE).
+  await apiClient.delete('/api/auth/delete-account', { data: { password } });
   // Clear all local state after the server confirms deletion
   clearUserScopedStores();
   await SecureStore.deleteItemAsync(REFRESH_TOKEN_KEY);
+}
+
+/**
+ * Backfill a date of birth for an account created before the age gate.
+ * Returns whether the declared date meets the 18+ requirement; an ineligible
+ * (but plausible) date is recorded and routed to moderation, not rejected.
+ */
+export async function submitDateOfBirth(
+  dateOfBirth: string,
+): Promise<{ eligible: boolean; message: string }> {
+  const response = await apiClient.post<ApiResponse<{ eligible: boolean }>>(
+    '/api/auth/date-of-birth',
+    { dateOfBirth },
+  );
+  return {
+    eligible: response.data.data.eligible,
+    message: response.data.message ?? '',
+  };
 }

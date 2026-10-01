@@ -215,7 +215,7 @@ export default function GroupDetailPage() {
   const handleRemove = async (userId: string) => {
     setRemovingId(userId);
     try {
-      const res = await fetch(`/api/groups/${id}/members?userId=${userId}`, { method: "DELETE" });
+      const res = await fetch(`/api/groups/${id}/members/${encodeURIComponent(userId)}`, { method: "DELETE" });
       const data = await res.json();
       if (data.success) {
         setActionMsg("Member removed.");

@@ -166,3 +166,49 @@
     transform: translateY(0);
   }
 }
+
+/* ── Password requirements checklist ──────────────────────────
+   Shown under the password field on Register so the criteria are visible
+   before submitting rather than only as an error afterwards. The rules come
+   from the admin-configured password policy served by user-svc. */
+.password-rules {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.password-rule {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+  color: #6b6875;
+}
+
+.password-rule.met {
+  color: #1b873f;
+}
+
+.password-rule-icon {
+  flex: 0 0 auto;
+  width: 1rem;
+  text-align: center;
+  font-weight: 700;
+}
+
+/* Visible to screen readers only — announces met/not-met without
+   duplicating the tick glyph visually. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}

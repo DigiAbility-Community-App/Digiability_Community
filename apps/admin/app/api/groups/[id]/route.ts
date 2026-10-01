@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { dbPool } from "@/lib/db";
-import { requireAdminAuth } from "@/lib/auth";
+import { requireAdminAuth, getAdminSession, getRequestIp } from "@/lib/auth";
 import { writeAudit } from "@/lib/audit";
 
 // GET — single group with members
@@ -63,6 +63,8 @@ export async function PATCH(
 ) {
   const authError = await requireAdminAuth(request);
   if (authError) return authError;
+  const actor = await getAdminSession(request);
+  const ip = getRequestIp(request);
 
   try {
     const { id } = await params;
@@ -114,6 +116,11 @@ export async function PATCH(
       values
     );
 
+    await writeAudit({
+      adminEmail: actor?.email, ipAddress: ip,
+      action: "group_update", targetType: "group", targetId: id,
+    });
+
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("Group PATCH error:", error);
@@ -128,6 +135,9 @@ export async function DELETE(
 ) {
   const authError = await requireAdminAuth(req);
   if (authError) return authError;
+  // Actor identity for the audit trail — see lib/audit.ts.
+  const actor = await getAdminSession(req);
+  const ip = getRequestIp(req);
 
   try {
     const { id } = await params;
@@ -181,7 +191,7 @@ export async function DELETE(
       );
     }
 
-    await writeAudit({
+    await writeAudit({ adminEmail: actor?.email, ipAddress: ip,
       action: "delete_group",
       reason: groupName ? `"${groupName}" (ID: ${id})` : `conversation ${id}`,
     });

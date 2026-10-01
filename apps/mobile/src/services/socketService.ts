@@ -1,6 +1,7 @@
 import { useAuthStore } from '@store/authStore';
 import { useChatStore } from '@store/chatStore';
-import { chatService, CHAT_BASE_URL } from './chatService';
+import { chatService } from './chatService';
+import { CHAT_SOCKET_URL } from '@config/env';
 
 // ─────────────────────────────────────────────────────────
 // WebSocket Client Service
@@ -27,7 +28,7 @@ export const initSocket = () => {
   const token = useAuthStore.getState().accessToken;
   if (!token) return;
 
-  const wsUrl = CHAT_BASE_URL.replace(/^http/, 'ws') + '/ws';
+  const wsUrl = CHAT_SOCKET_URL;
 
   if (socket?.readyState === WebSocket.OPEN || socket?.readyState === WebSocket.CONNECTING) {
     return;
@@ -303,12 +304,16 @@ const handleSocketEvent = (message: any) => {
     case 'invite.cancelled':
       console.log(`📪 Invite ${type.split('.')[1]}:`, payload.inviteId);
       store.removePendingInvite(payload.inviteId);
+      // An accepted invite adds a membership, which the Groups / Care Circles
+      // tabs need to pick up — they don't derive from `conversations`.
+      store.refreshCommunityGroups();
       break;
 
     case 'member.joined':
       console.log('👤 Member joined:', payload);
       // Refresh conversations to get updated members
       chatService.getConversations().then(convos => store.setConversations(convos));
+      store.refreshCommunityGroups();
       break;
 
     case 'member.left':
@@ -316,6 +321,7 @@ const handleSocketEvent = (message: any) => {
       console.log('👤 Member left/removed:', payload);
       // Refresh conversations to get updated members
       chatService.getConversations().then(convos => store.setConversations(convos));
+      store.refreshCommunityGroups();
       break;
 
     case 'group.settings.updated':

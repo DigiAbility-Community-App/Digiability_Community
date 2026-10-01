@@ -26,15 +26,21 @@ export type AuditEventType =
   | "auth.account_locked"
   | "auth.logout"
   | "auth.token_reuse"
+  | "auth.session_revoked"
+  | "auth.sessions_revoked_all"
   | "auth.password_reset"
   | "auth.email_verified"
   | "auth.account_deleted"
+  | "auth.account_deletion_denied"
+  | "auth.register_blocked_underage"
+  | "auth.underage_flagged_for_review"
   | "auth.register"
   // Privacy / DPDP Act 2023
   | "privacy.consent_recorded"
   | "privacy.consent_withdrawn"
   | "privacy.data_exported"
-  | "privacy.correction_requested";
+  | "privacy.correction_requested"
+  | "privacy.grievance_received";
 
 interface AuditEntry {
   event: AuditEventType;

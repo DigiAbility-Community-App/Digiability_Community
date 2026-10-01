@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
   Platform,
   Alert,
+  Modal,
 } from "react-native";
 import { KeyboardAwareScrollView } from "react-native-keyboard-aware-scroll-view";
 
@@ -20,6 +21,7 @@ import { login, register, checkEmailAvailability } from "@services/authService";
 import { sanitizeNameInput, isValidNameFormat } from "../../utils/nameValidation";
 import { Check } from "lucide-react-native";
 import apiClient from "@services/apiClient";
+import { sanitizeMobileInput, isValidMobileFormat } from "../../utils/mobileValidation";
 import {
   evaluatePassword,
   firstPasswordError,
@@ -32,11 +34,21 @@ import { AccessibleButton } from "../../components/shared/AccessibleButton";
 import { Input } from "../../components/shared/Input";
 import ScreenWrapper from "../../components/layout/ScreenWrapper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import * as WebBrowser from "expo-web-browser";
+import DateTimePickerModal from "react-native-modal-datetime-picker";
+import {
+  isOldEnough,
+  latestEligibleBirthDate,
+  toApiDate,
+  toDisplayDate,
+  MINIMUM_AGE,
+} from "../../utils/ageValidation";
+import { POLICY_VERSION, CONSENT_NOTICE_VERSION } from "../../legal/legal-docs.generated";
+import { ConsentNoticeContent } from "../../components/legal/ConsentNoticeContent";
+import { SafeAreaView } from "react-native-safe-area-context";
 
-// Green used for a satisfied password rule / an available email. The theme
-// has no success colour, and the brand purple reads as "selected" rather
-// than "done".
+// Green used for a satisfied password rule / an available email. The theme has
+// no success colour, and the brand purple would read as "selected" rather than
+// "done".
 const RULE_MET_COLOR = "#1B873F";
 
 type Props = {
@@ -90,19 +102,17 @@ function getApiErrorMessage(error: unknown, fallback: string) {
 }
 
 const WelcomeScreen = ({ navigation }: Props) => {
-  const { colors, spacing, highContrast } = useTheme();
+  const { colors, spacing, highContrast, typography } = useTheme();
   const insets = useSafeAreaInsets();
   const [activeTab, setActiveTab] = useState<"SignUp" | "Login">("SignUp");
 
   // SignUp
   const [name, setName] = useState("");
   const [signUpEmail, setSignUpEmail] = useState("");
-  const [signUpPassword, setSignUpPassword] = useState("");
-
-  // ── Live "already registered?" check (item 7) ──
-  // Mirrors the username check in ProfileScreen: debounced, and every early
-  // return cancels the pending timer so a stale resolve can't overwrite a
-  // newer state.
+  // Live "already registered?" check so the user isn't told only after
+  // submitting the whole form. Same shape as the username check in
+  // ProfileScreen: debounced, with every early return cancelling the pending
+  // timer so a stale resolve can't overwrite a newer state.
   const [emailStatus, setEmailStatus] = useState<
     "idle" | "invalid" | "checking" | "available" | "taken"
   >("idle");
@@ -144,6 +154,8 @@ const WelcomeScreen = ({ navigation }: Props) => {
     }, 500);
   };
 
+  const [signUpPassword, setSignUpPassword] = useState("");
+
   // ── Password rules (item 8) ──
   // The rules are admin-configured and served by user-svc, so the checklist
   // shows exactly what the API enforces. The list is revealed only while the
@@ -174,6 +186,16 @@ const WelcomeScreen = ({ navigation }: Props) => {
   // Shared
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Real checkbox, not the passive caption this used to be. Registration is
+  // blocked until this is checked — see the guard in handleSignUp below.
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
+  // Data-processing notice (DPDP §5/§6) shown after the form validates.
+  const [showConsent, setShowConsent] = useState(false);
+  const [consentError, setConsentError] = useState<string | null>(null);
+  // Digiability is an 18+ platform (DPDP §9). The server is the real gate;
+  // collecting it here gives a clear message before submitting.
+  const [dob, setDob] = useState<Date | null>(null);
+  const [showDobPicker, setShowDobPicker] = useState(false);
 
   const clearError = () => setError(null);
 
@@ -197,7 +219,7 @@ const WelcomeScreen = ({ navigation }: Props) => {
       return;
     }
 
-    if (!/^[6-9]\d{9}$/.test(trimmedPhone)) {
+    if (!isValidMobileFormat(trimmedPhone)) {
       setError("Please enter a valid 10-digit mobile number.");
       return;
     }
@@ -228,23 +250,55 @@ const WelcomeScreen = ({ navigation }: Props) => {
       return;
     }
 
-    // Rules come from the admin-configured policy, so this can't drift from
-    // what the API enforces.
+    // Rules come from the admin-configured policy (see passwordPolicy state
+    // above) so this can't drift from what the API enforces.
     const passwordError = firstPasswordError(trimmedPassword, passwordPolicy);
     if (passwordError) {
       setError(passwordError);
       return;
     }
 
+    if (!dob) {
+      setError("Please enter your date of birth.");
+      return;
+    }
+
+    if (!isOldEnough(dob)) {
+      setError(`You must be ${MINIMUM_AGE} or older to use Digiability Community.`);
+      return;
+    }
+
+    if (!acceptedTerms) {
+      setError("Please accept the Terms of Use and Community Guidelines to continue.");
+      return;
+    }
+
+    // Form is valid — show the data-processing notice. The account is only
+    // created once the user ticks its separate consent box and agrees.
+    setConsentError(null);
+    setShowConsent(true);
+  };
+
+  // Called from the data-processing notice after the user ticked the box.
+  const handleConsentAgree = async () => {
+    if (!dob) return;
+    const trimmedEmail = signUpEmail.trim().toLowerCase();
+    setConsentError(null);
     setLoading(true);
 
     try {
       const result = await register({
-        name: trimmedName,
+        name: name.trim(),
         email: trimmedEmail,
-        password: trimmedPassword,
-        phoneNo: trimmedPhone,
+        password: signUpPassword.trim(),
+        phoneNo: signUpPhone.trim(),
+        acceptedTerms: true,
+        policyVersion: POLICY_VERSION,
+        acceptedDataProcessing: true,
+        consentNoticeVersion: CONSENT_NOTICE_VERSION,
+        dateOfBirth: toApiDate(dob),
       });
+      setShowConsent(false);
       // Registration no longer starts a session (the server issues tokens only
       // after the OTP is verified), so navigate to Verify Email explicitly
       // rather than relying on setAuth flipping RootNavigator to the Main stack.
@@ -259,10 +313,17 @@ const WelcomeScreen = ({ navigation }: Props) => {
       navigation.navigate("VerifyEmail", { email: trimmedEmail });
     } catch (err: unknown) {
       console.error("[SignUpError]", err);
-      setError(getApiErrorMessage(err, "Registration failed."));
+      setConsentError(getApiErrorMessage(err, "Registration failed."));
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleConsentDecline = () => {
+    setShowConsent(false);
+    setError(
+      "We can't create an account without your consent to process your data — the service can't run without it. You can review the notice again whenever you're ready."
+    );
   };
 
   // Login
@@ -332,7 +393,7 @@ const WelcomeScreen = ({ navigation }: Props) => {
             variant="heroTitle"
             style={{ color: '#FFFFFF', textAlign: 'center' }}
           >
-            Welcome to DigiAbility
+            Welcome to Digiability Community
           </AccessibleText>
 
           <AccessibleText variant="subtitle" style={{ color: 'rgba(255,255,255,0.8)', textAlign: 'center' }}>
@@ -344,11 +405,19 @@ const WelcomeScreen = ({ navigation }: Props) => {
       {/* MAIN CARD */}
       <KeyboardAwareScrollView
         style={[styles.bottomCard, { backgroundColor: colors.card }]}
-        contentContainerStyle={[styles.bottomContent, { flexGrow: 1 }]}
+        // Flat object, not an array — with enableOnAndroid this library reads
+        // (contentContainerStyle || {}).paddingBottom to add its own keyboard
+        // padding on top of ours; on an array that's undefined, so its
+        // replacement value becomes the ONLY paddingBottom RN keeps after
+        // flattening the style array, silently discarding bottomContent's.
+        contentContainerStyle={{ ...styles.bottomContent, flexGrow: 1 }}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
         enableOnAndroid={true}
-        extraScrollHeight={20}
+        // Phone Number is the last field, right above the submit button —
+        // 20 wasn't enough clearance to scroll it above the keyboard once
+        // focused, so it stayed hidden behind it.
+        extraScrollHeight={100}
       >
         {/* TABS */}
         <View style={styles.tabs}>
@@ -514,11 +583,11 @@ const WelcomeScreen = ({ navigation }: Props) => {
                 <View style={[styles.phoneDivider, { backgroundColor: colors.border }]} />
                 {/* Phone number digit section */}
                 <TextInput
-                  style={[styles.phoneInput, { color: colors.text }]}
+                  style={[styles.phoneInput, { color: colors.text, fontSize: typography.input.fontSize }]}
                   placeholder="XXXXX XXXXX"
                   placeholderTextColor="rgba(126,115,131,0.5)"
                   value={signUpPhone}
-                  onChangeText={(t) => setSignUpPhone(t.replace(/[^0-9]/g, ''))}
+                  onChangeText={(t) => setSignUpPhone(sanitizeMobileInput(t))}
                   keyboardType="phone-pad"
                   maxLength={10}
                   accessible={true}
@@ -528,11 +597,111 @@ const WelcomeScreen = ({ navigation }: Props) => {
               </View>
             </View>
 
+            <View style={styles.phoneContainer}>
+              <AccessibleText style={[styles.phoneLabel, { color: colors.subtext }]}>
+                Date of Birth
+              </AccessibleText>
+              <TouchableOpacity
+                activeOpacity={0.9}
+                onPress={() => setShowDobPicker(true)}
+                accessibilityRole="button"
+                accessibilityLabel="Date of birth"
+                accessibilityHint={
+                  dob
+                    ? `Selected: ${toDisplayDate(dob)}. Double tap to change`
+                    : "Double tap to open the date picker"
+                }
+              >
+                <TextInput
+                  style={[
+                    styles.phoneInput,
+                    {
+                      color: colors.text,
+                      fontSize: typography.input.fontSize,
+                      backgroundColor: colors.surface,
+                      borderWidth: 1,
+                      borderColor: colors.border,
+                      borderRadius: 12,
+                      paddingHorizontal: 14,
+                    },
+                    highContrast && { borderWidth: 2, borderColor: "#000000" },
+                  ]}
+                  placeholder="DD/MM/YYYY"
+                  placeholderTextColor="rgba(126,115,131,0.5)"
+                  value={dob ? toDisplayDate(dob) : ""}
+                  editable={false}
+                  pointerEvents="none"
+                  accessibilityLabel="Date of birth"
+                />
+              </TouchableOpacity>
+              <AccessibleText variant="caption" style={{ color: colors.subtext, marginTop: 6 }}>
+                You must be {MINIMUM_AGE} or older to join.
+              </AccessibleText>
+            </View>
+
+            <DateTimePickerModal
+              isVisible={showDobPicker}
+              mode="date"
+              // Opening on the latest eligible date makes the requirement
+              // obvious and saves scrolling back 18 years.
+              date={dob ?? latestEligibleBirthDate()}
+              maximumDate={new Date()}
+              onConfirm={(date) => {
+                setShowDobPicker(false);
+                setDob(date);
+                clearError();
+              }}
+              onCancel={() => setShowDobPicker(false)}
+            />
+
+            <TouchableOpacity
+              onPress={() => setAcceptedTerms((prev) => !prev)}
+              style={styles.termsRow}
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: acceptedTerms }}
+              accessibilityLabel="Accept Terms of Use and Community Guidelines"
+            >
+              <View
+                style={[
+                  styles.checkbox,
+                  {
+                    borderColor: acceptedTerms ? colors.primary : colors.border,
+                    backgroundColor: acceptedTerms ? colors.primary : "transparent",
+                  },
+                  highContrast && { borderWidth: 2, borderColor: "#000000" },
+                ]}
+              >
+                {acceptedTerms && <Check size={14} color="#fff" strokeWidth={3} />}
+              </View>
+              <AccessibleText variant="caption" style={{ flex: 1, lineHeight: 20 }}>
+                I agree to the{" "}
+                <Text
+                  style={{ color: colors.primary, fontWeight: "700" }}
+                  onPress={() => navigation.navigate("Legal", { doc: "terms" })}
+                  accessibilityRole="link"
+                >
+                  Terms of Use
+                </Text>{" "}
+                and{" "}
+                <Text
+                  style={{ color: colors.primary, fontWeight: "700" }}
+                  onPress={() => navigation.navigate("Legal", { doc: "community-guidelines" })}
+                  accessibilityRole="link"
+                >
+                  Community Guidelines
+                </Text>
+              </AccessibleText>
+            </TouchableOpacity>
+
             <AccessibleButton
               accessibilityLabel="Create Account"
-              accessibilityHint="Submit registration details and continue"
+              accessibilityHint={
+                acceptedTerms
+                  ? "Submit registration details and continue"
+                  : "Accept the Terms of Use and Community Guidelines first"
+              }
               onPress={handleSignUp}
-              disabled={loading}
+              disabled={loading || !acceptedTerms}
             >
               {loading ? <ActivityIndicator color="#fff" /> : "Create Account"}
             </AccessibleButton>
@@ -588,7 +757,7 @@ const WelcomeScreen = ({ navigation }: Props) => {
         {/* [LEGAL PLACEHOLDER] The documents themselves are still drafts.
             These open in-app now — the old external links were built from
             EXPO_PUBLIC_WEB_BASE_URL, which is defined nowhere, so every
-            build fell back to http://localhost:3000 and went nowhere. */}
+            build fell back to a localhost URL and went nowhere. */}
         <AccessibleText variant="caption" style={{ marginTop: spacing.xl, textAlign: 'center', lineHeight: 22 }}>
           By continuing, you agree to our{" "}
           <Text
@@ -602,7 +771,7 @@ const WelcomeScreen = ({ navigation }: Props) => {
           {" "}&{" "}
           <Text
             style={{ color: colors.primary, fontWeight: '700' }}
-            onPress={() => navigation.navigate("Legal", { doc: "privacy" })}
+            onPress={() => navigation.navigate("Legal", { doc: "privacy-policy" })}
             accessibilityRole="link"
             accessibilityLabel="Privacy Policy"
           >
@@ -610,6 +779,26 @@ const WelcomeScreen = ({ navigation }: Props) => {
           </Text>
         </AccessibleText>
       </KeyboardAwareScrollView>
+
+      {/* Data-processing notice + separate consent (DPDP §5/§6). A modal, not
+          a pushed screen, so the password never goes into navigation params. */}
+      <Modal
+        visible={showConsent}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        onRequestClose={handleConsentDecline}
+      >
+        <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
+          <ConsentNoticeContent
+            agreeLabel="Agree and create account"
+            declineLabel="Go back"
+            busy={loading}
+            error={consentError}
+            onAgree={handleConsentAgree}
+            onDecline={handleConsentDecline}
+          />
+        </SafeAreaView>
+      </Modal>
     </ScreenWrapper>
   );
 };
@@ -649,16 +838,20 @@ const styles = StyleSheet.create({
     flexShrink: 1,
   },
 
+
   // PHONE INPUT
   phoneContainer: {
     width: '100%',
   },
+  // Matches Input's own label (variant="label": weight 700, letterSpacing
+  // 1.2). No fontSize — the label variant supplies a scaled one, and the
+  // hardcoded 12 here meant Phone and Date of Birth ignored the text-size
+  // setting while every field above them honoured it.
   phoneLabel: {
     textTransform: 'uppercase',
-    fontSize: 12,
-    fontWeight: '600',
-    marginBottom: 6,
-    letterSpacing: 0.5,
+    fontWeight: '700',
+    marginBottom: 8,
+    letterSpacing: 1.2,
   },
   phoneWrapper: {
     flexDirection: 'row',
@@ -685,21 +878,23 @@ const styles = StyleSheet.create({
   },
   phoneInput: {
     flex: 1,
-    fontSize: 16,
-    paddingHorizontal: 14,
-    paddingVertical: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     minHeight: 48,
   },
 
 
   // HEADER
   header: {
-    height: "38%",
-    minHeight: 220,
+    // No fixed height: the title wraps to two lines on narrower phones and
+    // grows further with the app's text-size setting, and the old
+    // height/minHeight pair plus overflow:"hidden" clipped it. The decorative
+    // glows are clipped individually instead (see topGlow/bottomGlow).
+    minHeight: 240,
+    paddingVertical: 24,
     justifyContent: "center",
     alignItems: "center",
     paddingHorizontal: 24,
-    overflow: "hidden",
   },
 
   topGlow: {
@@ -745,7 +940,7 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255,255,255,0.2)",
     justifyContent: "center",
     alignItems: "center",
-    marginBottom: 24,
+    marginBottom: 16,
   },
 
   logo: {
@@ -753,21 +948,7 @@ const styles = StyleSheet.create({
     height: 80,
   },
 
-  title: {
-    fontSize: 28,
-    fontWeight: "800",
-    color: "#fff",
-    letterSpacing: -0.7,
-    marginBottom: 8,
-    textAlign: "center",
-  },
 
-  subtitle: {
-    fontSize: 16,
-    fontWeight: "500",
-    color: "rgba(255,255,255,0.8)",
-    textAlign: "center",
-  },
 
   // BOTTOM CARD
   bottomCard: {
@@ -799,76 +980,40 @@ const styles = StyleSheet.create({
     borderBottomColor: "#E8E7EE",
   },
 
-  activeTabBtn: {
-    borderBottomColor: "#500088",
-  },
 
-  activeTabText: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: "#500088",
-  },
 
-  inactiveTabText: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: "#7E7383",
-  },
 
   // FORM
   form: {
     gap: 22,
   },
 
-  label: {
-    fontSize: 12,
-    fontWeight: "700",
-    letterSpacing: 1.2,
-    color: "#7E7383",
-    marginBottom: 8,
-  },
 
-  input: {
-    backgroundColor: "#F4F3FA",
-    borderRadius: 12,
-    paddingHorizontal: 18,
-    paddingVertical: 17,
-    fontSize: 16,
-    color: "#1A1B20",
-  },
 
   forgotBtn: {
     alignSelf: "flex-end",
-    marginTop: -10,
+    marginTop: 2,
   },
 
-  forgotText: {
-    color: "#500088",
-    fontWeight: "600",
-    fontSize: 14,
-  },
 
   // BUTTON
-  ctaButton: {
-    marginTop: 8,
-    borderRadius: 12,
-    overflow: "hidden",
-    shadowColor: "#500088",
-    shadowOpacity: 0.25,
-    shadowRadius: 12,
-    elevation: 8,
-  },
 
-  gradientButton: {
-    paddingVertical: 16,
-    alignItems: "center",
-    justifyContent: "center",
+  // TERMS CHECKBOX
+  termsRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    marginTop: 4,
+    marginBottom: 4,
   },
-
-  ctaText: {
-    color: "#fff",
-    fontSize: 18,
-    fontWeight: "700",
+  checkbox: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 1,
   },
 
   // ERROR
@@ -881,22 +1026,7 @@ const styles = StyleSheet.create({
     marginBottom: 22,
   },
 
-  errorText: {
-    color: "#C62828",
-    fontSize: 14,
-  },
 
   // FOOTER
-  footer: {
-    marginTop: 34,
-    textAlign: "center",
-    color: "#7E7383",
-    fontSize: 14,
-    lineHeight: 22,
-  },
 
-  footerLink: {
-    color: "#500088",
-    fontWeight: "700",
-  },
 });

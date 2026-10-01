@@ -23,7 +23,7 @@ export interface ManagedConnection {
   connId: string;
   deviceId: string;
   connectedAt: Date;
-  jti?: string;        // JWT ID — used to check revocation on heartbeat
+  sid: string;         // Session id — re-checked on heartbeat, closed on revocation
   tokenExp?: number;   // Token expiry (Unix seconds) — used for early eviction
 }
 
@@ -181,6 +181,25 @@ class ConnectionManager {
    */
   get userCount(): number {
     return this.userConnections.size;
+  }
+
+  /**
+   * Close every connection opened under a session that has just been revoked
+   * (logout, logout-all, password reset, account deletion). The ws "close"
+   * handler does the usual cleanup. Returns how many were closed.
+   */
+  closeBySession(sid: string): number {
+    let closed = 0;
+    for (const conn of this.connections.values()) {
+      if (conn.sid !== sid) continue;
+      try {
+        conn.ws.close(4001, "Session revoked");
+        closed++;
+      } catch {
+        // Best effort
+      }
+    }
+    return closed;
   }
 
   /**

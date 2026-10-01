@@ -1,10 +1,12 @@
 import { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
 import prisma from "../models/prisma.client";
+import { isSessionActive } from "../services/session.service";
 
 export interface AccessTokenPayload {
   sub: string;        // userId
   email: string;
+  sid?: string;       // session id — checked on every request
   iat?: number;
   exp?: number;
 }
@@ -61,6 +63,14 @@ export async function authenticate(
     return;
   }
 
+  // Logout / logout-all / password reset revoke the session; the token dies
+  // with it (VAPT M-003). Tokens without a sid predate sessions — the client
+  // refreshes on 401 and gets a session-bound one.
+  if (!payload.sid || !(await isSessionActive(payload.sid))) {
+    res.status(401).json({ success: false, message: "Session has been revoked. Please log in again." });
+    return;
+  }
+
   // Reject every request from a suspended/banned account — runs on every
   // authenticated call, so a ban takes effect on the user's very next request.
   try {
@@ -111,7 +121,10 @@ export async function optionalAuth(
     const payload = jwt.verify(token, getPublicKey(), {
       algorithms: ["RS256"],
     }) as AccessTokenPayload;
-    req.user = payload;
+    // A logged-out token is treated as anonymous, not as the user.
+    if (payload.sid && (await isSessionActive(payload.sid))) {
+      req.user = payload;
+    }
   } catch {
     // Fail silently on invalid token for optional auth
   }

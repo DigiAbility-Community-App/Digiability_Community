@@ -1,0 +1,448 @@
+DIGIABILITY COMMUNITY — INFRA TASKS FOR DEVOPS (ngo-devops repo + VPS)
+=====================================================================
+Owner: DevOps engineer. App/backend code changes are handled separately in
+the Digiability_Community repo. New items are appended per phase at the end.
+
+Last updated: 2026-10-01 (evening)
+
+STATUS AT A GLANCE
+------------------
+  DONE by DevOps (verified from outside on 2026-10-01):
+    1 DNS · 2 in-cluster URLs · 3 ingress/TLS/HSTS/redirects, /api/internal blocked
+    7 firewall (Hostinger, upstream) · 8 verification
+  DONE by the app team: release APK 1.0.1 with the HTTPS endpoints (see 6)
+  NEXT for DevOps:
+    6  NodePort -> ClusterIP (the APK is out — go ahead)
+    17 BACKEND RELEASE prerequisites — before the main-repo PR is merged
+  Website headers (5) are handled by the app team in the website repo.
+
+
+BACKGROUND
+----------
+VAPT finding M-001 (High): the Community mobile app calls its backend over
+plain HTTP straight to the server IP, so login tokens and chat messages cross
+the network unencrypted.
+
+Today the app talks to FOUR NodePorts on 187.127.191.28, not one gateway:
+
+  :30501  user-svc   auth / users REST
+  :30502  chat-svc   chat REST + native WebSocket at /ws  (all chat messages)
+  :30503  forum-svc  forum REST + socket.io at /socket.io/
+  :30504  admin      admin panel (Next.js)
+
+Each service needs its own hostname. One host with path routing does not work:
+/health exists on all of them and /api/moderation exists on both user-svc and
+chat-svc.
+
+Already in place (no action): the Traefik "letsencrypt" certResolver
+(TLS-ALPN-01, kube-system/traefik-helmchartconfig.yaml), externalTrafficPolicy:
+Local, postgres-external removed, ngo backend/frontend on ClusterIP.
+
+
+ORDER (important)
+-----------------
+  1. DNS
+  2. Pre-flight check of in-cluster URLs
+  3. Ingress + HTTPS, with the NodePorts STILL OPEN
+  4. Share the final URLs  ->  app team builds and releases the new APK
+  5. App team confirms     ->  NodePorts -> ClusterIP, then firewall
+  6. Verify
+
+Closing the NodePorts before the new APK is out breaks the current app for
+every user.
+
+
+1. DNS   [DONE]
+--------------------
+A records -> 187.127.191.28. (digiability.in is on GoDaddy, not Cloudflare,
+so the earlier proxy caveat did not apply.)
+
+  api.community.digiability.in    -> user-svc  4001
+  chat.community.digiability.in   -> chat-svc  4002  (WebSocket /ws)
+  forum.community.digiability.in  -> forum-svc 4003  (socket.io /socket.io/)
+  admin.community.digiability.in  -> admin     3001
+
+Create these BEFORE applying the ingress; otherwise Let's Encrypt validation
+fails and can hit its rate limit.
+
+  for h in api chat forum admin; do dig +short $h.community.digiability.in; done
+
+>>> Please confirm the final hostnames. The app's production config is
+    already set to the four above; if you pick different names, tell us.
+
+
+2. PRE-FLIGHT: in-cluster service URLs   [DONE — already cluster-internal]
+--------------------------------------
+The admin panel calls chat-svc /api/internal/* via CHAT_SVC_URL. If any of
+these env vars point at the public IP or a NodePort, they break in step 5.
+
+  for s in admin-secrets forum-svc-secrets user-svc-secrets chat-svc-secrets; do
+    echo "== $s"; kubectl -n communityapp get secret $s -o json \
+      | jq -r '.data|map_values(@base64d)|to_entries[]|"\(.key)=\(.value)"' \
+      | grep -E '187\.127|:30[0-9]{3}|_SVC_URL'; done
+
+USER_SVC_URL / CHAT_SVC_URL / FORUM_SVC_URL / NOTIF_SVC_URL should look like
+http://chat-svc.communityapp.svc.cluster.local:4002. If not, fix in Infisical.
+
+
+3. INGRESS: new file communityapp/ingress.yaml   [DONE]
+---------------------------------------------
+Same pattern as the root ingress.yaml:
+  - HTTP only redirects to HTTPS.
+  - HTTPS adds HSTS (max-age=31536000; includeSubDomains, no preload).
+  - /api/internal is NOT routed on the public chat host (admin reaches it
+    in-cluster).
+  - Traefik proxies WebSocket upgrades natively; no extra config needed.
+
+---8<---------------------------------------------------------------------
+# Public HTTPS entry point for the Digiability Community backend.
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: redirect-https
+  namespace: communityapp
+spec:
+  redirectScheme:
+    scheme: https
+    permanent: true
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: hsts
+  namespace: communityapp
+spec:
+  headers:
+    stsSeconds: 31536000
+    stsIncludeSubdomains: true
+    forceSTSHeader: true
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: communityapp-http
+  namespace: communityapp
+spec:
+  entryPoints:
+    - web
+  routes:
+    - match: "Host(`api.community.digiability.in`) || Host(`chat.community.digiability.in`) || Host(`forum.community.digiability.in`) || Host(`admin.community.digiability.in`)"
+      kind: Rule
+      middlewares:
+        - name: redirect-https
+      services:            # never reached; required by the CRD
+        - name: user-svc
+          port: 4001
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: communityapp
+  namespace: communityapp
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    - match: "Host(`api.community.digiability.in`)"
+      kind: Rule
+      middlewares: [{ name: hsts }]
+      services: [{ name: user-svc, port: 4001 }]
+    - match: "Host(`chat.community.digiability.in`) && !PathPrefix(`/api/internal`)"
+      kind: Rule
+      middlewares: [{ name: hsts }]
+      services: [{ name: chat-svc, port: 4002 }]
+    - match: "Host(`forum.community.digiability.in`)"
+      kind: Rule
+      middlewares: [{ name: hsts }]
+      services: [{ name: forum-svc, port: 4003 }]
+    - match: "Host(`admin.community.digiability.in`)"
+      kind: Rule
+      middlewares: [{ name: hsts }]
+      services: [{ name: admin, port: 3001 }]
+  tls:
+    certResolver: letsencrypt
+    domains:
+      - main: api.community.digiability.in
+        sans:
+          - chat.community.digiability.in
+          - forum.community.digiability.in
+          - admin.community.digiability.in
+---8<---------------------------------------------------------------------
+
+ArgoCD app "community-app" syncs communityapp/ automatically. To apply now:
+
+  kubectl apply -f communityapp/ingress.yaml
+  kubectl -n communityapp get ingressroute,middleware
+  kubectl -n kube-system logs deploy/traefik --since=10m | grep -iE 'acme|community'
+
+
+4. INFISICAL / SECRETS
+----------------------
+a) CORS: CLIENT_BASE_URL in /user-svc (and probably /chat-svc) is still the
+   placeholder "CHANGE_ME". API responses literally return
+   "Access-Control-Allow-Origin: CHANGE_ME". Set it to:
+       https://community.digiability.in
+   It is a SINGLE origin (the code passes it straight to cors()); a
+   comma-separated list will not work. The admin panel calls the services
+   server-side and does not need CORS; the mobile app never needs CORS.
+b) Admin panel public URL: if admin has a public-URL env var (e.g.
+   NEXT_PUBLIC_APP_URL), change it from http://187.127.191.28:30504 to
+   https://admin.community.digiability.in.
+c) Please check Infisical / k8s secrets for any other placeholder values
+   (CHANGE_ME, REPLACE, your_..., localhost).
+
+
+5. SECURITY HEADERS on community.digiability.in   [APP TEAM — website repo PR]
+-----------------------------------------------
+VAPT flagged missing CSP, HSTS and X-Frame-Options. This site is on Cloudflare
+Pages (digiability-community-website.pages.dev), NOT the VPS, so it can't be
+fixed in k8s. Add a "_headers" file to the website repo, or a Cloudflare
+Transform Rule:
+
+  /*
+    Strict-Transport-Security: max-age=31536000; includeSubDomains
+    X-Frame-Options: DENY
+    Content-Security-Policy: default-src 'self'; frame-ancestors 'none'   (tune for the site's assets)
+
+It also currently sends "Access-Control-Allow-Origin: *", which should go.
+
+
+6. CLOSE NODEPORTS   [GO AHEAD — APK 1.0.1 is out]
+-------------------------------------------------------------------------
+(The Hostinger firewall already blocks them; this is defence in depth.)
+In communityapp/user-svc.yaml, chat-svc.yaml, forum-svc.yaml and admin.yaml,
+change the Service from "type: NodePort" to "type: ClusterIP" and delete the
+"nodePort: 3050x" line. Example:
+
+  spec:
+    type: ClusterIP
+    selector:
+      app: user-svc
+    ports:
+      - protocol: TCP
+        port: 4001
+        targetPort: 4001
+
+Then check:  kubectl -n communityapp get svc   (all ClusterIP).
+notif-svc is already ClusterIP.
+
+
+7. FIREWALL on the VPS   [DONE — Hostinger firewall, 28 Sep]
+----------------------
+ufw is currently inactive. NOTE: "ufw deny 30000:32767" on its own does NOT
+block NodePorts. kube-proxy redirects that traffic in nat PREROUTING, before
+ufw's INPUT rules ever see it. The ClusterIP change in step 6 is what really
+closes them; the raw-table drop below adds a second layer.
+
+Allow SSH FIRST and keep the Hostinger browser console open in case of lockout.
+
+  IFACE=$(ip route get 1.1.1.1 | awk '{for(i=1;i<=NF;i++) if($i=="dev") print $(i+1)}')
+
+  ufw default deny incoming
+  ufw default allow outgoing
+  ufw allow 22/tcp
+  ufw allow 80/tcp
+  ufw allow 443/tcp
+  ufw allow from 10.42.0.0/16 to any     # k3s pod CIDR (required by k3s with ufw)
+  ufw allow from 10.43.0.0/16 to any     # k3s service CIDR
+  ufw deny 30000:32767/tcp
+  ufw deny 30000:32767/udp
+
+  cp /etc/ufw/before.rules /etc/ufw/before.rules.bak
+  cat > /tmp/raw.rules <<EOF
+  *raw
+  :PREROUTING ACCEPT [0:0]
+  -A PREROUTING -i $IFACE -p tcp --dport 30000:32767 -j DROP
+  -A PREROUTING -i $IFACE -p udp --dport 30000:32767 -j DROP
+  COMMIT
+  EOF
+  cat /tmp/raw.rules /etc/ufw/before.rules.bak > /etc/ufw/before.rules
+
+  ufw --force enable
+  ufw status verbose
+  iptables -t raw -S PREROUTING
+
+Side effects:
+  - 6443 (kube API) is no longer reachable from outside; kubectl over SSH still works.
+  - Infisical NodePort 30080 closes. The operator uses ClusterIP; the UI is
+    at https://infisical.digiability.in.
+  - The CI "Sync ArgoCD" step only needs port 22, which stays open.
+
+
+8. VERIFICATION  (run from outside the VPS)
+------------------------------------------
+  # HTTPS + valid cert + HSTS
+  for h in api chat forum admin; do curl -sSI https://$h.community.digiability.in/health | grep -iE '^HTTP|strict-transport'; done
+  openssl s_client -connect api.community.digiability.in:443 -servername api.community.digiability.in </dev/null 2>/dev/null | openssl x509 -noout -subject -ext subjectAltName -dates
+
+  # http:// only redirects (expect 308)
+  curl -sS -o /dev/null -w '%{http_code} -> %{redirect_url}\n' http://api.community.digiability.in/health
+
+  # Raw IP + NodePorts no longer answer (expect timeout / refused)
+  for p in 30501 30502 30503 30504; do curl -sS -m 5 -o /dev/null -w "$p %{http_code}\n" http://187.127.191.28:$p/health || echo "$p closed"; done
+
+  # Raw IP without a hostname doesn't reach the API (expect 404)
+  curl -sS -o /dev/null -w '%{http_code}\n' http://187.127.191.28/api/auth/me
+
+  # Internal chat route not public (expect 404)
+  curl -sS -o /dev/null -w '%{http_code}\n' https://chat.community.digiability.in/api/internal/groups
+
+  # Socket.io handshake over TLS (expect 0{"sid":...)
+  curl -sS "https://forum.community.digiability.in/socket.io/?EIO=4&transport=polling" | head -c 80
+
+
+=====================================================================
+PHASE 2/3 ADDITIONS  (2026-10-01: app HTTPS cutover + users/batch fix)
+=====================================================================
+
+9. DATABASE GRANT for user-svc
+------------------------------
+The fix for VAPT M-002 (POST /api/auth/users/batch) makes user-svc read two
+tables in the "chat" schema to check that the requester shares a conversation
+with the users they look up:
+
+  chat.conversation_members
+  chat.conversations
+  chat.group_invites
+
+Locally every service uses the same Postgres role, so this just works. Please
+check which role user-svc uses in prod (DATABASE_URL in Infisical /user-svc)
+and, if it differs from chat-svc's role, grant read access:
+
+  GRANT USAGE ON SCHEMA chat TO <user_svc_role>;
+  GRANT SELECT ON chat.conversation_members, chat.conversations, chat.group_invites TO <user_svc_role>;
+
+Without it, the endpoint returns a 500 after the next user-svc deploy.
+
+10. NO NEW INTERNAL ROUTE NEEDED
+--------------------------------
+/api/auth/users/batch has no service-to-service callers (only the mobile and
+web apps call it), so nothing new needs hiding from the ingress. Keep
+/api/internal excluded on the chat host as in step 3.
+
+
+=====================================================================
+PHASE 4 ADDITIONS  (2026-10-01: logout/session revocation + CORS hardening)
+=====================================================================
+These code changes are NOT deployed yet. Items 11-13 must be done BEFORE the
+next user-svc / chat-svc / forum-svc deploy, or the new images will refuse
+to start (11) or reject every chat request (13).
+
+11. CORS: NEW REQUIRED SECRET (replaces CLIENT_BASE_URL)
+--------------------------------------------------------
+In Infisical, for /user-svc, /chat-svc AND /forum-svc:
+
+  ADD     CORS_ALLOWED_ORIGINS=https://community.digiability.in,https://admin.community.digiability.in
+  DELETE  CLIENT_BASE_URL        (the "CHANGE_ME" one — no longer read)
+
+Rules the services enforce at startup when NODE_ENV=production (they exit
+with a clear log message otherwise): comma-separated, exact https origins,
+no "*", no paths, no CHANGE_ME / REPLACE / localhost / example values.
+Requests from any other browser origin get no CORS headers. The mobile app
+is not affected (native apps send no Origin).
+
+12. ACCESS TOKEN LIFETIME
+-------------------------
+Access tokens now last 10 minutes. If /user-svc in Infisical sets
+JWT_EXPIRES_IN, change it to 10m (or delete it — 10m is the default).
+
+13. DATABASE GRANT for chat-svc
+-------------------------------
+chat-svc now checks, on every request and WebSocket connection, that the
+user's login session is still active. Sessions live in user-svc's new table
+public.sessions. If chat-svc uses a different Postgres role than user-svc:
+
+  GRANT USAGE ON SCHEMA public TO <chat_svc_role>;
+  GRANT SELECT ON public.sessions TO <chat_svc_role>;
+
+forum-svc and user-svc already share the public schema — nothing needed.
+
+14. REDIS FOR forum-svc (recommended)
+-------------------------------------
+Add REDIS_URL to /forum-svc in Infisical (same value as chat-svc's). With
+it, a logout is enforced on the forum instantly; without it, the forum keeps
+accepting a logged-out token for up to 15 seconds. Verified locally both ways.
+
+15. DATABASE MIGRATION
+----------------------
+New user-svc migration: 20261002000000_add_sessions. It runs through the
+existing `prisma migrate deploy` hook. Additive only: creates "sessions",
+adds refresh_tokens."sessionId", and backfills one session per currently
+logged-in device — nobody is logged out by it. No data is dropped.
+
+16. PLACEHOLDER / WEAK SECRET SCAN
+----------------------------------
+Please run this on the VPS. It prints KEY NAMES only (never values) for any
+secret in the communityapp namespace that is empty or still looks like a
+placeholder:
+
+  for s in $(kubectl -n communityapp get secret -o name | grep -v 'service-account\|ghcr\|infisical-machine'); do
+    kubectl -n communityapp get $s -o json \
+      | jq -r --arg s "$s" '.data | to_entries[]
+          | select((.value|@base64d) | test("^$|CHANGE_ME|REPLACE|your[_-]|example|placeholder|localhost|127\\.0\\.0\\.1|changeme|xxx"; "i"))
+          | "\($s)  \(.key)"'
+  done
+
+Known so far: CLIENT_BASE_URL=CHANGE_ME (item 11). Keys most worth checking
+by eye, because the code has weak or empty fallbacks for them:
+  - JWT_SECRET (admin)            must be long random, NOT the .env.example text
+  - INTERNAL_API_SECRET (admin, user-svc, chat-svc, notif-svc)  admin falls
+                                  back to "" if unset; must be set and identical
+  - ADMIN_SEED_EMAIL / ADMIN_SEED_PASSWORD (admin)  should be unset once the
+                                  admin credentials store exists
+  - COOKIE_SECRET (user-svc)
+  - MAIL_USER / MAIL_PASS / EMAIL_FROM / MAIL_HOST (user-svc)
+  - USER_SVC_URL / CHAT_SVC_URL / FORUM_SVC_URL / NOTIF_SVC_URL  must be
+                                  cluster-internal (see item 2)
+  - NEXT_PUBLIC_APP_URL (admin)   should be https://admin.community.digiability.in
+  - OPENAI_API_KEY / GOOGLE_VISION_API_KEY (moderation)
+  - INCIDENT_WEBHOOK_URL / INCIDENT_ALERT_EMAIL
+  - DEBUG_AUTH                    must be unset in production
+
+
+=====================================================================
+17. BACKEND RELEASE — do these BEFORE the main-repo PR is merged
+=====================================================================
+Live still runs main @ ca7468c. The PR "VAPT remediation" (branch
+fix/vapt-m001-m002) carries the backend fixes: logout really revoking sessions
+(M-003), users/batch authorisation (M-002), CORS allowlist incl. the forum
+"reflects any origin" issue you flagged, consent notice, rate limits.
+Merging it deploys new user-svc / chat-svc / forum-svc images.
+
+a) CORS_ALLOWED_ORIGINS   [BLOCKER — services won't start without it]
+   For /user-svc, /chat-svc AND /forum-svc in Infisical:
+     CORS_ALLOWED_ORIGINS=https://community.digiability.in,https://admin.community.digiability.in
+   The new code no longer reads CLIENT_BASE_URL (the value you just set keeps
+   the CURRENT images correct — leave it until the new ones are live, then
+   delete it). Exact https origins only; no "*", no placeholders.
+
+b) JWT_EXPIRES_IN — set to 10m for /user-svc, or delete the key (10m default).
+
+c) Database grants — only if user-svc and chat-svc use DIFFERENT Postgres roles:
+     GRANT USAGE ON SCHEMA chat TO <user_svc_role>;
+     GRANT SELECT ON chat.conversation_members, chat.conversations, chat.group_invites TO <user_svc_role>;
+     GRANT USAGE ON SCHEMA public TO <chat_svc_role>;
+     GRANT SELECT ON public.sessions TO <chat_svc_role>;   (after the migration below)
+
+d) Migrations that run on the user-svc deploy (prisma migrate deploy), additive:
+     20260908000000_add_skill_trainer_fields
+     20260908010000_swap_skill_trainer_volunteer_roles
+     20261002000000_add_sessions   (creates "sessions", backfills current logins —
+                                    nobody is logged out)
+   forum-svc's schema mirrors the new table, so a forum `db push` won't drop it.
+
+e) Recommended: REDIS_URL for /forum-svc (same value as chat-svc), so a logout
+   is enforced on the forum instantly instead of within 15 s.
+
+f) Admin panel needs a redeploy from the same PR (CSP nonce, member-removal route).
+
+g) Housekeeping: delete NEXT_PUBLIC_API_URL=CHANGE_ME (dead config), and run the
+   placeholder scan in item 16.
+
+h) After the deploy, please verify:
+     curl -s -o /dev/null -w '%{http_code}\n' -X POST https://api.community.digiability.in/api/auth/check-email \
+       -H 'Content-Type: application/json' -d '{"email":"x@example.org"}'          # 200
+     curl -sI -H 'Origin: https://evil.example' https://forum.community.digiability.in/health \
+       | grep -i access-control-allow-origin                                       # nothing
+     curl -s -o /dev/null -w '%{http_code}\n' -X POST https://api.community.digiability.in/api/auth/logout-all   # 401 (route exists)

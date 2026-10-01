@@ -294,9 +294,8 @@ const GroupChatScreen = ({ navigation, route }: Props) => {
         formerEntries.forEach((h) => {
           const looked = userMap.get(h.userId);
           map[h.userId] = formatUserDisplayName({
-            name: looked?.name || "Unknown",
-            deletedAt: looked?.deletedAt ?? null,
-            isSuspended: looked?.isSuspended ?? null,
+            name: looked?.name ?? "",
+            unavailable: !looked,
             leftAt: h.leftAt,
             leftReason: h.leftReason,
           });

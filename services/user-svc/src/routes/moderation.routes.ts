@@ -9,6 +9,8 @@ import {
   deleteKeyword,
 } from "../services/keyword.service";
 import { KeywordAction, KeywordCategory, KeywordMatchType, KeywordSeverity, FlagStatus, ReportStatus } from "../generated/client";
+import { adminListGrievances, adminUpdateGrievance } from "../controllers/grievance.controller";
+import { adminListAppeals, adminDecideAppeal, adminClaimAppeal } from "../controllers/appeal.controller";
 
 // ─────────────────────────────────────────────────────
 // Moderation Routes (user-svc)
@@ -308,5 +310,18 @@ router.get(
     res.status(200).json({ success: true, data: { entries, total } });
   })
 );
+
+// ─── Grievances (IT Rules Rule 3(2)) ──────────────────
+// Acknowledgement within 24h and resolution within 15 days are published
+// commitments; these endpoints are what makes them measurable.
+router.get("/grievances", internalOnly, adminListGrievances);
+router.patch("/grievances/:id", internalOnly, adminUpdateGrievance);
+
+// ─── Appeals (Community Guidelines) ───────────────────
+// The service refuses a decision made by the admin who took the original
+// action, so the published "reviewed by someone not involved" holds.
+router.get("/appeals", internalOnly, adminListAppeals);
+router.patch("/appeals/:id", internalOnly, adminDecideAppeal);
+router.post("/appeals/:id/claim", internalOnly, adminClaimAppeal);
 
 export default router;

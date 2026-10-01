@@ -1,24 +1,35 @@
 import prisma from "../models/prisma.client";
 import { hashPassword, comparePassword } from "../utils/hash.util";
-import { signAccessToken } from "../utils/jwt.util";
 import { createError } from "../middleware/error.middleware";
 import { assertNotSuspended, isCurrentlySuspended } from "../utils/suspension.util";
 import {
   createEmailVerificationOtp,
   validateEmailVerificationOtp,
   deleteEmailVerificationOtp,
-  createRefreshToken,
+  createSession,
   createPasswordResetOtp,
   validatePasswordResetOtp,
   deletePasswordResetOtp,
-  revokeAllUserRefreshTokens,
+  revokeAllUserSessions,
+  broadcastSessionsEnded,
 } from "./token.service";
 import {
   sendVerificationOtpEmail,
   sendPasswordResetOtpEmail,
 } from "./email.service";
 import { auditLog } from "./audit.service";
-import { recordRegistrationConsents } from "./consent.service";
+import {
+  recordRegistrationConsents,
+  CURRENT_POLICY_VERSION,
+  CURRENT_CONSENT_NOTICE_VERSION,
+  needsPolicyReacceptance,
+  needsDataConsent,
+} from "./consent.service";
+import { eraseCrossServiceContent, recordErasureOutcome } from "./erasure.service";
+import { RETENTION_DAYS } from "../config/retention.config";
+import { checkAgeEligibility } from "../utils/age.util";
+import { maskEmailForDisplay } from "../utils/mask.util";
+import { checkMinorFlag } from "./profileService";
 import type {
   RegisterInput,
   LoginInput,
@@ -36,7 +47,8 @@ import { Role } from "../generated/client";
 
 export async function verifyEmailOtp(
   email: string,
-  otp: string
+  otp: string,
+  userAgent?: string
 ): Promise<LoginResult & { message: string }> {
   // 1. Find user by email
   const user = await prisma.user.findUnique({ where: { email } });
@@ -63,8 +75,7 @@ export async function verifyEmailOtp(
   // or forum-svc, which only verify the JWT signature. Minting only after
   // verification means no valid token can exist for an unverified account,
   // so every downstream service is protected without changing any of them.
-  const accessToken = signAccessToken({ sub: verifiedUser.id, email: verifiedUser.email });
-  const refreshToken = await createRefreshToken(verifiedUser.id);
+  const { accessToken, refreshToken } = await createSession(verifiedUser, userAgent);
 
   return {
     accessToken,
@@ -139,6 +150,10 @@ export interface LoginResult {
     roles: string[];
     profileComplete: boolean;
     isEmailVerified: boolean;
+    /** YYYY-MM-DD, or null for pre-age-gate accounts. Captured at signup and
+     *  reused to prefill the onboarding profile form so the user isn't asked
+     *  for their date of birth twice. */
+    dateOfBirth: string | null;
   };
   /** Only meaningful on the registration path — whether the verification
    *  OTP email actually sent. `undefined` for login, where no OTP is sent. */
@@ -163,6 +178,7 @@ function toAuthUser(user: {
   profileComplete: boolean;
   isEmailVerified: boolean;
   phoneNo?: string | null;
+  dateOfBirth?: Date | null;
 }) {
   return {
     id: user.id,
@@ -173,6 +189,10 @@ function toAuthUser(user: {
     profileComplete: user.profileComplete,
     isEmailVerified: user.isEmailVerified,
     phoneNo: user.phoneNo ?? null,
+    // Date-only (YYYY-MM-DD): the stored value is a UTC midnight, so slicing
+    // the ISO string avoids the local-timezone shift toISOString+format would
+    // introduce and keeps it comparable to what the client sent at signup.
+    dateOfBirth: user.dateOfBirth ? user.dateOfBirth.toISOString().slice(0, 10) : null,
   };
 }
 
@@ -180,7 +200,41 @@ export async function registerUser(
   input: RegisterInput,
   ip?: string
 ): Promise<RegisterResult> {
-  const { name, email, password, role, roles, phoneNo } = input as any;
+  const { name, email, password, role, roles, phoneNo, policyVersion, consentNoticeVersion, dateOfBirth } = input as any;
+
+  // ── Age gate (DPDP §9) ──────────────────────────────────
+  // The server is the gate: a request that bypasses the app entirely is
+  // rejected by the same rule the UI enforces. Previously checkMinorFlag only
+  // wrote an audit line and explicitly did not block, and date of birth was an
+  // optional profile field most accounts never filled in.
+  const dob = new Date(`${dateOfBirth}T00:00:00.000Z`);
+  const ageCheck = checkAgeEligibility(dob);
+  if (!ageCheck.eligible) {
+    auditLog("auth.register_blocked_underage", {
+      email,
+      detail: { age: ageCheck.age, reason: ageCheck.reason },
+    });
+    throw createError(ageCheck.reason, 400);
+  }
+
+  // A client on an old build might send acceptance of policy text the user
+  // was never actually shown. Rather than silently stamp today's version onto
+  // a stale acceptance, refuse the registration and tell the client to update.
+  if (policyVersion !== CURRENT_POLICY_VERSION) {
+    throw createError(
+      "The Terms of Use and Community Guidelines have been updated. Please refresh and review the latest version before continuing.",
+      409
+    );
+  }
+
+  // Same rule for the data-processing notice: consent only counts for the
+  // notice text the user was actually shown.
+  if (consentNoticeVersion !== CURRENT_CONSENT_NOTICE_VERSION) {
+    throw createError(
+      "Our data-processing notice has been updated. Please update the app and review it before continuing.",
+      409
+    );
+  }
 
   const existing = await prisma.user.findUnique({ where: { email } });
   if (existing) {
@@ -196,17 +250,30 @@ export async function registerUser(
     dbRoles = [role as Role];
   }
 
-  const userData: any = { name, email, password: hashedPassword, roles: dbRoles, isEmailVerified: false };
+  const userData: any = {
+    name,
+    email,
+    password: hashedPassword,
+    roles: dbRoles,
+    isEmailVerified: false,
+    dateOfBirth: dob,
+  };
   if (phoneNo && typeof phoneNo === 'string' && phoneNo.trim()) {
     userData.phoneNo = phoneNo.trim();
   }
 
-  const user = await prisma.user.create({ data: userData });
-
-  // Record mandatory DATA_PROCESSING consent at registration (DPDP §6)
-  recordRegistrationConsents(user.id, ip).catch((err) =>
-    console.error("[ConsentService] Failed to record registration consent:", err)
-  );
+  // User creation and consent recording happen in one transaction: a failure
+  // recording consent must not leave a created account with no consent row and
+  // an email that's now taken with no way to retry registration.
+  const user = await prisma.$transaction(async (tx) => {
+    const created = await tx.user.create({ data: userData });
+    // Records DATA_PROCESSING, TERMS_OF_USE and COMMUNITY_GUIDELINES (DPDP §6).
+    // Previously fire-and-forget outside any transaction, which meant a slow
+    // or failed write left no record at all while registration still reported
+    // success — defeating the point of a consent record.
+    await recordRegistrationConsents(created.id, ip, tx);
+    return created;
+  });
 
   auditLog("auth.register", { userId: user.id, email: user.email });
 
@@ -237,7 +304,7 @@ const MAX_LOGIN_ATTEMPTS = 10;
 // Lockout duration in minutes
 const LOCKOUT_MINUTES = 15;
 
-export async function loginUser(input: LoginInput): Promise<LoginResult> {
+export async function loginUser(input: LoginInput, userAgent?: string): Promise<LoginResult> {
   const { email, password } = input;
 
   // 1. Find user (select lockout fields)
@@ -248,6 +315,10 @@ export async function loginUser(input: LoginInput): Promise<LoginResult> {
       roles: true, profileComplete: true, isEmailVerified: true,
       loginAttempts: true, lockedUntil: true, deletedAt: true,
       isSuspended: true, suspendedUntil: true, suspensionReason: true,
+      // Returned to the client so the onboarding profile form can prefill it
+      // — without this the select would omit it and toAuthUser would report
+      // null for every logged-in user.
+      dateOfBirth: true,
     },
   });
   if (!user) throw createError("Invalid email or password", 400);
@@ -309,9 +380,8 @@ export async function loginUser(input: LoginInput): Promise<LoginResult> {
     data: { loginAttempts: 0, lockedUntil: null, lastSeen: new Date() },
   });
 
-  // 7. Sign access token + issue refresh token
-  const accessToken = signAccessToken({ sub: user.id, email: user.email });
-  const refreshToken = await createRefreshToken(user.id);
+  // 7. Start a session: access token (bound to it via `sid`) + refresh token
+  const { accessToken, refreshToken } = await createSession(user, userAgent);
 
   auditLog("auth.login_success", { userId: user.id, email: user.email });
 
@@ -377,14 +447,13 @@ export async function resetPassword(
   // 2. Hash new password
   const hashedPassword = await hashPassword(password);
 
-  // 3. Update password + revoke all refresh tokens (force re-login)
-  await Promise.all([
-    prisma.user.update({
-      where: { id: userId },
-      data: { password: hashedPassword },
-    }),
-    revokeAllUserRefreshTokens(userId),
-  ]);
+  // 3. Update password, then end every session on every device — access
+  // tokens included, not just refresh tokens (force re-login everywhere).
+  await prisma.user.update({
+    where: { id: userId },
+    data: { password: hashedPassword },
+  });
+  await revokeAllUserSessions(userId, "password_reset");
 
   // 4. Delete used reset OTP
   await deletePasswordResetOtp(userId);
@@ -400,8 +469,53 @@ export async function resetPassword(
 // resolve to "Deleted User" rather than erroring. The account cannot be
 // recovered or logged into after this point.
 
-export async function deleteAccount(userId: string): Promise<{ message: string }> {
+export async function deleteAccount(
+  userId: string,
+  password: string
+): Promise<{ message: string }> {
+  // Re-authenticate before destroying anything. A valid access token alone used
+  // to be enough, which meant an unlocked phone was sufficient to irreversibly
+  // delete someone's account.
+  const account = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { id: true, password: true, email: true, phoneNo: true, createdAt: true, deletedAt: true },
+  });
+  if (!account || account.deletedAt) {
+    throw createError("Account not found", 404);
+  }
+  const passwordValid = await comparePassword(password, account.password);
+  if (!passwordValid) {
+    auditLog("auth.account_deletion_denied", { userId });
+    throw createError("Incorrect password", 401);
+  }
+
+  // Collected before the transaction deletes them, so the revocation can be
+  // broadcast afterwards (instant 401s, and chat WebSockets dropped).
+  const endedSessions = await prisma.session.findMany({
+    where: { userId, revokedAt: null },
+    select: { id: true },
+  });
+
   await prisma.$transaction(async (tx) => {
+    // 0. Seal a minimal registration record BEFORE anonymising, because the
+    //    anonymisation below overwrites the very fields it has to preserve.
+    //    The Information Technology (Intermediary Guidelines) Rules 2021 require
+    //    registration information be retained for 180 days after cancellation.
+    //    Nothing else survives — see docs/legal/05.
+    const purgeAfter = new Date();
+    purgeAfter.setDate(purgeAfter.getDate() + RETENTION_DAYS.registrationRecords);
+    await tx.registrationRecord.upsert({
+      where: { userId },
+      create: {
+        userId,
+        email: account.email,
+        phoneNo: account.phoneNo,
+        registeredAt: account.createdAt,
+        purgeAfter,
+      },
+      update: {},
+    });
+
     // 1. Anonymise the user row — unique email keeps the constraint satisfied
     await tx.user.update({
       where: { id: userId },
@@ -409,6 +523,7 @@ export async function deleteAccount(userId: string): Promise<{ message: string }
         name: "Deleted User",
         email: `deleted_${userId}@digiability.deleted`,
         phoneNo: null,
+        dateOfBirth: null,
         deletedAt: new Date(),
         isEmailVerified: false,
         profileComplete: false,
@@ -445,6 +560,7 @@ export async function deleteAccount(userId: string): Promise<{ message: string }
 
     // 3. Revoke all auth tokens so existing sessions stop working immediately
     await tx.refreshToken.deleteMany({ where: { userId } });
+    await tx.session.deleteMany({ where: { userId } });
     await tx.emailVerificationToken.deleteMany({ where: { userId } });
     await tx.passwordResetToken.deleteMany({ where: { userId } });
 
@@ -461,40 +577,22 @@ export async function deleteAccount(userId: string): Promise<{ message: string }
   });
 
   auditLog("auth.account_deleted", { userId });
+  await broadcastSessionsEnded(userId, endedSessions.map((s) => s.id));
 
-  // 6. Best-effort: notify chat-svc to remove the user from all conversations.
-  //    Fire-and-forget — a failure here does not roll back the deletion.
-  const chatSvcUrl = process.env.CHAT_SVC_URL;
-  const internalSecret = process.env.INTERNAL_API_SECRET;
-  if (chatSvcUrl && internalSecret) {
-    fetch(`${chatSvcUrl}/api/internal/users/${userId}/memberships`, {
-      method: "DELETE",
-      headers: {
-        "x-internal-secret": internalSecret,
-        "x-internal-ts": String(Date.now()),
-      },
-    }).catch((err) => {
-      console.error("[deleteAccount] chat-svc membership cleanup failed:", err);
-    });
-  }
+  // 6. Erase content owned by the other services. Awaited and recorded, rather
+  //    than the fire-and-forget it used to be — a failure here is now visible
+  //    and retried by the retention worker instead of silently dropped.
+  const outcome = await eraseCrossServiceContent(userId);
+  await recordErasureOutcome(userId, outcome);
 
-  // 7. Best-effort: notify forum-svc to anonymise the user's forum content.
-  //    Forum posts are attributed to "Deleted User" rather than removed, to
-  //    preserve discussion threads. The authorId FK still resolves (soft-deleted user row).
-  const forumSvcUrl = process.env.FORUM_SVC_URL;
-  if (forumSvcUrl && internalSecret) {
-    fetch(`${forumSvcUrl}/api/internal/users/${userId}/content`, {
-      method: "DELETE",
-      headers: {
-        "x-internal-secret": internalSecret,
-        "x-internal-ts": String(Date.now()),
-      },
-    }).catch((err) => {
-      console.error("[deleteAccount] forum-svc content anonymisation failed:", err);
-    });
-  }
-
-  return { message: "Your account has been permanently deleted." };
+  // Deliberately not "permanently deleted": this is immediate anonymisation
+  // plus a sealed 180-day registration record the law requires us to keep.
+  // Claiming more than that would be untrue. See docs/legal/05.
+  return {
+    message:
+      "Your account has been deleted and your personal information erased. " +
+      "As Indian law requires, a minimal registration record is kept for 180 days and then destroyed.",
+  };
 }
 
 // ─── Get Current User ──────────────────────────────────
@@ -511,6 +609,7 @@ export async function getCurrentUser(userId: string) {
       profileComplete: true,
       lastSeen: true,
       isEmailVerified: true,
+      dateOfBirth: true,
       isSuspended: true,
       suspendedUntil: true,
       suspensionReason: true,
@@ -519,11 +618,30 @@ export async function getCurrentUser(userId: string) {
     },
   });
 
-  if (!user) throw new Error("User not found");
+  if (!user) throw createError("User not found", 404);
+
+  // Surfaced so the client can intercept with a re-acceptance prompt. This is
+  // also the annual-notice mechanism: bumping CURRENT_POLICY_VERSION puts
+  // every existing user back into this state on their next session restore.
+  const policyReacceptanceRequired = await needsPolicyReacceptance(userId);
+
+  // True until the user has consented to the CURRENT data-processing notice —
+  // including every account that predates the separate notice (DPDP §5/§6).
+  const dataConsentRequired = await needsDataConsent(userId);
+
+  // Accounts created before the age gate have no recorded date of birth,
+  // because it used to be an optional profile field. They are asked for it at
+  // the same interception point, so the population converges instead of
+  // drifting indefinitely (docs/legal/06 §2.4).
+  const dateOfBirthRequired = user.dateOfBirth === null;
+
   return {
     ...user,
     role: user.roles[0] || null,
     isSuspended: isCurrentlySuspended(user),
+    policyReacceptanceRequired,
+    dataConsentRequired,
+    dateOfBirthRequired,
   };
 }
 
@@ -571,31 +689,75 @@ export async function updateUserRole(userId: string, input: UpdateRoleInput) {
 }
 
 // ─── Batch User Lookup ─────────────────────────────────
-// Returns minimal user info (id, name, deletedAt, isSuspended) for a list of
-// IDs. Used by the mobile app to resolve participant names in
-// conversation lists without making N+1 requests. deletedAt lets
-// clients distinguish a soft-deleted account from a real user who
-// happens to be named "Deleted User". isSuspended lets clients render
-// "Name (Inactive)" for suspended-but-not-deleted accounts.
+// Resolves display names for users the requester is allowed to see
+// (VAPT M-002 / OWASP API1:2023). chat-svc stores only userIds, so clients
+// look names up here; without a check, any account could enumerate any other.
+//
+// A user is returned only if they are:
+//   • the requester themselves;
+//   • a current or former member of a conversation the requester is an
+//     active member of (participant lists, and group history showing
+//     people who left);
+//   • the invitee on an invite to a conversation the requester is an active
+//     admin of (reviewing invites and join requests — chat-svc only shows
+//     that list to admins; admin roles mirror chat-svc's hasAdminAccess:
+//     OWNER/ADMIN in groups, OWNER/CAREGIVER in Care Circles);
+//   • someone who invited the requester.
+// Soft-deleted accounts are never returned; clients show a missing id as
+// "This user no longer exists". Unauthorised ids are omitted rather than rejected with a
+// 403, so the response doesn't reveal whether an id shares a conversation.
+//
+// The filter runs in Postgres in one query. It reads chat-svc's tables in the
+// `chat` schema with raw SQL instead of Prisma models: declaring chat models
+// in this service's schema would let user-svc's `prisma db push` try to
+// manage tables it doesn't own.
 
-export async function getUsersByIds(ids: string[]) {
-  const uniqueIds = [...new Set(ids)];
-  if (uniqueIds.length === 0) return [];
-  if (uniqueIds.length > 100) {
-    throw createError("Too many IDs — max 100 per request", 400);
-  }
+export interface PublicUserDTO {
+  id: string;
+  name: string;
+}
 
-  const users = await prisma.user.findMany({
-    where: { id: { in: uniqueIds } },
-    select: {
-      id: true,
-      name: true,
-      deletedAt: true,
-      isSuspended: true,
-    },
-  });
+export async function getUsersByIds(requesterId: string, ids: string[]): Promise<PublicUserDTO[]> {
+  if (ids.length === 0) return [];
 
-  return users;
+  return prisma.$queryRaw<PublicUserDTO[]>`
+    SELECT u.id, u.name
+    FROM public.users u
+    WHERE u.id = ANY(${ids}::text[])
+      AND u."deletedAt" IS NULL
+      AND (
+        u.id = ${requesterId}
+        OR EXISTS (
+          SELECT 1
+          FROM chat.conversation_members mine
+          JOIN chat.conversations c ON c.id = mine."conversationId" AND c."deletedAt" IS NULL
+          JOIN chat.conversation_members theirs ON theirs."conversationId" = mine."conversationId"
+          WHERE mine."userId" = ${requesterId}
+            AND mine."leftAt" IS NULL
+            AND theirs."userId" = u.id
+        )
+        OR EXISTS (
+          SELECT 1
+          FROM chat.conversation_members mine
+          JOIN chat.conversations c ON c.id = mine."conversationId" AND c."deletedAt" IS NULL
+          JOIN chat.group_invites gi ON gi."conversationId" = mine."conversationId"
+          WHERE mine."userId" = ${requesterId}
+            AND mine."leftAt" IS NULL
+            AND (
+              mine.role = 'OWNER'
+              OR (c."subType" = 'CARE_CIRCLE' AND mine.role = 'CAREGIVER')
+              OR (c."subType" IS DISTINCT FROM 'CARE_CIRCLE' AND mine.role = 'ADMIN')
+            )
+            AND gi."inviteeId" = u.id
+        )
+        OR EXISTS (
+          SELECT 1
+          FROM chat.group_invites gi
+          WHERE gi."inviteeId" = ${requesterId}
+            AND gi."inviterId" = u.id
+        )
+      )
+  `;
 }
 
 // ─── Device Token ─────────────────────────────────────
@@ -653,5 +815,63 @@ export async function searchUsers(query: string, excludeUserId?: string) {
     orderBy: { name: "asc" },
   });
 
-  return users;
+  // Mask before returning. The member picker shows this under the name to tell
+  // two people with the same name apart, so it can't be dropped — but handing
+  // out full addresses to anyone who types a letter is a harvesting surface.
+  return users.map((u) => ({
+    ...u,
+    email: maskEmailForDisplay(u.email),
+  }));
+}
+
+// ─── Date-of-birth backfill ────────────────────────────
+// For accounts created before the age gate existed. Reached from the same
+// interception point as policy re-acceptance (docs/legal/06 §2.4).
+//
+// An under-18 declaration here is routed to the moderation queue rather than
+// deleting the account outright: the likeliest cause of a surprising date is a
+// typo, and Terms §2 commits to termination by decision, not automatically.
+
+export async function submitDateOfBirth(
+  userId: string,
+  dateOfBirth: string
+): Promise<{ eligible: boolean; message: string }> {
+  const existing = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { dateOfBirth: true },
+  });
+  if (!existing) throw createError("Account not found", 404);
+
+  // Write-once: this is an eligibility fact, not an editable preference. Letting
+  // it be rewritten would let a flagged account clear its own flag.
+  if (existing.dateOfBirth) {
+    throw createError(
+      "Your date of birth is already on record. Contact support if it needs correcting.",
+      409
+    );
+  }
+
+  const dob = new Date(`${dateOfBirth}T00:00:00.000Z`);
+  const check = checkAgeEligibility(dob);
+
+  if (!check.eligible && check.age !== null && check.age >= 0 && check.age <= 120) {
+    // A plausible date that happens to be under 18: record it and refer to a
+    // human. Storing it matters — otherwise the next prompt asks again and the
+    // account never resolves either way.
+    await prisma.user.update({ where: { id: userId }, data: { dateOfBirth: dob } });
+    await checkMinorFlag(userId, dob);
+    return {
+      eligible: false,
+      message:
+        "Thanks. Digiability Community is for people aged 18 and over, so our team will review your account. If this date is wrong, please contact support.",
+    };
+  }
+
+  if (!check.eligible) {
+    // Nonsense date — don't persist it, just ask again.
+    throw createError(check.reason, 400);
+  }
+
+  await prisma.user.update({ where: { id: userId }, data: { dateOfBirth: dob } });
+  return { eligible: true, message: "Thank you." };
 }

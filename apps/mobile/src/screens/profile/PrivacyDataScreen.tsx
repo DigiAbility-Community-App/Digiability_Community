@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { View, StyleSheet, ScrollView, Switch, Alert } from "react-native";
+import { useNavigation } from "@react-navigation/native";
 import { File, Paths } from "expo-file-system";
 import * as Sharing from "expo-sharing";
 import { useTheme } from "../../theme/ThemeContext";
@@ -8,6 +9,7 @@ import { AccessibleButton } from "../../components/shared/AccessibleButton";
 import ScreenWrapper from "../../components/layout/ScreenWrapper";
 import AppHeader from "../../components/layout/AppHeader";
 import { confirmDeleteAccount } from "../../utils/accountDeletion";
+import { DeleteAccountModal } from "../../components/account/DeleteAccountModal";
 import {
     ConsentRecord,
     ConsentType,
@@ -36,7 +38,7 @@ export default function PrivacyDataScreen() {
     const [consents, setConsents] = useState<ConsentRecord[]>([]);
     const [consentBusy, setConsentBusy] = useState<Partial<Record<ConsentType, boolean>>>({});
     const [exporting, setExporting] = useState(false);
-    const [deletingAccount, setDeletingAccount] = useState(false);
+    const [showDeleteModal, setShowDeleteModal] = useState(false);
 
     const cardBorder = highContrast
         ? { borderWidth: 2, borderColor: "#000000" }
@@ -56,6 +58,9 @@ export default function PrivacyDataScreen() {
     useEffect(() => {
         loadConsents();
     }, [loadConsents]);
+
+    const navigation = useNavigation<any>();
+    const dataProcessingRecord = consents.find((c) => c.consentType === "DATA_PROCESSING");
 
     const isAccepted = (type: ConsentType) =>
         consents.find((c) => c.consentType === type)?.accepted ?? false;
@@ -102,25 +107,68 @@ export default function PrivacyDataScreen() {
     };
 
     const handleDeleteAccount = () => {
-        confirmDeleteAccount({
-            onStart: () => setDeletingAccount(true),
-            onError: (message) => {
-                setDeletingAccount(false);
-                Alert.alert("Error", message);
-            },
-        });
+        // Two warnings first, then the password modal — the server requires
+        // re-authentication for this irreversible action.
+        confirmDeleteAccount({ onConfirmed: () => setShowDeleteModal(true) });
     };
 
     return (
         <ScreenWrapper>
-            <AppHeader title="Privacy & Data" />
+            <AppHeader title="My data & privacy" />
 
             <ScrollView
                 showsVerticalScrollIndicator={false}
                 contentContainerStyle={styles.scrollContent}
             >
+                {/* ── MY DATA (DPDP §11 access, §12 correction; erasure below) ── */}
+                <AccessibleText variant="overline" style={{ color: colors.subtext, marginBottom: 8 }} accessibilityRole="header">
+                    MY DATA
+                </AccessibleText>
+
+                <View style={[styles.card, { backgroundColor: colors.card }, cardBorder]}>
+                    <AccessibleText variant="body" style={{ color: colors.subtext, marginBottom: 12 }}>
+                        See everything we hold about you, download a copy, or correct it. Messages and
+                        forum posts live on separate services and aren't included — contact support if
+                        you need those too.
+                    </AccessibleText>
+                    <AccessibleButton
+                        accessibilityLabel="View my data"
+                        accessibilityHint="Shows the personal data we hold about you"
+                        onPress={() => navigation.navigate("MyData")}
+                    >
+                        View my data
+                    </AccessibleButton>
+                    <AccessibleButton
+                        variant="outline"
+                        accessibilityLabel="Download a copy of my data"
+                        accessibilityHint="Saves your personal data as a file you can keep or share"
+                        disabled={exporting}
+                        onPress={handleExport}
+                        style={styles.stackedBtn}
+                    >
+                        {exporting ? "Preparing download…" : "Download a copy"}
+                    </AccessibleButton>
+                    <AccessibleButton
+                        variant="outline"
+                        accessibilityLabel="Correct my details"
+                        accessibilityHint="Opens your profile so you can fix anything that's wrong"
+                        onPress={() => navigation.navigate("EditProfile")}
+                        style={styles.stackedBtn}
+                    >
+                        Correct my details
+                    </AccessibleButton>
+                    <AccessibleButton
+                        variant="secondary"
+                        accessibilityLabel="Read how we use your data"
+                        onPress={() => navigation.navigate("Legal", { doc: "data-processing-notice" })}
+                        style={styles.stackedBtn}
+                    >
+                        How we use your data
+                    </AccessibleButton>
+                </View>
+
                 {/* ── YOUR CONSENTS ── */}
-                <AccessibleText variant="overline" style={{ color: colors.subtext, marginBottom: 8 }}>
+                <AccessibleText variant="overline" style={{ color: colors.subtext, marginTop: 24, marginBottom: 8 }}>
                     YOUR CONSENTS
                 </AccessibleText>
 
@@ -133,6 +181,11 @@ export default function PrivacyDataScreen() {
                             <AccessibleText variant="body" style={{ color: colors.subtext, marginTop: 4 }}>
                                 Required to operate your account. To stop this, delete your account below.
                             </AccessibleText>
+                            {dataProcessingRecord?.acceptedAt ? (
+                                <AccessibleText variant="caption" style={{ color: colors.subtext, marginTop: 4 }}>
+                                    You agreed on {new Date(dataProcessingRecord.acceptedAt).toLocaleDateString()} (notice version {dataProcessingRecord.version}).
+                                </AccessibleText>
+                            ) : null}
                         </View>
                         <AccessibleText variant="caption" style={{ color: colors.subtext }}>
                             Required
@@ -167,28 +220,6 @@ export default function PrivacyDataScreen() {
                     </View>
                 ))}
 
-                {/* ── YOUR DATA ── */}
-                <AccessibleText variant="overline" style={{ color: colors.subtext, marginTop: 24, marginBottom: 8 }}>
-                    YOUR DATA
-                </AccessibleText>
-
-                <View style={[styles.card, { backgroundColor: colors.card }, cardBorder]}>
-                    <AccessibleText variant="body" style={{ color: colors.subtext, marginBottom: 12 }}>
-                        Download a copy of the personal data we hold about you, including your profile,
-                        mentor activity, and consent history. Messages and forum posts live on separate
-                        services and aren't included here — contact support if you need those too.
-                    </AccessibleText>
-                    <AccessibleButton
-                        variant="outline"
-                        accessibilityLabel="Export my data"
-                        accessibilityHint="Downloads a copy of your personal data as a file"
-                        disabled={exporting}
-                        onPress={handleExport}
-                    >
-                        {exporting ? "Preparing export…" : "Export my data"}
-                    </AccessibleButton>
-                </View>
-
                 {/* ── DANGER ZONE ── */}
                 <AccessibleText variant="overline" style={{ color: colors.subtext, marginTop: 24, marginBottom: 8 }}>
                     DANGER ZONE
@@ -196,21 +227,26 @@ export default function PrivacyDataScreen() {
 
                 <View style={[styles.card, { backgroundColor: colors.card }, cardBorder]}>
                     <AccessibleText variant="body" style={{ color: colors.subtext, marginBottom: 12 }}>
-                        Deleting your account deactivates it immediately and anonymises your profile,
-                        preferences, messages, and forum posts. Some records are retained, marked as
-                        deleted, as required by law.
+                        Deleting your account erases your profile, preferences, personal details and
+                        message content immediately. Your forum posts remain but are shown as written
+                        by "Deleted User". A minimal registration record is kept for 180 days because
+                        Indian law requires it, and is then destroyed.
                     </AccessibleText>
                     <AccessibleButton
                         variant="danger"
                         accessibilityLabel="Delete my account"
                         accessibilityHint="Deactivates and anonymises your account and personal data"
-                        disabled={deletingAccount}
                         onPress={handleDeleteAccount}
                     >
-                        {deletingAccount ? "Deleting account…" : "Delete my account"}
+                        Delete my account
                     </AccessibleButton>
                 </View>
             </ScrollView>
+
+            <DeleteAccountModal
+                visible={showDeleteModal}
+                onClose={() => setShowDeleteModal(false)}
+            />
         </ScreenWrapper>
     );
 }
@@ -237,5 +273,8 @@ const styles = StyleSheet.create({
     switchText: {
         flex: 1,
         paddingRight: 16,
+    },
+    stackedBtn: {
+        marginTop: 10,
     },
 });

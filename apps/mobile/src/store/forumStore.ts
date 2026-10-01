@@ -97,7 +97,7 @@ interface ForumState {
     questionId?: string;
     answerId?: string;
     reason: string;
-  }) => Promise<void>;
+  }) => Promise<{ referenceCode?: string } | undefined>;
   fetchQuestionSummary: (id: string) => Promise<void>;
   toggleBookmark: (questionId: string) => Promise<void>;
   fetchBookmarks: () => Promise<void>;
@@ -392,8 +392,11 @@ export const useForumStore = create<ForumState>((set, get) => ({
   reportContent: async (payload) => {
     set({ actionLoading: true, error: null });
     try {
-      await forumService.reportContent(payload);
+      // Return the created report so the caller can show the reference number
+      // the Community Guidelines promise. This used to discard the response.
+      const res = await forumService.reportContent(payload);
       set({ actionLoading: false });
+      return res?.data;
     } catch (err: any) {
       set({
         error: err.response?.data?.message || "Failed to send report",

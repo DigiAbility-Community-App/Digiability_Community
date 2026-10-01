@@ -79,7 +79,7 @@ io("http://localhost:4003", { auth: { token }, transports: ["websocket"] });
 Broadcast events: `question_created`, `question_deleted`, `question_reopened`, `answer_created`, `answer_updated`, `answer_deleted`, `answer_voted`, `answer_accepted`
 Per-user event: `notification`
 
-Socket.io CORS is `origin: "*"`, and the Express CORS reflects any origin — unlike user-svc/chat-svc, forum-svc is **not** restricted to a single `CLIENT_BASE_URL`.
+Express and Socket.io CORS use the same `CORS_ALLOWED_ORIGINS` allowlist as user-svc/chat-svc (`src/config/cors.ts`).
 
 > The **web app does not use forum realtime** — it is wired up on mobile only (`forumSocketService.ts`).
 

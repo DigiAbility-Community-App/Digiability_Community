@@ -6,6 +6,11 @@ import {
   withdrawConsentHandler,
   exportData,
 } from "../controllers/privacy.controller";
+import {
+  createAttestation,
+  listAttestations,
+  revokeAttestation,
+} from "../controllers/guardian.controller";
 
 // ─────────────────────────────────────────────────────
 // Privacy Routes — DPDP Act 2023 / GDPR
@@ -20,6 +25,13 @@ const router = Router();
 router.get("/consent", authenticate, listConsents);
 router.post("/consent", authenticate, updateConsent);
 router.delete("/consent/:type", authenticate, withdrawConsentHandler);
+
+// Guardian attestation for Care Circle members (DPDP §9).
+// NOTE: self-attested, not verified consent — see guardian.service's header
+// and docs/legal/06 §1.7 before treating this as satisfying §9.
+router.post("/guardian", authenticate, createAttestation);
+router.get("/guardian", authenticate, listAttestations);
+router.delete("/guardian/:id", authenticate, revokeAttestation);
 
 // Data portability / right to access (DPDP §11)
 router.get("/export", authenticate, exportData);

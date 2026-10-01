@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAdminAuth } from "@/lib/auth";
+import { requireAdminAuth, getAdminSession, getRequestIp } from "@/lib/auth";
+import { writeAudit } from "@/lib/audit";
+import {
+  preserveRemovedContent,
+  readQuestionForPreservation,
+} from "@/lib/preserveRemovedContent";
 import { dbPool } from "@/lib/db";
 
 export async function GET(request: NextRequest) {
@@ -78,13 +83,51 @@ export async function GET(request: NextRequest) {
   }
 }
 
-export async function DELETE(request: Request) {
+export async function DELETE(request: NextRequest) {
+  // This handler had NO authentication check while GET above did, and the
+  // middleware matcher excludes /api entirely — so any unauthenticated caller
+  // could soft-delete any forum question by POSTing an id. Verified exploitable
+  // before this fix.
+  const authError = await requireAdminAuth(request);
+  if (authError) return authError;
+  const actor = await getAdminSession(request);
+  const ip = getRequestIp(request);
+
   try {
     const { questionId } = await request.json();
+    if (!questionId || typeof questionId !== "string") {
+      return NextResponse.json(
+        { success: false, message: "questionId is required" },
+        { status: 400 }
+      );
+    }
+
+    // Snapshot before the soft-delete (IT Rules 3(1)(d)).
+    const original = await readQuestionForPreservation(questionId);
+    if (original) {
+      await preserveRemovedContent({
+        contentType: "FORUM_QUESTION",
+        contentId: questionId,
+        contentSnapshot: original.content,
+        authorId: original.authorId,
+        removedBy: actor?.email,
+        reason: "Removed from the forums admin page",
+      });
+    }
+
     await dbPool.query(
       `UPDATE forum_questions SET "deletedAt" = NOW() WHERE id = $1`,
       [questionId]
     );
+
+    await writeAudit({
+      adminEmail: actor?.email,
+      ipAddress: ip,
+      action: "delete_post",
+      targetType: "forum_question",
+      targetId: questionId,
+    });
+
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("Failed to delete question:", error);

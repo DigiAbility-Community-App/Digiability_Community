@@ -17,6 +17,30 @@ export interface AuthUser {
   fullName?: string;
   username?: string;
   phoneNo?: string | null;
+  /**
+   * YYYY-MM-DD, captured at signup as the 18+ eligibility gate. Null on
+   * accounts created before that gate existed. Used to prefill the onboarding
+   * profile form so the date of birth is never asked for twice.
+   */
+  dateOfBirth?: string | null;
+  /**
+   * True when the user must re-accept the Terms/Guidelines because the policy
+   * version changed. Bumping POLICY_VERSION puts every existing user into this
+   * state, which is also how the annual-notice requirement is met.
+   */
+  policyReacceptanceRequired?: boolean;
+  /**
+   * True until the user has consented to the current data-processing notice
+   * (docs/legal/07). Every account that predates the separate notice is asked
+   * once; bumping CONSENT_NOTICE_VERSION asks everyone again.
+   */
+  dataConsentRequired?: boolean;
+  /**
+   * True for accounts created before the age gate, which have no recorded date
+   * of birth. Asked for at the same interception point as re-acceptance so the
+   * population converges rather than drifting (docs/legal/06 §2.4).
+   */
+  dateOfBirthRequired?: boolean;
 }
 
 // Basic profile fields collected during onboarding (not yet in DB)

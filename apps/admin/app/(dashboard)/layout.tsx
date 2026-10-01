@@ -317,6 +317,18 @@ export default function DashboardLayout({
       <main className="flex-1 h-full min-w-0 w-full overflow-y-auto overflow-x-hidden bg-[#F6F6F6] transition-all duration-300">
         {children}
       </main>
+
+      <ConfirmModal
+        open={showLogoutConfirm}
+        title="Log out?"
+        message="You'll need to sign in again to access the admin panel."
+        confirmLabel="Log Out"
+        destructive
+        icon={LogOut}
+        busy={loggingOut}
+        onConfirm={handleLogout}
+        onCancel={() => setShowLogoutConfirm(false)}
+      />
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   View,
   StyleSheet,
@@ -15,11 +15,9 @@ import { ChatsStackParamList } from "@navigation/ChatsStack";
 import ScreenWrapper from "../../components/layout/ScreenWrapper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ArrowLeft, User, MessageCircle, Phone, Video, FileText, Ban, Flag } from "lucide-react-native";
-import {
-  submitReport,
-  REPORT_REASON_LABELS,
-  ReportReason,
-} from "@services/reportService";
+import { submitReport } from "@services/reportService";
+import { chatService } from "@services/chatService";
+import { REPORT_REASONS, ReportReason } from "../../constants/reportReasons";
 import { useTheme } from "../../theme/ThemeContext";
 import { AccessibleText } from "../../components/shared/AccessibleText";
 import { AccessibleButton } from "../../components/shared/AccessibleButton";
@@ -36,15 +34,6 @@ type Props = {
   route: RouteProp<ChatsStackParamList, "UserProfile">;
 };
 
-const REPORT_REASONS: ReportReason[] = [
-  "SPAM",
-  "HARASSMENT",
-  "HATE_SPEECH",
-  "INAPPROPRIATE_CONTENT",
-  "MISINFORMATION",
-  "IMPERSONATION",
-  "OTHER",
-];
 
 const UserProfileScreen = ({ navigation, route }: Props) => {
   const { userId, userName } = route.params;
@@ -52,6 +41,76 @@ const UserProfileScreen = ({ navigation, route }: Props) => {
   const { colors, highContrast } = useTheme();
   const [showReportSheet, setShowReportSheet] = useState(false);
   const [submittingReport, setSubmittingReport] = useState(false);
+  const [isBlocked, setIsBlocked] = useState(false);
+  const [blockBusy, setBlockBusy] = useState(false);
+
+  // Reflect existing block state so the button can offer Unblock. Without this
+  // the only way to reverse a block was to have never made it.
+  useEffect(() => {
+    let cancelled = false;
+    chatService
+      .getBlockedIds()
+      .then((ids) => {
+        if (!cancelled) setIsBlocked(ids.includes(userId));
+      })
+      .catch(() => {
+        // Non-fatal: the button still works, it just opens as "Block".
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [userId]);
+
+  const handleToggleBlock = () => {
+    if (blockBusy) return;
+
+    if (isBlocked) {
+      Alert.alert("Unblock user", `Unblock ${userName}? You will be able to message each other again.`, [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Unblock",
+          onPress: async () => {
+            setBlockBusy(true);
+            try {
+              await chatService.unblockUser(userId);
+              setIsBlocked(false);
+            } catch {
+              Alert.alert("Error", "Could not unblock this user. Please try again.");
+            } finally {
+              setBlockBusy(false);
+            }
+          },
+        },
+      ]);
+      return;
+    }
+
+    Alert.alert(
+      `Block ${userName}?`,
+      // Blocking is mutual on the server (isBlockedEitherWay), so say so rather
+      // than implying it only stops them contacting you.
+      "They won't be able to message you, and you won't be able to message them. You can undo this from Settings.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Block",
+          style: "destructive",
+          onPress: async () => {
+            setBlockBusy(true);
+            try {
+              await chatService.blockUser(userId);
+              setIsBlocked(true);
+              Alert.alert("Blocked", `You have blocked ${userName}.`);
+            } catch {
+              Alert.alert("Error", "Could not block this user. Please try again.");
+            } finally {
+              setBlockBusy(false);
+            }
+          },
+        },
+      ]
+    );
+  };
 
   // Standard card outline — subtle in normal mode, solid black under high
   // contrast — for card-like containers.
@@ -65,10 +124,14 @@ const UserProfileScreen = ({ navigation, route }: Props) => {
     setShowReportSheet(false);
     setSubmittingReport(true);
     try {
-      await submitReport({ targetType: "USER", targetId: userId, reason });
+      const { referenceCode } = await submitReport({
+        targetType: "USER",
+        targetId: userId,
+        reason,
+      });
       Alert.alert(
         "Report submitted",
-        "Thank you. Our moderation team will review this report.",
+        `Thank you. Our moderation team will review this report.\n\nReference: ${referenceCode}`,
         [{ text: "OK" }]
       );
     } catch {
@@ -188,14 +251,26 @@ const UserProfileScreen = ({ navigation, route }: Props) => {
         <View style={styles.dangerSection}>
           <AccessibleButton
             variant="danger"
-            accessibilityLabel="Block user"
-            accessibilityHint={`Blocks ${userName} from messaging you`}
+            accessibilityLabel={isBlocked ? "Unblock user" : "Block user"}
+            accessibilityHint={
+              isBlocked
+                ? `Lets you and ${userName} message each other again`
+                : `Stops you and ${userName} messaging each other`
+            }
             style={styles.dangerBtn}
+            onPress={handleToggleBlock}
+            disabled={blockBusy}
           >
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-              <Ban size={17} color={colors.white} strokeWidth={2} />
-              <AccessibleText variant="button" style={{ color: colors.white }}>Block User</AccessibleText>
-            </View>
+            {blockBusy ? (
+              <ActivityIndicator color={colors.white} />
+            ) : (
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                <Ban size={17} color={colors.white} strokeWidth={2} />
+                <AccessibleText variant="button" style={{ color: colors.white }}>
+                  {isBlocked ? "Unblock User" : "Block User"}
+                </AccessibleText>
+              </View>
+            )}
           </AccessibleButton>
           <AccessibleButton
             variant="danger"
@@ -233,15 +308,15 @@ const UserProfileScreen = ({ navigation, route }: Props) => {
             <AccessibleText variant="subtitle" style={[styles.reasonTitle, { color: colors.text, borderBottomColor: colors.border }]}>
               Why are you reporting {userName}?
             </AccessibleText>
-            {REPORT_REASONS.map((reason) => (
+            {REPORT_REASONS.map(({ key: reason, label }) => (
               <TouchableOpacity
                 key={reason}
                 style={[styles.reasonRow, { borderBottomColor: colors.border }]}
                 onPress={() => handleSelectReason(reason)}
                 accessibilityRole="button"
-                accessibilityLabel={REPORT_REASON_LABELS[reason]}
+                accessibilityLabel={label}
               >
-                <AccessibleText variant="body" style={[styles.reasonLabel, { color: colors.error }]}>{REPORT_REASON_LABELS[reason]}</AccessibleText>
+                <AccessibleText variant="body" style={[styles.reasonLabel, { color: colors.error }]}>{label}</AccessibleText>
               </TouchableOpacity>
             ))}
             <TouchableOpacity

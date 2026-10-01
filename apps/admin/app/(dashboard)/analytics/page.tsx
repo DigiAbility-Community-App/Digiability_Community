@@ -39,6 +39,19 @@ const ROLE_COLORS: Record<string, string> = {
   mentor: "#06b6d4",
 };
 
+// The DB Role enum predates the app's vocabulary: `student` is the app's
+// "Skill Trainer" and `volunteer` is its "Volunteer" (swapped by migration
+// 20260908010000). Without this the chart reads "student" to an admin.
+const ROLE_LABELS: Record<string, string> = {
+  pwd: "PwD",
+  caregiver: "Caregiver",
+  therapist: "Therapist",
+  ngo: "NGO",
+  volunteer: "Volunteer",
+  student: "Skill Trainer",
+  mentor: "Mentor",
+};
+
 export default function AnalyticsPage() {
   const [data, setData] = useState<Analytics | null>(null);
   const [loading, setLoading] = useState(true);
@@ -248,7 +261,7 @@ export default function AnalyticsPage() {
                 return (
                   <div key={r.role}>
                     <div className="flex justify-between items-center mb-1.5">
-                      <span className="text-sm font-semibold text-[#1A1C1C] capitalize">{r.role}</span>
+                      <span className="text-sm font-semibold text-[#1A1C1C] capitalize">{ROLE_LABELS[r.role] ?? r.role}</span>
                       <span className="text-xs font-bold text-[#7D7387]">{r.count} ({pct}%)</span>
                     </div>
                     <div className="h-2 bg-[#F3F3F3] rounded-full overflow-hidden">

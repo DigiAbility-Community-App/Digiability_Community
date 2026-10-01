@@ -15,8 +15,15 @@ import {
   searchUsers,
   registerDeviceToken,
   removeDeviceToken,
+  submitDateOfBirth,
 } from "../services/auth.service";
-import { rotateRefreshToken, revokeRefreshToken } from "../services/token.service";
+import {
+  rotateRefreshToken,
+  revokeSession,
+  revokeSessionByRefreshToken,
+  revokeAllUserSessions,
+} from "../services/token.service";
+import { verifyAccessTokenIgnoringExpiry } from "../utils/jwt.util";
 import {
   setRefreshTokenCookie,
   clearRefreshTokenCookie,
@@ -36,7 +43,7 @@ function attachRefreshToken(res: Response, refreshToken: string) {
 }
 
 // ─── POST /auth/register ───────────────────────────────
-// ─── GET /auth/check-email ─────────────────────────────
+// ─── POST /auth/check-email ────────────────────────────
 // Public: lets the signup form tell the user an address is already
 // registered while they type, instead of only after they submit the whole
 // form. This does confirm whether an email has an account — but registration
@@ -45,7 +52,9 @@ function attachRefreshToken(res: Response, refreshToken: string) {
 // expensive. Deliberately NOT used by forgot-password, which stays
 // non-committal on purpose.
 export const checkEmailHandler = asyncHandler(async (req: Request, res: Response) => {
-  const email = String(req.query.email ?? "").trim().toLowerCase();
+  // POST body, not a query string: an email in the URL ends up in access
+  // and proxy logs (VAPT: sensitive information in URL).
+  const email = String(req.body?.email ?? "").trim().toLowerCase();
 
   if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     res.status(400).json({
@@ -58,6 +67,8 @@ export const checkEmailHandler = asyncHandler(async (req: Request, res: Response
 
   const existing = await prisma.user.findUnique({
     where: { email },
+    // deletedAt matters: a soft-deleted account still occupies the unique
+    // email index, so registering it again would fail regardless.
     select: { id: true },
   });
 
@@ -71,10 +82,9 @@ export const checkEmailHandler = asyncHandler(async (req: Request, res: Response
 });
 
 export const register = asyncHandler(async (req: Request, res: Response) => {
-  const ip =
-    req.headers["x-forwarded-for"]?.toString().split(",")[0] ||
-    req.socket.remoteAddress;
-  const { user, otpEmailSent } = await registerUser(req.body, ip);
+  // req.ip honours `trust proxy`; raw X-Forwarded-For is client-controlled
+  // and ends up on the consent record.
+  const { user, otpEmailSent } = await registerUser(req.body, req.ip);
 
   // No tokens and no refresh cookie here — the session is issued by
   // /auth/verify-email once the OTP is confirmed. Handing out a session at
@@ -93,7 +103,7 @@ export const register = asyncHandler(async (req: Request, res: Response) => {
 export const verifyEmailHandler = asyncHandler(
   async (req: Request, res: Response) => {
     const { email, otp } = req.body;
-    const { accessToken, refreshToken, user, message } = await verifyEmailOtp(email, otp);
+    const { accessToken, refreshToken, user, message } = await verifyEmailOtp(email, otp, req.get("user-agent"));
 
     // Same cookie/header handling as the login path — this is now the point
     // where a session actually begins.
@@ -118,7 +128,7 @@ export const resendOtpHandler = asyncHandler(
 
 // ─── POST /auth/login ──────────────────────────────────
 export const login = asyncHandler(async (req: Request, res: Response) => {
-  const { accessToken, refreshToken, user } = await loginUser(req.body);
+  const { accessToken, refreshToken, user } = await loginUser(req.body, req.get("user-agent"));
 
   attachRefreshToken(res, refreshToken);
 
@@ -149,28 +159,47 @@ export const refresh = asyncHandler(async (req: Request, res: Response) => {
 });
 
 // ─── POST /auth/logout ─────────────────────────────────
+// Ends the caller's session: its access tokens stop working on their next
+// request and its refresh token can't be used again. Works without a valid
+// access token (expired, or already discarded by the client) by falling back
+// to the refresh token from the body, cookie or x-refresh-token header.
+// Always 200, so it can't be used to probe which tokens exist.
 export const logout = asyncHandler(async (req: Request, res: Response) => {
-  const rawRefreshToken =
-    getRefreshTokenFromCookie(req.cookies) ??
-    getRefreshTokenFromAuthHeader(req.headers.authorization);
+  let revoked = false;
 
-  // Extract the current access token so its JTI can be blocklisted immediately.
-  // The Authorization header here carries the access token (logout is a protected route).
-  const rawAccessToken = req.headers.authorization?.startsWith("Bearer ")
-    ? req.headers.authorization.slice(7)
-    : undefined;
+  const authHeader = req.headers.authorization;
+  if (authHeader?.startsWith("Bearer ")) {
+    try {
+      // Signature still verified; only expiry is ignored.
+      const { sid } = verifyAccessTokenIgnoringExpiry(authHeader.slice(7).trim());
+      if (sid) revoked = await revokeSession(sid, "logout");
+    } catch {
+      // Not a token we signed — ignore and try the refresh token.
+    }
+  }
 
-  if (rawRefreshToken) {
-    // revokeRefreshToken also adds the access token JTI to the Redis blocklist
-    await revokeRefreshToken(rawRefreshToken, rawAccessToken);
+  if (!revoked) {
+    const bodyToken =
+      typeof req.body?.refreshToken === "string" ? req.body.refreshToken.trim() : "";
+    const headerToken = req.get("x-refresh-token")?.trim() ?? "";
+    const rawRefreshToken =
+      bodyToken || headerToken || getRefreshTokenFromCookie(req.cookies);
+    if (rawRefreshToken) await revokeSessionByRefreshToken(rawRefreshToken, "logout");
   }
 
   clearRefreshTokenCookie(res);
+  res.status(200).json({ success: true, message: "Logged out successfully", data: {} });
+});
 
+// ─── POST /auth/logout-all ─────────────────────────────
+// Ends every session the user has, on every device.
+export const logoutAll = asyncHandler(async (req: Request, res: Response) => {
+  const count = await revokeAllUserSessions(req.user!.sub, "logout_all");
+  clearRefreshTokenCookie(res);
   res.status(200).json({
     success: true,
-    message: "Logged out successfully",
-    data: {},
+    message: "Logged out of all devices",
+    data: { sessionsEnded: count },
   });
 });
 
@@ -199,7 +228,15 @@ export const deleteAccountHandler = asyncHandler(
   async (req: Request, res: Response) => {
     // req.user is set by authenticate middleware
     const userId = req.user!.sub;
-    const result = await deleteAccount(userId);
+
+    // Re-authentication: a valid access token is no longer sufficient for an
+    // irreversible destructive action.
+    const { password } = req.body as { password?: string };
+    if (!password || typeof password !== "string") {
+      throw createError("Your password is required to delete your account.", 400);
+    }
+
+    const result = await deleteAccount(userId, password);
     clearRefreshTokenCookie(res);
     res.status(200).json({ success: true, message: result.message, data: {} });
   }
@@ -220,32 +257,10 @@ export const updateRoleHandler = asyncHandler(async (req: Request, res: Response
 });
 
 // ─── POST /auth/users/batch ────────────────────────────
-// Returns minimal user info ({ id, name }) for a list of IDs.
-// Used by chat screens to resolve participant display names.
-const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
+// Returns { id, name } for the requested users the caller is allowed to see.
+// Body is validated by BatchLookupSchema (UUIDs, max 50, deduplicated).
 export const batchLookupUsers = asyncHandler(async (req: Request, res: Response) => {
-  const { ids } = req.body;
-
-  if (!Array.isArray(ids) || ids.length === 0) {
-    res.status(400).json({
-      success: false,
-      message: "ids must be a non-empty array of user IDs",
-    });
-    return;
-  }
-
-  // Validate each ID is a proper UUID to prevent DB errors and enumeration abuse
-  const validIds = ids
-    .filter((id): id is string => typeof id === "string" && UUID_REGEX.test(id))
-    .slice(0, 100); // enforce cap
-
-  if (validIds.length === 0) {
-    res.status(400).json({ success: false, message: "No valid UUIDs provided" });
-    return;
-  }
-
-  const users = await getUsersByIds(validIds);
+  const users = await getUsersByIds(req.user!.sub, req.body.ids);
   res.status(200).json({ success: true, data: { users } });
 });
 
@@ -320,3 +335,19 @@ export const checkMaintenanceHandler = asyncHandler(async (_req: Request, res: R
     });
   }
 });
+
+// ── POST /api/auth/date-of-birth ──────────────────────
+// Backfill for accounts predating the age gate (docs/legal/06 §2.4).
+export const submitDateOfBirthHandler = asyncHandler(
+  async (req: Request, res: Response) => {
+    const userId = req.user!.sub;
+    const { dateOfBirth } = req.body as { dateOfBirth?: string };
+
+    if (!dateOfBirth || !/^\d{4}-\d{2}-\d{2}$/.test(dateOfBirth)) {
+      throw createError("Date of birth must be in YYYY-MM-DD format.", 400);
+    }
+
+    const result = await submitDateOfBirth(userId, dateOfBirth);
+    res.status(200).json({ success: true, message: result.message, data: { eligible: result.eligible } });
+  }
+);

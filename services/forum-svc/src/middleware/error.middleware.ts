@@ -31,8 +31,35 @@ export function errorHandler(
     message: err.isOperational
       ? err.message
       : "An unexpected error occurred. Please try again later.",
-    ...(isProduction ? {} : { stack: err.stack }),
+    // Only in explicit development — an unset NODE_ENV must not leak stacks.
+    ...(process.env.NODE_ENV === "development" ? { stack: err.stack } : {}),
   });
+}
+
+const GENERIC_ERROR_MESSAGE = "An unexpected error occurred. Please try again later.";
+
+/**
+ * For route handlers that catch their own errors instead of passing them to
+ * errorHandler. Client errors (createError, or any 4xx) keep their message;
+ * anything else is logged and replaced with a generic one, so database or
+ * library internals never reach the client.
+ */
+export function sendRouteError(
+  res: Response,
+  error: unknown,
+  fallbackMessage = GENERIC_ERROR_MESSAGE
+): void {
+  const err = (error ?? {}) as AppError;
+  const statusCode = typeof err.statusCode === "number" ? err.statusCode : 500;
+  const isClientError = statusCode >= 400 && statusCode < 500;
+
+  if (err.isOperational || isClientError) {
+    res.status(statusCode).json({ success: false, message: err.message || fallbackMessage });
+    return;
+  }
+
+  console.error("[Error] unhandled route error:", err.message, err.stack);
+  res.status(statusCode).json({ success: false, message: fallbackMessage });
 }
 
 export function notFoundHandler(req: Request, res: Response): void {
