@@ -46,6 +46,15 @@ export async function POST(
       );
     }
 
+    // chat-svc caps JSON bodies at 10kb; 2000 chars stays under it even for
+    // 3-byte scripts (Devanagari etc.) and matches the global broadcast cap.
+    if (trimmedSubject.length > 200 || trimmedMessage.length > 2000) {
+      return NextResponse.json(
+        { success: false, message: "Subject must be at most 200 characters and message at most 2000." },
+        { status: 400 }
+      );
+    }
+
     // 1. Verify group exists
     const groupRes = await dbPool.query(
       `SELECT id, name, "createdBy", "subType",
@@ -129,8 +138,6 @@ export async function POST(
       }, { status: 404 });
     }
 
-    const messageId = crypto.randomUUID();
-    const clientMessageId = crypto.randomUUID();
     const formattedContent = `📢 [${trimmedSubject}]\n\n${trimmedMessage}`;
     const msgMetadata = JSON.stringify({
       senderName: "DigiAbility Admin",
@@ -138,67 +145,90 @@ export async function POST(
       broadcast: true,
     });
 
-    // Get next sequence number
-    const seqRes = await dbPool.query(
-      `SELECT COALESCE(MAX("sequenceNo"), 0) + 1 AS "nextSeq" FROM chat.messages WHERE "conversationId" = $1`,
-      [id]
-    );
-    const nextSeq = parseInt(seqRes.rows[0]?.nextSeq, 10) || 1;
-
-    // 4. Insert message into group chat thread as DigiAbility Admin
-    await dbPool.query(`
-      INSERT INTO chat.messages (
-        id, "conversationId", "senderId", "clientMessageId",
-        "sequenceNo", content, type, status, metadata, "createdAt", "updatedAt"
-      ) VALUES ($1, $2, 'digiability-admin', $3, $4, $5, 'TEXT', 'PERSISTED', $6, NOW(), NOW())
-    `, [messageId, id, clientMessageId, nextSeq, formattedContent, msgMetadata]);
-
-    // 5. Update conversation last message preview
-    await dbPool.query(`
-      UPDATE chat.conversations
-      SET "lastMessageId" = $1,
-          "lastMessageText" = $2,
-          "lastMessageAt" = NOW(),
-          "updatedAt" = NOW()
-      WHERE id = $3
-    `, [messageId, formattedContent.slice(0, 120), id]);
-
-    // 6. Insert message recipients
-    for (const uId of targetUserIds) {
-      await dbPool.query(`
-        INSERT INTO chat.message_recipients (id, "messageId", "userId", status, "createdAt", "updatedAt")
-        VALUES ($1, $2, $3, 'PENDING', NOW(), NOW())
-        ON CONFLICT DO NOTHING
-      `, [crypto.randomUUID(), messageId, uId]);
+    // 4. Post the message through chat-svc.
+    // This used to INSERT into chat.messages with raw SQL, which skipped
+    // chat-svc's msg:persisted stream: online members never got a
+    // message.new event, so the admin saw "sent" while nothing appeared in
+    // the open chat. It also computed sequenceNo without chat-svc's advisory
+    // lock and wrote message/recipients/preview as separate statements.
+    // There is deliberately no direct-DB fallback — if chat-svc can't take
+    // the message, the admin must see a failure, not "sent successfully".
+    const chatSvcUrl = process.env.CHAT_SVC_URL;
+    const internalSecret = process.env.INTERNAL_API_SECRET;
+    if (!chatSvcUrl || !internalSecret) {
+      console.error("Group message: CHAT_SVC_URL / INTERNAL_API_SECRET not configured");
+      return NextResponse.json(
+        { success: false, message: "Chat service is not configured. The message was not sent." },
+        { status: 503 }
+      );
     }
 
-    // 7. Insert in-app notifications into forum_notifications
+    let chatRes: Response;
+    try {
+      chatRes = await fetch(`${chatSvcUrl}/api/internal/groups/${encodeURIComponent(id)}/announcements`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-internal-secret": internalSecret,
+          "x-internal-ts": String(Date.now()),  // required by internalAuth replay-protection
+        },
+        body: JSON.stringify({ content: formattedContent, metadata: msgMetadata }),
+      });
+    } catch (svcErr) {
+      console.error("Group message: chat-svc unreachable:", svcErr);
+      return NextResponse.json(
+        { success: false, message: "Could not reach the chat service. The message was not sent." },
+        { status: 502 }
+      );
+    }
+
+    const chatData = await chatRes.json().catch(() => null) as
+      | { success?: boolean; message?: string; data?: { messageId: string; liveDelivered: boolean } }
+      | null;
+    if (!chatRes.ok || !chatData?.success || !chatData.data) {
+      console.error(`Group message: chat-svc returned ${chatRes.status}`, chatData);
+      return NextResponse.json(
+        {
+          success: false,
+          message: chatData?.message
+            ? `${chatData.message} The message was not sent.`
+            : `Chat service error (${chatRes.status}). The message was not sent.`,
+        },
+        // Pass through only the group-state errors (404 deleted, 409
+        // suspended). Anything else — notably 401/403 from internalAuth on a
+        // secret mismatch — is our misconfiguration, not the admin's session.
+        { status: chatRes.status === 404 || chatRes.status === 409 ? chatRes.status : 502 }
+      );
+    }
+    const { liveDelivered } = chatData.data;
+
+    // 5. In-app notifications for the target audience (one statement, so it
+    // either all lands or none of it does).
     const notifType = messageType === "Urgent Alert" ? "ADMIN_ALERT" : "GROUP_ANNOUNCEMENT";
     const notifTitle = `📢 ${groupName}: ${trimmedSubject}`;
     const notifBody = trimmedMessage;
 
-    for (const uId of targetUserIds) {
-      await dbPool.query(`
-        INSERT INTO forum_notifications (id, "userId", type, title, message, read, "relatedId", "createdAt")
-        VALUES ($1, $2, $3, $4, $5, false, $6, NOW())
-      `, [crypto.randomUUID(), uId, notifType, notifTitle, notifBody, id]);
-    }
+    await dbPool.query(`
+      INSERT INTO forum_notifications (id, "userId", type, title, message, read, "relatedId", "createdAt")
+      SELECT gen_random_uuid()::text, uid, $2, $3, $4, false, $5, NOW()
+      FROM unnest($1::text[]) AS uid
+    `, [targetUserIds, notifType, notifTitle, notifBody, id]);
 
-    // 8. Send push notifications via Expo push service
+    // 6. Send push notifications via Expo push service
     const pushedCount = await sendBroadcastPush(targetUserIds, notifTitle, notifBody, {
       type: "group_message",
       conversationId: id,
       groupId: id,
     });
 
-    // 9. Log in admin notification logs
+    // 7. Log in admin notification logs
     const audienceLabel = `${groupName} (${sendToArr.join(", ")})`;
     await dbPool.query(`
       INSERT INTO admin_notification_logs (title, message, type, audience, sent_count)
       VALUES ($1, $2, $3, $4, $5)
     `, [notifTitle, notifBody, notifType, audienceLabel, targetUserIds.length]);
 
-    // 10. Audit log
+    // 8. Audit log
     await writeAudit({ adminEmail: actor?.email, ipAddress: ip,
       action: "send_group_message",
       reason: `Broadcasted "${trimmedSubject}" (${messageType || 'General Update'}) to ${targetUserIds.length} members in "${groupName}" (Audience: ${sendToArr.join(', ')})`,
@@ -206,9 +236,12 @@ export async function POST(
 
     return NextResponse.json({
       success: true,
-      message: `Message broadcasted successfully to ${targetUserIds.length} members of "${groupName}".`,
+      message: liveDelivered
+        ? `Message broadcasted successfully to ${targetUserIds.length} members of "${groupName}".`
+        : `Message saved to "${groupName}" and notifications sent to ${targetUserIds.length} members, but live delivery failed — members will see it the next time they open the chat.`,
       sentTo: targetUserIds.length,
       pushedTo: pushedCount,
+      liveDelivered,
     });
   } catch (error: any) {
     console.error("Group Message send error:", error);

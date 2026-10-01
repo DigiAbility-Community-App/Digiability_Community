@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, useMemo } from "react";
+import React, { useState, useCallback, useMemo } from "react";
 import {
   View,
   StyleSheet,
@@ -48,12 +48,16 @@ export default function EventsScreen() {
   const [activeCategories, setActiveCategories] = useState<EventCategory[]>([]);
   const [categoriesLoaded, setCategoriesLoaded] = useState(false);
 
-  useEffect(() => {
-    fetchEventCategories().then((cats) => {
-      setActiveCategories(cats);
-      setCategoriesLoaded(true);
-    });
-  }, []);
+  const loadCategories = async () => {
+    const cats = await fetchEventCategories();
+    setActiveCategories(cats);
+    setCategoriesLoaded(true);
+    // Drop a selected chip whose category was just deactivated, or the list
+    // would stay filtered to a category that no longer has a chip.
+    setSelectedCategory((current) =>
+      current === "all" || cats.some((c) => c.id === current) ? current : "all"
+    );
+  };
 
   const loadEvents = async (showLoading = true) => {
     try {
@@ -68,16 +72,20 @@ export default function EventsScreen() {
     }
   };
 
-  // Reload events when screen comes into focus
+  // Reload events and categories when the screen comes into focus. The tab
+  // stays mounted, so a mount-only category fetch never saw a category being
+  // deactivated (or reactivated) in Master Data until the app restarted.
   useFocusEffect(
     useCallback(() => {
       loadEvents(true);
+      loadCategories();
     }, [])
   );
 
   const onRefresh = () => {
     setRefreshing(true);
     loadEvents(false);
+    loadCategories();
   };
 
   // Category chips are driven entirely by Master Data (Active only) — no

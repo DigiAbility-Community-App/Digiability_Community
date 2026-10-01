@@ -72,20 +72,42 @@ export async function handleMessageSend(
 
   try {
     // ── 2. Verify membership ───────────────────────────────────
+    // isMember() is false for a soft-deleted conversation too; say which, so
+    // a member of a just-deleted group isn't told they aren't a member.
     const isMember = await conversationRepository.isMember(conversationId, userId);
     if (!isMember) {
+      const deleted = !(await conversationRepository.isActive(conversationId));
       sendAck(ws, {
         clientMessageId,
         messageId: "",
         sequenceNo: 0,
         status: "rejected",
-        reason: "You are not a member of this conversation",
+        reason: deleted
+          ? "This group has been deleted. You can't send messages here."
+          : "You are not a member of this conversation",
         timestamp: Date.now(),
       }, requestId);
       return;
     }
 
     const conversation = await conversationRepository.getById(conversationId);
+
+    // ── 2a. Deleted-conversation gate ──────────────────────────
+    // getById() returns null for a soft-deleted conversation. Every gate
+    // below is conditional on `conversation`, so without this a send to a
+    // deleted group skipped all of them and was persisted.
+    if (!conversation) {
+      logger.info("Message rejected — conversation deleted", { userId, conversationId });
+      sendAck(ws, {
+        clientMessageId,
+        messageId: "",
+        sequenceNo: 0,
+        status: "rejected",
+        reason: "This group has been deleted. You can't send messages here.",
+        timestamp: Date.now(),
+      }, requestId);
+      return;
+    }
 
     // ── 2a-bis. Group suspension gate ──────────────────────────
     // Runs BEFORE the admin permission gate on purpose: a suspension is a

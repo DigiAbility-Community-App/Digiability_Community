@@ -183,7 +183,13 @@ export default function ContactSupportScreen() {
     <ScreenWrapper>
       <AppHeader
         title="Contact Support"
-        onBackPress={() => navigation.goBack()}
+        // Fall back to the Profile tab (where this screen is opened from) when
+        // there's no history to go back to, e.g. after a deep link.
+        onBackPress={() =>
+          navigation.canGoBack()
+            ? navigation.goBack()
+            : (navigation as any).navigate("MainTabs", { screen: "HomeProfile" })
+        }
       />
 
       <KeyboardAvoidingView

@@ -9,6 +9,7 @@ import {
   adminCreateGroup,
   adminRemoveMember,
   adminTransferOwnership,
+  adminPostAnnouncement,
 } from "../controllers/internal.controller";
 
 // ─────────────────────────────────────────────────────────────
@@ -60,5 +61,10 @@ router.delete("/groups/:conversationId/members/:userId", adminRemoveMember);
 // POST /api/internal/groups/:conversationId/transfer-ownership
 // Called by the admin panel to reassign a group's OWNER. Body: { newOwnerId }.
 router.post("/groups/:conversationId/transfer-ownership", adminTransferOwnership);
+
+// POST /api/internal/groups/:conversationId/announcements
+// Called by the admin panel to post an announcement into a group chat through
+// the normal persist + delivery pipeline. Body: { content, metadata? }.
+router.post("/groups/:conversationId/announcements", adminPostAnnouncement);
 
 export default router;

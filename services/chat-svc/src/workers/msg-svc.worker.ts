@@ -12,6 +12,7 @@ import "dotenv/config";
 import Redis from "ioredis";
 import { logger } from "../config/logger";
 import { messageRepository } from "../repositories/message.repository";
+import { conversationRepository } from "../repositories/conversation.repository";
 import { publishMessagePersisted, ensureConsumerGroups } from "../streams/producer";
 import { enqueueForClassification, extractImageUrl } from "../moderation/classify-queue";
 import {
@@ -109,6 +110,18 @@ async function processEntry(
   });
 
   try {
+    // The send handler already rejects deleted conversations, but a group can
+    // be deleted between that ACK and this worker picking the entry up. Drop
+    // the message rather than persisting it into a deleted group.
+    if (!(await conversationRepository.isActive(event.conversationId))) {
+      logger.warn("Dropping message for deleted conversation", {
+        messageId: event.messageId,
+        conversationId: event.conversationId,
+      });
+      await redis.xack(STREAMS.MESSAGE_CREATED, CONSUMER_GROUPS.MSG_SVC, entryId);
+      return;
+    }
+
     const persisted = await messageRepository.persistMessage({
       messageId: event.messageId,
       conversationId: event.conversationId,

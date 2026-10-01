@@ -2,6 +2,23 @@ import { Request, Response, NextFunction } from "express";
 import prisma from "../models/prisma.client";
 
 /**
+ * What mobile may see: published events whose category is not deactivated in
+ * Master Data. Filtering on "not inactive" rather than "is active" keeps
+ * legacy rows whose category is free text from before the master-data id
+ * backfill — those have no row in event_categories at all.
+ */
+async function visibleEventsWhere() {
+  const inactive = await prisma.eventCategory.findMany({
+    where: { status: { not: "Active" } },
+    select: { id: true },
+  });
+  return {
+    status: "published",
+    ...(inactive.length > 0 ? { category: { notIn: inactive.map((c) => c.id) } } : {}),
+  };
+}
+
+/**
  * Get all events
  * GET /api/events
  */
@@ -11,7 +28,7 @@ export async function getEvents(req: Request, res: Response, next: NextFunction)
     const cursor = req.query.cursor as string | undefined;
 
     const events = await prisma.event.findMany({
-      where: { status: "published" },
+      where: await visibleEventsWhere(),
       orderBy: { createdAt: "desc" },
       take: limit + 1,
       ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
@@ -41,8 +58,10 @@ export async function getEventById(req: Request, res: Response, next: NextFuncti
   try {
     const { id } = req.params;
 
-    const event = await prisma.event.findUnique({
-      where: { id },
+    // Same visibility rule as the feed — a deep link or notification must not
+    // open an unpublished event, or one in a deactivated category.
+    const event = await prisma.event.findFirst({
+      where: { id, ...(await visibleEventsWhere()) },
     });
 
     if (!event) {
