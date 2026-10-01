@@ -45,7 +45,7 @@ The chat WebSocket URL is derived from `VITE_CHAT_SVC_URL` by swapping the schem
 
 ### Two gotchas when pointing at a live backend
 
-1. **CORS is single-origin.** user-svc (when `NODE_ENV=production`) and chat-svc (always) allow exactly **one** origin — their `CLIENT_BASE_URL`. It must exactly match the origin this app is served from, or every request is blocked.
+1. **CORS is an allowlist.** user-svc, chat-svc and forum-svc only answer browsers whose origin is listed in their `CORS_ALLOWED_ORIGINS`. This app's exact origin must be in that list, or every request is blocked.
 2. **The refresh cookie needs HTTPS.** With `NODE_ENV=production` the refresh cookie is set `Secure`, so browsers drop it over plain `http://` and the session silently fails to restore. Serve the backend over HTTPS.
 
 ---

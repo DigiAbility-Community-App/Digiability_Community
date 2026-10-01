@@ -24,6 +24,8 @@ const Register = () => {
   // This form previously had no terms notice at all — not even the passive
   // caption the mobile app showed. Registration is now gated on it.
   const [acceptedTerms, setAcceptedTerms] = useState(false);
+  // Separate, unticked consent to the data-processing notice (DPDP §5/§6).
+  const [acceptedDataProcessing, setAcceptedDataProcessing] = useState(false);
   // Digiability is an 18+ platform (DPDP §9). The server is the real gate.
   const [dateOfBirth, setDateOfBirth] = useState('');
 
@@ -72,6 +74,10 @@ const Register = () => {
     }
     if (!acceptedTerms) {
       setError('Please accept the Terms of Use and Community Guidelines to continue.');
+      return;
+    }
+    if (!acceptedDataProcessing) {
+      setError('Please consent to the processing of your data to create an account.');
       return;
     }
 
@@ -217,10 +223,33 @@ const Register = () => {
         </label>
       </div>
 
+      <div className="form-group">
+        <label
+          htmlFor="acceptedDataProcessing"
+          style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', cursor: 'pointer', lineHeight: 1.5 }}
+        >
+          <input
+            id="acceptedDataProcessing"
+            type="checkbox"
+            checked={acceptedDataProcessing}
+            onChange={(e) => setAcceptedDataProcessing(e.target.checked)}
+            disabled={isLoading}
+            style={{ marginTop: '3px', flexShrink: 0 }}
+          />
+          <span>
+            I consent to Digiability processing my personal data, including any disability
+            information I choose to share, as described in{' '}
+            <Link to="/data-processing-notice" target="_blank" className="auth-link">
+              How we use your data
+            </Link>
+          </span>
+        </label>
+      </div>
+
       <button
         type="submit"
         className="btn-primary"
-        disabled={isLoading || !acceptedTerms}
+        disabled={isLoading || !acceptedTerms || !acceptedDataProcessing}
         aria-busy={isLoading}
       >
         {isLoading ? 'Creating Account...' : 'Create Account'}

@@ -1,6 +1,6 @@
 import apiClient from './apiClient';
 import { useAuthStore, type User } from '../store/authStore';
-import { POLICY_VERSION } from '../legal/legal-docs.generated';
+import { POLICY_VERSION, CONSENT_NOTICE_VERSION } from '../legal/legal-docs.generated';
 
 // Keep in sync with apps/mobile/src/services/authService.ts. Skill Trainer
 // stores as `student` and Volunteer as `volunteer` — swapped by migration
@@ -60,6 +60,9 @@ export const authService = {
       password,
       acceptedTerms: true,
       policyVersion: POLICY_VERSION,
+      // Separate consent to the data-processing notice — its own checkbox.
+      acceptedDataProcessing: true,
+      consentNoticeVersion: CONSENT_NOTICE_VERSION,
       // Required — Digiability is an 18+ platform (DPDP §9).
       dateOfBirth,
     });

@@ -2,7 +2,43 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { verifyJWT } from "./lib/jwt";
 
+// ─── Strict CSP, report-only for now ──────────────────────────────────────
+// A per-request nonce lets Next.js mark its own <script> tags, so the policy
+// can drop 'unsafe-inline' and rely on 'strict-dynamic'. Next reads the nonce
+// from the *request's* Content-Security-Policy header, so it is set there;
+// the browser gets the same policy as Content-Security-Policy-Report-Only.
+// next.config.js keeps enforcing the looser baseline. Once this produces no
+// violations, send it as Content-Security-Policy and drop the baseline.
+function strictCsp(nonce: string): string {
+  const isDev = process.env.NODE_ENV !== "production";
+  return [
+    "default-src 'self'",
+    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${isDev ? " 'unsafe-eval'" : ""}`,
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: blob:",
+    "font-src 'self'",
+    `connect-src 'self'${isDev ? " ws: wss:" : ""}`,
+    "frame-ancestors 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    "object-src 'none'",
+  ].join("; ");
+}
+
 export async function middleware(request: NextRequest) {
+  const nonce = btoa(crypto.randomUUID());
+  const policy = strictCsp(nonce);
+  const withCsp = (response: NextResponse): NextResponse => {
+    response.headers.set("Content-Security-Policy-Report-Only", policy);
+    return response;
+  };
+  const next = (): NextResponse => {
+    const headers = new Headers(request.headers);
+    headers.set("x-nonce", nonce);
+    headers.set("Content-Security-Policy", policy);
+    return withCsp(NextResponse.next({ request: { headers } }));
+  };
+
   const { pathname } = request.nextUrl;
   const sessionCookie = request.cookies.get("admin-session");
   
@@ -11,13 +47,13 @@ export async function middleware(request: NextRequest) {
     // JWT_SECRET is not set — deny all access to force proper configuration.
     // Never redirect /login to itself, or every request 307-loops forever.
     if (pathname === "/login") {
-      return NextResponse.next();
+      return next();
     }
     if (pathname === "/security") {
-      return NextResponse.next();
+      return next();
     }
     const loginUrl = new URL("/login", request.url);
-    return NextResponse.redirect(loginUrl);
+    return withCsp(NextResponse.redirect(loginUrl));
   }
   let isValid = false;
 
@@ -41,18 +77,18 @@ export async function middleware(request: NextRequest) {
     if (sessionCookie) {
       response.cookies.delete("admin-session");
     }
-    return response;
+    return withCsp(response);
   }
 
   // If already logged in and visiting login, redirect to dashboard
   if (pathname === "/login") {
     if (isValid) {
       const dashboardUrl = new URL("/dashboard", request.url);
-      return NextResponse.redirect(dashboardUrl);
+      return withCsp(NextResponse.redirect(dashboardUrl));
     }
   }
 
-  return NextResponse.next();
+  return next();
 }
 
 // Matching all routes except static files, api routes, etc. The file
