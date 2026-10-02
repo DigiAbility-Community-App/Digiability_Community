@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { verifyJWT, signJWT } from "@/lib/jwt";
+import { signJWT } from "@/lib/jwt";
+import { verifyAdminToken } from "@/lib/auth";
+import { touchAdminSession } from "@/lib/adminSessions.server";
 import {
   ABSOLUTE_SESSION_HOURS,
   SESSION_COOKIE,
@@ -15,16 +17,22 @@ import { getIdleTimeoutMinutes } from "@/lib/sessionPolicy.server";
  *        idle tab can log itself out instead of sitting there looking signed
  *        in. Does NOT extend the session.
  * POST — the admin is actively working: push the idle deadline forward, but
- *        never past the absolute deadline (`abs`) fixed at login.
+ *        never past the absolute deadline (`abs`) fixed at login. A "Keep me
+ *        signed in" session has no idle window, so it is not extended.
+ *
+ * Both reject a session revoked server-side (logout elsewhere, "sign out of
+ * all devices"), which is how an open tab finds out it was signed out.
  */
 async function readSession(request: NextRequest) {
   const secret = process.env.JWT_SECRET;
   if (!secret) return { secret: null, payload: null };
-  const cookie = request.cookies.get(SESSION_COOKIE);
-  if (!cookie?.value) return { secret, payload: null };
-  const payload = await verifyJWT(cookie.value, secret);
+  const payload = await verifyAdminToken(request);
   if (!payload || payload.role !== "admin") return { secret, payload: null };
   return { secret, payload };
+}
+
+function remaining(deadline: unknown, nowSec: number): number | null {
+  return typeof deadline === "number" ? Math.max(0, deadline - nowSec) : null;
 }
 
 export async function GET(request: NextRequest) {
@@ -32,18 +40,19 @@ export async function GET(request: NextRequest) {
   if (!payload) {
     return NextResponse.json({ authenticated: false }, { status: 401 });
   }
+  const nowSec = Math.floor(Date.now() / 1000);
   return NextResponse.json({
     authenticated: true,
     // The signed-in admin's own email. Needed by the appeals page to explain
     // why an appeal is locked ("you made this decision") before the request is
     // made — the server remains the authority on that rule.
     email: payload.email ?? null,
+    // Lets the client skip the idle countdown for "Keep me signed in".
+    remember: payload.remember === true,
     // Seconds remaining before the idle deadline — drives the client's
     // countdown/warning without it needing to read the httpOnly cookie.
-    expiresIn: Math.max(0, payload.exp - Math.floor(Date.now() / 1000)),
-    absoluteExpiresIn: typeof payload.abs === "number"
-      ? Math.max(0, payload.abs - Math.floor(Date.now() / 1000))
-      : null,
+    expiresIn: remaining(payload.exp, nowSec) ?? 0,
+    absoluteExpiresIn: remaining(payload.abs, nowSec),
   });
 }
 
@@ -54,11 +63,20 @@ export async function POST(request: NextRequest) {
   }
 
   const nowSec = Math.floor(Date.now() / 1000);
+  const remember = payload.remember === true;
+
+  // Fixed lifetime: nothing to slide, just note the activity.
+  if (remember) {
+    await touchAdminSession(payload.sid, new Date(payload.exp * 1000));
+    return NextResponse.json({
+      authenticated: true,
+      remember: true,
+      expiresIn: remaining(payload.exp, nowSec) ?? 0,
+      absoluteExpiresIn: remaining(payload.abs, nowSec),
+    });
+  }
+
   const idleMinutes = await getIdleTimeoutMinutes();
-  // Sessions issued before absolute deadlines existed have no `abs`. Grant
-  // them a full window from now rather than treating "missing" as "expired",
-  // which would have logged every already-signed-in admin out on their first
-  // activity ping. They pick up a real `abs` from this renewal onward.
   const abs = typeof payload.abs === "number"
     ? payload.abs
     : nowSec + ABSOLUTE_SESSION_HOURS * 60 * 60;
@@ -75,20 +93,22 @@ export async function POST(request: NextRequest) {
   }
 
   const exp = Math.min(nowSec + idleMinutes * 60, abs);
+  await touchAdminSession(payload.sid, new Date(exp * 1000));
   const token = await signJWT(
-    { email: payload.email, role: "admin", exp, abs, remember: payload.remember === true },
+    { email: payload.email, role: "admin", sid: payload.sid, exp, abs, remember: false },
     secret
   );
 
   const response = NextResponse.json({
     authenticated: true,
+    remember: false,
     expiresIn: exp - nowSec,
     absoluteExpiresIn: abs - nowSec,
   });
   response.cookies.set(
     SESSION_COOKIE,
     token,
-    sessionCookieOptions({ isHttps: requestIsHttps(request), remember: payload.remember === true })
+    sessionCookieOptions({ isHttps: requestIsHttps(request), remember: false })
   );
   return response;
 }

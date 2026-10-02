@@ -679,3 +679,44 @@ NOT DevOps (app team): new EAS build of the mobile app (new native modules:
 react-native-keyboard-controller, reanimated, worklets, zoom-toolkit) and the
 device test in apps/mobile/docs/media-release-checklist.md.
 
+
+
+=====================================================================
+24. ADMIN SECURITY RELEASE (2026-10-02) — branch fix/admin-session-security
+=====================================================================
+What it fixes:
+  - Three admin API routes had NO login check and were open to the internet:
+    events/[id] (edit/delete any event), settings/disability-types
+    (add/rename/delete), users/[id]/reports (reads reports about any user).
+  - Logout now ends the session on the server (new table admin_sessions).
+    Previously a copied admin cookie kept working after logout.
+  - "Keep me signed in" now really lasts 7 days; normal logins log out after
+    8h idle / 12h max. Also adds Settings -> Security -> "Sign out of all
+    devices".
+
+Deploy this one soon: the open endpoints above are live today.
+
+STEP 1 — table (before or with the admin image; safe to run twice):
+  # from the Mac:
+  scp services/user-svc/prisma/migrations/20261002030000_add_admin_sessions/migration.sql \
+      root@187.127.191.28:/root/add-admin-sessions.sql
+  # on the VPS:
+  kubectl -n communityapp exec -i deploy/user-svc -- \
+    npx prisma db execute --stdin --schema prisma/schema.prisma < /root/add-admin-sessions.sql
+  (The admin also creates the table itself on first login, so this is
+  belt-and-braces. Use `prisma db execute` as above — psql with the
+  DATABASE_URL from the secret fails because the password contains @/$.)
+
+STEP 2 — admin image: same manual path as item 23 step 4c (build from
+  merged main with --platform linux/amd64, save, scp, ctr import, bump
+  admin.yaml, kubectl rollout). No new env vars.
+
+STEP 3 — expected effect: EVERY admin is signed out once and must log in
+  again (old tokens have no session id). Tell the admins beforehand.
+
+STEP 4 — check from outside the VPS (all must be 401):
+  curl -s -o /dev/null -w '%{http_code}\n' -X DELETE https://admin.community.digiability.in/api/events/x
+  curl -s -o /dev/null -w '%{http_code}\n' -X POST   https://admin.community.digiability.in/api/settings/disability-types
+  curl -s -o /dev/null -w '%{http_code}\n'           https://admin.community.digiability.in/api/users/x/reports
+  Then log in with "Keep me signed in" ticked, close and reopen the browser:
+  still signed in.

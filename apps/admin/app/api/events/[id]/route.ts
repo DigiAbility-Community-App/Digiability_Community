@@ -1,12 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAdminAuth } from "@/lib/auth";
+import { requireAdminAuth, getAdminSession, getRequestIp } from "@/lib/auth";
+import { writeAudit } from "@/lib/audit";
 import { dbPool } from "@/lib/db";
 import { isValidLocation, INVALID_LOCATION_MESSAGE } from "@/lib/validation";
 
 export async function GET(
-  _request: Request,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const authError = await requireAdminAuth(request);
+  if (authError) return authError;
+
   try {
     const { id } = await params;
     const result = await dbPool.query(`SELECT * FROM events WHERE id = $1`, [id]);
@@ -21,9 +25,16 @@ export async function GET(
 }
 
 export async function PATCH(
-  request: Request,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  // This handler (and DELETE below) had no auth check at all, so anyone who
+  // could reach the admin host could edit or delete any event.
+  const authError = await requireAdminAuth(request);
+  if (authError) return authError;
+  const actor = await getAdminSession(request);
+  const ip = getRequestIp(request);
+
   try {
     const { id } = await params;
     const body = await request.json();
@@ -64,6 +75,11 @@ export async function PATCH(
     if (result.rows.length === 0) {
       return NextResponse.json({ success: false, message: "Event not found" }, { status: 404 });
     }
+    await writeAudit({ adminEmail: actor?.email, ipAddress: ip,
+      action: "update_event",
+      targetType: "event",
+      targetId: id,
+    });
     return NextResponse.json({ success: true, event: result.rows[0] });
   } catch (error) {
     console.error("Failed to update event:", error);
@@ -72,9 +88,14 @@ export async function PATCH(
 }
 
 export async function DELETE(
-  request: Request,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const authError = await requireAdminAuth(request);
+  if (authError) return authError;
+  const actor = await getAdminSession(request);
+  const ip = getRequestIp(request);
+
   try {
     const { id } = await params;
 
@@ -83,6 +104,11 @@ export async function DELETE(
     }
 
     await dbPool.query(`DELETE FROM events WHERE id = $1`, [id]);
+    await writeAudit({ adminEmail: actor?.email, ipAddress: ip,
+      action: "delete_event",
+      targetType: "event",
+      targetId: id,
+    });
     return NextResponse.json({ success: true, message: "Event deleted successfully" });
   } catch (error) {
     console.error("Failed to delete event:", error);

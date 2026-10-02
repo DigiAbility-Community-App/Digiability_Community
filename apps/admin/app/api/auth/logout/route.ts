@@ -1,37 +1,57 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { verifyJWTSignature } from "@/lib/jwt";
+import { getRequestIp } from "@/lib/auth";
+import { writeAudit } from "@/lib/audit";
+import { revokeAdminSession } from "@/lib/adminSessions.server";
+import { SESSION_COOKIE, requestIsHttps } from "@/lib/session";
 
-// secure must reflect how the request actually arrived, not NODE_ENV — see
-// the comment in app/api/auth/login/route.ts for why.
-function isHttps(request: Request): boolean {
-  return (
-    request.headers.get("x-forwarded-proto") === "https" ||
-    new URL(request.url).protocol === "https:"
-  );
-}
+/**
+ * End this session: revoke it server-side, then clear the cookie.
+ *
+ * Clearing the cookie alone used to be all logout did, so a copied token kept
+ * working until its deadline. The signature is still verified (expired tokens
+ * accepted) so a forged cookie can't be used to revoke someone else's session.
+ *
+ * POST only. The GET variant let any website log an admin out by linking to
+ * it, and nothing in the panel used it.
+ */
+export async function POST(request: NextRequest) {
+  const payload = await readSignedPayload(request);
 
-export async function POST(request: Request) {
+  if (payload?.sid) {
+    try {
+      await revokeAdminSession(payload.sid, "logout");
+      await writeAudit({
+        adminEmail: typeof payload.email === "string" ? payload.email : null,
+        ipAddress: getRequestIp(request),
+        action: "admin_logout",
+        targetType: "admin",
+        targetId: typeof payload.email === "string" ? payload.email : null,
+      });
+    } catch (e) {
+      // Still clear the cookie — the user asked to leave.
+      console.error("[admin-logout] could not revoke session:", e);
+    }
+  }
+
   const response = NextResponse.json({ success: true, message: "Logged out" });
-  response.cookies.set("admin-session", "", {
+  response.cookies.set(SESSION_COOKIE, "", {
     path: "/",
     httpOnly: true,
-    secure: isHttps(request),
+    secure: requestIsHttps(request),
     sameSite: "strict",
     maxAge: 0, // Expire immediately
   });
   return response;
 }
 
-// Support both POST and GET for browser-based logout links
-export async function GET(request: Request) {
-  const response = NextResponse.redirect(
-    new URL("/login", process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3001")
-  );
-  response.cookies.set("admin-session", "", {
-    path: "/",
-    httpOnly: true,
-    secure: isHttps(request),
-    sameSite: "strict",
-    maxAge: 0,
-  });
-  return response;
+/**
+ * Signature-checked payload, accepting an expired token: an admin whose idle
+ * window just lapsed should still be able to revoke that session's row.
+ */
+async function readSignedPayload(request: NextRequest): Promise<Record<string, any> | null> {
+  const secret = process.env.JWT_SECRET;
+  const token = request.cookies.get(SESSION_COOKIE)?.value;
+  if (!secret || !token) return null;
+  return verifyJWTSignature(token, secret);
 }

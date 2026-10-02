@@ -1,5 +1,30 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyJWT } from "./jwt";
+import { isAdminSessionActive } from "./adminSessions.server";
+import { SESSION_COOKIE } from "./session";
+
+/**
+ * Decode the admin cookie and confirm its server-side session is still live.
+ *
+ * Signature and deadlines alone are not enough: logout used to clear only the
+ * cookie, so a copied token kept working. The `sid` must name an active row in
+ * admin_sessions — tokens without one (issued before sessions existed) are
+ * rejected, which costs every admin a single re-login after this deploy.
+ */
+export async function verifyAdminToken(
+  request: NextRequest
+): Promise<Record<string, any> | null> {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) return null;
+
+  const sessionCookie = request.cookies.get(SESSION_COOKIE);
+  if (!sessionCookie?.value) return null;
+
+  const payload = await verifyJWT(sessionCookie.value, secret);
+  if (!payload) return null;
+  if (!(await isAdminSessionActive(payload.sid))) return null;
+  return payload;
+}
 
 /**
  * Verify the admin session cookie inside an API route handler.
@@ -15,12 +40,11 @@ export async function requireAdminAuth(request: NextRequest): Promise<NextRespon
     return NextResponse.json({ success: false, message: "Server configuration error" }, { status: 500 });
   }
 
-  const sessionCookie = request.cookies.get("admin-session");
-  if (!sessionCookie?.value) {
+  if (!request.cookies.get(SESSION_COOKIE)?.value) {
     return NextResponse.json({ success: false, message: "Unauthorized" }, { status: 401 });
   }
 
-  const payload = await verifyJWT(sessionCookie.value, secret);
+  const payload = await verifyAdminToken(request);
 
   // An expired/invalid token is an authentication problem, not an
   // authorisation one — it must be 401 so the client can tell "your session
@@ -45,13 +69,7 @@ export async function requireAdminAuth(request: NextRequest): Promise<NextRespon
  * this request carries a valid admin session.
  */
 export async function isAdminRequest(request: NextRequest): Promise<boolean> {
-  const secret = process.env.JWT_SECRET;
-  if (!secret) return false;
-
-  const sessionCookie = request.cookies.get("admin-session");
-  if (!sessionCookie?.value) return false;
-
-  const payload = await verifyJWT(sessionCookie.value, secret);
+  const payload = await verifyAdminToken(request);
   return !!payload && payload.role === "admin";
 }
 
@@ -71,13 +89,7 @@ export interface AdminSession {
  * need to record who acted.
  */
 export async function getAdminSession(request: NextRequest): Promise<AdminSession | null> {
-  const secret = process.env.JWT_SECRET;
-  if (!secret) return null;
-
-  const sessionCookie = request.cookies.get("admin-session");
-  if (!sessionCookie?.value) return null;
-
-  const payload = await verifyJWT(sessionCookie.value, secret);
+  const payload = await verifyAdminToken(request);
   if (!payload || payload.role !== "admin" || typeof payload.email !== "string") {
     return null;
   }

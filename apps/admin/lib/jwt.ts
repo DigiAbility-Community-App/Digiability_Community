@@ -44,7 +44,15 @@ export async function signJWT(payload: Record<string, any>, secret: string): Pro
   return `${dataToSign}.${encodedSignature}`;
 }
 
-export async function verifyJWT(token: string, secret: string): Promise<Record<string, any> | null> {
+/**
+ * Verify the signature only and return the payload, ignoring `exp`/`abs`.
+ * For logout, which must be able to revoke a session whose idle window has
+ * just lapsed. Never use this to authorise a request — use verifyJWT.
+ */
+export async function verifyJWTSignature(
+  token: string,
+  secret: string
+): Promise<Record<string, any> | null> {
   const parts = token.split(".");
   if (parts.length !== 3) return null;
 
@@ -73,21 +81,26 @@ export async function verifyJWT(token: string, secret: string): Promise<Record<s
     if (!isValid) return null;
 
     const payloadStr = new TextDecoder().decode(fromBase64url(encodedPayload));
-    const payload = JSON.parse(payloadStr);
-
-    // `exp` is REQUIRED. This used to be conditional, which meant a token
-    // without an exp claim verified successfully and never expired.
-    const now = Math.floor(Date.now() / 1000);
-    if (typeof payload.exp !== "number") return null;
-    if (now > payload.exp) return null; // idle window elapsed
-
-    // Absolute deadline: sliding renewal refreshes `exp`, but never past this,
-    // so an active session still can't live forever.
-    if (typeof payload.abs === "number" && now > payload.abs) return null;
-
-    return payload;
+    return JSON.parse(payloadStr);
   } catch (error) {
     console.error("JWT verification failed:", error);
     return null;
   }
+}
+
+export async function verifyJWT(token: string, secret: string): Promise<Record<string, any> | null> {
+  const payload = await verifyJWTSignature(token, secret);
+  if (!payload) return null;
+
+  // `exp` is REQUIRED. This used to be conditional, which meant a token
+  // without an exp claim verified successfully and never expired.
+  const now = Math.floor(Date.now() / 1000);
+  if (typeof payload.exp !== "number") return null;
+  if (now > payload.exp) return null; // idle window elapsed
+
+  // Absolute deadline: sliding renewal refreshes `exp`, but never past this,
+  // so an active session still can't live forever.
+  if (typeof payload.abs === "number" && now > payload.abs) return null;
+
+  return payload;
 }

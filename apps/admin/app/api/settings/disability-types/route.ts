@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAdminAuth } from "@/lib/auth";
+import { requireAdminAuth, getAdminSession, getRequestIp } from "@/lib/auth";
+import { writeAudit } from "@/lib/audit";
 import { dbPool } from "@/lib/db";
 
 // Ensure table exists on every cold start
@@ -50,7 +51,14 @@ export async function GET(request: NextRequest) {
   }
 }
 
-export async function POST(req: Request) {
+export async function POST(req: NextRequest) {
+  // POST/PATCH/DELETE had no auth check — only GET did — so anyone could
+  // add, rename or delete disability types.
+  const authError = await requireAdminAuth(req);
+  if (authError) return authError;
+  const actor = await getAdminSession(req);
+  const ip = getRequestIp(req);
+
   try {
     await ensureTable();
     const { name, status = "Active" } = await req.json();
@@ -68,6 +76,12 @@ export async function POST(req: Request) {
        RETURNING id, code, name, status`,
       [name.trim(), code, status]
     );
+    await writeAudit({ adminEmail: actor?.email, ipAddress: ip,
+      action: "create_disability_type",
+      targetType: "disability_type",
+      targetId: rows[0].id,
+      reason: `Added disability type "${name.trim()}"`,
+    });
     return NextResponse.json({ success: true, type: rows[0] });
   } catch (error) {
     console.error("POST disability-types error:", error);
@@ -75,7 +89,12 @@ export async function POST(req: Request) {
   }
 }
 
-export async function PATCH(req: Request) {
+export async function PATCH(req: NextRequest) {
+  const authError = await requireAdminAuth(req);
+  if (authError) return authError;
+  const actor = await getAdminSession(req);
+  const ip = getRequestIp(req);
+
   try {
     await ensureTable();
     const { id, name, status } = await req.json();
@@ -94,6 +113,11 @@ export async function PATCH(req: Request) {
     if (rows.length === 0) {
       return NextResponse.json({ success: false, message: "Not found" }, { status: 404 });
     }
+    await writeAudit({ adminEmail: actor?.email, ipAddress: ip,
+      action: "update_disability_type",
+      targetType: "disability_type",
+      targetId: id,
+    });
     return NextResponse.json({ success: true, type: rows[0] });
   } catch (error) {
     console.error("PATCH disability-types error:", error);
@@ -101,7 +125,12 @@ export async function PATCH(req: Request) {
   }
 }
 
-export async function DELETE(req: Request) {
+export async function DELETE(req: NextRequest) {
+  const authError = await requireAdminAuth(req);
+  if (authError) return authError;
+  const actor = await getAdminSession(req);
+  const ip = getRequestIp(req);
+
   try {
     await ensureTable();
     const { searchParams } = new URL(req.url);
@@ -110,6 +139,11 @@ export async function DELETE(req: Request) {
       return NextResponse.json({ success: false, message: "id is required" }, { status: 400 });
     }
     await dbPool.query(`DELETE FROM disability_types WHERE id = $1`, [id]);
+    await writeAudit({ adminEmail: actor?.email, ipAddress: ip,
+      action: "delete_disability_type",
+      targetType: "disability_type",
+      targetId: id,
+    });
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("DELETE disability-types error:", error);

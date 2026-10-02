@@ -7,7 +7,6 @@
 import { useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { useRouter } from "next/navigation";
 
 import {
     ShieldCheck,
@@ -25,8 +24,6 @@ import {
 // ----------------------
 
 const AdminLoginPage = () => {
-    const router = useRouter();
-
     // ----------------------
     // STATES
     // ----------------------
@@ -50,6 +47,9 @@ const AdminLoginPage = () => {
         e.preventDefault();
         setError("");
         setLoading(true);
+        // Password managers ignore a field that is type="text" at submit, so a
+        // revealed password would never be offered for saving.
+        setShowPassword(false);
 
         try {
             const formData = new FormData(e.currentTarget);
@@ -73,8 +73,11 @@ const AdminLoginPage = () => {
                 throw new Error(data.message || "Invalid email or password");
             }
 
-            // Redirect to dashboard
-            router.push("/dashboard");
+            // A full navigation, not router.push: browsers only offer to save
+            // the password once they see the login form actually lead
+            // somewhere, and a client-side route change often isn't detected
+            // (Safari/Firefox). It also loads the dashboard with the new cookie.
+            window.location.assign("/dashboard");
         } catch (err: any) {
             setError(err.message || "Something went wrong. Please try again.");
             setLoading(false);
@@ -183,8 +186,12 @@ const AdminLoginPage = () => {
                         {/* LOGIN CARD */}
                         <div className="bg-white rounded-[28px] shadow-[0px_12px_32px_rgba(26,26,46,0.06)] p-6">
 
+                            {/* method/action: if JS fails to load, the browser must not fall
+                                back to a GET that puts the password in the URL. */}
                             <form
                                 onSubmit={handleLogin}
+                                method="post"
+                                action="/login"
                                 className="space-y-4"
                             >
                                 {error && (
@@ -195,7 +202,7 @@ const AdminLoginPage = () => {
 
                                 {/* EMAIL */}
                                 <div>
-                                    <label className="block text-xs font-semibold uppercase tracking-[0.15em] text-[#4B4355] mb-2">
+                                    <label htmlFor="email" className="block text-xs font-semibold uppercase tracking-[0.15em] text-[#4B4355] mb-2">
                                         Email Address
                                     </label>
 
@@ -203,8 +210,10 @@ const AdminLoginPage = () => {
                                         <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-[#7D7387] w-5 h-5" />
 
                                         <input
+                                            id="email"
                                             type="email"
                                             name="email"
+                                            autoComplete="username"
                                             placeholder="admin@digiability.com"
                                             required
                                             className="w-full h-12 rounded-xl bg-[#FCF8FF] border border-transparent focus:border-[#8A38F5] focus:ring-4 focus:ring-violet-200 outline-none pl-12 pr-4 text-sm transition-all"
@@ -214,7 +223,7 @@ const AdminLoginPage = () => {
 
                                 {/* PASSWORD */}
                                 <div>
-                                    <label className="block text-xs font-semibold uppercase tracking-[0.15em] text-[#4B4355] mb-2">
+                                    <label htmlFor="password" className="block text-xs font-semibold uppercase tracking-[0.15em] text-[#4B4355] mb-2">
                                         Password
                                     </label>
 
@@ -227,7 +236,9 @@ const AdminLoginPage = () => {
                                                     ? "text"
                                                     : "password"
                                             }
+                                            id="password"
                                             name="password"
+                                            autoComplete="current-password"
                                             placeholder="••••••••"
                                             required
                                             className="w-full h-12 rounded-xl bg-[#FCF8FF] border border-transparent focus:border-[#8A38F5] focus:ring-4 focus:ring-violet-200 outline-none pl-12 pr-12 text-sm transition-all"
@@ -240,6 +251,7 @@ const AdminLoginPage = () => {
                                                     !showPassword
                                                 )
                                             }
+                                            aria-label={showPassword ? "Hide password" : "Show password"}
                                             className="absolute right-4 top-1/2 -translate-y-1/2 text-[#7D7387]"
                                         >
                                             {showPassword ? (

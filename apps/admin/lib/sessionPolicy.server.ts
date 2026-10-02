@@ -5,6 +5,8 @@
 import { dbPool } from "./db";
 import { DEFAULT_IDLE_MINUTES, normalizeIdleMinutes } from "./session";
 
+const STALE_DEFAULTS = new Set([1440, 30, 120]);
+
 /**
  * `session_timeout_mins` has existed in admin_security_settings all along but
  * was never read by anything — the value an admin saved in Settings → Security
@@ -20,11 +22,12 @@ export async function getIdleTimeoutMinutes(): Promise<number> {
     );
     if (result.rows.length === 0) return DEFAULT_IDLE_MINUTES;
     const stored = result.rows[0].session_timeout_mins;
-    // 1440 was the column's old default while nothing read this value, so it
-    // reflects no actual decision — don't let a dead default become a 24h idle
-    // window. (The security-settings route also migrates it in place, but this
-    // doesn't depend on that route having been hit first.)
-    if (Number(stored) === 1440) return DEFAULT_IDLE_MINUTES;
+    // 1440, 30 and 120 are all past defaults — no admin can set this value
+    // (there is no Settings field for it), so none reflects a decision. Don't
+    // let a dead default override the current one. (The security-settings
+    // route also migrates them in place, but this doesn't depend on that
+    // route having been hit first.)
+    if (STALE_DEFAULTS.has(Number(stored))) return DEFAULT_IDLE_MINUTES;
     return normalizeIdleMinutes(stored);
   } catch {
     return DEFAULT_IDLE_MINUTES;

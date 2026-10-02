@@ -5,11 +5,13 @@ import bcrypt from "bcryptjs";
 import { signJWT } from "@/lib/jwt";
 import {
   ABSOLUTE_SESSION_HOURS,
+  REMEMBER_ME_DAYS,
   SESSION_COOKIE,
   requestIsHttps,
   sessionCookieOptions,
 } from "@/lib/session";
 import { getIdleTimeoutMinutes } from "@/lib/sessionPolicy.server";
+import { createAdminSession } from "@/lib/adminSessions.server";
 import { checkLoginAllowed, recordLoginAttempt } from "@/lib/loginRateLimit";
 import { getRequestIp } from "@/lib/auth";
 import { writeAudit } from "@/lib/audit";
@@ -94,16 +96,36 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ success: false, message: "Server configuration error" }, { status: 500 });
       }
       
-      // `exp` is the IDLE deadline (slides while the admin is active, see
-      // /api/auth/session); `abs` is the hard ceiling for this login. It used
-      // to be a flat 24h with no idle concept at all.
-      const idleMinutes = await getIdleTimeoutMinutes();
-      const nowSec = Math.floor(Date.now() / 1000);
-      const exp = nowSec + idleMinutes * 60;
-      const abs = nowSec + ABSOLUTE_SESSION_HOURS * 60 * 60;
+      // Normal: `exp` is the IDLE deadline (slides while the admin is active,
+      // see /api/auth/session) and `abs` the hard ceiling for this login.
+      // "Keep me signed in": a fixed REMEMBER_ME_DAYS with no idle window —
+      // it previously got the normal 2h/12h token inside a 7-day cookie, so
+      // ticking it didn't keep anyone signed in. See lib/session.ts.
       const remember = rememberMe === true;
+      const nowSec = Math.floor(Date.now() / 1000);
+      let exp: number;
+      let abs: number;
+      if (remember) {
+        abs = nowSec + REMEMBER_ME_DAYS * 24 * 60 * 60;
+        exp = abs;
+      } else {
+        const idleMinutes = await getIdleTimeoutMinutes();
+        abs = nowSec + ABSOLUTE_SESSION_HOURS * 60 * 60;
+        exp = Math.min(nowSec + idleMinutes * 60, abs);
+      }
+
+      // Server-side record of this login; its id rides in the token as `sid`,
+      // and revoking the row (logout) ends the session wherever the token is.
+      const sid = await createAdminSession({
+        email,
+        remember,
+        expiresAt: new Date(exp * 1000),
+        userAgent: request.headers.get("user-agent"),
+        ipAddress: ip,
+      });
+
       const token = await signJWT(
-        { email: email.toLowerCase(), role: "admin", exp, abs, remember },
+        { email: email.toLowerCase(), role: "admin", sid, exp, abs, remember },
         secret
       );
 
