@@ -65,6 +65,8 @@ export default function GroupDetailPage() {
   const [editAM,      setEditAM]      = useState<"ADMINS_ONLY"|"ALL_MEMBERS">("ADMINS_ONLY");
   const [editSM,      setEditSM]      = useState<"ADMINS_ONLY"|"ALL_MEMBERS">("ALL_MEMBERS");
   const [editApprove, setEditApprove] = useState(false);
+  const [editMax,     setEditMax]     = useState("");
+  const [editError,   setEditError]   = useState("");
   const [saving,      setSaving]      = useState(false);
 
   // Add member state
@@ -124,6 +126,7 @@ export default function GroupDetailPage() {
         setEditAM(data.group.addMembers || "ADMINS_ONLY");
         setEditSM(data.group.sendMessages || "ALL_MEMBERS");
         setEditApprove(data.group.approveNewMembers || false);
+        setEditMax(String(data.group.maxMembers ?? ""));
         // Real suspension state, straight from the group's own suspension
         // columns. This used to be inferred from sendMessages === "ADMINS_ONLY",
         // which showed every announcement-only group as suspended and cleared
@@ -165,11 +168,14 @@ export default function GroupDetailPage() {
   useEffect(() => { fetchGroup(); fetchUsers(); }, [id]);
 
   // ── save edits ──
+  // Reads the response: this used to show "Group updated successfully." even
+  // when the PATCH failed.
   const handleSave = async () => {
     if (!editName.trim()) return;
     setSaving(true);
+    setEditError("");
     try {
-      await fetch(`/api/groups/${id}`, {
+      const res = await fetch(`/api/groups/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -179,11 +185,21 @@ export default function GroupDetailPage() {
           addMembers: editAM,
           sendMessages: editSM,
           approveNewMembers: editApprove,
+          // Only sent when changed, so an unrelated edit to a legacy group
+          // whose stored limit is out of today's bounds doesn't fail.
+          ...(group && editMax !== String(group.maxMembers) ? { maxMembers: editMax } : {}),
         }),
       });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.success) {
+        setEditError(data?.message || "Failed to update group.");
+        return;
+      }
       setEditing(false);
       setActionMsg("Group updated successfully.");
       fetchGroup();
+    } catch {
+      setEditError("Network error — could not update group.");
     } finally { setSaving(false); }
   };
 
@@ -480,7 +496,7 @@ export default function GroupDetailPage() {
               <div className={`w-14 h-14 rounded-2xl flex items-center justify-center ${group.subType==="CARE_CIRCLE" ? "bg-pink-100 text-pink-600" : "bg-violet-100 text-violet-600"}`}>
                 {group.subType === "CARE_CIRCLE" ? <Heart className="w-6 h-6" /> : <Users className="w-6 h-6" />}
               </div>
-              <button onClick={() => setEditing(!editing)} className="h-9 px-3 rounded-xl border border-gray-200 text-sm font-semibold text-[#4B4355] hover:bg-gray-50 flex items-center gap-1.5 transition">
+              <button onClick={() => { setEditing(!editing); setEditError(""); }} className="h-9 px-3 rounded-xl border border-gray-200 text-sm font-semibold text-[#4B4355] hover:bg-gray-50 flex items-center gap-1.5 transition">
                 {editing ? <><X className="w-3.5 h-3.5" /> Cancel</> : <><Pencil className="w-3.5 h-3.5" /> Edit</>}
               </button>
             </div>
@@ -520,6 +536,27 @@ export default function GroupDetailPage() {
                     </button>
                   </div>
                 </div>
+                <div>
+                  <label htmlFor="edit-max-members" className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">
+                    Member Limit
+                  </label>
+                  <input
+                    id="edit-max-members"
+                    type="number"
+                    inputMode="numeric"
+                    min={Math.max(2, Number(group.memberCount))}
+                    max={group.subType === "CARE_CIRCLE" ? 15 : 500}
+                    value={editMax}
+                    onChange={e => setEditMax(e.target.value)}
+                    className="w-full h-11 rounded-xl bg-[#F7F5FA] px-4 text-sm outline-none border border-transparent focus:border-[#8A38F5]"
+                  />
+                  <p className="text-[11px] text-slate-400 mt-1">
+                    {group.memberCount} current member{Number(group.memberCount) === 1 ? "" : "s"} · max {group.subType === "CARE_CIRCLE" ? 15 : 500}
+                  </p>
+                </div>
+                {editError && (
+                  <p role="alert" className="text-xs font-semibold text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{editError}</p>
+                )}
                 <button onClick={handleSave} disabled={!editName.trim() || saving} className="w-full h-11 rounded-xl bg-[#7004DC] hover:bg-[#5c03b7] disabled:bg-violet-200 text-white font-bold text-sm flex items-center justify-center gap-2 transition">
                   {saving ? <><Loader2 className="w-4 h-4 animate-spin" />Saving...</> : <><Save className="w-4 h-4" />Save Changes</>}
                 </button>

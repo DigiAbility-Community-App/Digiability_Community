@@ -62,7 +62,10 @@ async function sendPush(
 ): Promise<void> {
   const messages: ExpoPushMessage[] = tokens
     .filter((t) => Expo.isExpoPushToken(t))
-    .map((to) => ({ to, title, body, data, sound: "default" }));
+    // priority "high" so Android delivers while the device is in Doze (Expo's
+    // default is "normal", which FCM may hold); channelId matches the
+    // MAX-importance channel the app creates in notificationService.ts.
+    .map((to) => ({ to, title, body, data, sound: "default", priority: "high", channelId: "default" }));
 
   if (messages.length === 0) return;
 

@@ -454,7 +454,9 @@ class ConversationRepository {
       where: {
         conversationId_userId: { conversationId, userId },
       },
-      update: { leftAt: null, role },
+      // Clear leftReason too, so a rejoined member isn't still carrying the
+      // "LEFT"/"REMOVED" from their previous membership.
+      update: { leftAt: null, leftReason: null, role },
       create: { conversationId, userId, role, lastReadSequenceNo: maxSeq },
     });
   }

@@ -37,19 +37,49 @@ export function defaultWeeklySchedule(): WeeklySchedule {
   return schedule;
 }
 
-/** Shape + business-rule check: every open day must have from < to. */
-export function isValidWeeklySchedule(s: unknown): s is WeeklySchedule {
-  if (!s || typeof s !== "object") return false;
+export type ScheduleValidation =
+  | { ok: true }
+  | { ok: false; day: string | null; reason: "shape" | "missing" | "order" };
+
+/** "00:00" as a closing time means midnight at the end of the day. */
+export const MIDNIGHT = "00:00";
+
+/**
+ * Shape + business-rule check with the reason, so the form can say which day
+ * is wrong and why. Every open day needs from and to, and from < to, except
+ * that a close of "00:00" means "until midnight" (end of the same day).
+ *
+ * Times are "HH:MM" from <input type="time">, which is always zero-padded
+ * 24h, so string comparison is chronological.
+ */
+export function validateWeeklySchedule(s: unknown): ScheduleValidation {
+  if (!s || typeof s !== "object") return { ok: false, day: null, reason: "shape" };
   const schedule = s as Record<string, unknown>;
-  for (const { key } of DAYS) {
+  for (const { key, label } of DAYS) {
     const day = schedule[key] as DaySchedule | undefined;
-    if (!day || typeof day !== "object" || typeof day.open !== "boolean") return false;
+    if (!day || typeof day !== "object" || typeof day.open !== "boolean") {
+      return { ok: false, day: label, reason: "shape" };
+    }
     if (day.open) {
-      if (!day.from || !day.to) return false;
-      if (day.from >= day.to) return false;
+      if (!day.from || !day.to) return { ok: false, day: label, reason: "missing" };
+      const closesAtMidnight = day.to === MIDNIGHT && day.from !== MIDNIGHT;
+      if (!closesAtMidnight && day.from >= day.to) return { ok: false, day: label, reason: "order" };
     }
   }
-  return true;
+  return { ok: true };
+}
+
+/** User-facing message for a failed validateWeeklySchedule(). */
+export function scheduleErrorMessage(v: Exclude<ScheduleValidation, { ok: true }>): string {
+  if (v.reason === "missing") return `${v.day}: set both a From and a To time.`;
+  if (v.reason === "order") {
+    return `${v.day}: the From time must be earlier than the To time (use 12:00 AM as the To time for "until midnight").`;
+  }
+  return v.day ? `${v.day}: the schedule for this day is invalid.` : "Invalid availability schedule.";
+}
+
+export function isValidWeeklySchedule(s: unknown): s is WeeklySchedule {
+  return validateWeeklySchedule(s).ok;
 }
 
 function formatTime(hhmm: string): string {
@@ -76,7 +106,8 @@ export function formatAvailabilitySummary(schedule: WeeklySchedule): string {
   for (const { key, short } of DAYS) {
     const day = schedule[key];
     const sig = dayKey(day);
-    const label = day.open ? `${formatTime(day.from)}–${formatTime(day.to)}` : "Closed";
+    const closes = day.to === MIDNIGHT ? "Midnight" : formatTime(day.to);
+    const label = day.open ? `${formatTime(day.from)}–${closes}` : "Closed";
     const last = groups[groups.length - 1];
     if (last && last.sig === sig) {
       last.days.push(short);

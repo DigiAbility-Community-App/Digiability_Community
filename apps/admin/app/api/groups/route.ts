@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdminAuth } from "@/lib/auth";
 import { dbPool } from "@/lib/db";
+import { defaultMaxMembers, validateMaxMembers } from "@/lib/groupLimits";
 
 // A group can have at most this many admin-capable members (OWNER counts
 // toward this) — mirrors MAX_ADMINS_PER_GROUP in chat-svc's roles.util.ts.
@@ -46,8 +47,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, message: "A group admin must be designated to create the group" }, { status: 400 });
     }
 
-    const defaultMax = subType === "CARE_CIRCLE" ? 15 : 256;
-    const resolvedMax = Number(maxMembers) > 0 ? Number(maxMembers) : defaultMax;
+    let resolvedMax = defaultMaxMembers(subType);
+    if (maxMembers !== undefined && maxMembers !== null && maxMembers !== "") {
+      const check = validateMaxMembers(maxMembers, subType);
+      if (!check.ok) {
+        return NextResponse.json({ success: false, message: check.message }, { status: 400 });
+      }
+      resolvedMax = check.value;
+    }
 
     const memberList: Array<{ userId: string; role: string }> = Array.isArray(initialMembers) ? initialMembers : [];
     const ownerIncluded = memberList.some((m) => m.userId === ownerId);

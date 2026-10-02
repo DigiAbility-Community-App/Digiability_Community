@@ -6,7 +6,7 @@ import { getImageProvider } from "../moderation/providers/image-provider";
 // ─────────────────────────────────────────────────────
 // Moderation Worker (Tier C + D)
 //
-// BullMQ worker that reads from 'moderation:classify' and:
+// BullMQ worker that reads from 'moderation-classify' and:
 //   Tier C — calls AI text classification (OpenAI Moderation)
 //   Tier D — calls vision/content-safety for images (Google Vision)
 //
@@ -20,7 +20,12 @@ import { getImageProvider } from "../moderation/providers/image-provider";
 //   MODERATION_FLAG_THRESHOLD    — min score to write a flag (default 0.5)
 // ─────────────────────────────────────────────────────
 
-export const MODERATION_QUEUE = "moderation:classify";
+// BullMQ (5.x) rejects queue names containing ":" — "moderation:classify"
+// threw in the Queue/Worker constructor, so the user-svc worker never started
+// and forum-svc's enqueue failed every question/answer post with a 500 after
+// it had been saved. Producers (chat-svc, forum-svc) and the consumer
+// (user-svc moderation.worker.ts) must use the same name.
+export const MODERATION_QUEUE = "moderation-classify";
 
 export interface ClassifyJobData {
   contentType: "chat_message" | "forum_question" | "forum_answer";

@@ -5,7 +5,8 @@ import { isValidIndianPhone, INVALID_PHONE_MESSAGE } from "@/lib/validation";
 import {
   WeeklySchedule,
   defaultWeeklySchedule,
-  isValidWeeklySchedule,
+  validateWeeklySchedule,
+  scheduleErrorMessage,
   formatAvailabilitySummary,
 } from "@/lib/availabilitySchedule";
 import { getOrCreateServiceCategoryId } from "@/lib/masterCategories";
@@ -271,9 +272,10 @@ export async function POST(request: NextRequest) {
     }
 
     const schedule: WeeklySchedule = availabilitySchedule ?? defaultWeeklySchedule();
-    if (!isValidWeeklySchedule(schedule)) {
+    const scheduleCheck = validateWeeklySchedule(schedule);
+    if (!scheduleCheck.ok) {
       return NextResponse.json(
-        { success: false, message: "Invalid availability schedule — every open day needs both a From and To time." },
+        { success: false, message: scheduleErrorMessage(scheduleCheck) },
         { status: 400 }
       );
     }

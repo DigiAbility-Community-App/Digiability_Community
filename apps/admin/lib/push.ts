@@ -29,7 +29,9 @@ export async function sendBroadcastPush(
   const messages: ExpoPushMessage[] = result.rows
     .map((r) => r.token)
     .filter((t) => Expo.isExpoPushToken(t))
-    .map((to) => ({ to, title, body, data, sound: "default" }));
+    // Same delivery options as notif-svc: high priority so Android delivers
+    // in Doze, on the app's MAX-importance "default" channel.
+    .map((to) => ({ to, title, body, data, sound: "default", priority: "high", channelId: "default" }));
 
   if (messages.length === 0) return 0;
 

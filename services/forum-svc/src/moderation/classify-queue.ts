@@ -12,7 +12,12 @@ import { Queue } from "bullmq";
 // request host (or FORUM_SVC_BASE_URL in production).
 // ─────────────────────────────────────────────────────
 
-const MODERATION_QUEUE = "moderation:classify";
+// BullMQ (5.x) rejects queue names containing ":" — "moderation:classify"
+// threw in the Queue/Worker constructor, so the user-svc worker never started
+// and forum-svc's enqueue failed every question/answer post with a 500 after
+// it had been saved. Producers (chat-svc, forum-svc) and the consumer
+// (user-svc moderation.worker.ts) must use the same name.
+const MODERATION_QUEUE = "moderation-classify";
 
 let _queue: Queue | null = null;
 
@@ -59,7 +64,14 @@ export function enqueueForClassification(job: ForumClassifyJob): void {
   const hasContent = job.text?.trim() || job.imageUrl;
   if (!hasContent) return;
 
-  const q = getQueue();
+  // Fire-and-forget: classification must never fail the post it's about.
+  let q: Queue | null;
+  try {
+    q = getQueue();
+  } catch (err) {
+    console.warn("[classify-queue] Queue unavailable:", (err as Error).message);
+    return;
+  }
   if (!q) return;
 
   q.add("classify", { ...job, text: job.text?.slice(0, 2000) }).catch((err: Error) => {

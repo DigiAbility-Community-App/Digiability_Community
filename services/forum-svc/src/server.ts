@@ -13,6 +13,9 @@ import { createServer } from "http";
 import { initSocketServer } from "./websocket/socket";
 
 const app = express();
+// Behind the ingress: read the client's protocol/IP from X-Forwarded-*, so
+// req.protocol is "https" (same setting as user-svc).
+app.set("trust proxy", 1);
 const PORT = parseInt(process.env.PORT ?? "4003", 10);
 const server = createServer(app);
 

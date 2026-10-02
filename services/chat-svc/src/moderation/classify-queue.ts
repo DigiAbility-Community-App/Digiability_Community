@@ -12,7 +12,12 @@ import { env } from "../config/env";
 // Tier D: image/file messages → image URL classification
 // ─────────────────────────────────────────────────────
 
-const MODERATION_QUEUE = "moderation:classify";
+// BullMQ (5.x) rejects queue names containing ":" — "moderation:classify"
+// threw in the Queue/Worker constructor, so the user-svc worker never started
+// and forum-svc's enqueue failed every question/answer post with a 500 after
+// it had been saved. Producers (chat-svc, forum-svc) and the consumer
+// (user-svc moderation.worker.ts) must use the same name.
+const MODERATION_QUEUE = "moderation-classify";
 
 let _queue: Queue | null = null;
 
@@ -70,12 +75,16 @@ export function enqueueForClassification(job: ChatClassifyJob): void {
   const hasContent = (job.text?.trim()) || job.imageUrl;
   if (!hasContent) return;
 
-  getQueue()
-    .add("classify", {
-      ...job,
-      text: job.text?.slice(0, 2000),
-    })
-    .catch((err: Error) => {
-      console.warn("[classify-queue] Failed to enqueue:", err.message);
-    });
+  // Fire-and-forget: classification must never fail the caller (the
+  // msg-svc worker, which would otherwise log the message as not persisted).
+  let q: Queue;
+  try {
+    q = getQueue();
+  } catch (err) {
+    console.warn("[classify-queue] Queue unavailable:", (err as Error).message);
+    return;
+  }
+  q.add("classify", { ...job, text: job.text?.slice(0, 2000) }).catch((err: Error) => {
+    console.warn("[classify-queue] Failed to enqueue:", err.message);
+  });
 }
