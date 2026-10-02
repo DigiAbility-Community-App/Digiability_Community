@@ -57,12 +57,31 @@ const ALLOWED_CATEGORIES = [
   'Others'
 ];
 
-const getImageUrl = (req: Request, filename?: string) => {
-  if (!filename) return null;
-  const protocol = req.protocol;
-  const host = req.get('host');
-  return `${protocol}://${host}/uploads/${filename}`;
+// Uploaded media is stored as a host-relative path ("/uploads/x.jpg"), the
+// same contract as chat-svc; each client resolves it against its own
+// forum-svc base URL. This used to store `${req.protocol}://${host}/uploads/…`
+// — behind the TLS ingress without `trust proxy` that was
+// "http://<node-ip>:30503/uploads/…", which production apps (cleartext
+// denied) can't load, save or share. See scripts/2026-10-media-urls-relative.sql
+// for the rewrite of rows stored that way.
+const UPLOAD_PATH_RE = /^\/uploads\/[\w.-]+$/;
+
+const uploadPath = (filename: string) => `/uploads/${filename}`;
+
+/**
+ * A client-supplied media reference is only accepted when it points at one of
+ * our own uploads (e.g. re-using an earlier upload). Anything else — an
+ * external URL in particular — is rejected, as chat-svc does.
+ * Returns the path, null when absent, or false when invalid.
+ */
+const clientMediaPath = (value: unknown): string | null | false => {
+  if (value === undefined || value === null || value === '') return null;
+  return typeof value === 'string' && UPLOAD_PATH_RE.test(value) ? value : false;
 };
+
+/** Absolute URL for server-side consumers (the image classifier). */
+const absoluteUploadUrl = (req: Request, path: string | null) =>
+  path ? `${req.protocol}://${req.get('host')}${path}` : undefined;
 
 const mapAuthorRole = (author: any) => {
   if (!author) return author;
@@ -158,8 +177,14 @@ export const createQuestion = async (req: Request, res: Response): Promise<void>
     const imageFile = files?.['image']?.[0];
     const audioFile = files?.['audio']?.[0];
 
-    const imageUrl = imageFile ? getImageUrl(req, imageFile.filename) : (req.body.imageUrl || null);
-    const resolvedAudioUrl = audioFile ? getImageUrl(req, audioFile.filename) : (audioUrl || null);
+    const clientImage = imageFile ? null : clientMediaPath(req.body.imageUrl);
+    const clientAudio = audioFile ? null : clientMediaPath(audioUrl);
+    if (clientImage === false || clientAudio === false) {
+      res.status(400).json({ success: false, message: 'Invalid media reference' });
+      return;
+    }
+    const imageUrl = imageFile ? uploadPath(imageFile.filename) : clientImage;
+    const resolvedAudioUrl = audioFile ? uploadPath(audioFile.filename) : clientAudio;
 
     let tagNames: string[] = [];
     if (tags) {
@@ -214,7 +239,7 @@ export const createQuestion = async (req: Request, res: Response): Promise<void>
       contentId: question.id,
       userId: authorId,
       text: [cleanTitle, cleanDescription].filter(Boolean).join(" "),
-      imageUrl: imageUrl ?? undefined,
+      imageUrl: absoluteUploadUrl(req, imageUrl),
     });
 
     broadcastForumEvent('question_created', mapQuestionRoles(question));
@@ -469,8 +494,14 @@ export const createAnswer = async (req: Request, res: Response): Promise<void> =
     const imageFile = files?.['image']?.[0];
     const audioFile = files?.['audio']?.[0];
 
-    const imageUrl = imageFile ? getImageUrl(req, imageFile.filename) : (req.body.imageUrl || null);
-    const resolvedAudioUrl = audioFile ? getImageUrl(req, audioFile.filename) : (audioUrl || null);
+    const clientImage = imageFile ? null : clientMediaPath(req.body.imageUrl);
+    const clientAudio = audioFile ? null : clientMediaPath(audioUrl);
+    if (clientImage === false || clientAudio === false) {
+      res.status(400).json({ success: false, message: 'Invalid media reference' });
+      return;
+    }
+    const imageUrl = imageFile ? uploadPath(imageFile.filename) : clientImage;
+    const resolvedAudioUrl = audioFile ? uploadPath(audioFile.filename) : clientAudio;
 
     const answer = await prisma.$transaction(async (tx) => {
       // 1. Create the answer
@@ -537,7 +568,7 @@ export const createAnswer = async (req: Request, res: Response): Promise<void> =
       contentId: answer.id,
       userId: authorId,
       text: cleanContent ?? "",
-      imageUrl: imageUrl ?? undefined,
+      imageUrl: absoluteUploadUrl(req, imageUrl),
     });
 
     broadcastForumEvent('answer_created', mapAnswerRoles(answer));

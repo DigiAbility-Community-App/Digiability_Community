@@ -212,3 +212,19 @@
   white-space: nowrap;
   border: 0;
 }
+
+/* Inline status/error under a single field (email availability, password). */
+.field-status {
+  margin: 0.4rem 0 0;
+  font-size: 0.8rem;
+  color: #6b6875;
+}
+
+.field-status-error {
+  color: var(--color-danger);
+  font-weight: 600;
+}
+
+.field-status-ok {
+  color: #1b873f;
+}

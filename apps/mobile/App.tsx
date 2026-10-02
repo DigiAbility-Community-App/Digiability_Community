@@ -11,7 +11,12 @@ import { StatusBar } from 'expo-status-bar';
 import { registerRootComponent } from 'expo';
 import RootNavigator from '@navigation/RootNavigator';
 import { AppThemeProvider } from './src/theme/ThemeContext';
-import { addNotificationResponseListener } from '@services/notificationService';
+import type { NotificationResponse } from 'expo-notifications';
+import { KeyboardProvider } from 'react-native-keyboard-controller';
+import {
+  addNotificationResponseListener,
+  consumeLaunchNotificationResponse,
+} from '@services/notificationService';
 import {
   routeNotificationTap,
   flushPendingNotificationRoute,
@@ -71,14 +76,25 @@ export default function App() {
   // only reacts to notification taps, which is safe to mount unconditionally.
   // Taps are validated and auth-gated in notificationRouting.ts.
   useEffect(() => {
+    // The launch tap can also be delivered to the listener on some platforms;
+    // route each notification once.
+    const handled = new Set<string>();
+    const handle = (response: NotificationResponse | null) => {
+      const id = response?.notification?.request?.identifier;
+      if (!response || (id && handled.has(id))) return;
+      if (id) handled.add(id);
+      // Held as pending inside routeNotificationTap until the signed-in UI
+      // has mounted, so calling this before session restore is safe.
+      routeNotificationTap(
+        navigationRef.current,
+        response.notification?.request?.content?.data,
+      ).catch(() => {});
+    };
+
     let sub: { remove: () => void } | null = null;
     try {
-      sub = addNotificationResponseListener((response) => {
-        routeNotificationTap(
-          navigationRef.current,
-          response?.notification?.request?.content?.data,
-        ).catch(() => {});
-      });
+      sub = addNotificationResponseListener(handle);
+      handle(consumeLaunchNotificationResponse());
     } catch (e) {
       console.warn('[App] Failed to attach notification response listener:', e);
     }
@@ -100,18 +116,23 @@ export default function App() {
     <RootErrorBoundary>
       <GestureHandlerRootView style={{ flex: 1 }}>
         <SafeAreaProvider>
-          <NavigationContainer
-            ref={navigationRef}
-            // Replays a notification tap held until the signed-in UI mounted.
-            onStateChange={() => {
-              flushPendingNotificationRoute(navigationRef.current).catch(() => {});
-            }}
-          >
-            <AppThemeProvider>
-              <StatusBar style="light" />
-              <RootNavigator />
-            </AppThemeProvider>
-          </NavigationContainer>
+          {/* One keyboard system for the whole app: KeyboardAwareScrollView /
+              SheetKeyboardAvoidingView (react-native-keyboard-controller)
+              read the keyboard from here, including inside RN Modals. */}
+          <KeyboardProvider>
+            <NavigationContainer
+              ref={navigationRef}
+              // Replays a notification tap held until the signed-in UI mounted.
+              onStateChange={() => {
+                flushPendingNotificationRoute(navigationRef.current).catch(() => {});
+              }}
+            >
+              <AppThemeProvider>
+                <StatusBar style="light" />
+                <RootNavigator />
+              </AppThemeProvider>
+            </NavigationContainer>
+          </KeyboardProvider>
         </SafeAreaProvider>
       </GestureHandlerRootView>
     </RootErrorBoundary>

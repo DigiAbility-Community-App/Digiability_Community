@@ -82,6 +82,17 @@ export async function startDeliveryWorker(): Promise<() => Promise<void>> {
   };
 }
 
+function isAdminBroadcast(metadata: string | undefined): boolean {
+  if (!metadata) return false;
+  try {
+    const parsed: unknown = JSON.parse(metadata);
+    return typeof parsed === "object" && parsed !== null &&
+      (parsed as { broadcast?: unknown }).broadcast === true;
+  } catch {
+    return false;
+  }
+}
+
 async function processEntry(redis: Redis, entryId: string, fields: string[]): Promise<void> {
   const data: Record<string, string> = {};
   for (let i = 0; i < fields.length; i += 2) data[fields[i]] = fields[i + 1];
@@ -167,7 +178,12 @@ async function processEntry(redis: Redis, entryId: string, fields: string[]): Pr
       }
     }
 
-    for (const recipientId of offlineRecipients) {
+    // Admin-panel announcements already push to their whole target audience
+    // from the admin route (apps/admin/app/api/groups/[id]/message), so a
+    // msg:notify here would send offline members a second push.
+    const pushHandledByAdmin = isAdminBroadcast(event.metadata);
+
+    for (const recipientId of pushHandledByAdmin ? [] : offlineRecipients) {
       const notifyEvent: MessageNotifyEvent = {
         messageId: event.messageId,
         conversationId: event.conversationId,

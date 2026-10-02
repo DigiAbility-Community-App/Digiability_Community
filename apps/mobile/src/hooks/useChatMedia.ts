@@ -13,7 +13,7 @@ import { useCallback, useRef, useState } from "react";
 import { Alert } from "react-native";
 import { Audio } from "expo-av";
 import * as ImagePicker from "expo-image-picker";
-import { chatService } from "@services/chatService";
+import { chatService, isLocalMediaUri } from "@services/chatService";
 import { sendSocketMessage } from "@services/socketService";
 import { useChatStore, ChatMessage } from "@store/chatStore";
 import { useAuthStore } from "@store/authStore";
@@ -49,6 +49,18 @@ function resolveUploadFileInfo(
   const ext = uri.split(".").pop()?.toLowerCase() || fallbackExt;
   return { ext, mimeType: `${kind}/${ext === "jpg" ? "jpeg" : ext}` };
 }
+
+/** What's needed to re-upload an image whose upload failed, by clientMessageId. */
+interface PendingUpload {
+  localUri: string;
+  mimeType?: string | null;
+  fileName?: string | null;
+}
+// Module-level so it survives the chat screen unmounting while an upload is
+// in flight. Entries are removed once the image is uploaded or discarded.
+const pendingUploads = new Map<string, PendingUpload>();
+
+const UPLOAD_FAILED_REASON = "Your image couldn't be uploaded. Long-press it to retry or remove it.";
 
 export function useChatMedia(conversationId: string, senderId: string | undefined) {
   const addMessage = useChatStore((s) => s.addMessage);
@@ -224,30 +236,127 @@ export function useChatMedia(conversationId: string, senderId: string | undefine
     setPendingImageMeta({});
   }, []);
 
-  // Send the previously picked image with a screen-reader alt description.
-  const sendPendingImage = useCallback(
-    async (altText: string) => {
-      const uri = pendingImageUri;
-      if (!uri) return;
-      const { mimeType: assetMimeType, fileName: assetFileName } = pendingImageMeta;
-      setPendingImageUri(null);
-      setPendingImageMeta({});
+  // Fire message.send for a bubble already in the store (its content must be
+  // the uploaded server path). Shared by the first send and Retry.
+  const emitSend = useCallback(
+    (message: ChatMessage) => {
+      const sent = sendSocketMessage("message.send", {
+        conversationId: message.conversationId,
+        content: message.content,
+        type: message.type,
+        clientMessageId: message.clientMessageId,
+        metadata: message.metadata,
+        senderName,
+      });
+      if (!sent) {
+        useChatStore.getState().failMessage(message.clientMessageId, "You appear to be offline. The message wasn't sent.");
+      }
+    },
+    [senderName]
+  );
+
+  // Upload a picked image for an optimistic bubble that is previewing the
+  // local file, then swap in the server path and send it. Upload failure
+  // marks the bubble failed (so it gets Retry / Remove) rather than leaving
+  // a grey box or just showing an Alert.
+  const uploadAndSendImage = useCallback(
+    async (message: ChatMessage) => {
+      const pending = pendingUploads.get(message.clientMessageId);
+      if (!pending) return;
       setIsUploading(true);
       try {
-        const { ext, mimeType } = resolveUploadFileInfo("image", uri, assetMimeType, assetFileName);
+        const { ext, mimeType } = resolveUploadFileInfo(
+          "image",
+          pending.localUri,
+          pending.mimeType,
+          pending.fileName
+        );
         const { url } = await chatService.uploadMedia(
-          { uri, name: `image-${Date.now()}.${ext}`, type: mimeType },
+          { uri: pending.localUri, name: `image-${Date.now()}.${ext}`, type: mimeType },
           "image"
         );
-        sendMedia("IMAGE", url, { altText: altText.trim() });
+        pendingUploads.delete(message.clientMessageId);
+        const uploaded: ChatMessage = { ...message, content: url, status: "sending" };
+        addMessage(uploaded); // merges into the optimistic bubble by clientMessageId
+        emitSend(uploaded);
       } catch (err) {
         console.error("image upload failed", err);
-        Alert.alert("Send failed", "Could not send your image.");
+        useChatStore.getState().failMessage(message.clientMessageId, UPLOAD_FAILED_REASON);
       } finally {
         setIsUploading(false);
       }
     },
-    [pendingImageUri, pendingImageMeta, sendMedia]
+    [addMessage, emitSend]
+  );
+
+  // Send the previously picked image with a screen-reader alt description.
+  // The bubble appears immediately, previewing the local file while it
+  // uploads, instead of only appearing (as a grey box) once it is on the server.
+  const sendPendingImage = useCallback(
+    async (altText: string) => {
+      const uri = pendingImageUri;
+      if (!uri || !senderId) return;
+      const { mimeType, fileName } = pendingImageMeta;
+      setPendingImageUri(null);
+      setPendingImageMeta({});
+
+      const clientMessageId = generateUUID();
+      const optimistic: ChatMessage = {
+        id: clientMessageId,
+        clientMessageId,
+        conversationId,
+        senderId,
+        content: uri,
+        type: "IMAGE",
+        metadata: JSON.stringify({ altText: altText.trim() }),
+        status: "sending",
+        createdAt: new Date().toISOString(),
+      };
+      pendingUploads.set(clientMessageId, { localUri: uri, mimeType, fileName });
+      addMessage(optimistic);
+      await uploadAndSendImage(optimistic);
+    },
+    [pendingImageUri, pendingImageMeta, senderId, conversationId, addMessage, uploadAndSendImage]
+  );
+
+  /** True when a failed bubble can be retried from this device. */
+  const canRetry = useCallback((message: ChatMessage): boolean => {
+    if (message.status !== "failed") return false;
+    // Still a local file: retry needs the upload details we kept for it.
+    if (isLocalMediaUri(message.content)) return pendingUploads.has(message.clientMessageId);
+    return true;
+  }, []);
+
+  /**
+   * Retry a failed message with the same clientMessageId. A rejected message
+   * was never persisted, so the server treats the resend as new; an upload
+   * failure re-uploads first.
+   */
+  const retryMessage = useCallback(
+    (message: ChatMessage) => {
+      if (!canRetry(message)) return;
+      const retrying: ChatMessage = { ...message, status: "sending", failureReason: undefined, failureAcknowledged: false };
+      addMessage(retrying);
+      if (isLocalMediaUri(message.content)) {
+        uploadAndSendImage(retrying);
+      } else {
+        emitSend(retrying);
+      }
+    },
+    [canRetry, addMessage, uploadAndSendImage, emitSend]
+  );
+
+  /**
+   * Drop a failed message from this device only. It never reached the
+   * server, so there is nothing to delete there — sending its clientMessageId
+   * to message.delete just came back MESSAGE_NOT_FOUND.
+   */
+  const discardFailedMessage = useCallback(
+    (message: ChatMessage) => {
+      pendingUploads.delete(message.clientMessageId);
+      removeMessage(message.conversationId, message.clientMessageId);
+    },
+    [removeMessage]
   );
 
   return {
@@ -261,5 +370,8 @@ export function useChatMedia(conversationId: string, senderId: string | undefine
     cancelPendingImage,
     sendPendingImage,
     removeMessage,
+    canRetry,
+    retryMessage,
+    discardFailedMessage,
   };
 }

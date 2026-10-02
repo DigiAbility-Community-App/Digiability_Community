@@ -1,5 +1,5 @@
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { AlertCircle, Eye, EyeOff } from 'lucide-react';
 import { authService } from '../../services/authService';
@@ -11,7 +11,15 @@ import {
   type PasswordPolicy,
 } from '../../utils/passwordValidation';
 import apiClient from '../../services/apiClient';
-import { useEffect } from 'react';
+
+type EmailStatus = 'idle' | 'invalid' | 'checking' | 'available' | 'taken';
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/** Field errors from a 422 `{ errors: [{ field, message }] }` response. */
+function fieldError(err: any, field: string): string | null {
+  const errors: Array<{ field?: string; message?: string }> = err?.response?.data?.errors ?? [];
+  return errors.find((e) => e.field === field)?.message ?? null;
+}
 
 const Register = () => {
   const navigate = useNavigate();
@@ -19,6 +27,48 @@ const Register = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  // Shown under the password field rather than in the banner at the top.
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+
+  // Live "already registered" check, debounced like the mobile app's, so the
+  // user finds out while typing instead of after submitting the whole form.
+  const [emailStatus, setEmailStatus] = useState<EmailStatus>('idle');
+  const [emailMessage, setEmailMessage] = useState('');
+  const emailDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Ignores a response for an address the user has since changed.
+  const latestEmailRef = useRef('');
+
+  useEffect(() => () => {
+    if (emailDebounceRef.current) clearTimeout(emailDebounceRef.current);
+  }, []);
+
+  const handleEmailChange = (value: string) => {
+    setEmail(value);
+    const trimmed = value.trim().toLowerCase();
+    latestEmailRef.current = trimmed;
+    if (emailDebounceRef.current) clearTimeout(emailDebounceRef.current);
+
+    if (!trimmed) {
+      setEmailStatus('idle');
+      setEmailMessage('');
+      return;
+    }
+    if (!EMAIL_PATTERN.test(trimmed)) {
+      // Don't nag mid-typing; the format message shows once the field is left.
+      setEmailStatus('invalid');
+      setEmailMessage('');
+      return;
+    }
+
+    setEmailStatus('checking');
+    setEmailMessage('Checking…');
+    emailDebounceRef.current = setTimeout(async () => {
+      const result = await authService.checkEmailAvailability(trimmed);
+      if (latestEmailRef.current !== trimmed) return;
+      setEmailStatus(!result.checked ? 'idle' : result.available ? 'available' : 'taken');
+      setEmailMessage(result.checked ? result.message : '');
+    }, 500);
+  };
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   // This form previously had no terms notice at all — not even the passive
@@ -59,9 +109,18 @@ const Register = () => {
       setError('Please fill in all fields.');
       return;
     }
-    const passwordError = firstPasswordError(password, passwordPolicy);
-    if (passwordError) {
-      setError(passwordError);
+    if (emailStatus === 'taken') {
+      setError(emailMessage || 'An account with this email already exists.');
+      return;
+    }
+    if (emailStatus === 'checking') {
+      setError('Checking that email address, please wait…');
+      return;
+    }
+    const passwordRuleError = firstPasswordError(password, passwordPolicy);
+    if (passwordRuleError) {
+      setPasswordError(passwordRuleError);
+      document.getElementById('password')?.focus();
       return;
     }
     if (!dateOfBirth) {
@@ -83,6 +142,7 @@ const Register = () => {
 
     setIsLoading(true);
     setError(null);
+    setPasswordError(null);
 
     try {
       await authService.register(name, email, password, dateOfBirth);
@@ -90,7 +150,15 @@ const Register = () => {
       // read from the auth store on the next screen — pass it through.
       navigate('/verify-email', { state: { email } });
     } catch (err: any) {
-      const msg = err.response?.data?.message || err.message || 'Registration failed.';
+      // A 422 from the password policy carries the real reasons in errors[];
+      // the top-level message is only "Validation failed".
+      const serverPasswordError = fieldError(err, 'password');
+      if (serverPasswordError) {
+        setPasswordError(serverPasswordError);
+        return;
+      }
+      const firstFieldMessage = err.response?.data?.errors?.[0]?.message;
+      const msg = firstFieldMessage || err.response?.data?.message || err.message || 'Registration failed.';
       setError(msg);
     } finally {
       setIsLoading(false);
@@ -127,11 +195,25 @@ const Register = () => {
           className="form-input"
           placeholder="Enter your email"
           value={email}
-          onChange={(e) => setEmail(e.target.value)}
+          onChange={(e) => handleEmailChange(e.target.value)}
+          onBlur={() => {
+            if (emailStatus === 'invalid') setEmailMessage('Enter a valid email address');
+          }}
           required
           autoComplete="email"
           disabled={isLoading}
+          aria-invalid={emailStatus === 'taken' || (emailStatus === 'invalid' && !!emailMessage)}
+          aria-describedby={emailMessage ? 'email-status' : undefined}
         />
+        {emailMessage && (
+          <p
+            id="email-status"
+            role={emailStatus === 'taken' ? 'alert' : 'status'}
+            className={`field-status ${emailStatus === 'taken' || emailStatus === 'invalid' ? 'field-status-error' : emailStatus === 'available' ? 'field-status-ok' : ''}`}
+          >
+            {emailStatus === 'available' ? `\u2713 ${emailMessage}` : emailMessage}
+          </p>
+        )}
       </div>
       <div className="form-group">
         <label htmlFor="password" className="form-label">Password</label>
@@ -142,13 +224,18 @@ const Register = () => {
             className="form-input"
             placeholder={`${passwordPolicy.minLength}\u2013${passwordPolicy.maxLength} characters`}
             value={password}
-            onChange={(e) => setPassword(e.target.value)}
+            onChange={(e) => {
+              setPassword(e.target.value);
+              setPasswordError(null);
+            }}
             onFocus={() => setPasswordFocused(true)}
             onBlur={() => setPasswordFocused(false)}
             required
             autoComplete="new-password"
             disabled={isLoading}
             style={{ paddingRight: '40px' }}
+            aria-invalid={!!passwordError}
+            aria-describedby={passwordError ? 'password-error' : undefined}
           />
           <button
             type="button"
@@ -161,9 +248,16 @@ const Register = () => {
           </button>
         </div>
 
-        {/* Revealed while the password field is focused, ticking off live —
-            the list is the admin-configured policy the API will enforce. */}
-        {passwordFocused && (
+        {passwordError && (
+          <p id="password-error" role="alert" className="field-status field-status-error">
+            {passwordError}
+          </p>
+        )}
+
+        {/* Revealed while the password field is focused (or while a password
+            error is showing), ticking off live — the list is the
+            admin-configured policy the API will enforce. */}
+        {(passwordFocused || !!passwordError) && (
           <ul className="password-rules" aria-label="Password requirements">
             {passwordRules.map((rule) => (
               <li

@@ -12,6 +12,16 @@ import { conversationRepository } from "../repositories/conversation.repository"
 import { logger } from "../config/logger";
 import { connectionManager } from "../websocket/connection-manager";
 import { WS_EVENTS } from "../types/ws-events";
+import { createError } from "../middleware/error.middleware";
+import { publishMessagePersisted } from "../streams/producer";
+import { generateMessageId } from "../utils/id.util";
+import {
+  getConversationSuspension,
+  suspensionRejectionReason,
+} from "../utils/suspension.util";
+
+/** senderId the admin panel posts group announcements under. */
+export const ADMIN_SENDER_ID = "digiability-admin";
 
 class MessageService {
   /**
@@ -200,6 +210,83 @@ class MessageService {
     }
 
     logger.info("Message soft-deleted and broadcast", { messageId, conversationId });
+  }
+
+  /**
+   * Admin-panel announcement into a group chat.
+   *
+   * The admin panel used to INSERT into chat.messages with raw SQL, which
+   * skipped the msg:persisted stream — so online members never got a
+   * message.new event and saw nothing until they reopened the chat — and
+   * computed sequenceNo without the advisory lock. This goes through the same
+   * persistMessage() + publishMessagePersisted() pair the msg-svc worker uses,
+   * so delivery.worker fans it out over WebSocket like any other message.
+   *
+   * Returns only once the row is persisted. `liveDelivered` is false when the
+   * stream publish failed: the message is saved and shows up on the next
+   * history fetch, but members with the chat already open won't see it live.
+   */
+  async adminPostAnnouncement(
+    conversationId: string,
+    content: string,
+    metadata: string
+  ): Promise<{ messageId: string; sequenceNo: string; liveDelivered: boolean }> {
+    const conversation = await conversationRepository.getById(conversationId);
+    if (!conversation || conversation.type !== "GROUP") {
+      throw createError("Group not found or has been deleted.", 404);
+    }
+
+    const suspension = getConversationSuspension(conversation);
+    if (suspension) {
+      throw createError(suspensionRejectionReason(suspension), 409);
+    }
+
+    const persisted = await messageRepository.persistMessage({
+      messageId: generateMessageId(),
+      conversationId,
+      senderId: ADMIN_SENDER_ID,
+      clientMessageId: generateMessageId(),
+      content,
+      type: "TEXT",
+      metadata,
+      createdAt: new Date().toISOString(),
+    });
+
+    let liveDelivered = true;
+    try {
+      await publishMessagePersisted({
+        messageId: persisted.id,
+        conversationId,
+        senderId: ADMIN_SENDER_ID,
+        senderName: "DigiAbility Admin",
+        clientMessageId: persisted.clientMessageId,
+        content: persisted.content,
+        type: persisted.type,
+        metadata,
+        sequenceNo: persisted.sequenceNo.toString(),
+        createdAt: persisted.createdAt.toISOString(),
+      });
+    } catch (err) {
+      liveDelivered = false;
+      logger.error("Admin announcement persisted but stream publish failed", {
+        messageId: persisted.id,
+        conversationId,
+        error: err instanceof Error ? err.message : "unknown",
+      });
+    }
+
+    logger.info("Admin announcement posted", {
+      messageId: persisted.id,
+      conversationId,
+      sequenceNo: persisted.sequenceNo.toString(),
+      liveDelivered: String(liveDelivered),
+    });
+
+    return {
+      messageId: persisted.id,
+      sequenceNo: persisted.sequenceNo.toString(),
+      liveDelivered,
+    };
   }
 }
 

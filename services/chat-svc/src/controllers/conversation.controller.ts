@@ -190,9 +190,10 @@ export const removeMember = asyncHandler(async (req: Request, res: Response) => 
 
   await conversationService.removeMember(conversationId, user.sub, targetId);
 
+  // Same route serves leaving and removal; say which one happened.
   res.status(200).json({
     success: true,
-    message: "Member removed successfully",
+    message: targetId === user.sub ? "You left the group" : "Member removed successfully",
   });
 });
 

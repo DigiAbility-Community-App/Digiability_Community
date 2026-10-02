@@ -4,12 +4,20 @@ import { CHAT_API_URL } from '@config/env';
 
 export const CHAT_BASE_URL = CHAT_API_URL;
 
+/** True for a URI that points at a file on this device rather than the server. */
+export function isLocalMediaUri(uri: string): boolean {
+  return /^(file|content|ph|assets-library|data):/i.test(uri);
+}
+
 // Resolve a media path/URL returned by the server. New uploads return a
 // host-relative path ("/uploads/x.jpg") which each client resolves against its
 // own chat-svc base; older absolute URLs pass through unchanged.
 export function resolveMediaUrl(pathOrUrl: string): string {
   if (!pathOrUrl) return pathOrUrl;
   if (/^https?:\/\//i.test(pathOrUrl)) return pathOrUrl;
+  // Device-local URIs (file://, content://, ph://, data:) belong to an image
+  // still being uploaded — the optimistic bubble previews it from the device.
+  if (isLocalMediaUri(pathOrUrl)) return pathOrUrl;
   return `${CHAT_BASE_URL}${pathOrUrl.startsWith('/') ? '' : '/'}${pathOrUrl}`;
 }
 

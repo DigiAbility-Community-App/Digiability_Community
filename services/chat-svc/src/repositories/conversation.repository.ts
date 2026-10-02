@@ -308,16 +308,31 @@ class ConversationRepository {
 
   /**
    * Check if a user is an active member of a conversation.
+   *
+   * A soft-deleted conversation has no active members. Without this, a
+   * deleted group's members still passed the membership check in the
+   * message.send handler, and since getById() returns null for a deleted
+   * group, every later gate there (suspension, ADMINS_ONLY, block) was
+   * skipped and the message was persisted.
    */
   async isMember(conversationId: string, userId: string): Promise<boolean> {
     const member = await prisma.conversationMember.findUnique({
       where: {
         conversationId_userId: { conversationId, userId },
       },
-      select: { leftAt: true },
+      select: { leftAt: true, conversation: { select: { deletedAt: true } } },
     });
 
-    return member !== null && member.leftAt === null;
+    return member !== null && member.leftAt === null && member.conversation.deletedAt === null;
+  }
+
+  /** True when the conversation exists and has not been soft-deleted. */
+  async isActive(conversationId: string): Promise<boolean> {
+    const row = await prisma.conversation.findFirst({
+      where: { id: conversationId, deletedAt: null },
+      select: { id: true },
+    });
+    return row !== null;
   }
 
   /**
@@ -439,7 +454,9 @@ class ConversationRepository {
       where: {
         conversationId_userId: { conversationId, userId },
       },
-      update: { leftAt: null, role },
+      // Clear leftReason too, so a rejoined member isn't still carrying the
+      // "LEFT"/"REMOVED" from their previous membership.
+      update: { leftAt: null, leftReason: null, role },
       create: { conversationId, userId, role, lastReadSequenceNo: maxSeq },
     });
   }

@@ -1009,8 +1009,8 @@ function CreateGroupModal({ onClose, onCreated }: { onClose: () => void; onCreat
 
               {/* MAX MEMBERS */}
               <div>
-                <label className="block text-xs font-extrabold uppercase tracking-[0.15em] text-slate-500 mb-2">Max Members (default: {subType==="CARE_CIRCLE" ? 15 : 256})</label>
-                <input type="number" value={maxMembers} onChange={e => setMaxMembers(e.target.value)} min={2} max={500} placeholder={String(subType==="CARE_CIRCLE" ? 15 : 256)} className="w-full h-12 rounded-xl bg-[#F7F5FA] px-4 text-sm outline-none border border-transparent focus:border-[#8A38F5] transition" />
+                <label className="block text-xs font-extrabold uppercase tracking-[0.15em] text-slate-500 mb-2">Max Members (default: {subType==="CARE_CIRCLE" ? 15 : 256}, up to {subType==="CARE_CIRCLE" ? 15 : 500})</label>
+                <input type="number" value={maxMembers} onChange={e => setMaxMembers(e.target.value)} min={2} max={subType==="CARE_CIRCLE" ? 15 : 500} placeholder={String(subType==="CARE_CIRCLE" ? 15 : 256)} className="w-full h-12 rounded-xl bg-[#F7F5FA] px-4 text-sm outline-none border border-transparent focus:border-[#8A38F5] transition" />
               </div>
 
               {/* PERMISSIONS */}

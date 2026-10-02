@@ -13,7 +13,7 @@ import {
 import { WeeklyScheduleEditor } from "@/components/shared/WeeklyScheduleEditor";
 import { ConfirmModal } from "@/components/shared/ConfirmModal";
 import { ModalErrorBanner } from "@/components/shared/ModalErrorBanner";
-import { WeeklySchedule, defaultWeeklySchedule, isValidWeeklySchedule } from "@/lib/availabilitySchedule";
+import { WeeklySchedule, defaultWeeklySchedule, validateWeeklySchedule, scheduleErrorMessage } from "@/lib/availabilitySchedule";
 
 // ─────────────────────────────────────────────
 // SERVICE DIRECTORY TYPES
@@ -223,8 +223,9 @@ export default function ServicesPage() {
       setServiceErrorMsg(INVALID_PHONE_MESSAGE);
       return;
     }
-    if (!isValidWeeklySchedule(serviceFormData.availabilitySchedule)) {
-      setServiceErrorMsg("Every day marked Open needs both a From and To time.");
+    const scheduleCheck = validateWeeklySchedule(serviceFormData.availabilitySchedule);
+    if (!scheduleCheck.ok) {
+      setServiceErrorMsg(scheduleErrorMessage(scheduleCheck));
       return;
     }
 

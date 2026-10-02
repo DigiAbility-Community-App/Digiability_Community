@@ -19,7 +19,7 @@ import { useRoute, useNavigation } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import ScreenWrapper from "../../components/layout/ScreenWrapper";
 import { SheetKeyboardAvoidingView } from "../../components/shared/SheetKeyboardAvoidingView";
-import { KeyboardAwareScrollView } from "react-native-keyboard-aware-scroll-view";
+import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import {
   ArrowLeft,
   CheckCircle2,
@@ -52,6 +52,7 @@ import { useTheme } from "../../theme/ThemeContext";
 import { AccessibleText } from "../../components/shared/AccessibleText";
 import { AccessibleButton } from "../../components/shared/AccessibleButton";
 import { REPORT_REASONS } from "../../constants/reportReasons";
+import { resolveForumMediaUrl } from "@services/forumService";
 
 const { height: SCREEN_HEIGHT } = Dimensions.get("window");
 
@@ -452,13 +453,13 @@ const QuestionDetailsScreen = () => {
         ) : null}
 
         {/* QUESTION IMAGE - Clickable to open pinch-to-zoom MediaViewer */}
-        {!failedImages[currentQuestion.id] && isValidImageUrl(currentQuestion.imageUrl) && (
+        {!failedImages[currentQuestion.id] && isValidImageUrl(resolveForumMediaUrl(currentQuestion.imageUrl)) && (
           <TouchableOpacity
             style={styles.imageContainer}
             activeOpacity={0.9}
             onPress={() =>
               setSelectedMedia({
-                src: currentQuestion.imageUrl as string,
+                src: resolveForumMediaUrl(currentQuestion.imageUrl),
                 alt: isValidAltText(currentQuestion.altText)
                   ? currentQuestion.altText!
                   : currentQuestion.title,
@@ -473,7 +474,7 @@ const QuestionDetailsScreen = () => {
             accessibilityHint="Tap to view image full screen with zoom and download"
           >
             <Image
-              source={{ uri: currentQuestion.imageUrl as string }}
+              source={{ uri: resolveForumMediaUrl(currentQuestion.imageUrl) }}
               style={styles.questionImage}
               resizeMode="cover"
               onError={() => setFailedImages((prev) => ({ ...prev, [currentQuestion.id]: true }))}
@@ -775,13 +776,13 @@ const QuestionDetailsScreen = () => {
             )}
 
             {/* IMAGE - Clickable to open pinch-to-zoom MediaViewer */}
-            {!failedImages[item.id] && isValidImageUrl(item.imageUrl) && (
+            {!failedImages[item.id] && isValidImageUrl(resolveForumMediaUrl(item.imageUrl)) && (
               <TouchableOpacity
                 style={styles.imageContainer}
                 activeOpacity={0.9}
                 onPress={() =>
                   setSelectedMedia({
-                    src: item.imageUrl as string,
+                    src: resolveForumMediaUrl(item.imageUrl),
                     alt: isValidAltText(item.altText) ? item.altText! : "Answer image",
                   })
                 }
@@ -792,7 +793,7 @@ const QuestionDetailsScreen = () => {
                 accessibilityHint="Tap to view image full screen with zoom and download"
               >
                 <Image
-                  source={{ uri: item.imageUrl as string }}
+                  source={{ uri: resolveForumMediaUrl(item.imageUrl) }}
                   style={styles.answerImage}
                   resizeMode="cover"
                   onError={() => setFailedImages((prev) => ({ ...prev, [item.id]: true }))}
@@ -997,8 +998,7 @@ const QuestionDetailsScreen = () => {
                 showsVerticalScrollIndicator={false}
                 keyboardShouldPersistTaps="handled"
                 contentContainerStyle={{ paddingBottom: 16 }}
-                enableOnAndroid={true}
-                extraScrollHeight={60}
+                bottomOffset={60}
               >
                 <AccessibleText variant="title" style={[styles.reportTitle, { color: colors.text }]}>
                   Report {reportTarget?.type === "answer" ? "Answer" : "Post"}

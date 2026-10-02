@@ -1,64 +1,56 @@
 // ─────────────────────────────────────────────────────────────
-// MediaViewer — full-screen modal for viewing images & videos.
+// MediaViewer — full-screen viewer for images & videos, with Save to Gallery
+// and Share. Used by chat (DM/group), forum questions/answers and events.
 //
-// Image zoom: Uses react-native-image-viewing which provides
-//   • Proper 2-finger pinch-to-zoom (in and out, clamped at 1x min)
-//   • Pan/drag while zoomed - stays within image bounds
-//   • Double-tap to zoom
-//   • Image always centered in its original frame
+// Image zoom: react-native-zoom-toolkit's ResumableZoom (gesture-handler +
+// Reanimated). Pinch zooms around the fingers, double-tap toggles fit/4×,
+// panning is clamped to the image edges, and zoom state lives in Reanimated
+// shared values on the UI thread — a re-render of this component (presence /
+// typing / new-message traffic in the chat behind it) can't reset it.
 //
-// Download: Saves directly to device Gallery/Photos via expo-media-library.
-//   Green tick ONLY shows when save genuinely succeeds.
-// Share: Opens system share sheet.
+// This replaced react-native-image-viewing (unmaintained since 2020), whose
+// Android zoom kept its state in render-scoped variables and reset on every
+// re-render, used absolute scale limits (huge photos jumped to ~20×, small
+// images shrank), and never saved a gesture that was taken over. Five
+// patches over it never held. Don't bring it back — CI's check-transport
+// script fails if it reappears.
+//
+// Rules this file must keep:
+//  - No hooks after a conditional return. The forum screen keeps this
+//    component mounted and toggles `visible`; a hook added after an early
+//    return crashed it ("Rendered more hooks than during the previous render").
+//  - The Modal's content is wrapped in its own GestureHandlerRootView. On
+//    Android, gesture-handler gestures don't fire inside an RN Modal without it.
+//  - Save/share go through prepareLocalMediaFile() only (utils/mediaFile.ts).
 // ─────────────────────────────────────────────────────────────
 
-import React, { useCallback, useRef, useState, useEffect } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   View,
+  Image,
   TouchableOpacity,
   StyleSheet,
   Modal,
   StatusBar,
-  Dimensions,
   ActivityIndicator,
   Alert,
   Linking,
-  Platform,
+  useWindowDimensions,
 } from "react-native";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
+import { ResumableZoom, useImageResolution, fitContainer } from "react-native-zoom-toolkit";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Video, ResizeMode } from "expo-av";
-import { prepareLocalMediaFile, mimeTypeForUri } from "../../utils/mediaFile";
 import * as MediaLibrary from "expo-media-library";
 import * as Sharing from "expo-sharing";
-import ImageViewing from "react-native-image-viewing";
-import {
-  ArrowLeft,
-  X,
-  Download,
-  Share2,
-  Check,
-} from "lucide-react-native";
+import { ArrowLeft, X, Download, Share2, Check, ImageOff } from "lucide-react-native";
+import { prepareLocalMediaFile, mimeTypeForUri, logMedia } from "../../utils/mediaFile";
 import { AccessibleText } from "../shared/AccessibleText";
-import { CHAT_BASE_URL } from "../../services/chatService";
 
-const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get("window");
+/** Max zoom relative to the image fitted to the screen (fit = 1×). */
+const MAX_ZOOM = 4;
+const HIT_SLOP = { top: 8, bottom: 8, left: 8, right: 8 };
 
-// Defense-in-depth: only ever download from this app's own chat-svc origin.
-// The server already rejects non-upload media content at send time
-// (messageSendSchema), but a modified/older client could still slip an
-// external URL through, and this is the last line of defense before
-// anything gets written to the user's device storage.
-function originOf(url: string): string {
-  const match = url.match(/^https?:\/\/[^/]+/i);
-  return match ? match[0].toLowerCase() : "";
-}
-function isAllowedMediaOrigin(url: string): boolean {
-  const urlOrigin = originOf(url);
-  return !!urlOrigin && urlOrigin === originOf(CHAT_BASE_URL);
-}
-
-// A generous cap so a malicious/misbehaving URL can't fill up device
-// storage or flood the photo library with an oversized file.
 interface MediaViewerProps {
   visible: boolean;
   src: string;
@@ -68,39 +60,34 @@ interface MediaViewerProps {
   title?: string;
 }
 
-export function MediaViewer({
-  visible,
-  src,
-  alt,
-  isVideo,
-  onClose,
-  title = "Shared image",
-}: MediaViewerProps) {
-  const videoRef = useRef<Video>(null);
+function MediaViewerImpl({ visible, src, alt, isVideo, onClose, title = "Shared image" }: MediaViewerProps) {
   const insets = useSafeAreaInsets();
-
+  const videoRef = useRef<Video>(null);
   const [downloading, setDownloading] = useState(false);
   const [downloadSuccess, setDownloadSuccess] = useState(false);
-  // Track whether user has reached end-of-video so next play restarts from beginning
-  const videoEndedRef = useRef(false);
+  const [sharing, setSharing] = useState(false);
 
-  // Auto-start video when modal becomes visible (without using shouldPlay=true which fights native controls)
+  // Auto-start video when opened (shouldPlay=true fights the native controls).
   useEffect(() => {
-    if (visible && isVideo) {
-      videoEndedRef.current = false;
-      const timer = setTimeout(() => {
-        videoRef.current?.playAsync().catch(() => {});
-      }, 300);
-      return () => clearTimeout(timer);
-    }
+    if (!visible || !isVideo) return;
+    const timer = setTimeout(() => {
+      videoRef.current?.playAsync().catch(() => {});
+    }, 300);
+    return () => clearTimeout(timer);
   }, [visible, isVideo]);
 
-  // Handle end-of-video: pause in place (do NOT seek — that causes resume-from-start bug)
-  // When user taps play after video ends, we seek to 0 THEN play (see handleVideoPress)
+  // Reset per-open UI state so a previous image's tick doesn't carry over.
+  useEffect(() => {
+    if (!visible) {
+      setDownloading(false);
+      setDownloadSuccess(false);
+      setSharing(false);
+    }
+  }, [visible]);
+
+  // At end of video just pause in place — seeking there caused resume-from-start bugs.
   const handlePlaybackStatusUpdate = useCallback((status: any) => {
     if (status?.didJustFinish && !status?.isLooping) {
-      videoEndedRef.current = true;
-      // Just pause — keep position at end so native controls show correctly
       videoRef.current?.pauseAsync().catch(() => {});
     }
   }, []);
@@ -110,128 +97,85 @@ export function MediaViewer({
     onClose();
   }, [onClose]);
 
-  // Chat media stays restricted to the chat-svc origin; the shared helper
-  // handles download/decode and verifies something was actually written.
-  const prepareLocalFile = (): Promise<string> =>
-    prepareLocalMediaFile(src, { isVideo, isAllowedOrigin: isAllowedMediaOrigin });
-
-  // ── Download & Save Directly to Phone Gallery / Photos ──
-  const handleDownload = async () => {
+  // ── Save to Gallery / Photos ──
+  const handleDownload = useCallback(async () => {
     if (!src || downloading) return;
     setDownloading(true);
     setDownloadSuccess(false);
-
     try {
-      const localUri = await prepareLocalFile();
+      const localUri = await prepareLocalMediaFile(src, { isVideo });
 
-      // Request photo/video write permission only (not AUDIO to avoid AndroidManifest error)
+      // Write-only: no runtime prompt on Android 13+; WRITE_EXTERNAL_STORAGE
+      // on Android ≤12; "Add Photos Only" on iOS.
       const { status, canAskAgain } = await MediaLibrary.requestPermissionsAsync(true, ["photo", "video"]);
       if (status !== "granted") {
-        setDownloadSuccess(false);
-        if (canAskAgain === false) {
-          // Permanently denied ("don't ask again" on Android, or a
-          // previously-declined prompt on iOS) — the OS won't show the
-          // request dialog again, so the only way forward is Settings.
-          Alert.alert(
-            "Permission Required",
-            "Photo/media access is turned off for Digiability. Enable it in Settings to save images to your phone Gallery.",
-            [
-              { text: "Cancel", style: "cancel" },
-              { text: "Open Settings", onPress: () => Linking.openSettings() },
-            ]
-          );
-        } else {
-          Alert.alert(
-            "Permission Required",
-            "Please allow photo/media access so Digiability can save images to your phone Gallery.",
-            [{ text: "OK" }]
-          );
-        }
+        logMedia("save permission denied", src, { status, canAskAgain });
+        Alert.alert(
+          "Permission Required",
+          canAskAgain === false
+            ? "Photo access is turned off for Digiability. Enable it in Settings to save to your Gallery."
+            : "Please allow photo access so Digiability can save to your Gallery.",
+          canAskAgain === false
+            ? [
+                { text: "Cancel", style: "cancel" },
+                { text: "Open Settings", onPress: () => Linking.openSettings() },
+              ]
+            : [{ text: "OK" }]
+        );
         return;
       }
 
-      // Save to device Gallery — green tick ONLY if this succeeds
       await MediaLibrary.saveToLibraryAsync(localUri);
-
       setDownloadSuccess(true);
-      Alert.alert(
-        "Saved to Gallery ✓",
-        "The media has been saved to your device's Photos / Gallery.",
-        [{ text: "OK" }]
-      );
+      Alert.alert("Saved to Gallery ✓", isVideo ? "The video has been saved to your Gallery." : "The image has been saved to your Gallery.");
       setTimeout(() => setDownloadSuccess(false), 3500);
     } catch (error: any) {
-      console.error("Save to gallery error:", error);
-      setDownloadSuccess(false);
-      Alert.alert(
-        "Save Failed",
-        error?.message || "Could not save media to device. Please try again."
-      );
+      logMedia("save failed", src, error);
+      Alert.alert("Save Failed", error?.message || "Could not save to your Gallery. Please try again.");
     } finally {
       setDownloading(false);
     }
-  };
+  }, [src, isVideo, downloading]);
 
-  // ── Share via external apps (WhatsApp, Drive, etc.) ──
-  const handleShare = async () => {
+  // ── Share sheet (WhatsApp, Gmail, Drive, …) ──
+  const handleShare = useCallback(async () => {
+    if (!src || sharing) return;
+    setSharing(true);
     try {
-      const localUri = await prepareLocalFile();
-      if (await Sharing.isAvailableAsync()) {
-        await Sharing.shareAsync(localUri, {
-          // Derive from the actual file rather than always claiming JPEG —
-          // a PNG announced as image/jpeg confuses some receiving apps.
-          mimeType: mimeTypeForUri(localUri, isVideo),
-          dialogTitle: isVideo ? "Share Video" : "Share Image",
-        });
-      } else {
-        Alert.alert("Share", "Sharing is not available on this device.");
+      if (!(await Sharing.isAvailableAsync())) {
+        Alert.alert("Share", "Sharing isn't available on this device.");
+        return;
       }
+      const localUri = await prepareLocalMediaFile(src, { isVideo });
+      await Sharing.shareAsync(localUri, {
+        mimeType: mimeTypeForUri(localUri, isVideo),
+        dialogTitle: isVideo ? "Share Video" : "Share Image",
+      });
     } catch (error: any) {
-      Alert.alert("Share Failed", error?.message || "Could not open share menu.");
+      logMedia("share failed", src, error);
+      Alert.alert("Share Failed", error?.message || "Could not open the share menu.");
+    } finally {
+      setSharing(false);
     }
-  };
+  }, [src, isVideo, sharing]);
 
-  if (!visible) return null;
-
-  // ── VIDEO: Custom full-screen modal ──
-  if (isVideo) {
-    return (
-      <Modal
-        visible={visible}
-        animationType="fade"
-        presentationStyle="fullScreen"
-        statusBarTranslucent
-        onRequestClose={handleClose}
-        supportedOrientations={["portrait", "landscape"]}
-      >
+  return (
+    <Modal
+      visible={visible}
+      animationType="fade"
+      statusBarTranslucent
+      navigationBarTranslucent
+      onRequestClose={handleClose}
+      supportedOrientations={["portrait", "landscape"]}
+    >
+      <GestureHandlerRootView style={styles.container}>
         <StatusBar barStyle="light-content" backgroundColor="#000" />
-        <View style={styles.container}>
-          {/* Top bar */}
-          <View style={[styles.topBarSafe, { paddingTop: Math.max(insets.top, 16) }]}>
-            <View style={styles.topBar}>
-              <TouchableOpacity style={styles.backBtn} onPress={handleClose} accessibilityRole="button" accessibilityLabel="Back" hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
-                <ArrowLeft size={22} color="#fff" strokeWidth={2.2} />
-                <AccessibleText numberOfLines={1} style={styles.headerTitle}>{alt || title}</AccessibleText>
-              </TouchableOpacity>
-              <View style={styles.actionsRow}>
-                <TouchableOpacity style={[styles.iconBtn, downloadSuccess && styles.iconBtnSuccess]} onPress={handleDownload} disabled={downloading} accessibilityRole="button" accessibilityLabel="Save to Gallery" hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                  {downloading ? <ActivityIndicator size="small" color="#fff" /> : downloadSuccess ? <Check size={20} color="#4ADE80" strokeWidth={2.5} /> : <Download size={20} color="#fff" strokeWidth={2} />}
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.iconBtn} onPress={handleShare} accessibilityRole="button" accessibilityLabel="Share" hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                  <Share2 size={20} color="#fff" strokeWidth={2} />
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.closeBtn} onPress={handleClose} accessibilityRole="button" accessibilityLabel="Close" hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                  <X size={20} color="#fff" strokeWidth={2.2} />
-                </TouchableOpacity>
-              </View>
-            </View>
-          </View>
-          {/* Video player */}
-          <View style={styles.content}>
+        <View style={styles.content}>
+          {isVideo ? (
             <Video
               ref={videoRef}
               source={{ uri: src }}
-              style={styles.video}
+              style={styles.fill}
               resizeMode={ResizeMode.CONTAIN}
               useNativeControls
               shouldPlay={false}
@@ -239,79 +183,115 @@ export function MediaViewer({
               onPlaybackStatusUpdate={handlePlaybackStatusUpdate}
               accessibilityLabel={alt || "Video"}
             />
+          ) : visible ? (
+            <ZoomableImage src={src} alt={alt || title} />
+          ) : null}
+        </View>
+
+        {/* Header overlays the media so zooming never moves it. */}
+        <View style={[styles.header, { paddingTop: Math.max(insets.top, 16) }]} pointerEvents="box-none">
+          <View style={styles.topBar}>
+            <TouchableOpacity style={styles.backBtn} onPress={handleClose} accessibilityRole="button" accessibilityLabel="Back" hitSlop={HIT_SLOP}>
+              <ArrowLeft size={22} color="#fff" strokeWidth={2.2} />
+              <AccessibleText numberOfLines={1} style={styles.headerTitle}>{alt || title}</AccessibleText>
+            </TouchableOpacity>
+            <View style={styles.actionsRow}>
+              <TouchableOpacity
+                style={[styles.iconBtn, downloadSuccess && styles.iconBtnSuccess]}
+                onPress={handleDownload}
+                disabled={downloading}
+                accessibilityRole="button"
+                accessibilityLabel={isVideo ? "Save video to Gallery" : "Save image to Gallery"}
+                accessibilityState={{ busy: downloading, disabled: downloading }}
+                hitSlop={HIT_SLOP}
+              >
+                {downloading ? <ActivityIndicator size="small" color="#fff" /> : downloadSuccess ? <Check size={20} color="#4ADE80" strokeWidth={2.5} /> : <Download size={20} color="#fff" strokeWidth={2} />}
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.iconBtn}
+                onPress={handleShare}
+                disabled={sharing}
+                accessibilityRole="button"
+                accessibilityLabel={isVideo ? "Share video" : "Share image"}
+                accessibilityState={{ busy: sharing, disabled: sharing }}
+                hitSlop={HIT_SLOP}
+              >
+                {sharing ? <ActivityIndicator size="small" color="#fff" /> : <Share2 size={20} color="#fff" strokeWidth={2} />}
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.iconBtn} onPress={handleClose} accessibilityRole="button" accessibilityLabel="Close" hitSlop={HIT_SLOP}>
+                <X size={20} color="#fff" strokeWidth={2.2} />
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
-      </Modal>
+      </GestureHandlerRootView>
+    </Modal>
+  );
+}
+
+/**
+ * The pinch/pan/double-tap surface. A separate component so its hooks only
+ * run for images (useImageResolution would try to measure a video URL).
+ */
+function ZoomableImage({ src, alt }: { src: string; alt: string }) {
+  const { width, height } = useWindowDimensions();
+  const { isFetching, resolution, error } = useImageResolution({ uri: src });
+
+  if (isFetching) {
+    return <ActivityIndicator size="large" color="#fff" accessibilityLabel="Loading image" />;
+  }
+  if (error || !resolution || resolution.width === 0 || resolution.height === 0) {
+    return (
+      <View style={styles.unavailable} accessible accessibilityLabel={`${alt}. Image unavailable`}>
+        <ImageOff size={36} color="#9CA3AF" />
+        <AccessibleText style={styles.unavailableText}>Image unavailable</AccessibleText>
+      </View>
     );
   }
 
-  // ── IMAGE: react-native-image-viewing handles pinch-to-zoom, pan, centering natively ──
-  // The library hides the Android status bar while the viewer is open
-  // (StatusBarManager calls StatusBar.setHidden for overFullScreen, which is
-  // Android-only), but insets.top still reports the inset for it — so padding
-  // by insets.top there pushed the bar well below the top edge. iOS keeps the
-  // status bar visible and still needs the real inset.
-  const imageHeaderTopPadding = Platform.OS === "android" ? 12 : Math.max(insets.top, 16);
-
-  // Defined once rather than inline: passing an arrow to HeaderComponent makes
-  // it a new component type on every render, so React remounts the header and
-  // the download spinner / success tick lose their state mid-download.
-  const ImageViewerHeader = useCallback(() => (
-    <View style={[styles.topBarSafe, { paddingTop: imageHeaderTopPadding }]}>
-      <View style={styles.topBar}>
-        <TouchableOpacity style={styles.backBtn} onPress={handleClose} accessibilityRole="button" accessibilityLabel="Back" hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
-          <ArrowLeft size={22} color="#fff" strokeWidth={2.2} />
-          <AccessibleText numberOfLines={1} style={styles.headerTitle}>{alt || title}</AccessibleText>
-        </TouchableOpacity>
-        <View style={styles.actionsRow}>
-          <TouchableOpacity style={[styles.iconBtn, downloadSuccess && styles.iconBtnSuccess]} onPress={handleDownload} disabled={downloading} accessibilityRole="button" accessibilityLabel="Save to Gallery" hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            {downloading ? <ActivityIndicator size="small" color="#fff" /> : downloadSuccess ? <Check size={20} color="#4ADE80" strokeWidth={2.5} /> : <Download size={20} color="#fff" strokeWidth={2} />}
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.iconBtn} onPress={handleShare} accessibilityRole="button" accessibilityLabel="Share" hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <Share2 size={20} color="#fff" strokeWidth={2} />
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.closeBtn} onPress={handleClose} accessibilityRole="button" accessibilityLabel="Close" hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <X size={20} color="#fff" strokeWidth={2.2} />
-          </TouchableOpacity>
-        </View>
-      </View>
-    </View>
-  ), [imageHeaderTopPadding, alt, title, downloading, downloadSuccess, handleClose, handleDownload, handleShare]);
-
+  // Fit the whole image on screen; ResumableZoom scales from this size.
+  const size = fitContainer(resolution.width / resolution.height, { width, height });
   return (
-    <>
-      <StatusBar barStyle="light-content" backgroundColor="#000" />
-      <ImageViewing
-        images={[{ uri: src }]}
-        imageIndex={0}
-        visible={visible}
-        onRequestClose={handleClose}
-        animationType="fade"
-        backgroundColor="#000"
-        swipeToCloseEnabled={false}
-        doubleTapToZoomEnabled={true}
-        // Without this, the library's own Android modal adds a
-        // StatusBar.currentHeight top offset AND our own topBarSafe below
-        // adds insets.top on top of that — double-compensating and pushing
-        // the header bar down. overFullScreen makes the modal true top:0
-        // full-screen (and hides the status bar while open, standard for a
-        // photo viewer), leaving insets.top as the only offset applied.
-        presentationStyle="overFullScreen"
-        // Custom header with download + share
-        HeaderComponent={ImageViewerHeader}
+    <ResumableZoom maxScale={MAX_ZOOM} panMode="clamp" pinchMode="clamp">
+      <Image
+        source={{ uri: src }}
+        style={size}
+        resizeMode="cover"
+        accessible
+        accessibilityLabel={alt}
+        accessibilityHint="Pinch or double-tap to zoom"
       />
-    </>
+    </ResumableZoom>
   );
 }
+
+/**
+ * Memoised: chat screens re-render on every presence/typing/message event.
+ * Zoom state survives re-renders regardless (it lives in Reanimated shared
+ * values); this just avoids pointless work while the viewer is open.
+ */
+export const MediaViewer = React.memo(MediaViewerImpl);
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#000000",
   },
-  topBarSafe: {
-    backgroundColor: "rgba(0, 0, 0, 0.75)",
-    zIndex: 10,
+  content: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  fill: {
+    width: "100%",
+    height: "100%",
+  },
+  header: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: "rgba(0, 0, 0, 0.6)",
   },
   topBar: {
     flexDirection: "row",
@@ -326,6 +306,7 @@ const styles = StyleSheet.create({
     gap: 8,
     flex: 1,
     paddingRight: 10,
+    minHeight: 44,
   },
   headerTitle: {
     color: "#FFFFFF",
@@ -339,9 +320,9 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   iconBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: "rgba(255, 255, 255, 0.15)",
     justifyContent: "center",
     alignItems: "center",
@@ -351,22 +332,13 @@ const styles = StyleSheet.create({
     borderColor: "#4ADE80",
     borderWidth: 1,
   },
-  closeBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "rgba(255, 255, 255, 0.18)",
-    justifyContent: "center",
+  unavailable: {
     alignItems: "center",
+    gap: 10,
   },
-  content: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    overflow: "hidden",
-  },
-  video: {
-    width: SCREEN_W,
-    height: SCREEN_H * 0.75,
+  unavailableText: {
+    color: "#D1D5DB",
+    fontSize: 15,
+    fontWeight: "600",
   },
 });

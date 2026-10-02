@@ -1,17 +1,21 @@
 // ─────────────────────────────────────────────────────────────
-// Drop-in replacement for RN's KeyboardAvoidingView, hardcoding the one
-// thing that has repeatedly gone wrong across this app's history: Android
-// needs an explicit `behavior` too. Leaving it `undefined` on Android
-// disables keyboard avoidance entirely (see AltTextModal.tsx's git
-// history — commits fb11b56 and cd5c19b re-fixed this same class of bug
-// twice). Every consumer here always gets "padding" on iOS / "height" on
-// Android; `keyboardVerticalOffset` stays caller-supplied since that
-// varies legitimately per screen (modal sheet vs. full screen with a
-// header).
+// The app's one keyboard-avoiding wrapper for bottom sheets and modals.
+//
+// Built on react-native-keyboard-controller (KeyboardProvider in App.tsx)
+// rather than RN's KeyboardAvoidingView. RN's version needed a different
+// `behavior` per platform — leaving it undefined on Android disabled
+// avoidance entirely, and commits fb11b56 and cd5c19b re-fixed that same bug
+// twice — and inside an RN Modal it didn't reliably move the sheet on
+// Android, which is how the Alt Text field ended up under the keyboard.
+// keyboard-controller tracks the keyboard natively on both platforms,
+// Modals included, so "padding" is right everywhere.
+// `keyboardVerticalOffset` stays caller-supplied since that varies
+// legitimately per screen (modal sheet vs. full screen with a header).
 // ─────────────────────────────────────────────────────────────
 
 import React from "react";
-import { KeyboardAvoidingView, Platform, StyleProp, ViewStyle } from "react-native";
+import { StyleProp, ViewStyle } from "react-native";
+import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 
 export function SheetKeyboardAvoidingView({
   children,
@@ -24,7 +28,7 @@ export function SheetKeyboardAvoidingView({
 }) {
   return (
     <KeyboardAvoidingView
-      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      behavior="padding"
       keyboardVerticalOffset={keyboardVerticalOffset}
       style={style}
     >

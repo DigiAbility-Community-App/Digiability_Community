@@ -140,6 +140,9 @@ function mapUserToFrontend(user: any): any {
 export interface EmailCheckResult {
   available: boolean;
   message: string;
+  /** False when the check couldn't run (network error, rate limit). Callers
+   *  must then show nothing rather than a misleading "available ✓". */
+  checked: boolean;
 }
 
 /**
@@ -154,14 +157,14 @@ export async function checkEmailAvailability(email: string): Promise<EmailCheckR
       '/api/auth/check-email',
       { email: email.trim().toLowerCase() },
     );
-    return { available: response.data.available, message: response.data.message };
+    return { available: response.data.available, message: response.data.message, checked: true };
   } catch (error: any) {
     if (error?.response?.status === 400) {
-      return { available: false, message: error.response.data?.message ?? 'Enter a valid email address' };
+      return { available: false, message: error.response.data?.message ?? 'Enter a valid email address', checked: true };
     }
     // Network/server error (or the rate limit) — don't block the user on a
     // check that couldn't run; registration still validates server-side.
-    return { available: true, message: '' };
+    return { available: true, message: '', checked: false };
   }
 }
 

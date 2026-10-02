@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { dbPool } from "@/lib/db";
 import { requireAdminAuth, getAdminSession, getRequestIp } from "@/lib/auth";
 import { writeAudit } from "@/lib/audit";
+import { validateMaxMembers } from "@/lib/groupLimits";
 
 // GET — single group with members
 export async function GET(
@@ -70,7 +71,7 @@ export async function PATCH(
     const { id } = await params;
     const body = await request.json();
 
-    // Whitelist. Only these six columns are editable here — destructuring the
+    // Whitelist. Only these seven columns are editable here — destructuring the
     // body rather than iterating it keeps suspension state (isSuspended,
     // suspendedAt, suspendedUntil, suspensionReason, suspensionNote) out of
     // reach of this endpoint entirely. Suspension is changed only via
@@ -81,7 +82,7 @@ export async function PATCH(
     // "Send Messages" to "All Members" here was writing the exact same column
     // the unsuspend action wrote. Those are now separate columns, so editing
     // permissions leaves an active suspension untouched.
-    const { name, description, editGroupInfo, addMembers, sendMessages, approveNewMembers } = body;
+    const { name, description, editGroupInfo, addMembers, sendMessages, approveNewMembers, maxMembers } = body;
 
     const PERMISSION_VALUES = ["ADMINS_ONLY", "ALL_MEMBERS"];
     for (const [field, value] of Object.entries({ editGroupInfo, addMembers, sendMessages })) {
@@ -91,6 +92,39 @@ export async function PATCH(
           { status: 400 }
         );
       }
+    }
+
+    // Member limit: bounded per subType, and never below the group's current
+    // active member count — lowering it under that would leave the group
+    // over capacity with every add/invite/join refused.
+    let newMaxMembers: number | undefined;
+    if (maxMembers !== undefined) {
+      const groupRes = await dbPool.query(
+        `SELECT c."subType",
+                (SELECT COUNT(*)::int FROM chat.conversation_members m
+                  WHERE m."conversationId" = c.id AND m."leftAt" IS NULL) AS "memberCount"
+           FROM chat.conversations c
+          WHERE c.id = $1 AND c."deletedAt" IS NULL`,
+        [id]
+      );
+      if (groupRes.rows.length === 0) {
+        return NextResponse.json({ success: false, message: "Group not found" }, { status: 404 });
+      }
+      const { subType, memberCount } = groupRes.rows[0] as { subType: string | null; memberCount: number };
+      const check = validateMaxMembers(maxMembers, subType);
+      if (!check.ok) {
+        return NextResponse.json({ success: false, message: check.message }, { status: 400 });
+      }
+      if (check.value < memberCount) {
+        return NextResponse.json(
+          {
+            success: false,
+            message: `This group has ${memberCount} members, so its limit can't be lower than ${memberCount}. Remove members first to set a lower limit.`,
+          },
+          { status: 409 }
+        );
+      }
+      newMaxMembers = check.value;
     }
 
     const updates: string[] = [];
@@ -103,6 +137,7 @@ export async function PATCH(
     if (addMembers !== undefined)       { updates.push(`"addMembers" = $${idx++}`);         values.push(addMembers); }
     if (sendMessages !== undefined)     { updates.push(`"sendMessages" = $${idx++}`);       values.push(sendMessages); }
     if (approveNewMembers !== undefined){ updates.push(`"approveNewMembers" = $${idx++}`);  values.push(approveNewMembers); }
+    if (newMaxMembers !== undefined)    { updates.push(`"maxMembers" = $${idx++}`);         values.push(newMaxMembers); }
 
     if (updates.length === 0) {
       return NextResponse.json({ success: false, message: "Nothing to update" }, { status: 400 });

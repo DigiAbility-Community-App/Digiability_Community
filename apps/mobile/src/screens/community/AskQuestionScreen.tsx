@@ -10,7 +10,7 @@ import {
   ActivityIndicator,
   Modal,
 } from "react-native";
-import { KeyboardAwareScrollView } from "react-native-keyboard-aware-scroll-view";
+import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
 import { ArrowLeft, Camera, HelpCircle, X, Check } from "lucide-react-native";
@@ -161,17 +161,15 @@ const AskQuestionScreen = () => {
       </View>
 
       {/* The keyboard used to cover Tags, Alt Text and the Post button, which
-          all sit below the multiline Description. contentContainerStyle must
-          stay a single flat object, never an array — with enableOnAndroid this
-          library reads (contentContainerStyle || {}).paddingBottom to add its
-          own keyboard padding, which is undefined on an array, and its
-          replacement then becomes the only paddingBottom RN keeps. */}
+          all sit below the multiline Description. keyboard-controller scrolls
+          the focused input to bottomOffset above the keyboard on both
+          platforms (the previous library relied on Android resizing the
+          window, which edge-to-edge no longer does). */}
       <KeyboardAwareScrollView
         contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
-        enableOnAndroid={true}
-        extraScrollHeight={100}
+        bottomOffset={100}
       >
         {/* HELP TEXT */}
         <View

@@ -33,7 +33,35 @@ function mapUserToFrontend(user: any): any {
   };
 }
 
+export interface EmailCheckResult {
+  available: boolean;
+  message: string;
+  /** False when the check couldn't run (network error, rate limit). */
+  checked: boolean;
+}
+
 export const authService = {
+  /**
+   * Live "is this email already registered?" check for the sign-up form.
+   * Same endpoint and semantics as the mobile app. POST so the address never
+   * lands in a URL/access log. A check that can't run returns checked:false —
+   * registration still enforces uniqueness server-side.
+   */
+  checkEmailAvailability: async (email: string): Promise<EmailCheckResult> => {
+    try {
+      const response = await apiClient.post<{ success: boolean; available: boolean; message: string }>(
+        '/api/auth/check-email',
+        { email: email.trim().toLowerCase() },
+      );
+      return { available: response.data.available, message: response.data.message, checked: true };
+    } catch (error: any) {
+      if (error?.response?.status === 400) {
+        return { available: false, message: error.response.data?.message ?? 'Enter a valid email address', checked: true };
+      }
+      return { available: true, message: '', checked: false };
+    }
+  },
+
   login: async (email: string, password: string) => {
     const response = await apiClient.post('/api/auth/login', { email, password });
     

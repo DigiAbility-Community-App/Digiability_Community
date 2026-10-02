@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useCallback, useMemo } from "react";
 import {
   View,
   StyleSheet,
@@ -13,7 +13,7 @@ import {
   TouchableWithoutFeedback,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as WebBrowser from "expo-web-browser";
 import { useTheme } from "../../theme/ThemeContext";
@@ -44,84 +44,6 @@ import {
   formatDaySchedule,
 } from "../../services/serviceService";
 
-const MOCK_SERVICES: ServiceModel[] = [
-  {
-    id: "srv-1",
-    name: "Dr. Sarah Jenkins",
-    type: "Occupational Therapist",
-    category: "therapists",
-    logo: "👩‍⚕️",
-    description: "Specialized in pediatric occupational therapy and sensory integration for children with autism and developmental delays.",
-    location: "Downtown Clinic & Home Visits",
-    contactPhone: "+1 (555) 234-5678",
-    contactEmail: "sarah.jenkins@therapy.org",
-    contactUrl: "https://services.digiability.org/sarah-jenkins",
-    verified: true,
-    price: "₹500 - ₹1,500 / session",
-    availability: "Next available: Tomorrow"
-  },
-  {
-    id: "srv-2",
-    name: "Mobility Solutions Inc.",
-    type: "Equipment Vendor",
-    category: "equipment",
-    logo: "🦽",
-    description: "Rental and purchase of wheelchairs, walkers, and custom-fitted seating systems. Same-day delivery available.",
-    location: "Westside Hub",
-    contactPhone: "+1 (555) 876-5432",
-    contactEmail: "info@mobilitysolutions.com",
-    contactUrl: "https://services.digiability.org/mobility-solutions",
-    verified: true,
-    price: "Varies by equipment",
-    availability: "Open 9AM - 6PM"
-  },
-  {
-    id: "srv-3",
-    name: "CareBridge Support",
-    type: "Respite Care",
-    category: "care",
-    logo: "🤝",
-    description: "Professional respite care providers offering short-term relief for primary caregivers. Background-checked and certified.",
-    location: "All City Areas",
-    contactPhone: "+1 (555) 345-6789",
-    contactEmail: "contact@carebridge.org",
-    contactUrl: "https://services.digiability.org/carebridge",
-    verified: true,
-    price: "₹200 - ₹350 / hour",
-    availability: "24/7 Availability"
-  },
-  {
-    id: "srv-4",
-    name: "Legal Advocates for Disability",
-    type: "Legal Services",
-    category: "legal",
-    logo: "⚖️",
-    description: "Assistance with disability claims, appeals, and educational advocacy (IEP meetings).",
-    location: "City Center",
-    contactPhone: "+1 (555) 901-2345",
-    contactEmail: "legal@disabilityadvocates.org",
-    contactUrl: "https://services.digiability.org/legal-advocates",
-    verified: true,
-    price: "Free consultation",
-    availability: "By appointment"
-  },
-  {
-    id: "srv-5",
-    name: "Accessible Transit Co.",
-    type: "Transportation",
-    category: "transport",
-    logo: "🚐",
-    description: "Wheelchair-accessible vans and specialized transport services for medical appointments and daily commuting.",
-    location: "Metro Area",
-    contactPhone: "+1 (555) 456-7890",
-    contactEmail: "dispatch@accessibletransit.com",
-    contactUrl: "https://services.digiability.org/accessible-transit",
-    verified: true,
-    price: "₹20 / km",
-    availability: "Book 24h in advance"
-  }
-];
-
 export const ServicesScreen = () => {
   const navigation = useNavigation<any>();
   const { colors, spacing, highContrast } = useTheme();
@@ -129,7 +51,7 @@ export const ServicesScreen = () => {
   const [activeCategory, setActiveCategory] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
-  const [services, setServices] = useState<ServiceModel[]>(MOCK_SERVICES);
+  const [services, setServices] = useState<ServiceModel[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const iconMuted = highContrast ? colors.text : "#94A3B8";
 
@@ -161,22 +83,36 @@ export const ServicesScreen = () => {
 
   const loadServices = async () => {
     const data = await fetchPublishedServices();
-    if (data && data.length > 0) {
+    // null = fetch failed: keep what's on screen. An empty array is a real
+    // answer (e.g. a category was set Inactive) and must clear the list.
+    if (data !== null) {
       setServices(data);
     }
   };
 
-  useEffect(() => {
-    loadServices();
-    fetchServiceCategories().then((cats) => {
-      setActiveServiceCategories(cats);
-      setCategoriesLoaded(true);
-    });
-  }, []);
+  const loadCategories = async () => {
+    const cats = await fetchServiceCategories();
+    setActiveServiceCategories(cats);
+    setCategoriesLoaded(true);
+    // Drop a selected chip whose category was just deactivated, or the list
+    // would stay filtered to a category that no longer has a chip.
+    setActiveCategory((current) =>
+      current === "all" || cats.some((c) => c.id === current) ? current : "all"
+    );
+  };
+
+  // Tabs stay mounted, so a mount-only fetch never saw admin changes to
+  // services or category status until the app restarted. Refetch on focus.
+  useFocusEffect(
+    useCallback(() => {
+      loadServices();
+      loadCategories();
+    }, [])
+  );
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await loadServices();
+    await Promise.all([loadServices(), loadCategories()]);
     setRefreshing(false);
   };
 

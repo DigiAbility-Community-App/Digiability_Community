@@ -2,7 +2,6 @@ import React, {
   useState,
   useRef,
   useCallback,
-  useMemo,
   useEffect,
 } from "react";
 
@@ -15,7 +14,7 @@ import {
   Alert,
   BackHandler,
 } from "react-native";
-import { KeyboardAwareScrollView } from "react-native-keyboard-aware-scroll-view";
+import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import SafeScreen from "../../components/layout/SafeScreen";
 
 import {
@@ -94,6 +93,33 @@ type UsernameStatus =
 // --------------------------------------------------
 // SCREEN
 // --------------------------------------------------
+
+/**
+ * Up to five distinct username candidates derived from `base` (a name or an
+ * attempted username), all passing isValidUsernameFormat.
+ */
+function buildUsernameCandidates(base: string): string[] {
+  // `base` can carry characters usernames don't allow (e.g. a hyphenated
+  // name like "Anna-Marie"); strip down to the allowed set first. A name
+  // that's entirely non-Latin script (e.g. Devanagari, Tamil) sanitizes to
+  // "" — fall back to a generic base rather than showing nothing.
+  const sanitized = base
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "")
+    .replace(/[^a-z0-9_.]/g, "");
+  // Pad very short bases so "a" + suffix still has the 3 letters/digits the
+  // validator requires.
+  const name = sanitized.replace(/[^a-z0-9]/g, "").length >= 2 ? sanitized : `${sanitized}user`;
+
+  // isValidUsernameFormat caps the total length at 15. Truncate the base to
+  // leave room for each suffix BEFORE appending it — filtering full-length
+  // candidates afterwards dropped every one for names of ~14+ characters.
+  const rand = (n: number) => Math.floor(Math.random() * n);
+  const suffixes = [`${rand(100)}`, `_${rand(999)}`, `.${rand(9999)}`, `${rand(1000)}`, `_${rand(99)}`];
+  const candidates = suffixes.map((suffix) => `${name.slice(0, Math.max(1, 15 - suffix.length))}${suffix}`);
+  return [...new Set(candidates)].filter((c) => isValidUsernameFormat(c));
+}
 
 const ProfileScreen = () => {
   const navigation =
@@ -559,38 +585,36 @@ const ProfileScreen = () => {
   // Generate username suggestions
   // --------------------------------------------------
 
-  const usernameSuggestions = useMemo(() => {
-    // fullName can carry characters isValidUsernameFormat doesn't allow (e.g. a
-    // hyphenated name like "Anna-Marie") — it's seeded straight from
-    // user?.name with no sanitization, unlike the field's own onChangeText.
-    // Strip down to the allowed set before building suggestions from it.
-    // A name that's entirely non-Latin script (e.g. Devanagari, Tamil)
-    // sanitizes to "" here — fall back to a generic base rather than
-    // showing no suggestions at all.
-    const sanitized = fullName
-      .trim()
-      .toLowerCase()
-      .replace(/\s+/g, "")
-      .replace(/[^a-z0-9_.]/g, "");
-    const name = sanitized || "user";
+  // Suggestions are built from the username the user tried once it's taken
+  // (so they get alternatives for *that* name), otherwise from their full
+  // name. Each candidate is checked with the server before it's shown — they
+  // used to be random, unchecked strings, so tapping one often came straight
+  // back "already taken". Debounced, so they don't reshuffle on every
+  // keystroke in the name field.
+  const [usernameSuggestions, setUsernameSuggestions] = useState<string[]>([]);
+  const [suggestionsLoading, setSuggestionsLoading] = useState(false);
+  const suggestionBase =
+    usernameStatus === "taken" ? normalizeUsername(username) ?? "" : fullName;
 
-    // isValidUsernameFormat caps the total length at 15. Truncate the base name
-    // to leave room for each suffix BEFORE appending it, rather than
-    // building full-length candidates and filtering afterwards — filtering
-    // after the fact was silently dropping every candidate (and returning
-    // an empty suggestion list) for any name of ~14+ characters.
-    const suffixes = [
-      `${Math.floor(Math.random() * 100)}`,
-      `_${Math.floor(Math.random() * 999)}`,
-      `.${Math.floor(Math.random() * 9999)}`,
-    ];
-    const candidates = suffixes.map(
-      (suffix) => `${name.slice(0, Math.max(1, 15 - suffix.length))}${suffix}`
-    );
-    // Safety net: only ever show a suggestion that already passes the same
-    // validator shown to the user.
-    return candidates.filter((c) => isValidUsernameFormat(c));
-  }, [fullName]);
+  useEffect(() => {
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      const candidates = buildUsernameCandidates(suggestionBase);
+      setSuggestionsLoading(true);
+      const results = await Promise.all(
+        candidates.map((c) =>
+          checkUsernameAvailability(c).then((r) => (r.checked && r.available ? c : null))
+        )
+      );
+      if (cancelled) return;
+      setUsernameSuggestions(results.filter((c): c is string => c !== null).slice(0, 3));
+      setSuggestionsLoading(false);
+    }, 600);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [suggestionBase]);
 
   // --------------------------------------------------
   //
@@ -771,8 +795,7 @@ const ProfileScreen = () => {
           styles.scrollContent
         }
         keyboardShouldPersistTaps="handled"
-        enableOnAndroid={true}
-        extraScrollHeight={100}
+        bottomOffset={100}
       >
         {/* HERO */}
         <View
@@ -1023,7 +1046,7 @@ const ProfileScreen = () => {
               autoCapitalize="none"
               autoCorrect={false}
               accessibilityLabel="Username"
-              accessibilityHint="Enter a unique username with 3 to 20 lowercase letters, numbers, underscores, or dots"
+              accessibilityHint="Enter a unique username of up to 15 lowercase letters, numbers, underscores, or dots, with at least 3 letters or numbers"
               textContentType="username"
             />
           </View>
@@ -1057,7 +1080,15 @@ const ProfileScreen = () => {
               styles.suggestionRow
             }
           >
-            {usernameSuggestions?.map((item) => (
+            {suggestionsLoading && usernameSuggestions.length === 0 && (
+              <ActivityIndicator size="small" color={colors.primary} accessibilityLabel="Loading username suggestions" />
+            )}
+            {!suggestionsLoading && usernameSuggestions.length === 0 && (
+              <AccessibleText variant="caption" style={{ color: colors.subtext }}>
+                No suggestions right now — try your own.
+              </AccessibleText>
+            )}
+            {usernameSuggestions.map((item) => (
               <TouchableOpacity
                 key={item}
                 style={[styles.suggestionChip, { backgroundColor: colors.surface }, cardBorder]}

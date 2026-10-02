@@ -406,7 +406,7 @@ EXPO_PUBLIC_FORUM_SOCKET_URL=ws://<LAN-IP>:4003
 EXPO_PUBLIC_ADMIN_API_URL=http://<LAN-IP>:3001
 ```
 
-All six are required — read only in `apps/mobile/src/config/env.ts`, no fallbacks. EAS `preview`/`production` profiles set `https://`/`wss://` values in `eas.json`; a `production` build throws at startup on any non-https/wss URL, and `npm run check:transport` guards it in CI.
+All six are required — read only in `apps/mobile/src/config/env.ts`, no fallbacks. EAS `preview`/`production` profiles set `https://`/`wss://` values in `eas.json`; a `production` build throws at startup on any non-https/wss URL, and `npm run check:transport` guards it on every EAS build (the `eas-build-post-install` hook in `apps/mobile/package.json`; `.github/workflows/ci.yml` only builds backend services and does not run it).
 
 ---
 
@@ -464,6 +464,10 @@ navigation.navigate("Chats", {
 Session restore on boot: `RootNavigator` reads refresh token from `expo-secure-store`, calls `getMe()` silently, populates auth store.
 
 ---
+
+### Images: viewer, zoom, save & share
+
+One viewer (`src/components/chat/MediaViewer.tsx`, pinch-zoom via `react-native-zoom-toolkit` inside its own `GestureHandlerRootView`) and one save/share pipeline (`src/utils/mediaFile.ts` + the allow rule in `src/utils/mediaPolicy.ts`). Server media URLs are host-relative (`/uploads/x`) for chat-svc and forum-svc; resolve with `resolveMediaUrl` / `resolveForumMediaUrl`. `npm run check:media` (also run on every EAS build) enforces this. Root causes of the repeated zoom/save/share breakages and the device test to run before a release: `apps/mobile/docs/media-release-checklist.md`.
 
 ## Web app
 

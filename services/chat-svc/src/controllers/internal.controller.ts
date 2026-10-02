@@ -219,6 +219,35 @@ export const adminDeleteConversation = asyncHandler(async (req: Request, res: Re
 });
 
 /**
+ * POST /api/internal/groups/:conversationId/announcements
+ * Called by the admin panel to post an announcement into a group chat.
+ * Body: { content, metadata? } — metadata is the JSON string stored on the
+ * message (senderName / isAdmin / broadcast flags the mobile app renders).
+ * 404 if the group is missing or deleted, 409 if it is suspended.
+ */
+export const adminPostAnnouncement = asyncHandler(async (req: Request, res: Response) => {
+  const { conversationId } = req.params;
+  const { content, metadata } = req.body as { content?: unknown; metadata?: unknown };
+
+  if (!conversationId || typeof content !== "string" || !content.trim()) {
+    res.status(400).json({ success: false, message: "conversationId and content are required." });
+    return;
+  }
+  if (metadata !== undefined && typeof metadata !== "string") {
+    res.status(400).json({ success: false, message: "metadata must be a JSON string." });
+    return;
+  }
+
+  const result = await messageService.adminPostAnnouncement(
+    conversationId,
+    content,
+    metadata ?? JSON.stringify({ senderName: "DigiAbility Admin", isAdmin: true, broadcast: true })
+  );
+
+  res.status(200).json({ success: true, data: result });
+});
+
+/**
  * DELETE /api/internal/messages/:messageId
  * Called by the admin moderation panel to remove a single reported message.
  * Goes through the normal service layer (not raw SQL) so conversation

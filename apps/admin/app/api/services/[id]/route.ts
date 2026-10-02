@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAdminAuth, isAdminRequest } from "@/lib/auth";
 import { dbPool } from "@/lib/db";
 import { isValidIndianPhone, INVALID_PHONE_MESSAGE } from "@/lib/validation";
-import { isValidWeeklySchedule, formatAvailabilitySummary } from "@/lib/availabilitySchedule";
+import { validateWeeklySchedule, scheduleErrorMessage, formatAvailabilitySummary } from "@/lib/availabilitySchedule";
 
 // Public for a published service (mobile detail view); a draft is only
 // visible to a logged-in admin — treated as 404 for anyone else, same as a
@@ -64,9 +64,10 @@ export async function PATCH(
       );
     }
 
-    if (availabilitySchedule !== undefined && !isValidWeeklySchedule(availabilitySchedule)) {
+    const scheduleCheck = availabilitySchedule !== undefined ? validateWeeklySchedule(availabilitySchedule) : null;
+    if (scheduleCheck && !scheduleCheck.ok) {
       return NextResponse.json(
-        { success: false, message: "Invalid availability schedule — every open day needs both a From and To time." },
+        { success: false, message: scheduleErrorMessage(scheduleCheck) },
         { status: 400 }
       );
     }

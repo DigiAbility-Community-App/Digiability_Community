@@ -7,7 +7,7 @@ import {
   StyleSheet,
   Platform,
 } from "react-native";
-import { KeyboardAwareScrollView } from "react-native-keyboard-aware-scroll-view";
+import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { useTheme } from "../../theme/ThemeContext";
 import { AccessibleText } from "../shared/AccessibleText";
 import { SheetKeyboardAvoidingView } from "../shared/SheetKeyboardAvoidingView";
@@ -133,8 +133,7 @@ export function ReportModal({
               contentContainerStyle={styles.scrollContent}
               keyboardShouldPersistTaps="handled"
               showsVerticalScrollIndicator={false}
-              enableOnAndroid={true}
-              extraScrollHeight={60}
+              bottomOffset={60}
             >
               {/* Category Options */}
               <View style={styles.categoryContainer}>

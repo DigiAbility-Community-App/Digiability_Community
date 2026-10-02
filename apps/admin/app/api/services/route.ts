@@ -5,7 +5,8 @@ import { isValidIndianPhone, INVALID_PHONE_MESSAGE } from "@/lib/validation";
 import {
   WeeklySchedule,
   defaultWeeklySchedule,
-  isValidWeeklySchedule,
+  validateWeeklySchedule,
+  scheduleErrorMessage,
   formatAvailabilitySummary,
 } from "@/lib/availabilitySchedule";
 import { getOrCreateServiceCategoryId } from "@/lib/masterCategories";
@@ -207,7 +208,18 @@ export async function GET(request: NextRequest) {
 
     const result = isAdmin
       ? await dbPool.query(`SELECT * FROM services ORDER BY "createdAt" DESC`)
-      : await dbPool.query(`SELECT * FROM services WHERE status = 'published' ORDER BY "createdAt" DESC`);
+      // Also hide services whose category was set Inactive in Master Data.
+      // "Not in an inactive category" rather than "in an active one", so
+      // legacy free-text categories with no service_categories row still show.
+      : await dbPool.query(`
+          SELECT s.* FROM services s
+          WHERE s.status = 'published'
+            AND NOT EXISTS (
+              SELECT 1 FROM service_categories sc
+              WHERE sc.id = s.category AND sc.status <> 'Active'
+            )
+          ORDER BY s."createdAt" DESC
+        `);
 
     return NextResponse.json({
       success: true,
@@ -260,9 +272,10 @@ export async function POST(request: NextRequest) {
     }
 
     const schedule: WeeklySchedule = availabilitySchedule ?? defaultWeeklySchedule();
-    if (!isValidWeeklySchedule(schedule)) {
+    const scheduleCheck = validateWeeklySchedule(schedule);
+    if (!scheduleCheck.ok) {
       return NextResponse.json(
-        { success: false, message: "Invalid availability schedule — every open day needs both a From and To time." },
+        { success: false, message: scheduleErrorMessage(scheduleCheck) },
         { status: 400 }
       );
     }

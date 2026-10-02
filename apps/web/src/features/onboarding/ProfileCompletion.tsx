@@ -54,13 +54,16 @@ const ProfileCompletion = () => {
     }
 
     const hasEnoughAlnum = (clean.match(/[a-z0-9]/g)?.length ?? 0) >= 3;
-    if (!/^[a-z0-9_.]{3,20}$/.test(clean) || !hasEnoughAlnum) {
+    // Same rule as user-svc (profile.routes.ts USERNAME_REGEX) and mobile:
+    // at most 15 characters. This used to allow 20, so a 16–20 character
+    // username passed here and was then rejected by the server.
+    if (!/^[a-z0-9_.]{1,15}$/.test(clean) || !hasEnoughAlnum) {
       // Same stale-debounce risk as above — a previously-scheduled check
       // for an earlier valid value must not be allowed to land later and
       // overwrite this "invalid" state with "available"/"taken".
       if (debounceRef.current) clearTimeout(debounceRef.current);
       setUsernameStatus('invalid');
-      setUsernameMsg('3-20 lowercase letters, numbers, _ or ., with at least 3 letters or numbers');
+      setUsernameMsg('Up to 15 lowercase letters, numbers, _ or ., with at least 3 letters or numbers');
       return;
     }
     

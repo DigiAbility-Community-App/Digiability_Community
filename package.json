@@ -19,6 +19,7 @@
     "check:schema-mirrors": "node scripts/check-schema-mirrors.js",
     "check:safety": "node scripts/check-safety-resources.js",
     "check:transport": "node scripts/check-transport.js",
+    "check:media": "node scripts/check-media.js",
     "breach:scope": "node scripts/breach-scope.js",
     "test": "turbo run test",
     "user-svc:dev": "npm run dev --workspace=@digiability/user-svc",

@@ -148,6 +148,9 @@ const CATEGORY_CHART_COLORS: Record<string, string> = {
   "General Support": "#94a3b8",
 };
 
+/** Poster formats the mobile app can save to the gallery and share. */
+const EVENT_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
+
 export default function EventsPage() {
   const [events, setEvents] = useState<EventType[]>([]);
   // Master data only — no hardcoded fallback category list. An empty array
@@ -270,6 +273,15 @@ export default function EventsPage() {
   const handleImageFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    // Only raster formats the mobile app can save and share. SVG/HEIC/etc.
+    // were accepted by accept="image/*" but produced corrupt or unopenable
+    // files when a user saved or shared the event poster on their phone.
+    if (!EVENT_IMAGE_TYPES.includes(file.type)) {
+      setErrorMsg("Please choose a JPEG, PNG or WebP image.");
+      e.target.value = "";
+      return;
+    }
 
     if (file.size > 5 * 1024 * 1024) {
       setErrorMsg("Image size exceeds 5MB. Please choose a smaller file.");
@@ -905,7 +917,7 @@ export default function EventsPage() {
                 <input
                   type="file"
                   ref={fileInputRef}
-                  accept="image/*"
+                  accept={EVENT_IMAGE_TYPES.join(",")}
                   onChange={handleImageFileChange}
                   className="hidden"
                 />

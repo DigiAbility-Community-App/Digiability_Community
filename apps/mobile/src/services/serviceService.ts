@@ -40,7 +40,9 @@ function formatDayTime(hhmm: string): string {
 /** Renders a single day's schedule as "9:00 AM – 6:00 PM" or "Closed". */
 export function formatDaySchedule(day: DaySchedule | null | undefined): string {
   if (!day || !day.open || !day.from || !day.to) return "Closed";
-  return `${formatDayTime(day.from)} – ${formatDayTime(day.to)}`;
+  // A close of "00:00" means "until midnight" (see admin availabilitySchedule.ts).
+  const closes = day.to === "00:00" ? "Midnight" : formatDayTime(day.to);
+  return `${formatDayTime(day.from)} – ${closes}`;
 }
 
 export interface ServiceCategory {
@@ -74,9 +76,14 @@ export interface ServiceModel {
 const ADMIN_BASE_URL = ADMIN_API_URL;
 
 /**
- * Fetch all published services from backend
+ * Fetch all published services from backend.
+ *
+ * Returns null when no source could be reached, and the server's list —
+ * possibly empty — otherwise. The two must stay distinguishable: an empty
+ * list is a real answer (e.g. the only category was set Inactive), and
+ * treating it as a failure left stale services on screen.
  */
-export async function fetchPublishedServices(): Promise<ServiceModel[]> {
+export async function fetchPublishedServices(): Promise<ServiceModel[] | null> {
   // 1. Try Admin portal endpoint directly (where services are managed & published)
   try {
     const adminRes = await axios.get<{ success: boolean; services?: ServiceModel[]; data?: ServiceModel[] }>(
@@ -84,7 +91,7 @@ export async function fetchPublishedServices(): Promise<ServiceModel[]> {
       { timeout: 5000 }
     );
     const list = adminRes.data?.services || adminRes.data?.data;
-    if (Array.isArray(list) && list.length > 0) {
+    if (Array.isArray(list)) {
       return list.filter((s) => s.status !== 'unpublished');
     }
   } catch (adminErr) {
@@ -98,14 +105,14 @@ export async function fetchPublishedServices(): Promise<ServiceModel[]> {
       { timeout: 5000 }
     );
     const list = response.data?.services || response.data?.data;
-    if (Array.isArray(list) && list.length > 0) {
+    if (Array.isArray(list)) {
       return list.filter((s) => s.status !== 'unpublished');
     }
   } catch (apiErr) {
     // apiClient call failed
   }
 
-  return [];
+  return null;
 }
 
 /**

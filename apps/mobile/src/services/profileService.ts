@@ -104,6 +104,8 @@ export function parseDateInput(
 export interface UsernameCheckResult {
   available: boolean;
   message: string;
+  /** False when the check couldn't run (network/server error). */
+  checked: boolean;
 }
 
 export async function checkUsernameAvailability(
@@ -120,16 +122,18 @@ export async function checkUsernameAvailability(
     return {
       available: response.data.available,
       message: response.data.message,
+      checked: true,
     };
   } catch (error) {
     if (axios.isAxiosError(error) && error.response?.status === 400) {
       return {
         available: false,
         message: error.response.data?.message ?? 'Invalid username format',
+        checked: true,
       };
     }
     // Network/server error — treat as unavailable so user retries rather than submitting blindly
-    return { available: false, message: 'Unable to verify — please try again' };
+    return { available: false, message: 'Unable to verify — please try again', checked: false };
   }
 }
 
