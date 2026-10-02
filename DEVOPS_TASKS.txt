@@ -582,12 +582,12 @@ STEP 1 — BEFORE merging: persistent uploads (item 19), keeping today's files
   Mounting a volume over /uploads HIDES the files already in the pod, so copy
   them out first and back in after.
 
-  a) Copy current uploads out:
-     CHAT=$(kubectl -n communityapp get pod -l app=chat-svc -o name | head -1)
-     FORUM=$(kubectl -n communityapp get pod -l app=forum-svc -o name | head -1)
-     kubectl -n communityapp cp ${CHAT#pod/}:/app/services/chat-svc/uploads  ./chat-uploads-backup
-     kubectl -n communityapp cp ${FORUM#pod/}:/app/services/forum-svc/uploads ./forum-uploads-backup
-     ls chat-uploads-backup | wc -l; ls forum-uploads-backup | wc -l
+  a) Copy current uploads out (on the VPS, as root). tar streams, not
+     `kubectl cp`, so the files land exactly where they were:
+     mkdir -p /root/uploads-backup && cd /root/uploads-backup
+     kubectl -n communityapp exec deploy/chat-svc  -- tar -C /app/services/chat-svc/uploads  -cf - . > chat-uploads.tar
+     kubectl -n communityapp exec deploy/forum-svc -- tar -C /app/services/forum-svc/uploads -cf - . > forum-uploads.tar
+     tar -tf chat-uploads.tar | wc -l; tar -tf forum-uploads.tar | wc -l    # note the counts
 
   b) In ngo-devops, add to communityapp/chat-svc.yaml (and the same in
      forum-svc.yaml with forum-uploads / forum-svc paths):
@@ -622,17 +622,20 @@ STEP 1 — BEFORE merging: persistent uploads (item 19), keeping today's files
      Commit + sync (or kubectl apply -f communityapp/chat-svc.yaml ...).
 
   c) Copy the files back into the new pods:
-     CHAT=$(kubectl -n communityapp get pod -l app=chat-svc -o name | head -1)
-     FORUM=$(kubectl -n communityapp get pod -l app=forum-svc -o name | head -1)
-     kubectl -n communityapp cp ./chat-uploads-backup/.  ${CHAT#pod/}:/app/services/chat-svc/uploads
-     kubectl -n communityapp cp ./forum-uploads-backup/. ${FORUM#pod/}:/app/services/forum-svc/uploads
+     cd /root/uploads-backup
+     kubectl -n communityapp exec -i deploy/chat-svc  -- tar -C /app/services/chat-svc/uploads  -xf - < chat-uploads.tar
+     kubectl -n communityapp exec -i deploy/forum-svc -- tar -C /app/services/forum-svc/uploads -xf - < forum-uploads.tar
+     kubectl -n communityapp exec deploy/chat-svc  -- ls /app/services/chat-svc/uploads  | wc -l   # same counts as (a)
+     kubectl -n communityapp exec deploy/forum-svc -- ls /app/services/forum-svc/uploads | wc -l
 
   d) Verify persistence: pick a file name from the backup, then
      kubectl -n communityapp rollout restart deploy/chat-svc
      curl -sI https://chat.community.digiability.in/uploads/<file>    # 200 after the restart
 
 STEP 2 — merge the PR -> CI builds and bumps user-svc, chat-svc, forum-svc,
-  notif-svc. They MUST go live together (moderation queue rename, item 21).
+  notif-svc (one after another). All four must end up on the new image; the
+  few minutes in between are harmless (the moderation queue simply keeps
+  failing as it does today until all are on the new name — item 21).
   If CI's "Sync ArgoCD" step fails again (it has been timing out on SSH),
   finish by hand:
      kubectl -n communityapp set image deploy/user-svc  user-svc=ghcr.io/techonsy/community-user-svc:<sha>
@@ -643,8 +646,11 @@ STEP 2 — merge the PR -> CI builds and bumps user-svc, chat-svc, forum-svc,
      kubectl -n communityapp logs deploy/user-svc | grep ModerationWorker     # "[ModerationWorker] Started"
 
 STEP 3 — forum media migration (item 20), after step 2:
-     psql "$DATABASE_URL" -v ON_ERROR_STOP=1 \
-       -f services/forum-svc/scripts/2026-10-media-urls-relative.sql
+     # copy services/forum-svc/scripts/2026-10-media-urls-relative.sql to /root/ first
+     DBURL=$(kubectl -n communityapp get secret forum-svc-secrets -o jsonpath='{.data.DATABASE_URL}' | base64 -d)
+     kubectl -n shared exec -i statefulset/postgres -- \
+       psql "${DBURL%%\?*}" -v ON_ERROR_STOP=1 < /root/2026-10-media-urls-relative.sql
+     unset DBURL
   The "after" counts must all be 0. Safe to re-run.
 
 STEP 4 — admin panel (item 18 + this PR)
