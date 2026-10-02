@@ -2,26 +2,34 @@
 // Admin session policy — one place so the login route, middleware,
 // renewal endpoint and client-side idle timer can't drift apart.
 //
-// Model: the JWT's `exp` is the IDLE deadline and slides forward while
-// the admin is active; `abs` is a hard ceiling set at login that sliding
-// can never push past. The cookie is a SESSION cookie (no maxAge) unless
-// the admin ticked "Remember me", so closing the browser ends the session.
+// Two kinds of session:
+//   • Normal — the JWT's `exp` is the IDLE deadline and slides forward while
+//     the admin is active; `abs` is a hard ceiling set at login that sliding
+//     can never push past. The cookie is a SESSION cookie (no maxAge), so
+//     closing the browser ends it.
+//   • "Keep me signed in" — `exp` = `abs` = login + REMEMBER_ME_DAYS, with no
+//     idle window, and a persistent cookie of the same length. It used to
+//     get the normal 2h/12h token inside a 7-day cookie, so the admin was
+//     logged out anyway while the browser kept a dead cookie.
+// Both are backed by a row in admin_sessions (`sid`), so logout and
+// "sign out of all devices" end them immediately.
 // ─────────────────────────────────────────────────────────────
 
 /**
- * Idle window used when the Security setting is missing or unreadable.
+ * Idle window for normal sessions when the Security setting is missing,
+ * unreadable or still an old default.
  *
- * 30 minutes was too aggressive in practice — an admin reading through a
- * moderation queue or writing a long reason field kept getting the "Still
- * there?" warning mid-task. 2 hours still bounds an unattended session well
- * inside the 12-hour absolute ceiling below.
+ * 30 minutes, then 2 hours, both proved too aggressive — an admin working
+ * through a moderation queue or writing a long reason kept getting the
+ * "Still there?" warning mid-task. 8 hours covers a working day, still inside
+ * the 12-hour absolute ceiling below.
  */
-export const DEFAULT_IDLE_MINUTES = 120;
+export const DEFAULT_IDLE_MINUTES = 480;
 
-/** Hard ceiling on one login, regardless of continuous activity. */
+/** Hard ceiling on one normal login, regardless of continuous activity. */
 export const ABSOLUTE_SESSION_HOURS = 12;
 
-/** How long a "Remember me" cookie survives browser restarts. */
+/** How long a "Keep me signed in" session lasts — token and cookie both. */
 export const REMEMBER_ME_DAYS = 7;
 
 /** Warn this long before the idle deadline so a working admin can stay in. */
@@ -36,8 +44,10 @@ export interface AdminSessionPayload {
   exp: number;
   /** Absolute deadline (unix seconds) — fixed at login. */
   abs: number;
-  /** Whether this session opted into surviving a browser restart. */
+  /** "Keep me signed in": fixed REMEMBER_ME_DAYS lifetime, no idle window. */
   remember?: boolean;
+  /** admin_sessions row id — revoking it ends the session everywhere. */
+  sid: string;
 }
 
 /**

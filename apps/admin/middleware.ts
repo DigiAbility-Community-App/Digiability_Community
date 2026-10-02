@@ -59,7 +59,10 @@ export async function middleware(request: NextRequest) {
 
   if (sessionCookie?.value) {
     const payload = await verifyJWT(sessionCookie.value, secret);
-    if (payload && payload.role === "admin") {
+    // Signature + deadlines only: the edge runtime can't reach Postgres, so a
+    // revoked session is caught by the API routes and SessionGuard instead.
+    // A token with no `sid` predates server-side sessions and is never valid.
+    if (payload && payload.role === "admin" && typeof payload.sid === "string") {
       isValid = true;
     }
   }

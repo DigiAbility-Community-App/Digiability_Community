@@ -3,9 +3,14 @@ import { requireAdminAuth } from "@/lib/auth";
 import { dbPool } from "@/lib/db";
 
 export async function GET(
-  _request: Request,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  // Had no auth check: anyone could list the reports filed against a user,
+  // including reporter names.
+  const authError = await requireAdminAuth(request);
+  if (authError) return authError;
+
   try {
     const { id } = await params;
     const rawId = decodeURIComponent(id).trim();

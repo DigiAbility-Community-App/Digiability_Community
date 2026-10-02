@@ -31,6 +31,7 @@ import {
   Activity,
   Calendar as CalendarIcon,
   Lock,
+  LogOut,
 } from "lucide-react";
 import { isValidIndianPhone, INVALID_PHONE_MESSAGE, isValidEmail, INVALID_EMAIL_MESSAGE } from "@/lib/validation";
 import { ConfirmModal } from "@/components/shared/ConfirmModal";
@@ -1668,6 +1669,27 @@ function SecurityTab({ onSave }: { onSave: () => void }) {
   const [logsLoading, setLogsLoading] = useState(true);
   const [auditLogs, setAuditLogs] = useState<AuditLogRow[]>([]);
   const [auditFilter, setAuditFilter] = useState("");
+  const [signOutAllOpen, setSignOutAllOpen] = useState(false);
+  const [signingOutAll, setSigningOutAll] = useState(false);
+  const [signOutAllError, setSignOutAllError] = useState<string | null>(null);
+
+  // Revokes every session for this admin, this one included — for a lost
+  // laptop or a "Keep me signed in" session left on a shared machine.
+  const handleSignOutAll = async () => {
+    setSigningOutAll(true);
+    setSignOutAllError(null);
+    try {
+      const res = await fetch("/api/auth/logout-all", { method: "POST" });
+      if (!res.ok && res.status !== 401) {
+        const data = await res.json().catch(() => null);
+        throw new Error(data?.message || "Could not sign out other devices.");
+      }
+      window.location.assign("/login");
+    } catch (err) {
+      setSignOutAllError(err instanceof Error ? err.message : "Could not sign out other devices.");
+      setSigningOutAll(false);
+    }
+  };
 
   // Load live security policies
   const loadSecuritySettings = async () => {
@@ -1974,12 +1996,9 @@ function SecurityTab({ onSave }: { onSave: () => void }) {
               </div>
               <div>
                 <h3 className="text-lg font-extrabold text-[#1A1C1C]">Admin Session Security</h3>
-                <p className="text-xs text-[#4B4355]/60">Encrypted JWT session cookie with HttpOnly protection</p>
+                <p className="text-xs text-[#4B4355]/60">Signed, HttpOnly session cookie backed by a server-side session</p>
               </div>
             </div>
-            <span className="px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[11px] font-bold border border-emerald-200">
-              Encrypted
-            </span>
           </div>
           <div className="p-4 bg-[#F7F5FA] rounded-xl border border-slate-100 space-y-2">
             <div className="flex items-center justify-between">
@@ -1992,9 +2011,33 @@ function SecurityTab({ onSave }: { onSave: () => void }) {
               </span>
             </div>
             <p className="text-xs text-[#4B4355]/70">
-              Authenticated via symmetric AES/HMAC signed token with secure cross-origin flags.
+              Logging out ends a session immediately on the server. Use the button below if you
+              stayed signed in on a device you no longer have, or a shared computer.
             </p>
           </div>
+          <button
+            type="button"
+            onClick={() => setSignOutAllOpen(true)}
+            className="mt-4 w-full h-11 rounded-xl border border-red-200 text-red-600 text-sm font-bold flex items-center justify-center gap-2 hover:bg-red-50 transition-colors"
+          >
+            <LogOut className="w-4 h-4" aria-hidden="true" />
+            Sign out of all devices
+          </button>
+          <ConfirmModal
+            open={signOutAllOpen}
+            title="Sign out of all devices?"
+            message="Every admin session for your account will end, including this one. You'll need to sign in again."
+            confirmLabel="Sign out everywhere"
+            destructive
+            busy={signingOutAll}
+            error={signOutAllError ?? undefined}
+            icon={LogOut}
+            onConfirm={handleSignOutAll}
+            onCancel={() => {
+              setSignOutAllOpen(false);
+              setSignOutAllError(null);
+            }}
+          />
         </div>
       </div>
 

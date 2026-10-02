@@ -1116,3 +1116,21 @@ model AdminLoginAttempt {
   @@index([identifier, attemptedAt(sort: Desc)])
   @@map("admin_login_attempts")
 }
+
+// Server-side admin panel sessions. Owned by apps/admin (lib/adminSessions.server.ts),
+// declared here so `prisma db push` on either public-schema service never drops it.
+model AdminSession {
+  id            String    @id
+  email         String
+  remember      Boolean   @default(false)
+  userAgent     String?   @db.VarChar(255)
+  ipAddress     String?
+  createdAt     DateTime  @default(now()) @db.Timestamptz(6)
+  lastSeenAt    DateTime  @default(now()) @db.Timestamptz(6)
+  expiresAt     DateTime  @db.Timestamptz(6)
+  revokedAt     DateTime? @db.Timestamptz(6)
+  revokedReason String?
+
+  @@index([email])
+  @@map("admin_sessions")
+}

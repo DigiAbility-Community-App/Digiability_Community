@@ -16,23 +16,24 @@ async function ensureTable() {
       require_special BOOLEAN DEFAULT true,
       max_failed_attempts INT DEFAULT 5,
       lockout_duration_mins INT DEFAULT 15,
-      session_timeout_mins INT DEFAULT 120,
+      session_timeout_mins INT DEFAULT 480,
       updated_at TIMESTAMPTZ DEFAULT NOW()
     );
     ALTER TABLE admin_security_settings ADD COLUMN IF NOT EXISTS max_password_len INT DEFAULT 16;
-    ALTER TABLE admin_security_settings ALTER COLUMN session_timeout_mins SET DEFAULT 120;
+    ALTER TABLE admin_security_settings ALTER COLUMN session_timeout_mins SET DEFAULT 480;
   `);
 
-  // Neither value below was ever a deliberate choice: 1440 was the dead column
-  // default from when nothing read this setting, and 30 came from the migration
-  // that replaced it. There is still no Settings UI field for the timeout and
-  // the POST handler below doesn't persist this column, so no admin has ever
-  // been able to pick a value — anything matching those two is a stale default,
-  // safe to move up to the current DEFAULT_IDLE_MINUTES (2 hours).
+  // None of the values below was ever a deliberate choice: 1440 was the dead
+  // column default from when nothing read this setting, 30 came from the
+  // migration that replaced it, and 120 was the previous default. There is
+  // still no Settings UI field for the timeout and the POST handler below
+  // doesn't persist this column, so no admin has ever been able to pick a
+  // value — anything matching these is a stale default, safe to move up to the
+  // current DEFAULT_IDLE_MINUTES (8 hours).
   await dbPool.query(
     `UPDATE admin_security_settings
      SET session_timeout_mins = $1
-     WHERE id = 'default' AND session_timeout_mins IN (1440, 30)`,
+     WHERE id = 'default' AND session_timeout_mins IN (1440, 30, 120)`,
     [DEFAULT_IDLE_MINUTES]
   );
 }
