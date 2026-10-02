@@ -7,6 +7,7 @@ import {
   Image,
   ActivityIndicator,
   Share,
+  Alert,
   Linking,
 } from "react-native";
 import {
@@ -36,7 +37,7 @@ import {
 } from "../../services/eventService";
 import { MediaViewer } from "../../components/chat/MediaViewer";
 import * as Sharing from "expo-sharing";
-import { prepareLocalMediaFile, mimeTypeForUri } from "../../utils/mediaFile";
+import { prepareLocalMediaFile, mimeTypeForUri, logMedia } from "../../utils/mediaFile";
 import { formatEventDateDisplay } from "../../utils/dateHelpers";
 
 function isEventCompleted(dateStr: string): boolean {
@@ -106,31 +107,45 @@ export default function EventDetailScreen() {
     if (!event) return;
     const message = `Check out this event: ${event.title}\nDate: ${formatEventDateDisplay(event.date)}${event.time ? ` • ${event.time}` : ""}\nLocation: ${event.location}\nShared via DigiAbility Community.`;
 
-    // Attach the poster when there is one. This used to be text-only, so
-    // "share" never sent an image. Event images are usually base64 data URLs
-    // written by the admin panel, which is why this goes through the same
-    // helper the media viewer uses rather than passing the raw src along.
-    if (event.image) {
+    const shareTextOnly = async () => {
       try {
-        const localUri = await prepareLocalMediaFile(event.image);
-        if (await Sharing.isAvailableAsync()) {
-          await Sharing.shareAsync(localUri, {
-            mimeType: mimeTypeForUri(localUri),
-            dialogTitle: event.title,
-          });
-          return;
-        }
+        await Share.share({ message });
       } catch (err) {
-        // Fall through to the text-only share below rather than failing the
-        // whole action — previously a bare `catch {}` hid every error here.
-        console.warn("[EventDetail] Could not attach event image to share:", err);
+        logMedia("event text share failed", event.title, err);
       }
+    };
+
+    // No poster: plain text share.
+    if (!event.image) {
+      await shareTextOnly();
+      return;
     }
 
+    // Poster: share the image file. Event images are usually base64 data URLs
+    // written by the admin panel, so this goes through the same pipeline as
+    // the media viewer. A failure is shown to the user — it used to fall back
+    // to a text-only share silently, so "share has no image" was never
+    // reported with a cause. (expo-sharing can't attach text to a file share.)
     try {
-      await Share.share({ message });
-    } catch (err) {
-      console.warn("[EventDetail] Share failed:", err);
+      if (!(await Sharing.isAvailableAsync())) {
+        await shareTextOnly();
+        return;
+      }
+      const localUri = await prepareLocalMediaFile(event.image);
+      await Sharing.shareAsync(localUri, {
+        mimeType: mimeTypeForUri(localUri),
+        dialogTitle: event.title,
+      });
+    } catch (err: any) {
+      logMedia("event poster share failed", event.image, err);
+      Alert.alert(
+        "Couldn't share the poster",
+        `${err?.message || "The event image couldn't be prepared."} You can still share the event details as text.`,
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Share details only", onPress: () => { shareTextOnly(); } },
+        ]
+      );
     }
   };
 

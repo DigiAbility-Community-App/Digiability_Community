@@ -40,7 +40,9 @@ function formatDayTime(hhmm: string): string {
 /** Renders a single day's schedule as "9:00 AM – 6:00 PM" or "Closed". */
 export function formatDaySchedule(day: DaySchedule | null | undefined): string {
   if (!day || !day.open || !day.from || !day.to) return "Closed";
-  return `${formatDayTime(day.from)} – ${formatDayTime(day.to)}`;
+  // A close of "00:00" means "until midnight" (see admin availabilitySchedule.ts).
+  const closes = day.to === "00:00" ? "Midnight" : formatDayTime(day.to);
+  return `${formatDayTime(day.from)} – ${closes}`;
 }
 
 export interface ServiceCategory {

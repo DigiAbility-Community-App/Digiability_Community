@@ -34,7 +34,7 @@ import ScreenWrapper from "../../components/layout/ScreenWrapper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   Check, CheckCheck, Plus, Mic, Send, Square,
-  ArrowLeft, Settings, Trash2, Volume2, Users, Accessibility, Heart, HeartHandshake,
+  ArrowLeft, Settings, Trash2, RotateCcw, Volume2, Users, Accessibility, Heart, HeartHandshake,
   Flag, CircleCheck, TriangleAlert, AlertCircle, CornerUpLeft, X
 } from "lucide-react-native";
 import { useTheme } from "../../theme/ThemeContext";
@@ -625,6 +625,17 @@ const GroupChatScreen = ({ navigation, route }: Props) => {
     if (!messageMenu) return [];
     const item = messageMenu;
     const isMine = item.senderId === user?.id;
+    // A message of ours that never reached the server (upload failed, offline,
+    // or rejected) only gets Retry / Remove — Reply, Report and Delete for
+    // everyone don't apply to something the server never stored.
+    if (isMine && item.status === "failed") {
+      const failedOpts: ActionSheetOption[] = [];
+      if (media.canRetry(item)) {
+        failedOpts.push({ label: "Retry", icon: RotateCcw, onPress: () => media.retryMessage(item) });
+      }
+      failedOpts.push({ label: "Remove", icon: Trash2, destructive: true, onPress: () => media.discardFailedMessage(item) });
+      return failedOpts;
+    }
     // Super Admins can delete any message for everyone
     const canDeleteForEveryone = isMine || hasAdminRights || isSuperAdmin;
     const opts: ActionSheetOption[] = [];

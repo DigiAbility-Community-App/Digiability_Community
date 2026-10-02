@@ -12,7 +12,7 @@ import {
   Platform,
   ActionSheetIOS,
 } from "react-native";
-import { KeyboardAwareScrollView } from "react-native-keyboard-aware-scroll-view";
+import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { NativeStackNavigationProp, NativeStackScreenProps } from "@react-navigation/native-stack";
 import { ChatsStackParamList } from "@navigation/ChatsStack";
 import { chatService } from "@services/chatService";
@@ -322,8 +322,7 @@ const CreateGroupScreen = ({ navigation, route }: Props) => {
         style={styles.content}
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={{ paddingBottom: 100, flexGrow: 1 }}
-        enableOnAndroid={true}
-        extraScrollHeight={20}
+        bottomOffset={20}
       >
           {/* ── Group Name ─────────────────────────────────── */}
           <View style={styles.section}>

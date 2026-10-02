@@ -11,7 +11,7 @@ import {
   Alert,
   Modal,
 } from "react-native";
-import { KeyboardAwareScrollView } from "react-native-keyboard-aware-scroll-view";
+import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 
 import { LinearGradient } from "expo-linear-gradient";
 
@@ -91,6 +91,12 @@ function getBanInfo(error: unknown) {
   };
 }
 
+/** The server's message for a rejected password (422 errors[].field), if any. */
+function getPasswordFieldError(error: unknown): string | null {
+  const errors = (error as ApiErrorShape).response?.data?.errors ?? [];
+  return errors.find((e) => e.field === "password")?.message ?? null;
+}
+
 function getApiErrorMessage(error: unknown, fallback: string) {
   const apiError = error as ApiErrorShape;
   const fieldMessage = apiError.response?.data?.errors?.[0]?.message;
@@ -149,8 +155,10 @@ const WelcomeScreen = ({ navigation }: Props) => {
     if (emailDebounceRef.current) clearTimeout(emailDebounceRef.current);
     emailDebounceRef.current = setTimeout(async () => {
       const result = await checkEmailAvailability(trimmed);
-      setEmailStatus(result.available ? "available" : "taken");
-      setEmailMessage(result.message);
+      // A check that couldn't run is neither "available" nor "taken" —
+      // registration still enforces uniqueness server-side.
+      setEmailStatus(!result.checked ? "idle" : result.available ? "available" : "taken");
+      setEmailMessage(result.checked ? result.message : "");
     }, 500);
   };
 
@@ -162,6 +170,9 @@ const WelcomeScreen = ({ navigation }: Props) => {
   // password field is focused, per QA.
   const [passwordPolicy, setPasswordPolicy] = useState<PasswordPolicy>(FALLBACK_PASSWORD_POLICY);
   const [passwordFocused, setPasswordFocused] = useState(false);
+  // Shown under the password field itself (not the banner at the top of the
+  // form), and keeps the requirements checklist open until it's fixed.
+  const [passwordError, setPasswordError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -207,6 +218,7 @@ const WelcomeScreen = ({ navigation }: Props) => {
   // Signup
   const handleSignUp = async () => {
     clearError();
+    setPasswordError(null);
 
     const trimmedName = name.trim();
     const trimmedEmail = signUpEmail.trim().toLowerCase();
@@ -252,9 +264,9 @@ const WelcomeScreen = ({ navigation }: Props) => {
 
     // Rules come from the admin-configured policy (see passwordPolicy state
     // above) so this can't drift from what the API enforces.
-    const passwordError = firstPasswordError(trimmedPassword, passwordPolicy);
-    if (passwordError) {
-      setError(passwordError);
+    const passwordRuleError = firstPasswordError(trimmedPassword, passwordPolicy);
+    if (passwordRuleError) {
+      setPasswordError(passwordRuleError);
       return;
     }
 
@@ -313,6 +325,14 @@ const WelcomeScreen = ({ navigation }: Props) => {
       navigation.navigate("VerifyEmail", { email: trimmedEmail });
     } catch (err: unknown) {
       console.error("[SignUpError]", err);
+      // A password the server's policy rejected belongs under the password
+      // field, not inside the consent notice where the field can't be seen.
+      const serverPasswordError = getPasswordFieldError(err);
+      if (serverPasswordError) {
+        setShowConsent(false);
+        setPasswordError(serverPasswordError);
+        return;
+      }
       setConsentError(getApiErrorMessage(err, "Registration failed."));
     } finally {
       setLoading(false);
@@ -405,19 +425,16 @@ const WelcomeScreen = ({ navigation }: Props) => {
       {/* MAIN CARD */}
       <KeyboardAwareScrollView
         style={[styles.bottomCard, { backgroundColor: colors.card }]}
-        // Flat object, not an array — with enableOnAndroid this library reads
-        // (contentContainerStyle || {}).paddingBottom to add its own keyboard
-        // padding on top of ours; on an array that's undefined, so its
-        // replacement value becomes the ONLY paddingBottom RN keeps after
-        // flattening the style array, silently discarding bottomContent's.
+        // Flat object, not an array: the previous keyboard library read
+        // (contentContainerStyle || {}).paddingBottom and, on an array, its
+        // value replaced bottomContent's padding. Kept flat for safety.
         contentContainerStyle={{ ...styles.bottomContent, flexGrow: 1 }}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
-        enableOnAndroid={true}
         // Phone Number is the last field, right above the submit button —
         // 20 wasn't enough clearance to scroll it above the keyboard once
         // focused, so it stayed hidden behind it.
-        extraScrollHeight={100}
+        bottomOffset={100}
       >
         {/* TABS */}
         <View style={styles.tabs}>
@@ -515,7 +532,11 @@ const WelcomeScreen = ({ navigation }: Props) => {
               label="Password"
               placeholder={`${passwordPolicy.minLength}\u2013${passwordPolicy.maxLength} characters`}
               value={signUpPassword}
-              onChangeText={setSignUpPassword}
+              onChangeText={(value) => {
+                setSignUpPassword(value);
+                setPasswordError(null);
+              }}
+              error={passwordError ?? undefined}
               onFocus={() => setPasswordFocused(true)}
               onBlur={() => setPasswordFocused(false)}
               secureTextEntry={true}
@@ -524,10 +545,11 @@ const WelcomeScreen = ({ navigation }: Props) => {
                 .join(", ")}`}
             />
 
-            {/* Requirements are revealed only while the password field is
-                focused (per QA) and tick off live as each rule is met. The
-                list itself is the admin-configured policy. */}
-            {passwordFocused && (
+            {/* Requirements are revealed while the password field is focused
+                (per QA), or while a password error is showing, and tick off
+                live as each rule is met. The list itself is the
+                admin-configured policy. */}
+            {(passwordFocused || !!passwordError) && (
               <View
                 style={styles.passwordRules}
                 accessible={true}

@@ -8,7 +8,7 @@ import {
   Animated,
   Alert,
 } from "react-native";
-import { KeyboardAwareScrollView } from "react-native-keyboard-aware-scroll-view";
+import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { ChatsStackParamList } from "@navigation/ChatsStack";
 import { chatService } from "@services/chatService";

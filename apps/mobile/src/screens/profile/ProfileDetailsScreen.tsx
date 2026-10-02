@@ -22,7 +22,7 @@ import {
   Alert,
   BackHandler,
 } from "react-native";
-import { KeyboardAwareScrollView } from "react-native-keyboard-aware-scroll-view";
+import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 
 import DateTimePickerModal from "react-native-modal-datetime-picker";
 import SafeScreen from "../../components/layout/SafeScreen";
@@ -426,8 +426,7 @@ const ProfileDetailsScreen = () => {
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
-          enableOnAndroid={true}
-          extraScrollHeight={100}
+          bottomOffset={100}
         >
           {/* HERO */}
           <View style={styles.heroSection}>

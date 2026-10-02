@@ -20,7 +20,7 @@ import {
   Dimensions,
 } from "react-native";
 import { Audio } from "expo-av";
-import { Play, Pause } from "lucide-react-native";
+import { Play, Pause, ImageOff } from "lucide-react-native";
 import { ChatMessage } from "@store/chatStore";
 import { resolveMediaUrl } from "@services/chatService";
 
@@ -133,26 +133,19 @@ export function MessageMedia({ message, isMine, onOpenViewer, onLongPress }: Mes
       );
     }
 
-    // Regular image: fixed-size, edge-to-edge in bubble
+    // Regular image: fixed-size, edge-to-edge in bubble. Keyed on the source
+    // so load/error state resets when the local preview of a just-sent image
+    // is swapped for the uploaded copy's server URL.
     return (
       <View>
-        <TouchableOpacity
-          activeOpacity={0.9}
+        <ChatImage
+          key={mediaSrc}
+          uri={mediaSrc}
+          altText={altText}
+          sending={message.status === "sending"}
           onPress={handlePress}
           onLongPress={onLongPress}
-          accessibilityRole="button"
-          accessibilityLabel={altText}
-          accessibilityHint="Tap to view full-screen"
-          style={styles.mediaTouchable}
-        >
-          <Image
-            source={{ uri: mediaSrc }}
-            style={styles.mediaImage}
-            resizeMode="cover"
-            accessible
-            accessibilityLabel={altText}
-          />
-        </TouchableOpacity>
+        />
         {meta.altText ? (
           <Text style={[styles.caption, isMine ? styles.captionMine : undefined]}>
             {meta.altText}
@@ -168,6 +161,73 @@ export function MessageMedia({ message, isMine, onOpenViewer, onLongPress }: Mes
   }
 
   return null;
+}
+
+/**
+ * Image thumbnail with explicit loading / sending / failed-to-load states.
+ *
+ * The bare <Image> painted the fixed-size #DDD block while loading and kept
+ * painting it forever when the URL 404'd (e.g. an upload lost when chat-svc's
+ * disk was recycled), so users saw an unexplained grey box. Now a spinner
+ * shows while loading or uploading, and a labelled tile replaces a source
+ * that can't load. Long-press still works on the tile so it can be deleted.
+ */
+function ChatImage({
+  uri,
+  altText,
+  sending,
+  onPress,
+  onLongPress,
+}: {
+  uri: string;
+  altText: string;
+  sending: boolean;
+  onPress: () => void;
+  onLongPress?: () => void;
+}) {
+  const [state, setState] = useState<"loading" | "loaded" | "error">("loading");
+
+  if (state === "error") {
+    return (
+      <TouchableOpacity
+        activeOpacity={0.9}
+        onLongPress={onLongPress}
+        accessibilityRole="image"
+        accessibilityLabel={`${altText}. Image unavailable`}
+        style={[styles.mediaTouchable, styles.unavailableTile]}
+      >
+        <ImageOff size={28} color="#6B7280" />
+        <Text style={styles.unavailableText}>Image unavailable</Text>
+      </TouchableOpacity>
+    );
+  }
+
+  return (
+    <TouchableOpacity
+      activeOpacity={0.9}
+      onPress={sending ? undefined : onPress}
+      onLongPress={onLongPress}
+      accessibilityRole="button"
+      accessibilityLabel={sending ? `${altText}. Sending` : altText}
+      accessibilityHint={sending ? undefined : "Tap to view full-screen"}
+      style={styles.mediaTouchable}
+    >
+      <Image
+        source={{ uri }}
+        style={styles.mediaImage}
+        resizeMode="cover"
+        accessible
+        accessibilityLabel={altText}
+        onLoad={() => setState("loaded")}
+        onError={() => setState("error")}
+      />
+      {(sending || state === "loading") && (
+        <View style={styles.mediaSpinnerOverlay} pointerEvents="none">
+          <ActivityIndicator color="#fff" />
+        </View>
+      )}
+    </TouchableOpacity>
+  );
 }
 
 function AudioBubble({
@@ -319,6 +379,23 @@ const styles = StyleSheet.create({
     width: MEDIA_WIDTH,
     height: MEDIA_HEIGHT,
     backgroundColor: "#DDD",
+  },
+  mediaSpinnerOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(0,0,0,0.25)",
+  },
+  unavailableTile: {
+    backgroundColor: "#F3F4F6",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+  },
+  unavailableText: {
+    color: "#4B5563",
+    fontSize: 13,
+    fontWeight: "600",
   },
 
   caption: {

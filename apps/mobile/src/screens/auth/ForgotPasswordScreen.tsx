@@ -6,7 +6,7 @@ import {
   Alert,
   TouchableOpacity,
 } from "react-native";
-import { KeyboardAwareScrollView } from "react-native-keyboard-aware-scroll-view";
+import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { LinearGradient } from "expo-linear-gradient";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { AuthStackParamList } from "@navigation/AuthNavigator";
@@ -228,7 +228,6 @@ const ForgotPasswordScreen = ({ navigation }: Props) => {
         <KeyboardAwareScrollView
           contentContainerStyle={styles.bottomContent}
           keyboardShouldPersistTaps="handled"
-          enableOnAndroid
         >
           {/* Error */}
           {error ? (

@@ -3,6 +3,25 @@ import { FORUM_API_URL } from "@config/env";
 
 const FORUM_BASE_URL = FORUM_API_URL;
 
+/**
+ * Resolve forum media for display/download. Mirrors chat's resolveMediaUrl.
+ *
+ * forum-svc stores uploads as host-relative paths ("/uploads/x.jpg"), which
+ * resolve against this build's forum base URL. Older rows were stored as
+ * absolute URLs to whatever host served the upload — in production that was
+ * "http://<node-ip>:30503/uploads/…", which a production build (cleartext
+ * denied) can't load. Any absolute URL pointing at an /uploads/ path is
+ * therefore re-based onto the forum base too, so legacy rows work even
+ * before scripts/2026-10-media-urls-relative.sql has been run.
+ */
+export function resolveForumMediaUrl(pathOrUrl?: string | null): string {
+  if (!pathOrUrl) return "";
+  const legacyUpload = /^https?:\/\/[^/]+(\/uploads\/[^?#]+)$/i.exec(pathOrUrl);
+  if (legacyUpload) return `${FORUM_BASE_URL}${legacyUpload[1]}`;
+  if (pathOrUrl.startsWith("/uploads/")) return `${FORUM_BASE_URL}${pathOrUrl}`;
+  return pathOrUrl;
+}
+
 export interface QuestionFilters {
   search?: string;
   category?: string;

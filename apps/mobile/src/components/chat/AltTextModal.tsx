@@ -12,10 +12,10 @@ import {
   Image,
   TextInput,
   TouchableOpacity,
-  ScrollView,
   StyleSheet,
   Platform,
 } from "react-native";
+import { KeyboardAwareScrollView, useKeyboardState } from "react-native-keyboard-controller";
 import { SheetKeyboardAvoidingView } from "../shared/SheetKeyboardAvoidingView";
 
 export function AltTextModal({
@@ -30,6 +30,9 @@ export function AltTextModal({
   onSend: (altText: string) => void;
 }) {
   const [altText, setAltText] = useState("");
+  // The 200px preview above the input left no room for it on small phones
+  // once the keyboard was up; shrink the preview while typing.
+  const keyboardVisible = useKeyboardState((state) => state.isVisible);
 
   useEffect(() => {
     if (visible) setAltText("");
@@ -48,13 +51,20 @@ export function AltTextModal({
         >
           <TouchableOpacity activeOpacity={1} style={styles.card} onPress={() => {}}>
             <Text style={styles.title}>Share image</Text>
-            <ScrollView
+            <KeyboardAwareScrollView
               style={styles.scrollArea}
               contentContainerStyle={styles.scrollContent}
               keyboardShouldPersistTaps="handled"
               showsVerticalScrollIndicator={false}
+              bottomOffset={16}
             >
-              {imageUri ? <Image source={{ uri: imageUri }} style={styles.preview} resizeMode="cover" /> : null}
+              {imageUri ? (
+                <Image
+                  source={{ uri: imageUri }}
+                  style={[styles.preview, keyboardVisible && styles.previewCompact]}
+                  resizeMode="cover"
+                />
+              ) : null}
               <Text style={styles.label}>Add a caption (shown to recipients, also read aloud by screen readers)</Text>
               <TextInput
                 style={styles.input}
@@ -66,7 +76,7 @@ export function AltTextModal({
                 maxLength={300}
                 accessibilityLabel="Image description"
               />
-            </ScrollView>
+            </KeyboardAwareScrollView>
             {/* Kept outside the scroll area so the buttons stay reachable. */}
             <View style={styles.actions}>
               <TouchableOpacity style={styles.cancelBtn} onPress={onCancel}>
@@ -115,6 +125,9 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     backgroundColor: "#eee",
     marginBottom: 12,
+  },
+  previewCompact: {
+    height: 96,
   },
   label: {
     fontSize: 13,

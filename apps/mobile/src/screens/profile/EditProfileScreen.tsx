@@ -16,7 +16,7 @@ import {
     TextInput,
     ActivityIndicator,
 } from "react-native";
-import { KeyboardAwareScrollView } from "react-native-keyboard-aware-scroll-view";
+import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 
 import { ConfirmDialog } from "../../components/chat/ConfirmDialog";
 
@@ -698,15 +698,10 @@ const EditProfileScreen = () => {
                 showsVerticalScrollIndicator={
                     false
                 }
-                // NOTE: must be a single flat object, not a style array — with
-                // enableOnAndroid, this library internally does
-                // `(contentContainerStyle || {}).paddingBottom` to add its own
-                // keyboard-space padding on top of ours. On an array, that
-                // property read is undefined, so its computed replacement
-                // becomes the ONLY paddingBottom left after RN flattens the
-                // style array — silently discarding ours entirely (0 with the
-                // keyboard closed, which is exactly why the last field was
-                // sitting flush behind the footer button with no gap at all).
+                // Kept a single flat object: the previous keyboard library read
+                // `(contentContainerStyle || {}).paddingBottom`, and on a style
+                // array its value replaced ours entirely — which is why the
+                // last field once sat flush behind the footer button.
                 contentContainerStyle={{
                     ...styles.scrollContent,
                     // Footer button's own footprint is ~ insets.bottom + 24 + 58 —
@@ -715,9 +710,8 @@ const EditProfileScreen = () => {
                     paddingBottom: Math.max(insets.bottom + 160, 180),
                 }}
                 keyboardShouldPersistTaps="handled"
-                enableOnAndroid={true}
-                enableResetScrollToCoords={false}
-                extraScrollHeight={140}
+                disableScrollOnKeyboardHide
+                bottomOffset={140}
             >
                 {/* PROFILE BANNER */}
                 <View

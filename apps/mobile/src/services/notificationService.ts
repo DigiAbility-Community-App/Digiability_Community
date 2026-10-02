@@ -104,6 +104,18 @@ export function addNotificationListener(
   return Notifications.addNotificationReceivedListener(handler);
 }
 
+/**
+ * The tap that launched the app from a killed state, if any — consumed so it
+ * is handled once. The response listener below only reliably covers taps
+ * while the app is running, so a cold-start tap would otherwise open the app
+ * on its default screen instead of the notification's target.
+ */
+export function consumeLaunchNotificationResponse(): Notifications.NotificationResponse | null {
+  const response = Notifications.getLastNotificationResponse();
+  if (response) Notifications.clearLastNotificationResponse();
+  return response;
+}
+
 export function addNotificationResponseListener(
   handler: (response: Notifications.NotificationResponse) => void
 ): Notifications.Subscription {

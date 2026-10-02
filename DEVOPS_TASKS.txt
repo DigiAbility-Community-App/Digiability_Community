@@ -487,3 +487,189 @@ then the seeded file is lost on every pod restart).
 Changing an admin password later = update the Secret (bcrypt hash) and restart
 the pod. If you'd rather keep it in Infisical, the same file content can be an
 Infisical secret synced to `admin-credentials` by the operator.
+
+=====================================================================
+19. PERSISTENT STORAGE FOR UPLOADS (chat-svc + forum-svc)   [NEEDED NOW — follow item 23 step 1, it preserves existing files]
+=====================================================================
+Chat and forum images / voice notes are written to the pod's own disk:
+  chat-svc   /app/services/chat-svc/uploads
+  forum-svc  /app/services/forum-svc/uploads
+Nothing persists that directory in the cluster, so every redeploy or pod
+restart deletes every file uploaded before it. In the app this shows up as
+images going blank and "Save to Gallery" / "Share" failing with "This file is
+no longer available on the server" (HTTP 404). It is the main reason image
+save/share "keeps breaking" after each release.
+
+Add a PVC per service (k3s default StorageClass `local-path` is fine):
+
+  apiVersion: v1
+  kind: PersistentVolumeClaim
+  metadata: { name: chat-uploads, namespace: communityapp }
+  spec:
+    accessModes: [ReadWriteOnce]
+    resources: { requests: { storage: 10Gi } }
+  ---
+  (same again with name: forum-uploads)
+
+Mount it in each Deployment:
+  spec.template.spec.volumes:
+    - name: uploads
+      persistentVolumeClaim: { claimName: chat-uploads }   # forum-uploads for forum-svc
+  containers[...].volumeMounts:
+    - name: uploads
+      mountPath: /app/services/chat-svc/uploads             # /app/services/forum-svc/uploads
+
+ReadWriteOnce means only ONE pod can mount it, so for both Deployments:
+  spec.replicas: 1
+  spec.strategy: { type: Recreate }   # RollingUpdate would deadlock on the RWO volume
+
+Verify: upload an image in a chat, `kubectl rollout restart deploy/chat-svc`,
+then `curl -sI https://chat.community.digiability.in/uploads/<file>` -> 200.
+(Files uploaded before the PVC existed are already gone; the app shows an
+"Image unavailable" tile for them.)
+
+=====================================================================
+20. FORUM MEDIA URL MIGRATION   [run once, after the forum-svc release]
+=====================================================================
+forum-svc stored image/audio URLs as "http://187.127.191.28:30503/uploads/..."
+(it built them from the request host without `trust proxy`). Production apps
+deny cleartext, so those images can't load, save or share. The new forum-svc
+stores "/uploads/..." and the app resolves it. Rewrite existing rows:
+
+  psql "$DATABASE_URL" -v ON_ERROR_STOP=1 \
+    -f services/forum-svc/scripts/2026-10-media-urls-relative.sql
+
+Idempotent (a second run updates 0 rows); prints counts before and after —
+"after" must be all 0. The new app also re-bases these URLs itself, so order
+doesn't matter, but run it so admin/moderation and any other reader get clean
+data.
+
+=====================================================================
+21. MODERATION QUEUE RENAME   [deploy chat-svc, forum-svc, user-svc together]
+=====================================================================
+The BullMQ queue "moderation:classify" was renamed "moderation-classify":
+BullMQ 5 rejects ":" in queue names, so the user-svc moderation worker never
+started ("Moderation worker failed to start (non-fatal): Queue name cannot
+contain :") and every forum question/answer post returned HTTP 500 after it
+had been saved (users saw "Failed to create question" and re-posted).
+No jobs could ever have been queued under the old name, so nothing to drain.
+After deploy, user-svc logs should show:
+  [ModerationWorker] Started — text: ..., image: ...
+
+=====================================================================
+22. FOLLOW-UP: MOVE UPLOADS TO OBJECT STORAGE (S3 / Cloudflare R2)
+=====================================================================
+Item 19 keeps files across restarts but pins each service to a single replica.
+To run more than one replica (or survive losing the node), uploads need to
+live in a bucket. Needs: a bucket + credentials in Infisical; app change in
+chat-svc/forum-svc upload middleware (tracked on the app side).
+
+=====================================================================
+23. RELEASE RUNBOOK — branch fix/qa-broadcast-deleted-group-categories
+=====================================================================
+State on 2 Oct (from ngo-devops @ main): user-svc, chat-svc, forum-svc,
+notif-svc run image 29e365b (item 17 released); admin still runs ca7468c;
+all four Services are still NodePort (30501-30504); no PVCs exist.
+
+This PR changes user-svc, chat-svc, forum-svc, notif-svc and admin. It needs
+NO new Infisical keys for the backend services. Do the steps in order.
+
+STEP 0 — sanity (read-only)
+  kubectl -n communityapp get pods -o wide        # all Running, 29e365b
+  kubectl -n communityapp get svc                 # note current types
+
+STEP 1 — BEFORE merging: persistent uploads (item 19), keeping today's files
+  Mounting a volume over /uploads HIDES the files already in the pod, so copy
+  them out first and back in after.
+
+  a) Copy current uploads out:
+     CHAT=$(kubectl -n communityapp get pod -l app=chat-svc -o name | head -1)
+     FORUM=$(kubectl -n communityapp get pod -l app=forum-svc -o name | head -1)
+     kubectl -n communityapp cp ${CHAT#pod/}:/app/services/chat-svc/uploads  ./chat-uploads-backup
+     kubectl -n communityapp cp ${FORUM#pod/}:/app/services/forum-svc/uploads ./forum-uploads-backup
+     ls chat-uploads-backup | wc -l; ls forum-uploads-backup | wc -l
+
+  b) In ngo-devops, add to communityapp/chat-svc.yaml (and the same in
+     forum-svc.yaml with forum-uploads / forum-svc paths):
+
+     ---
+     apiVersion: v1
+     kind: PersistentVolumeClaim
+     metadata:
+       name: chat-uploads
+       namespace: communityapp
+     spec:
+       accessModes: [ReadWriteOnce]
+       resources:
+         requests:
+           storage: 10Gi
+
+     In the Deployment:
+       spec:
+         replicas: 1
+         strategy:
+           type: Recreate            # RWO volume: RollingUpdate would hang
+         template.spec.containers[0]:
+           volumeMounts:
+             - name: uploads
+               mountPath: /app/services/chat-svc/uploads    # /app/services/forum-svc/uploads
+         template.spec:
+           volumes:
+             - name: uploads
+               persistentVolumeClaim:
+                 claimName: chat-uploads                    # forum-uploads
+
+     Commit + sync (or kubectl apply -f communityapp/chat-svc.yaml ...).
+
+  c) Copy the files back into the new pods:
+     CHAT=$(kubectl -n communityapp get pod -l app=chat-svc -o name | head -1)
+     FORUM=$(kubectl -n communityapp get pod -l app=forum-svc -o name | head -1)
+     kubectl -n communityapp cp ./chat-uploads-backup/.  ${CHAT#pod/}:/app/services/chat-svc/uploads
+     kubectl -n communityapp cp ./forum-uploads-backup/. ${FORUM#pod/}:/app/services/forum-svc/uploads
+
+  d) Verify persistence: pick a file name from the backup, then
+     kubectl -n communityapp rollout restart deploy/chat-svc
+     curl -sI https://chat.community.digiability.in/uploads/<file>    # 200 after the restart
+
+STEP 2 — merge the PR -> CI builds and bumps user-svc, chat-svc, forum-svc,
+  notif-svc. They MUST go live together (moderation queue rename, item 21).
+  If CI's "Sync ArgoCD" step fails again (it has been timing out on SSH),
+  finish by hand:
+     kubectl -n communityapp set image deploy/user-svc  user-svc=ghcr.io/techonsy/community-user-svc:<sha>
+     kubectl -n communityapp set image deploy/chat-svc  chat-svc=ghcr.io/techonsy/community-chat-svc:<sha>
+     kubectl -n communityapp set image deploy/forum-svc forum-svc=ghcr.io/techonsy/community-forum-svc:<sha>
+     kubectl -n communityapp set image deploy/notif-svc notif-svc=ghcr.io/techonsy/community-notif-svc:<sha>
+  Check:
+     kubectl -n communityapp logs deploy/user-svc | grep ModerationWorker     # "[ModerationWorker] Started"
+
+STEP 3 — forum media migration (item 20), after step 2:
+     psql "$DATABASE_URL" -v ON_ERROR_STOP=1 \
+       -f services/forum-svc/scripts/2026-10-media-urls-relative.sql
+  The "after" counts must all be 0. Safe to re-run.
+
+STEP 4 — admin panel (item 18 + this PR)
+  a) Credentials Secret: item 18 steps 1-3 (do this BEFORE the new image).
+  b) Admin env (Infisical / secret): CHAT_SVC_URL must be the in-cluster URL
+     (http://chat-svc:4002) and INTERNAL_API_SECRET must equal chat-svc's.
+     Group announcements now go through chat-svc and FAIL LOUDLY without
+     these (they used to silently write to the DB instead).
+  c) Build from merged main and deploy (manual path, GHCR push is still 403):
+     docker build --platform linux/amd64 -t ghcr.io/techonsy/community-admin:<sha> apps/admin    # context = apps/admin
+     docker save ... | scp ... ; k3s ctr images import ... ; bump admin.yaml ; kubectl rollout
+  d) Check: log in, open a group -> Send Message -> it appears live in the
+     app; Groups -> Edit -> Member Limit below member count is refused.
+
+STEP 5 — close NodePorts (item 6), once https ingress is confirmed working:
+  user-svc.yaml, chat-svc.yaml, forum-svc.yaml, admin.yaml:
+    type: NodePort -> type: ClusterIP, delete the "nodePort: 3050x" line.
+  Check: kubectl -n communityapp get svc   # all ClusterIP
+
+STEP 6 — final checks (from outside the VPS)
+  curl -s https://forum.community.digiability.in/api/forum/questions \
+    | grep -o '"imageUrl":"[^"]*' | head     # "/uploads/..." — no "http://187..."
+  curl -sI https://chat.community.digiability.in/health   # 200
+
+NOT DevOps (app team): new EAS build of the mobile app (new native modules:
+react-native-keyboard-controller, reanimated, worklets, zoom-toolkit) and the
+device test in apps/mobile/docs/media-release-checklist.md.
+

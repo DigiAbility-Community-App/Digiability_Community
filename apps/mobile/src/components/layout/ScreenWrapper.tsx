@@ -8,7 +8,7 @@ import {
 } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { KeyboardAwareScrollView } from "react-native-keyboard-aware-scroll-view";
+import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { useTheme } from "../../theme/ThemeContext";
 
 export interface ScreenWrapperProps {
@@ -63,9 +63,7 @@ export const ScreenWrapper: React.FC<ScreenWrapperProps> = ({
         <KeyboardAwareScrollView
           style={styles.flex}
           contentContainerStyle={{ flexGrow: 1 }}
-          enableOnAndroid={true}
-          keyboardOpeningTime={0}
-          extraScrollHeight={Platform.OS === 'ios' ? 20 : 0}
+          bottomOffset={20}
         >
           {content}
         </KeyboardAwareScrollView>
