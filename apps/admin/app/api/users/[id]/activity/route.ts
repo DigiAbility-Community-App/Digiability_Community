@@ -31,7 +31,7 @@ export async function GET(
         SELECT id, 'question' AS type, title AS content, category, "createdAt", "deletedAt",
                views, "answerCount", status::text AS status,
                NULL::boolean AS "isAccepted", 0 AS upvotes, 0 AS downvotes,
-               NULL::text AS "questionTitle", NULL::uuid AS "questionId"
+               NULL::text AS "questionTitle", NULL::text AS "questionId"  -- forum ids are TEXT; ::uuid broke the UNION
         FROM forum_questions WHERE "authorId" = $1
         UNION ALL
         SELECT fa.id, 'answer' AS type, fa.content, fq.category, fa."createdAt", fa."deletedAt",

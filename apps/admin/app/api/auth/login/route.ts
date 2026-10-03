@@ -20,9 +20,11 @@ export async function POST(request: NextRequest) {
   const ip = getRequestIp(request);
 
   try {
-    const { email, password, rememberMe } = await request.json();
+    // A missing or non-JSON body is a bad request, not a server error.
+    const body = await request.json().catch(() => null);
+    const { email, password, rememberMe } = body ?? {};
 
-    if (!email || !password) {
+    if (typeof email !== "string" || typeof password !== "string" || !email || !password) {
       return NextResponse.json(
         { success: false, message: "Email and password are required" },
         { status: 400 }
