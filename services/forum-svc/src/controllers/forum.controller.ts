@@ -83,36 +83,63 @@ const clientMediaPath = (value: unknown): string | null | false => {
 const absoluteUploadUrl = (req: Request, path: string | null) =>
   path ? `${req.protocol}://${req.get('host')}${path}` : undefined;
 
-const mapAuthorRole = (author: any) => {
+/**
+ * Who is reading. The forum list and question pages are public, so the author
+ * shape depends on it: members see the role badge ("PWD", "CAREGIVER" …);
+ * anonymous visitors don't, because a role like `pwd` discloses disability —
+ * sensitive personal data — to anyone on the internet.
+ */
+interface Viewer {
+  userId?: string;
+  member: boolean;
+}
+
+const ANONYMOUS: Viewer = { member: false };
+
+/** socket.io only accepts logged-in connections (websocket/socket.ts). */
+const MEMBERS: Viewer = { member: true };
+
+const viewerOf = (req: Request): Viewer =>
+  req.user?.sub ? { userId: String(req.user.sub), member: true } : ANONYMOUS;
+
+/**
+ * The only author fields the apps use: name, one role badge, reputation.
+ * Everything else the queries select (all roles, suspension state, deletedAt,
+ * the stats row's internal ids) is used server-side only and must not be
+ * returned — the public list used to expose all of it.
+ */
+const mapAuthorRole = (author: any, viewer: Viewer) => {
   if (!author) return author;
+  const reputation = author.forumStats?.reputation;
   return {
-    ...author,
-    role: author.roles?.[0] || null,
+    id: author.id,
+    name: author.name,
+    role: viewer.member ? author.roles?.[0] || null : null,
+    forumStats: typeof reputation === 'number' ? { reputation } : null,
   };
 };
 
-const mapAnswerRoles = (a: any, currentUserId?: string | number) => {
+const mapAnswerRoles = (a: any, viewer: Viewer) => {
   if (!a) return a;
-  const uid = typeof currentUserId === 'string' ? currentUserId : undefined;
+  const uid = viewer.userId;
   const isLiked = a.votes && Array.isArray(a.votes)
     ? a.votes.some((v: any) => v.type === 'UP' && (!uid || v.userId === uid))
     : Boolean(a.isLiked);
   return {
     ...a,
-    author: mapAuthorRole(a.author),
+    author: mapAuthorRole(a.author, viewer),
     isLiked,
   };
 };
 
-const mapQuestionRoles = (q: any, currentUserId?: string | number) => {
+const mapQuestionRoles = (q: any, viewer: Viewer) => {
   if (!q) return q;
-  const uid = typeof currentUserId === 'string' ? currentUserId : undefined;
   const mapped = {
     ...q,
-    author: mapAuthorRole(q.author),
+    author: mapAuthorRole(q.author, viewer),
   };
   if (q.answers && Array.isArray(q.answers)) {
-    mapped.answers = q.answers.map((a: any) => mapAnswerRoles(a, uid));
+    mapped.answers = q.answers.map((a: any) => mapAnswerRoles(a, viewer));
   }
   return mapped;
 };
@@ -242,8 +269,8 @@ export const createQuestion = async (req: Request, res: Response): Promise<void>
       imageUrl: absoluteUploadUrl(req, imageUrl),
     });
 
-    broadcastForumEvent('question_created', mapQuestionRoles(question));
-    res.status(201).json({ success: true, data: mapQuestionRoles(question) });
+    broadcastForumEvent('question_created', mapQuestionRoles(question, MEMBERS));
+    res.status(201).json({ success: true, data: mapQuestionRoles(question, viewerOf(req)) });
   } catch (error: any) {
     console.error('Create Question Error:', error);
     sendRouteError(res, error, 'Failed to create question');
@@ -283,7 +310,7 @@ export const checkDuplicates = async (req: Request, res: Response): Promise<void
       .slice(0, 5)
       .map(m => m.question);
 
-    res.status(200).json({ success: true, data: matches.map(mapQuestionRoles) });
+    res.status(200).json({ success: true, data: matches.map((q) => mapQuestionRoles(q, viewerOf(req))) });
   } catch (error: any) {
     console.error('Check Duplicates Error:', error);
     res.status(500).json({ success: false, message: 'Error performing similarity check' });
@@ -364,7 +391,7 @@ export const listQuestions = async (req: Request, res: Response): Promise<void> 
 
     res.status(200).json({
       success: true,
-      data: questions.map(mapQuestionRoles),
+      data: questions.map((q) => mapQuestionRoles(q, viewerOf(req))),
       nextCursor
     });
   } catch (error: any) {
@@ -422,7 +449,7 @@ export const getQuestionDetails = async (req: Request, res: Response): Promise<v
       }
     });
 
-    res.status(200).json({ success: true, data: mapQuestionRoles(question, userId) });
+    res.status(200).json({ success: true, data: mapQuestionRoles(question, viewerOf(req)) });
   } catch (error: any) {
     console.error('Get Question Details Error:', error);
     res.status(404).json({ success: false, message: 'Question not found' });
@@ -571,8 +598,8 @@ export const createAnswer = async (req: Request, res: Response): Promise<void> =
       imageUrl: absoluteUploadUrl(req, imageUrl),
     });
 
-    broadcastForumEvent('answer_created', mapAnswerRoles(answer));
-    res.status(201).json({ success: true, data: mapAnswerRoles(answer) });
+    broadcastForumEvent('answer_created', mapAnswerRoles(answer, MEMBERS));
+    res.status(201).json({ success: true, data: mapAnswerRoles(answer, viewerOf(req)) });
   } catch (error: any) {
     console.error('Create Answer Error:', error);
     res.status(500).json({ success: false, message: 'Failed to post answer' });
@@ -620,8 +647,8 @@ export const editAnswer = async (req: Request, res: Response): Promise<void> => 
       }
     });
 
-    broadcastForumEvent('answer_updated', mapAnswerRoles(updated));
-    res.status(200).json({ success: true, data: mapAnswerRoles(updated) });
+    broadcastForumEvent('answer_updated', mapAnswerRoles(updated, MEMBERS));
+    res.status(200).json({ success: true, data: mapAnswerRoles(updated, viewerOf(req)) });
   } catch (error: any) {
     console.error('Edit Answer Error:', error);
     res.status(500).json({ success: false, message: 'Failed to update answer' });
@@ -756,11 +783,11 @@ export const voteAnswer = async (req: Request, res: Response): Promise<void> => 
 
     const userLikedNow = existingVote && existingVote.type === voteType ? false : (voteType === VoteType.UP);
     const mappedResult = {
-      ...mapAnswerRoles(result, userId),
+      ...mapAnswerRoles(result, viewerOf(req)),
       isLiked: userLikedNow
     };
 
-    broadcastForumEvent('answer_voted', mapAnswerRoles(result));
+    broadcastForumEvent('answer_voted', mapAnswerRoles(result, MEMBERS));
     res.status(200).json({ success: true, data: mappedResult });
   } catch (error: any) {
     console.error('Vote Answer Error:', error);
@@ -1069,7 +1096,7 @@ export const listBookmarks = async (req: Request, res: Response): Promise<void> 
 
     const questions = bookmarks.map(b => b.question).filter(q => q.deletedAt === null);
 
-    res.status(200).json({ success: true, data: questions.map(mapQuestionRoles) });
+    res.status(200).json({ success: true, data: questions.map((q) => mapQuestionRoles(q, viewerOf(req))) });
   } catch (error: any) {
     console.error('List Bookmarks Error:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch bookmarks' });
