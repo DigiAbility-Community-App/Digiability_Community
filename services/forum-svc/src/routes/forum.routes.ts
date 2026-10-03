@@ -48,9 +48,10 @@ router.post(
   moderateContent,
   createQuestion
 );
-router.get('/questions', listQuestions);
+// optionalAuth: members get author role badges; anonymous readers don't.
+router.get('/questions', optionalAuth, listQuestions);
 // IMPORTANT: /questions/check-duplicates must remain above /questions/:id to avoid being shadowed
-router.get('/questions/check-duplicates', checkDuplicates);
+router.get('/questions/check-duplicates', optionalAuth, checkDuplicates);
 router.get('/questions/:id', optionalAuth, getQuestionDetails);
 router.delete('/questions/:id', authenticate, deleteQuestion);
 router.get('/questions/:id/summary', getQuestionSummary);
