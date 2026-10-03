@@ -3,18 +3,26 @@ DIGIABILITY COMMUNITY — INFRA TASKS FOR DEVOPS (ngo-devops repo + VPS)
 Owner: DevOps engineer. App/backend code changes are handled separately in
 the Digiability_Community repo. New items are appended per phase at the end.
 
-Last updated: 2026-10-01 (evening)
+Last updated: 2026-10-02 (evening)
 
-STATUS AT A GLANCE
+STATUS AT A GLANCE  (checked 2026-10-02 from outside + kubectl on the VPS)
 ------------------
-  DONE by DevOps (verified from outside on 2026-10-01):
+  DONE:
     1 DNS · 2 in-cluster URLs · 3 ingress/TLS/HSTS/redirects, /api/internal blocked
-    7 firewall (Hostinger, upstream) · 8 verification
-  DONE by the app team: release APK 1.0.1 with the HTTPS endpoints (see 6)
+    6 all Services ClusterIP · 7 firewall · 8 verification
+    17 VAPT backend release · 18 admin-credentials Secret mounted
+    19 chat-uploads / forum-uploads PVCs bound · 20 forum media URLs relative
+    21 ModerationWorker started · 23 PR #96 release
+    Running: user-svc + forum-svc d362234, chat-svc c7eb0e4, notif-svc 45a44cd
   NEXT for DevOps:
-    6  NodePort -> ClusterIP (the APK is out — go ahead)
-    17 BACKEND RELEASE prerequisites — before the main-repo PR is merged
-  Website headers (5) are handled by the app team in the website repo.
+    24 ADMIN SECURITY RELEASE — URGENT. Admin still runs 45a44cd; live
+       admin endpoints are open without login (users/x/reports returns 200).
+       CI does not build admin: manual build from main d362234, see item 24.
+    14 REDIS_URL for /forum-svc — still missing (recommended)
+    16 placeholder secret scan — not run yet (jq is not installed; item 16
+       has a version that needs only python3)
+  App team: 5 website headers (still "Access-Control-Allow-Origin: *",
+    no HSTS/CSP) · 22 object storage is a later change.
 
 
 BACKGROUND
@@ -382,6 +390,16 @@ placeholder:
       | jq -r --arg s "$s" '.data | to_entries[]
           | select((.value|@base64d) | test("^$|CHANGE_ME|REPLACE|your[_-]|example|placeholder|localhost|127\\.0\\.0\\.1|changeme|xxx"; "i"))
           | "\($s)  \(.key)"'
+  done
+
+No jq on the VPS? Same scan with python3 (also prints key names only):
+
+  for s in $(kubectl -n communityapp get secret -o name | grep -v 'service-account\|ghcr\|infisical-machine'); do
+    kubectl -n communityapp get $s -o json | S=$s python3 -c '
+import json,sys,base64,os,re
+pat=re.compile(r"^$|CHANGE_ME|REPLACE|your[_-]|example|placeholder|localhost|127\.0\.0\.1|changeme|xxx",re.I)
+for k,v in (json.load(sys.stdin).get("data") or {}).items():
+    if pat.search(base64.b64decode(v).decode("utf-8","replace")): print(os.environ["S"], k)'
   done
 
 Known so far: CLIENT_BASE_URL=CHANGE_ME (item 11). Keys most worth checking
