@@ -5,10 +5,12 @@ on:
     branches: [main]
     paths:
       - 'services/**'
+      - 'apps/admin/**'
   pull_request:
     branches: [main]
     paths:
       - 'services/**'
+      - 'apps/admin/**'
 
 jobs:
   detect_changes:
@@ -26,6 +28,7 @@ jobs:
       chat_svc: ${{ steps.changes.outputs['chat-svc'] }}
       forum_svc: ${{ steps.changes.outputs['forum-svc'] }}
       notif_svc: ${{ steps.changes.outputs['notif-svc'] }}
+      admin: ${{ steps.changes.outputs['admin'] }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
@@ -40,6 +43,8 @@ jobs:
               - 'services/forum-svc/**'
             notif-svc:
               - 'services/notif-svc/**'
+            admin:
+              - 'apps/admin/**'
 
   build_user_svc:
     name: Build & Push user-svc
@@ -159,9 +164,39 @@ jobs:
           cache-from: type=gha,scope=notif-svc
           cache-to: type=gha,scope=notif-svc,mode=max
 
+  build_admin:
+    name: Build & Push admin
+    needs: detect_changes
+    if: needs.detect_changes.outputs.admin == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - id: vars
+        run: echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ secrets.GHCR_USERNAME }}
+          password: ${{ secrets.GHCR_TOKEN }}
+      - uses: docker/build-push-action@v5
+        with:
+          # Own context, like user-svc/notif-svc: apps/admin has no
+          # @digiability/* workspace dependency, so it needs no repo root.
+          context: ./apps/admin
+          push: true
+          tags: |
+            ghcr.io/techonsy/community-admin:latest
+            ghcr.io/techonsy/community-admin:${{ steps.vars.outputs.sha_short }}
+          cache-from: type=gha,scope=admin
+          cache-to: type=gha,scope=admin,mode=max
+
   deploy:
     name: Deploy changed services
-    needs: [detect_changes, build_user_svc, build_chat_svc, build_forum_svc, build_notif_svc]
+    needs: [detect_changes, build_user_svc, build_chat_svc, build_forum_svc, build_notif_svc, build_admin]
     if: always() && github.ref == 'refs/heads/main' && !failure()
     runs-on: ubuntu-latest
     strategy:
@@ -181,6 +216,8 @@ jobs:
             changed: ${{ needs.detect_changes.outputs.forum_svc }}
           - service: notif-svc
             changed: ${{ needs.detect_changes.outputs.notif_svc }}
+          - service: admin
+            changed: ${{ needs.detect_changes.outputs.admin }}
     steps:
       - if: matrix.changed != 'true'
         run: echo "Skipping ${{ matrix.service }} — not changed" && exit 0
@@ -219,8 +256,9 @@ jobs:
             kubectl exec deployment/argocd-server -n argocd -- argocd app sync community-app --insecure --timeout 180
             kubectl exec deployment/argocd-server -n argocd -- argocd app wait community-app --insecure --health --timeout 180
             kubectl rollout status deployment/${{ matrix.service }} -n communityapp --timeout=180s
-            # notif-svc has no Prisma schema at all (raw pg Pool) — migrate deploy
-            # would fail with "command not found" / no schema.prisma for it.
-            if [ "${{ matrix.service }}" != "notif-svc" ]; then
+            # notif-svc and admin have no Prisma schema at all (both talk to
+            # Postgres through a raw pg Pool) — migrate deploy would fail with
+            # "command not found" / no schema.prisma for them.
+            if [ "${{ matrix.service }}" != "notif-svc" ] && [ "${{ matrix.service }}" != "admin" ]; then
               kubectl exec deployment/${{ matrix.service }} -n communityapp -- npx prisma migrate deploy
             fi

@@ -1,5 +1,7 @@
 # ─────────────────────────────────────────────────────────────
-# admin Dockerfile — manual build only, not wired into CI.
+# admin Dockerfile — built by .github/workflows/ci.yml (job build_admin)
+# on any change under apps/admin/, then deployed by bumping the tag in
+# ngo-devops/communityapp/admin.yaml, same as the four services.
 # Multi-stage: build → production. Self-contained context (this app has
 # no @digiability/* workspace dependency), same plain `npm install`
 # pattern as services/user-svc/Dockerfile — no root-context /
