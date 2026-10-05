@@ -42,8 +42,8 @@
   "devDependencies": {
     "@types/react": "~19.1.0",
     "patch-package": "^8.0.1",
-    "prisma": "^5.10.0",
-    "turbo": "^2.0.0"
+    "prisma": "^7.10.0",
+    "turbo": "^2.11.6"
   },
   "overrides": {
     "@types/react": "~19.1.0",
