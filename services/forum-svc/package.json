@@ -15,7 +15,7 @@
     "@digiability/moderation": "file:../../packages/moderation",
     "@prisma/client": "^5.14.0",
     "bad-words": "^4.0.0",
-    "bullmq": "^5.79.1",
+    "bullmq": "^6.3.11",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
